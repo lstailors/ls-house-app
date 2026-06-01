@@ -173,7 +173,7 @@ agentsRouter.get("/briefs", async (c) => {
 
   if (error) {
     console.error("[agents/briefs] fetch error:", error.message);
-    return c.json({ error: { message: "Failed to fetch briefs" } }, 500);
+    return c.json({ error: { message: `Failed to fetch briefs: ${error.message}` } }, 500);
   }
 
   return c.json({ data: data ?? [] });

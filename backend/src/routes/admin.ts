@@ -148,6 +148,42 @@ adminRouter.patch("/users/:id", async (c) => {
   });
 });
 
+adminRouter.post("/users/:id/password", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  const password = body.password;
+  if (!password || password.length < 8) return c.json({ error: { message: "Password must be at least 8 characters" } }, 400);
+  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(id, { password });
+  if (error) return c.json({ error: { message: error.message } }, 400);
+  return c.json({ data: { ok: true } });
+});
+
+adminRouter.post("/locations", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  if (!body.name || !body.code) return c.json({ error: { message: "name and code required" } }, 400);
+  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
+  const { data, error } = await supabaseAdmin
+    .from("locations")
+    .insert({ name: body.name, code: body.code.toUpperCase(), address: body.address ?? null, erpnext_company: body.erpnextCompany ?? null, active: true })
+    .select().single();
+  if (error) return c.json({ error: { message: error.message } }, 400);
+  return c.json({ data });
+});
+
+adminRouter.patch("/locations/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
+  const update: any = {};
+  if (body.name !== undefined) update.name = body.name;
+  if (body.isActive !== undefined) update.active = body.isActive;
+  if (body.address !== undefined) update.address = body.address;
+  const { data, error } = await supabaseAdmin.from("locations").update(update).eq("code", id).select().single();
+  if (error) return c.json({ error: { message: error.message } }, 400);
+  return c.json({ data });
+});
+
 adminRouter.get("/overview", async (c) => {
   if (!supabaseAdmin || !lshAdmin) {
     return c.json({ data: { totalUsers: 0, totalLocations: 0, totalCustomers: 0, totalCustomOrders: 0, totalAlterations: 0, totalDeliveries: 0 } });
