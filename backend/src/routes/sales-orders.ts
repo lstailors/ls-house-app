@@ -1,117 +1,92 @@
 import { Hono } from "hono";
-import { supabaseAdmin, lshAdmin } from "../lib/supabase";
-import {
-  canSeeFinancials,
-  getAuthedUser,
-  resolveSupabaseLocationId,
-  canReadFinancialRow,
-} from "../lib/scope";
+import { getAuthedUser } from "../lib/scope";
+import { erpList, erpGet } from "../lib/erp";
 
 export const salesOrdersRouter = new Hono();
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ERPNext Sales Order status → app status
+function mapStatus(erpStatus: string): string {
+  switch (erpStatus) {
+    case "Draft":              return "quote";
+    case "To Deliver and Bill":
+    case "To Bill":
+    case "To Deliver":         return "in_production";
+    case "Completed":          return "delivered";
+    case "Cancelled":          return "cancelled";
+    default:                   return "quote";
+  }
+}
 
-function serializeCustomer(row: any) {
+interface ErpSalesOrder {
+  name: string;
+  customer: string;
+  customer_name: string | null;
+  status: string;
+  transaction_date: string;
+  grand_total: number;
+  company: string;
+  modified: string;
+  creation: string;
+}
+
+function serialize(so: ErpSalesOrder) {
+  const locationId = so.company?.includes("NY") ? "NYC" : "HOU";
   return {
-    id: row.id,
-    name: row.full_name,
-    phone: row.phone,
-    email: row.email,
-    locationId: row.division,
-    createdById: null,
-    dossier: {
-      vip: row.vip_tier !== "Standard",
-      preferences: row.style_preferences || null,
+    id: so.name,
+    customOrderId: null,
+    locationId,
+    erpnextId: so.name,
+    status: mapStatus(so.status),
+    total: so.grand_total ?? 0,
+    payload: {},
+    createdAt: so.transaction_date ?? so.creation,
+    customer: {
+      id: so.customer,
+      name: so.customer_name ?? so.customer,
+      phone: "",
+      email: null,
+      locationId,
+      createdById: null,
+      dossier: { vip: false, preferences: null },
+      createdAt: so.creation ?? so.transaction_date,
+      updatedAt: so.modified ?? so.transaction_date,
     },
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
   };
 }
 
-function serializeSalesOrder(row: any, customer: any) {
-  return {
-    id: row.id,
-    customOrderId: row.custom_order_id,
-    locationId: row.location_id,
-    erpnextId: row.erpnext_id,
-    status: row.status,
-    total: Number(row.total),
-    payload: row.payload_json,
-    createdAt: row.created_at,
-    customer: customer ?? null,
-  };
-}
-
-// ─── Routes ───────────────────────────────────────────────────────────────────
-
-// Financials: super_admin + store_manager only.
+// GET /api/sales-orders — pull live from ERPNext
 salesOrdersRouter.get("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!canSeeFinancials(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
 
-  const locId = resolveSupabaseLocationId(user, c.req.query("locationId"));
+  const locationCode = c.req.query("locationId") ?? user.locationCode;
 
-  let q = lshAdmin!.from("sales_orders").select("*").order("created_at", { ascending: false }).limit(200);
-  if (locId) q = q.eq("location_id", locId);
-
-  const { data, error } = await q;
-  if (error) return c.json({ error: { message: error.message } }, 500);
-
-  const rows = data ?? [];
-
-  // Three-pass: sales_orders → custom_orders → customers
-  const customOrderIds = [...new Set(rows.map((r: any) => r.custom_order_id).filter(Boolean))] as string[];
-  let customerMap = new Map<string, any>();
-
-  if (customOrderIds.length && lshAdmin) {
-    const { data: customOrders } = await lshAdmin
-      .from("custom_orders")
-      .select("id, customer_id")
-      .in("id", customOrderIds);
-
-    if (customOrders?.length) {
-      const customerIds = [...new Set(customOrders.map((co: any) => co.customer_id).filter(Boolean))] as string[];
-      // Map custom_order_id → customer_id
-      const coToCustomer = new Map<string, string>();
-      for (const co of customOrders) coToCustomer.set(co.id, co.customer_id);
-
-      if (customerIds.length && supabaseAdmin) {
-        const { data: customers } = await supabaseAdmin
-          .from("customers")
-          .select("id, full_name, phone, email, division, vip_tier, style_preferences, created_at, updated_at")
-          .in("id", customerIds);
-
-        if (customers) {
-          const rawMap = new Map(customers.map((c: any) => [c.id, c]));
-          // Build map keyed by custom_order_id for easy lookup
-          for (const [coId, custId] of coToCustomer.entries()) {
-            const rawCustomer = rawMap.get(custId);
-            if (rawCustomer) customerMap.set(coId, serializeCustomer(rawCustomer));
-          }
-        }
-      }
-    }
+  const filters: unknown[] = [["docstatus", "!=", 2]]; // exclude deleted
+  if (locationCode && locationCode !== "ALL") {
+    // Map locationCode (NYC/HOU) to company name fragment
+    const companyFragment = locationCode === "HOU" ? "TX" : "NY";
+    filters.push(["company", "like", `%${companyFragment}%`]);
   }
 
-  return c.json({
-    data: rows.map((r: any) => serializeSalesOrder(r, r.custom_order_id ? customerMap.get(r.custom_order_id) : null)),
+  const orders = await erpList<ErpSalesOrder>("Sales Order", {
+    filters,
+    fields: [
+      "name", "customer", "customer_name", "status",
+      "transaction_date", "grand_total", "company", "modified", "creation",
+    ],
+    limit: 200,
+    order_by: "modified desc",
   });
+
+  return c.json({ data: orders.map(serialize) });
 });
 
 salesOrdersRouter.get("/:id", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!canSeeFinancials(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
 
-  const { data: row, error } = await lshAdmin!
-    .from("sales_orders")
-    .select("*")
-    .eq("id", c.req.param("id"))
-    .single();
+  const so = await erpGet<ErpSalesOrder>("Sales Order", c.req.param("id"));
+  if (!so) return c.json({ error: { message: "Not found" } }, 404);
 
-  if (error || !row) return c.json({ error: { message: "Not found" } }, 404);
-  if (!canReadFinancialRow(user, row)) return c.json({ error: { message: "Forbidden" } }, 403);
-
-  return c.json({ data: serializeSalesOrder(row, null) });
+  return c.json({ data: serialize(so) });
 });
