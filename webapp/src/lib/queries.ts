@@ -179,6 +179,27 @@ export function useCreateCustomOrder() {
   });
 }
 
+export interface Transition {
+  action: string;
+  label?: string;
+}
+
+export function useAlterationDetail(id: string | undefined) {
+  return useQuery({
+    queryKey: ["alterations", "detail", id],
+    queryFn: () => api.get<Alteration>(`/api/alterations/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useAlterationTransitions(id: string | undefined) {
+  return useQuery({
+    queryKey: ["alterations", "transitions", id],
+    queryFn: () => api.get<Transition[]>(`/api/alterations/${id}/transitions`),
+    enabled: !!id,
+  });
+}
+
 export function useCreateAlteration() {
   const qc = useQueryClient();
   return useMutation({

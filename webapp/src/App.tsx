@@ -11,6 +11,7 @@ import IntakeCustom from "./pages/intake/IntakeCustom";
 import OrdersAlterations from "./pages/orders/OrdersAlterations";
 import OrdersCustom from "./pages/orders/OrdersCustom";
 import CustomOrderDetail from "./pages/orders/CustomOrderDetail";
+import AlterationDetail from "./pages/orders/AlterationDetail";
 import SalesOrders from "./pages/orders/SalesOrders";
 import Invoices from "./pages/orders/Invoices";
 import Deliveries from "./pages/Deliveries";
@@ -86,6 +87,14 @@ const App = () => (
               element={
                 <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
                   <OrdersAlterations />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/orders/alterations/:id"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
+                  <AlterationDetail />
                 </RoleGuard>
               }
             />
