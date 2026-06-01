@@ -12,11 +12,10 @@ import { formatUSD, formatDate, relativeDay } from "@/lib/format";
 import type { Alteration } from "@/lib/types";
 
 const FILTERS = [
-  { value: "all", label: "All" },
-  { value: "intake", label: "Intake" },
-  { value: "in_progress", label: "In Progress" },
-  { value: "ready", label: "Ready" },
-  { value: "picked_up", label: "Picked Up" },
+  { value: "all",          label: "All"         },
+  { value: "in_progress",  label: "In Progress" },
+  { value: "complete",     label: "Complete"    },
+  { value: "delivered",    label: "Delivered"   },
 ];
 
 export default function OrdersAlterations() {
@@ -28,7 +27,14 @@ export default function OrdersAlterations() {
   const rows = useMemo(() => {
     const s = search.toLowerCase();
     return alterations.filter((a) => {
-      if (filter !== "all" && a.status !== filter) return false;
+      // Map display tabs → underlying status values
+      // In Progress = intake (Received) + in_progress (In Progress)
+      // Complete    = ready (Ready)
+      // Delivered   = picked_up (Picked Up)
+      if (filter === "in_progress" && a.status !== "intake" && a.status !== "in_progress") return false;
+      if (filter === "complete"    && a.status !== "ready")     return false;
+      if (filter === "delivered"   && a.status !== "picked_up") return false;
+      if (filter === "all") { /* no filter */ }
       if (!s) return true;
       return (
         a.customer?.name.toLowerCase().includes(s) ||
