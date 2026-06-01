@@ -521,3 +521,114 @@ agentsRouter.post("/:slug/messages", async (c) => {
   if (replyErr) return c.json({ error: { message: "Failed to save reply" } }, 500);
   return c.json({ data: saved });
 });
+
+// ── GET /api/agents/costs — token burn per agent ─────────────────────────────
+agentsRouter.get("/costs", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+
+  const days = parseInt(c.req.query("days") ?? "30", 10) || 30;
+  const since = new Date(Date.now() - days * 86400000).toISOString().split("T")[0];
+
+  const { data, error } = await lshAdmin()
+    .from("agent_costs")
+    .select("agent_slug, model, input_tokens, output_tokens, cost_usd, day")
+    .gte("day", since)
+    .order("day", { ascending: false });
+
+  if (error) return c.json({ data: [] });
+
+  // Aggregate by agent
+  const byAgent: Record<string, { totalCost: number; totalTokens: number; model: string; daily: any[] }> = {};
+  for (const row of data ?? []) {
+    if (!byAgent[row.agent_slug]) {
+      byAgent[row.agent_slug] = { totalCost: 0, totalTokens: 0, model: row.model, daily: [] };
+    }
+    byAgent[row.agent_slug].totalCost += Number(row.cost_usd);
+    byAgent[row.agent_slug].totalTokens += row.input_tokens + row.output_tokens;
+    byAgent[row.agent_slug].daily.push(row);
+  }
+
+  return c.json({ data: byAgent });
+});
+
+// ── GET /api/agents/cron — scheduled job manifest ────────────────────────────
+agentsRouter.get("/cron", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+
+  const { data, error } = await lshAdmin()
+    .from("cron_jobs")
+    .select("*")
+    .order("name");
+
+  if (error) return c.json({ data: [] });
+  return c.json({ data: data ?? [] });
+});
+
+// ── PATCH /api/agents/cron/:id — toggle enabled / trigger manual ─────────────
+agentsRouter.patch("/cron/:id", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+
+  const id = c.req.param("id");
+  const body = (await c.req.json().catch(() => ({}))) as any;
+  const update: Record<string, any> = {};
+  if (typeof body.enabled === "boolean") update.enabled = body.enabled;
+
+  if (Object.keys(update).length === 0) return c.json({ error: { message: "Nothing to update" } }, 400);
+
+  const { data, error } = await lshAdmin()
+    .from("cron_jobs")
+    .update(update)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) return c.json({ error: { message: error.message } }, 500);
+  return c.json({ data });
+});
+
+// ── GET /api/agents/audit — audit log ────────────────────────────────────────
+agentsRouter.get("/audit", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "100", 10), 500);
+  const agentSlug = c.req.query("agent");
+
+  let q = lshAdmin()
+    .from("audit_log")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (agentSlug) q = q.eq("agent_slug", agentSlug);
+
+  const { data, error } = await q;
+  if (error) return c.json({ data: [] });
+  return c.json({ data: data ?? [] });
+});
+
+// ── GET /api/agents/live — cross-fleet activity feed ─────────────────────────
+agentsRouter.get("/live", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+
+  // All agent events from last 2h, all agents
+  const since = new Date(Date.now() - 2 * 3600000).toISOString();
+  const { data, error } = await lshAdmin()
+    .from("agent_events")
+    .select("id, agent_slug, event_type, summary, severity, metadata, created_at")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  if (error) return c.json({ data: [] });
+  return c.json({ data: data ?? [] });
+});

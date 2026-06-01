@@ -575,3 +575,56 @@ export function useUpdateLocation(id: string | undefined) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["locations"] }),
   });
 }
+
+// ─── Mission Control — Costs, Cron, Audit, Live feed ─────────────────────────
+
+export function useAgentCosts(days = 30) {
+  return useQuery({
+    queryKey: ["agents", "costs", days],
+    queryFn: () => api.get<any>(`/api/agents/costs?days=${days}`),
+    refetchInterval: 5 * 60_000,
+  });
+}
+
+export function useCronJobs() {
+  return useQuery({
+    queryKey: ["agents", "cron"],
+    queryFn: () => api.get<any[]>("/api/agents/cron"),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useToggleCronJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      api.patch(`/api/agents/cron/${id}`, { enabled }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agents", "cron"] }),
+  });
+}
+
+export function useAuditLog(agentSlug?: string, limit = 100) {
+  return useQuery({
+    queryKey: ["agents", "audit", agentSlug, limit],
+    queryFn: () =>
+      api.get<any[]>(`/api/agents/audit?limit=${limit}${agentSlug ? `&agent=${agentSlug}` : ""}`),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useLiveFeed() {
+  return useQuery({
+    queryKey: ["agents", "live"],
+    queryFn: () => api.get<any[]>("/api/agents/live"),
+    refetchInterval: 10_000,
+  });
+}
+
+export function useAllTasks(status?: string) {
+  return useQuery({
+    queryKey: ["agents", "tasks", "all", status],
+    queryFn: () =>
+      api.get<any[]>(`/api/agents/approvals/pending`),
+    refetchInterval: 20_000,
+  });
+}
