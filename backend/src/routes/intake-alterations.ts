@@ -259,11 +259,11 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
     const result = await erpPost<any>('ls_alterations.api.create_ticket', {
       payload: JSON.stringify(payload),
     });
-    return c.json({ data: result });
-  } catch {
-    return c.json({
-      data: { ticket_name: `DRAFT-${Date.now()}`, status: 'draft_offline' },
-    });
+    // ERP returns { name, ticket_total, ... } — normalize to { ticketName }
+    return c.json({ data: { ticketName: result?.name ?? result?.ticket_name, ...result } });
+  } catch (e: any) {
+    console.error('[intake-alterations] ticket create error:', e?.message);
+    return c.json({ error: { message: e?.message || 'Failed to create ticket' } }, 502);
   }
 });
 

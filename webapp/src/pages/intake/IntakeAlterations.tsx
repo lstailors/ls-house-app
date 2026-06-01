@@ -180,6 +180,7 @@ function CustomerSearch({
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<CustomerResult[]>([])
   const [loading, setLoading] = useState(false)
+  const [editOpen, setEditOpen] = useState(false) // must be at top level, not inside if(customer)
   const [open, setOpen] = useState(false)
   const [manualMode, setManualMode] = useState(false)
   const [manual, setManual] = useState({ name: '', phone: '', email: '' })
@@ -212,8 +213,6 @@ function CustomerSearch({
       }
     }, 300)
   }, [query])
-
-  const [editOpen, setEditOpen] = useState(false)
 
   if (customer) {
     return (
