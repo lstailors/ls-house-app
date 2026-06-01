@@ -175,7 +175,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   const body = (await c.req.json()) as any;
-  const { customer, newCustomer, garments, isRush, origin, paymentMethod, deposit } = body;
+  const { customer, newCustomer, garments, isRush, origin, paymentMethod, deposit, ticket_date } = body;
 
   // Validate
   if (!garments || !Array.isArray(garments) || garments.length === 0) {
@@ -191,6 +191,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
     is_rush: isRush ? 1 : 0,
     payment_method: paymentMethod ?? 'on_account',
     deposit_amount: paymentMethod === 'deposit' ? parseFloat(deposit) || 0 : 0,
+    ticket_date: ticket_date ?? new Date().toISOString().split('T')[0],
     garments: garments.map((g: any) => ({
       garment_type: g.garmentType,
       garment_description: g.description || g.garmentType,

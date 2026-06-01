@@ -311,15 +311,32 @@ function CustomerSearch({
       </div>
 
       {open && results.length > 0 && (
-        <div className="absolute z-50 top-full mt-1 left-0 right-0 glass-panel border border-brass/20 rounded-lg overflow-hidden shadow-xl">
+        <div className="absolute z-50 top-full mt-1 left-0 right-0 glass-panel border border-brass/20 rounded-xl overflow-hidden shadow-xl">
           {results.map(r => (
             <button
               key={r.id}
-              className="w-full px-4 py-3 text-left hover:bg-brass/10 transition-colors border-b border-brass/10 last:border-0"
+              className="w-full px-4 py-3.5 text-left hover:bg-brass/10 transition-colors border-b border-brass/10 last:border-0 flex items-center gap-3"
               onClick={() => { onSelect(r); setQuery(''); setOpen(false) }}
             >
-              <p className="text-cream text-sm font-medium">{r.name}</p>
-              <p className="text-cream-muted text-xs">{r.phone} {r.email && `· ${r.email}`}</p>
+              <div className="w-9 h-9 rounded-full bg-brass/15 border border-brass/25 flex items-center justify-center flex-shrink-0">
+                <span className="text-brass-shimmer font-semibold text-sm">{r.name.charAt(0).toUpperCase()}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-cream text-sm font-semibold truncate">{r.name}</p>
+                <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                  {r.phone && (
+                    <span className="flex items-center gap-1 text-cream-muted text-xs">
+                      <Phone className="w-3 h-3 text-brass-light/60" />{r.phone}
+                    </span>
+                  )}
+                  {r.email && (
+                    <span className="flex items-center gap-1 text-cream-dim text-xs truncate max-w-[180px]">
+                      <Mail className="w-3 h-3 text-brass-light/60 flex-shrink-0" />{r.email}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <span className="text-brass-light/50 text-xs flex-shrink-0">Select →</span>
             </button>
           ))}
         </div>
@@ -489,7 +506,7 @@ function ActiveGarmentCard({
         {relevantPresets.length === 0 ? (
           <p className="text-cream-dim text-sm italic">No presets for this garment type</p>
         ) : (
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {relevantPresets.map(preset => {
               const selected = activePresets.has(preset.id)
               return (
@@ -497,17 +514,32 @@ function ActiveGarmentCard({
                   key={preset.id}
                   onClick={() => togglePreset(preset)}
                   className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-all',
+                    'relative flex flex-col items-start gap-1 p-3 rounded-xl border transition-all text-left',
                     selected
-                      ? 'bg-brass/80 border-brass text-forest-deep shadow-sm'
-                      : 'bg-transparent border-brass/30 text-cream-muted hover:border-brass/60 hover:text-cream'
+                      ? 'bg-brass/20 border-brass/70 shadow-[0_0_10px_rgba(180,140,60,0.15)]'
+                      : 'bg-forest-raised/60 border-brass/15 hover:border-brass/40 hover:bg-forest-raised'
                   )}
                 >
-                  {selected && <Check className="w-3 h-3" />}
-                  <span>{preset.preset_name}</span>
-                  <span className={cn('text-xs', selected ? 'text-forest-deep/70' : 'text-cream-dim')}>
+                  {selected && (
+                    <span className="absolute top-2 right-2 w-5 h-5 rounded-full bg-brass flex items-center justify-center">
+                      <Check className="w-3 h-3 text-forest-deep" />
+                    </span>
+                  )}
+                  <span className={cn(
+                    'text-xs font-medium leading-snug pr-6',
+                    selected ? 'text-cream' : 'text-cream-muted'
+                  )}>
+                    {preset.preset_name}
+                  </span>
+                  <span className={cn(
+                    'font-display italic text-base font-semibold',
+                    selected ? 'text-brass-shimmer' : 'text-brass-light/70'
+                  )}>
                     {formatUSD(preset.price)}
                   </span>
+                  {preset.est_minutes && (
+                    <span className="text-[10px] text-cream-dim">{preset.est_minutes} min</span>
+                  )}
                 </button>
               )
             })}
@@ -929,6 +961,7 @@ export default function IntakeAlterations() {
         paymentMethod,
         deposit: paymentMethod === 'deposit' ? parseFloat(deposit) || 0 : null,
         origin,
+        ticket_date: new Date().toISOString().split('T')[0], // YYYY-MM-DD — required by ERP
       }
       const result = await api.post<{ ticketName: string }>('/api/intake-alterations/tickets', payload)
       setSubmitted({ ticketName: result.ticketName })
