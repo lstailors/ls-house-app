@@ -389,3 +389,81 @@ export function useMaestroApprovalCount() {
     refetchInterval: 60 * 1000,
   });
 }
+
+// ─── Agents (Mission Control) ─────────────────────────────────────────────────
+
+export function useAgents() {
+  return useQuery({
+    queryKey: ["agents"],
+    queryFn: () => api.get<any[]>("/api/agents"),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useAgent(slug: string | undefined) {
+  return useQuery({
+    queryKey: ["agents", slug],
+    queryFn: () => api.get<any>(`/api/agents/${slug}`),
+    enabled: !!slug,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useAgentEvents(slug: string | undefined, limit = 50) {
+  return useQuery({
+    queryKey: ["agents", slug, "events", limit],
+    queryFn: () => api.get<any[]>(`/api/agents/${slug}/events?limit=${limit}`),
+    enabled: !!slug,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useAgentTasks(slug: string | undefined, status?: string) {
+  return useQuery({
+    queryKey: ["agents", slug, "tasks", status],
+    queryFn: () =>
+      api.get<any[]>(`/api/agents/${slug}/tasks${status ? `?status=${status}` : ""}`),
+    enabled: !!slug,
+    refetchInterval: 30_000,
+  });
+}
+
+export function usePendingApprovals() {
+  return useQuery({
+    queryKey: ["agents", "approvals", "pending"],
+    queryFn: () => api.get<{ byAgent: Record<string, any[]>; total: number }>("/api/agents/approvals/pending"),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useAgentBriefs(limit = 20) {
+  return useQuery({
+    queryKey: ["agents", "briefs", limit],
+    queryFn: () => api.get<any[]>(`/api/agents/briefs?limit=${limit}`),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useDelegateTask(slug: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { title: string; description?: string; priority?: string; due_at?: string }) =>
+      api.post<any>(`/api/agents/${slug}/tasks`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["agents", slug, "tasks"] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}
+
+export function useUpdateAgent(slug: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Record<string, unknown>) =>
+      api.patch<any>(`/api/agents/${slug}`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["agents", slug] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}

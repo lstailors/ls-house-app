@@ -28,6 +28,7 @@ import FabricPricingPage from "./pages/reference/FabricPricingPage";
 import StyleLibraryPage from "./pages/reference/StyleLibraryPage";
 import Academy from "./pages/Academy";
 import MissionControl from "./pages/MissionControl";
+import AgentDetail from "./pages/mission-control/AgentDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -60,6 +61,15 @@ const App = () => (
               element={
                 <RoleGuard allow={["super_admin", "store_manager"]}>
                   <MissionControl />
+                </RoleGuard>
+              }
+            />
+
+            <Route
+              path="/mission-control/agents/:slug"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager"]}>
+                  <AgentDetail />
                 </RoleGuard>
               }
             />

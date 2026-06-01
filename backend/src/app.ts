@@ -20,6 +20,7 @@ import { adminRouter } from "./routes/admin";
 import { dashboardRouter } from "./routes/dashboard";
 import { maestroRouter } from "./routes/maestro";
 import { sofiaRouter } from "./routes/sofia";
+import { agentsRouter } from "./routes/agents";
 
 const app = new Hono();
 
@@ -74,5 +75,6 @@ app.route("/api/admin", adminRouter);
 app.route("/api/dashboard", dashboardRouter);
 app.route("/api/maestro", maestroRouter);
 app.route("/api/sofia", sofiaRouter);
+app.route("/api/agents", agentsRouter);
 
 export default app;
