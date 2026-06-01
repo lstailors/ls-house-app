@@ -19,7 +19,7 @@ notificationsRouter.get("/", async (c) => {
     const { data: approvals } = await supabaseAdmin
       .from("approval_queue")
       .select("id, title, summary, category, created_at, status")
-      .eq("status", "pending")
+      .in("status", ["pending", "awaiting_second"])
       .order("created_at", { ascending: false })
       .limit(15);
 

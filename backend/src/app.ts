@@ -24,6 +24,8 @@ import { agentsRouter } from "./routes/agents";
 import { espressoRouter } from "./routes/espresso";
 import { tasksRouter } from "./routes/tasks";
 import { commsRouter } from "./routes/comms";
+import { searchRouter } from "./routes/search";
+import { notificationsRouter } from "./routes/notifications";
 
 const app = new Hono();
 
@@ -82,5 +84,7 @@ app.route("/api/agents", agentsRouter);
 app.route("/api/espresso", espressoRouter);
 app.route("/api/tasks", tasksRouter);
 app.route("/api/comms", commsRouter);
+app.route("/api/search", searchRouter);
+app.route("/api/notifications", notificationsRouter);
 
 export default app;
