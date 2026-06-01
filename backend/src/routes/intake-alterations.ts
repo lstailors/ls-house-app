@@ -120,6 +120,8 @@ intakeAlterationsRouter.get('/tailors', async (c) => {
 });
 
 // 3. GET /customers/search?q=
+// Searches ERPNext Customer doctype (primary source for alteration customers)
+// and falls back to Supabase customers table for MTM customers.
 intakeAlterationsRouter.get('/customers/search', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
@@ -127,13 +129,50 @@ intakeAlterationsRouter.get('/customers/search', async (c) => {
   const q = c.req.query('q') ?? '';
   if (q.length < 2) return c.json({ data: [] });
 
-  const { data: results } = await supabaseAdmin
-    .from('customers')
-    .select('id,full_name,phone,email,customer_number')
-    .or(`full_name.ilike.%${q}%,phone.ilike.%${q}%,email.ilike.%${q}%`)
-    .limit(8);
+  // Search ERPNext customers (covers all alteration + MTM customers)
+  const erpBase = process.env.ERPNEXT_BASE_URL ?? '';
+  const erpKey  = process.env.ERPNEXT_API_KEY  ?? '';
+  const erpSec  = process.env.ERPNEXT_API_SECRET ?? '';
 
-  return c.json({ data: results ?? [] });
+  const erpResults: any[] = [];
+  if (erpBase && erpKey && erpSec) {
+    try {
+      const fields = JSON.stringify(['name', 'customer_name', 'mobile_no', 'email_id']);
+      const filters = JSON.stringify([['customer_name', 'like', `%${q}%`]]);
+      const url = `${erpBase}/api/resource/Customer?fields=${encodeURIComponent(fields)}&filters=${encodeURIComponent(filters)}&limit_page_length=8&order_by=modified%20desc`;
+      const res = await fetch(url, {
+        headers: { Authorization: `token ${erpKey}:${erpSec}`, Accept: 'application/json' },
+      });
+      if (res.ok) {
+        const json: any = await res.json();
+        for (const row of (json.data ?? [])) {
+          erpResults.push({
+            id: row.name,
+            full_name: row.customer_name,
+            phone: row.mobile_no ?? '',
+            email: row.email_id ?? null,
+            customer_number: row.name,
+          });
+        }
+      }
+    } catch { /* fall through to Supabase */ }
+  }
+
+  // Also search Supabase for MTM customers not in ERPNext
+  const { data: sbResults } = await (supabaseAdmin
+    ?.from('customers')
+    .select('id,full_name,phone,email,customer_number')
+    .or(`full_name.ilike.%${q}%,phone.ilike.%${q}%`)
+    .limit(4) ?? { data: [] });
+
+  // Merge, deduplicate by full_name
+  const seen = new Set(erpResults.map((r: any) => r.full_name?.toLowerCase()));
+  const merged = [
+    ...erpResults,
+    ...(sbResults ?? []).filter((r: any) => !seen.has(r.full_name?.toLowerCase())),
+  ].slice(0, 10);
+
+  return c.json({ data: merged });
 });
 
 // 4. GET /tickets?status=&origin=NYC|HOU&limit=100
