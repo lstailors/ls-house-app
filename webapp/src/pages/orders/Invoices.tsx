@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { FileText, Download } from "lucide-react";
+import { FileText, Scissors } from "lucide-react";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { DataTable, type Column } from "@/components/glass/DataTable";
 import { FilterBar } from "@/components/glass/FilterBar";
@@ -8,15 +8,23 @@ import { EmptyState } from "@/components/glass/EmptyState";
 import { useInvoices } from "@/lib/queries";
 import { formatUSD, formatDate } from "@/lib/format";
 import type { Invoice } from "@/lib/types";
-import { Button } from "@/components/ui/button";
 
+// Use actual ERPNext status values returned by the backend
 const FILTERS = [
-  { value: "all", label: "All" },
-  { value: "draft", label: "Draft" },
-  { value: "sent", label: "Sent" },
-  { value: "paid", label: "Paid" },
-  { value: "void", label: "Void" },
+  { value: "all",      label: "All"     },
+  { value: "Unpaid",   label: "Unpaid"  },
+  { value: "Overdue",  label: "Overdue" },
+  { value: "Paid",     label: "Paid"    },
+  { value: "Draft",    label: "Draft"   },
+  { value: "Void",     label: "Void"    },
 ];
+
+// Extended Invoice type with extra fields the new backend returns
+interface ErpInvoice extends Invoice {
+  alterationTicketRef?: string | null;
+  outstanding?: number;
+  dueDate?: string | null;
+}
 
 export default function Invoices() {
   const { data: invoices = [], isLoading } = useInvoices();
@@ -25,25 +33,29 @@ export default function Invoices() {
 
   const rows = useMemo(() => {
     const s = search.toLowerCase();
-    return invoices.filter((i) => {
+    return (invoices as ErpInvoice[]).filter((i) => {
       if (filter !== "all" && i.status !== filter) return false;
       if (!s) return true;
       return (
         i.id.toLowerCase().includes(s) ||
         (i.erpnextId ?? "").toLowerCase().includes(s) ||
-        (i.customer?.name ?? "").toLowerCase().includes(s)
+        (i.customer?.name ?? "").toLowerCase().includes(s) ||
+        ((i as ErpInvoice).alterationTicketRef ?? "").toLowerCase().includes(s)
       );
     });
   }, [invoices, search, filter]);
 
   const totals = useMemo(() => {
+    const all = invoices as ErpInvoice[];
     return {
-      paid: invoices.filter((i) => i.status === "paid").reduce((s, i) => s + i.total, 0),
-      outstanding: invoices.filter((i) => i.status === "sent").reduce((s, i) => s + i.total, 0),
+      paid: all.filter((i) => i.status === "Paid").reduce((s, i) => s + i.total, 0),
+      outstanding: all
+        .filter((i) => i.status === "Unpaid" || i.status === "Overdue")
+        .reduce((s, i) => s + (i.outstanding ?? i.total), 0),
     };
   }, [invoices]);
 
-  const columns: Column<Invoice>[] = [
+  const columns: Column<ErpInvoice>[] = [
     {
       key: "id",
       header: "Invoice",
@@ -54,14 +66,41 @@ export default function Invoices() {
       ),
     },
     {
+      key: "salesOrderId" as any,
+      header: "Order",
+      cell: (i) => {
+        const ref = i.alterationTicketRef;
+        if (ref) {
+          return (
+            <div className="flex items-center gap-1.5">
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-widest bg-emerald-900/40 text-emerald-400 border border-emerald-700/40">
+                <Scissors className="h-2.5 w-2.5" />ALT
+              </span>
+              <span className="font-mono text-[10px] text-cream-dim">{ref}</span>
+            </div>
+          );
+        }
+        return <span className="text-cream-dim text-[10px]">—</span>;
+      },
+    },
+    {
       key: "customer",
       header: "Customer",
       cell: (i) => <span className="text-cream">{i.customer?.name ?? "—"}</span>,
     },
     {
       key: "date",
-      header: "Issued",
+      header: "Date",
       cell: (i) => <span className="text-cream-dim text-xs">{formatDate(i.createdAt)}</span>,
+    },
+    {
+      key: "dueDate" as any,
+      header: "Due",
+      cell: (i) => (
+        <span className="text-cream-dim text-xs">
+          {i.dueDate ? formatDate(i.dueDate) : "—"}
+        </span>
+      ),
     },
     {
       key: "status",
@@ -70,28 +109,23 @@ export default function Invoices() {
     },
     {
       key: "total",
-      header: "Total",
+      header: "Outstanding",
       align: "right",
       cell: (i) => (
-        <span className="font-display italic text-brass-shimmer text-base">
-          {formatUSD(i.total)}
+        <span className="font-mono text-xs text-cream-dim tabular-nums">
+          {(i.outstanding ?? 0) > 0 ? formatUSD(i.outstanding ?? 0) : "—"}
         </span>
       ),
     },
     {
-      key: "actions",
-      header: "",
-      cell: (i) =>
-        i.pdfUrl ? (
-          <Button variant="ghost" size="sm" className="text-cream-dim hover:text-brass-light h-7 px-2" asChild>
-            <a href={i.pdfUrl} target="_blank" rel="noreferrer">
-              <Download className="h-3.5 w-3.5" />
-            </a>
-          </Button>
-        ) : (
-          <span className="text-cream-dim text-[10px]">—</span>
-        ),
-      width: "50px",
+      key: "pdfUrl" as any,
+      header: "Total",
+      align: "right",
+      cell: (i) => (
+        <span className="font-display italic text-brass-shimmer text-base tabular-nums">
+          {formatUSD(i.total)}
+        </span>
+      ),
     },
   ];
 
@@ -117,7 +151,7 @@ export default function Invoices() {
       <FilterBar
         search={search}
         onSearchChange={setSearch}
-        searchPlaceholder="Search by ID or customer"
+        searchPlaceholder="Search by invoice, customer, or order…"
         filterValue={filter}
         onFilterChange={setFilter}
         filterOptions={FILTERS}
@@ -129,7 +163,7 @@ export default function Invoices() {
         <EmptyState
           icon={FileText}
           title="No invoices"
-          description="Invoices generate when sales orders reach the deposit step."
+          description="Invoices generate from both custom commissions and alteration tickets."
         />
       ) : (
         <DataTable rows={rows} columns={columns} rowKey={(r) => r.id} />
