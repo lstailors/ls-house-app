@@ -487,3 +487,61 @@ export function useSendAgentMessage(slug: string | undefined) {
     },
   });
 }
+
+// ─── Profile & Password ───────────────────────────────────────────────────────
+
+export function useUpdateMe() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name?: string; image?: string }) => api.patch<any>("/api/me", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
+  });
+}
+
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (password: string) => api.post<any>("/api/me/password", { password }),
+  });
+}
+
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; email: string; password: string; role: string; locationId?: string }) =>
+      api.post<any>("/api/admin/users", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }),
+  });
+}
+
+export function useUpdateUser(id: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name?: string; role?: string; locationId?: string; isActive?: boolean }) =>
+      api.patch<any>(`/api/admin/users/${id}`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }),
+  });
+}
+
+export function useResetUserPassword(id: string | undefined) {
+  return useMutation({
+    mutationFn: (password: string) => api.post<any>(`/api/admin/users/${id}/password`, { password }),
+  });
+}
+
+export function useCreateLocation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; code: string; address?: string; erpnextCompany?: string }) =>
+      api.post<any>("/api/admin/locations", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["locations"] }),
+  });
+}
+
+export function useUpdateLocation(id: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name?: string; isActive?: boolean; address?: string }) =>
+      api.patch<any>(`/api/admin/locations/${id}`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["locations"] }),
+  });
+}

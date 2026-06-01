@@ -1,14 +1,136 @@
+import { useState } from "react";
 import { Building2, MapPin, Plus, Power } from "lucide-react";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { StatusPill } from "@/components/glass/StatusPill";
 import { EmptyState } from "@/components/glass/EmptyState";
 import { Button } from "@/components/ui/button";
-import { useLocations } from "@/lib/queries";
+import { useLocations, useCreateLocation, useUpdateLocation } from "@/lib/queries";
 import { formatDate } from "@/lib/format";
+import { toast } from "sonner";
+import type { Location } from "@/lib/types";
+
+const INPUT_CLS =
+  "w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50";
+
+// ─── New Location Modal ───────────────────────────────────────────────────────
+
+function NewLocationModal({ onClose }: { onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [address, setAddress] = useState("");
+  const [erpnextCompany, setErpnextCompany] = useState("");
+
+  const createLocation = useCreateLocation();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name || !code) {
+      toast.error("Name and code are required.");
+      return;
+    }
+    try {
+      await createLocation.mutateAsync({
+        name,
+        code: code.toUpperCase(),
+        address: address || undefined,
+        erpnextCompany: erpnextCompany || undefined,
+      });
+      toast.success("Location created.");
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to create location.");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="glass-panel-strong rounded-2xl p-6 w-full max-w-md">
+        <h2 className="display-heading text-xl text-cream mb-4">New Location</h2>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="ui-label block mb-1.5">Name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className={INPUT_CLS}
+              placeholder="New York City"
+            />
+          </div>
+          <div>
+            <label className="ui-label block mb-1.5">Code</label>
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              className={INPUT_CLS}
+              placeholder="NYC"
+              maxLength={10}
+            />
+          </div>
+          <div>
+            <label className="ui-label block mb-1.5">Address</label>
+            <input
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              className={INPUT_CLS}
+              placeholder="123 Fifth Ave, New York, NY 10001"
+            />
+          </div>
+          <div>
+            <label className="ui-label block mb-1.5">ERPNext Company</label>
+            <input
+              value={erpnextCompany}
+              onChange={(e) => setErpnextCompany(e.target.value)}
+              className={INPUT_CLS}
+              placeholder="L&S NYC LLC"
+            />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button type="submit" className="btn-brass" disabled={createLocation.isPending}>
+              {createLocation.isPending ? "Creating…" : "Create"}
+            </Button>
+            <Button type="button" variant="outline" onClick={onClose} className="border-brass/20 text-cream-muted">
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Toggle Active Button ─────────────────────────────────────────────────────
+
+function ToggleActiveButton({ location }: { location: Location }) {
+  const updateLocation = useUpdateLocation(location.id);
+
+  const handleToggle = async () => {
+    try {
+      await updateLocation.mutateAsync({ isActive: !location.isActive });
+      toast.success(location.isActive ? "Location closed." : "Location opened.");
+    } catch {
+      toast.error("Failed to update location.");
+    }
+  };
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={handleToggle}
+      disabled={updateLocation.isPending}
+      className="border-brass/20 hover:bg-brass/10 text-cream-muted"
+    >
+      <Power className="h-3.5 w-3.5" />
+    </Button>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AdminLocations() {
   const { data: locations = [], isLoading } = useLocations();
+  const [showNewModal, setShowNewModal] = useState(false);
 
   return (
     <div className="space-y-6 animate-fade-up">
@@ -21,7 +143,7 @@ export default function AdminLocations() {
         }
         description="Each address where a gentleman can walk in and be measured."
         actions={
-          <Button className="btn-brass">
+          <Button className="btn-brass" onClick={() => setShowNewModal(true)}>
             <Plus className="h-4 w-4 mr-1.5" /> New location
           </Button>
         }
@@ -83,18 +205,14 @@ export default function AdminLocations() {
                 >
                   Edit
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-brass/20 hover:bg-brass/10 text-cream-muted"
-                >
-                  <Power className="h-3.5 w-3.5" />
-                </Button>
+                <ToggleActiveButton location={l} />
               </div>
             </GlassCard>
           ))}
         </div>
       )}
+
+      {showNewModal && <NewLocationModal onClose={() => setShowNewModal(false)} />}
     </div>
   );
 }

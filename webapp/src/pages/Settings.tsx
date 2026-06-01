@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import {
-  UserRound, Mail, Phone, Building2, Shield, LogOut, Bell, KeyRound, Palette, Languages,
+  UserRound, Mail, Phone, Building2, Shield, LogOut, Bell, KeyRound, Palette, Languages, Pencil, Camera,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SectionHeader } from "@/components/glass/SectionHeader";
@@ -11,7 +11,9 @@ import { Switch } from "@/components/ui/switch";
 import { useMe } from "@/lib/session";
 import { signOut } from "@/lib/authClient";
 import { initials } from "@/lib/format";
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { useUpdateMe, useChangePassword } from "@/lib/queries";
+import { toast } from "sonner";
 
 const ROLE_LABEL: Record<string, string> = {
   super_admin: "Super Admin",
@@ -35,10 +37,74 @@ export default function Settings() {
   const [notifReadyDelivery, setNotifReadyDelivery] = useState(true);
   const [notifInboundComms, setNotifInboundComms] = useState(true);
 
+  // Edit profile state
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [editName, setEditName] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Change password state
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  const updateMe = useUpdateMe();
+  const changePassword = useChangePassword();
+
   const handleSignOut = async () => {
     await signOut();
     qc.clear();
     navigate("/login");
+  };
+
+  const handleEditOpen = () => {
+    setEditName(me?.name ?? "");
+    setEditingProfile(true);
+  };
+
+  const handleSaveName = async () => {
+    if (!editName.trim()) return;
+    try {
+      await updateMe.mutateAsync({ name: editName.trim() });
+      toast.success("Profile updated.");
+      setEditingProfile(false);
+    } catch {
+      toast.error("Failed to update profile.");
+    }
+  };
+
+  const handleAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataURL = reader.result as string;
+      try {
+        await updateMe.mutateAsync({ image: dataURL });
+        toast.success("Avatar updated.");
+      } catch {
+        toast.error("Failed to update avatar.");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 8) {
+      toast.error("Password must be at least 8 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match.");
+      return;
+    }
+    try {
+      await changePassword.mutateAsync(newPassword);
+      toast.success("Password changed.");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch {
+      toast.error("Failed to change password.");
+    }
   };
 
   if (!me) {
@@ -60,12 +126,27 @@ export default function Settings() {
       {/* Profile */}
       <GlassCard variant="strong" className="p-6">
         <div className="flex items-start gap-5">
-          <Avatar className="h-20 w-20 border-2 border-brass/30 shadow-brass-glow">
-            <AvatarImage src={me.image ?? undefined} />
-            <AvatarFallback className="bg-forest-raised text-brass-light text-xl font-display italic">
-              {initials(me.name)}
-            </AvatarFallback>
-          </Avatar>
+          <div className="relative group">
+            <Avatar className="h-20 w-20 border-2 border-brass/30 shadow-brass-glow">
+              <AvatarImage src={me.image ?? undefined} />
+              <AvatarFallback className="bg-forest-raised text-brass-light text-xl font-display italic">
+                {initials(me.name)}
+              </AvatarFallback>
+            </Avatar>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              <Camera className="h-5 w-5 text-cream" />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarFile}
+            />
+          </div>
           <div className="flex-1 min-w-0">
             <div className="ui-label text-[10px] mb-1">Signed in as</div>
             <div className="display-heading text-3xl text-cream truncate">{me.name}</div>
@@ -88,6 +169,57 @@ export default function Settings() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Edit profile toggle */}
+        <div className="mt-4">
+          {!editingProfile ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleEditOpen}
+              className="border-brass/20 hover:bg-brass/10 text-cream-muted"
+            >
+              <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit profile
+            </Button>
+          ) : (
+            <div className="space-y-3 mt-2">
+              <div>
+                <label className="ui-label block mb-1.5">Display name</label>
+                <input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50"
+                  placeholder="Full name"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  className="btn-brass"
+                  onClick={handleSaveName}
+                  disabled={updateMe.isPending}
+                >
+                  {updateMe.isPending ? "Saving…" : "Save"}
+                </Button>
+                <button
+                  onClick={() => setEditingProfile(false)}
+                  className="text-xs text-cream-dim hover:text-cream"
+                >
+                  Cancel
+                </button>
+              </div>
+              <div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-brass/20 hover:bg-brass/10 text-cream-muted"
+                >
+                  <Camera className="h-3.5 w-3.5 mr-1.5" /> Upload photo
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="brass-divider my-5" />
@@ -169,23 +301,42 @@ export default function Settings() {
         </GlassCard>
       </div>
 
-      {/* Security */}
-      <GlassCard className="p-6">
+      {/* Change Password */}
+      <GlassCard variant="strong" className="p-5 rounded-2xl">
         <div className="flex items-center gap-2 mb-1">
           <KeyRound className="h-4 w-4 text-brass-light" />
-          <div className="display-heading text-xl text-cream">Security</div>
+          <div className="display-heading text-xl text-cream">Change Password</div>
         </div>
-        <div className="text-xs text-cream-dim mb-4">
-          The keys to the house.
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" className="border-brass/20 hover:bg-brass/10 text-cream-muted">
-            Change password
+        <div className="text-xs text-cream-dim mb-4">Set a new password for your account.</div>
+        <form onSubmit={handleChangePassword} className="space-y-3">
+          <div>
+            <label className="ui-label block mb-1.5">New Password</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50"
+              placeholder="Min. 8 characters"
+            />
+          </div>
+          <div>
+            <label className="ui-label block mb-1.5">Confirm Password</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50"
+              placeholder="Repeat new password"
+            />
+          </div>
+          <Button
+            type="submit"
+            className="btn-brass"
+            disabled={changePassword.isPending}
+          >
+            {changePassword.isPending ? "Saving…" : "Update password"}
           </Button>
-          <Button variant="outline" className="border-brass/20 hover:bg-brass/10 text-cream-muted">
-            Enable two-factor
-          </Button>
-        </div>
+        </form>
       </GlassCard>
 
       {/* Sign out */}

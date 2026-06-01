@@ -134,3 +134,21 @@ meRouter.patch("/", async (c) => {
     },
   });
 });
+
+meRouter.post("/password", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const body = await c.req.json().catch(() => ({}));
+  const password = body.password;
+  if (!password || password.length < 8) {
+    return c.json({ error: { message: "Password must be at least 8 characters" } }, 400);
+  }
+
+  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
+
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(user.id, { password });
+  if (error) return c.json({ error: { message: error.message } }, 400);
+
+  return c.json({ data: { ok: true } });
+});
