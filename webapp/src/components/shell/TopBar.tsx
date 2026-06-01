@@ -48,13 +48,25 @@ interface Notification {
 }
 
 const TYPE_ICON: Record<string, React.ElementType> = {
-  customer: Users,
-  sales_order: Receipt,
-  invoice: FileText,
-  fabric: Scissors,
-  task: CheckSquare,
+  customer:     Users,
+  alteration:   Scissors,
+  sales_order:  Receipt,
+  invoice:      FileText,
+  fabric:       Scissors,
+  task:         CheckSquare,
   intelligence: Cpu,
-  sms: MessageSquare,
+  sms:          MessageSquare,
+};
+
+const TYPE_LABEL: Record<string, string> = {
+  customer:     "Customer",
+  alteration:   "ALT Ticket",
+  sales_order:  "Sales Order",
+  invoice:      "Invoice",
+  fabric:       "Fabric",
+  task:         "Task",
+  intelligence: "Intelligence",
+  sms:          "Message",
 };
 
 const KIND_ICON: Record<string, React.ElementType> = {
@@ -111,7 +123,8 @@ function SearchPalette({ onClose }: { onClose: () => void }) {
   }, {} as Record<string, SearchResult[]>);
 
   const typeLabel: Record<string, string> = {
-    customer: "Customers", sales_order: "Sales Orders", invoice: "Invoices",
+    customer: "Customers", alteration: "Alteration Tickets",
+    sales_order: "Sales Orders", invoice: "Invoices",
     fabric: "Fabrics", task: "Tasks", intelligence: "Intelligence", sms: "Messages",
   };
 
