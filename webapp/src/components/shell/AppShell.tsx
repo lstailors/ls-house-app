@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Outlet, Navigate, useLocation } from "react-router-dom";
-import { Sidebar } from "./Sidebar";
+import { Sidebar, type SidebarMode } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { useMe } from "@/lib/session";
 import { LocationProvider } from "@/lib/locationContext";
@@ -16,6 +16,18 @@ export function AppShell() {
   const { data: user, isLoading } = useMe();
   const location = useLocation();
   const [navOpen, setNavOpen] = useState(false);
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>(() => {
+    try {
+      return (localStorage.getItem("ls-sidebar-mode") as SidebarMode) ?? "expanded";
+    } catch {
+      return "expanded";
+    }
+  });
+
+  const handleModeChange = (mode: SidebarMode) => {
+    setSidebarMode(mode);
+    try { localStorage.setItem("ls-sidebar-mode", mode); } catch {}
+  };
 
   if (isLoading) {
     return (
@@ -35,9 +47,29 @@ export function AppShell() {
   return (
     <LocationProvider user={user}>
       <div className="flex h-screen overflow-hidden">
-        <div className="hidden lg:block">
-          <Sidebar role={user.role} />
-        </div>
+        {/* Desktop sidebar */}
+        {sidebarMode !== "hidden" && (
+          <div className="hidden lg:block">
+            <Sidebar
+              role={user.role}
+              mode={sidebarMode}
+              onModeChange={handleModeChange}
+            />
+          </div>
+        )}
+
+        {/* Show expand button when hidden */}
+        {sidebarMode === "hidden" && (
+          <div className="hidden lg:flex items-start pt-4 pl-2">
+            <button
+              onClick={() => handleModeChange("expanded")}
+              className="p-1.5 rounded-md border border-brass/15 bg-forest-deep/60 text-cream-dim hover:text-cream transition-colors"
+              title="Show sidebar"
+            >
+              ▶
+            </button>
+          </div>
+        )}
 
         {/* Mobile/tablet drawer */}
         <Sheet open={navOpen} onOpenChange={setNavOpen}>

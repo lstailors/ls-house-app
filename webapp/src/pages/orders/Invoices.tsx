@@ -1,27 +1,59 @@
-import { useMemo, useState } from "react";
-import { FileText, Download } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { FileText, RefreshCw } from "lucide-react";
 import { SectionHeader } from "@/components/glass/SectionHeader";
-import { DataTable, type Column } from "@/components/glass/DataTable";
 import { FilterBar } from "@/components/glass/FilterBar";
 import { StatusPill } from "@/components/glass/StatusPill";
 import { EmptyState } from "@/components/glass/EmptyState";
-import { useInvoices } from "@/lib/queries";
-import { formatUSD, formatDate } from "@/lib/format";
-import type { Invoice } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
+import { formatUSD, formatDate } from "@/lib/format";
+
+interface ErpInvoice {
+  id: string;
+  erpnextId: string;
+  salesOrderErpName: string | null;
+  customer: { name: string } | null;
+  status: string; // paid | sent | overdue | draft | void
+  total: number;
+  grandTotal: number;
+  outstandingAmount: number;
+  paidAmount: number;
+  postingDate: string | null;
+  dueDate: string | null;
+  pdfUrl: string | null;
+  createdAt: string;
+}
 
 const FILTERS = [
   { value: "all", label: "All" },
-  { value: "draft", label: "Draft" },
-  { value: "sent", label: "Sent" },
+  { value: "sent", label: "Unpaid" },
+  { value: "overdue", label: "Overdue" },
   { value: "paid", label: "Paid" },
+  { value: "draft", label: "Draft" },
   { value: "void", label: "Void" },
 ];
 
 export default function Invoices() {
-  const { data: invoices = [], isLoading } = useInvoices();
+  const [invoices, setInvoices] = useState<ErpInvoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get<ErpInvoice[]>("/api/invoices");
+      setInvoices(res);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
 
   const rows = useMemo(() => {
     const s = search.toLowerCase();
@@ -29,78 +61,29 @@ export default function Invoices() {
       if (filter !== "all" && i.status !== filter) return false;
       if (!s) return true;
       return (
-        i.id.toLowerCase().includes(s) ||
-        (i.erpnextId ?? "").toLowerCase().includes(s) ||
-        (i.customer?.name ?? "").toLowerCase().includes(s)
+        i.erpnextId.toLowerCase().includes(s) ||
+        (i.customer?.name ?? "").toLowerCase().includes(s) ||
+        (i.salesOrderErpName ?? "").toLowerCase().includes(s)
       );
     });
   }, [invoices, search, filter]);
 
-  const totals = useMemo(() => {
-    return {
-      paid: invoices.filter((i) => i.status === "paid").reduce((s, i) => s + i.total, 0),
-      outstanding: invoices.filter((i) => i.status === "sent").reduce((s, i) => s + i.total, 0),
-    };
-  }, [invoices]);
-
-  const columns: Column<Invoice>[] = [
-    {
-      key: "id",
-      header: "Invoice",
-      cell: (i) => (
-        <div className="font-mono text-[11px] text-cream-dim">
-          {i.erpnextId ?? `#${i.id.slice(-6).toUpperCase()}`}
-        </div>
-      ),
-    },
-    {
-      key: "customer",
-      header: "Customer",
-      cell: (i) => <span className="text-cream">{i.customer?.name ?? "—"}</span>,
-    },
-    {
-      key: "date",
-      header: "Issued",
-      cell: (i) => <span className="text-cream-dim text-xs">{formatDate(i.createdAt)}</span>,
-    },
-    {
-      key: "status",
-      header: "Status",
-      cell: (i) => <StatusPill status={i.status} />,
-    },
-    {
-      key: "total",
-      header: "Total",
-      align: "right",
-      cell: (i) => (
-        <span className="font-display italic text-brass-shimmer text-base">
-          {formatUSD(i.total)}
-        </span>
-      ),
-    },
-    {
-      key: "actions",
-      header: "",
-      cell: (i) =>
-        i.pdfUrl ? (
-          <Button variant="ghost" size="sm" className="text-cream-dim hover:text-brass-light h-7 px-2" asChild>
-            <a href={i.pdfUrl} target="_blank" rel="noreferrer">
-              <Download className="h-3.5 w-3.5" />
-            </a>
-          </Button>
-        ) : (
-          <span className="text-cream-dim text-[10px]">—</span>
-        ),
-      width: "50px",
-    },
-  ];
+  const totals = useMemo(() => ({
+    paid: invoices.filter((i) => i.status === "paid").reduce((s, i) => s + i.paidAmount, 0),
+    outstanding: invoices.filter((i) => ["sent", "overdue"].includes(i.status)).reduce((s, i) => s + i.outstandingAmount, 0),
+  }), [invoices]);
 
   return (
     <div className="space-y-6 animate-fade-up">
       <SectionHeader
-        eyebrow="Orders · Invoices"
+        eyebrow="Workshop · Invoices"
         title={<>The <span className="text-brass-shimmer">invoice</span> book.</>}
-        description="Issued, paid, outstanding — across every commission and alteration."
+        description="Live from ERPNext — issued, paid, and outstanding across every commission."
+        actions={
+          <Button variant="outline" className="border-brass/20 hover:bg-brass/10 text-cream-muted" onClick={load}>
+            <RefreshCw className="h-4 w-4 mr-1.5" /> Refresh
+          </Button>
+        }
       />
 
       <div className="grid grid-cols-2 gap-4">
@@ -117,22 +100,52 @@ export default function Invoices() {
       <FilterBar
         search={search}
         onSearchChange={setSearch}
-        searchPlaceholder="Search by ID or customer"
+        searchPlaceholder="Search by invoice, customer, or order…"
         filterValue={filter}
         onFilterChange={setFilter}
         filterOptions={FILTERS}
       />
 
-      {isLoading ? (
+      {error && (
+        <div className="glass-panel border-l-4 border-signal-rose p-3 text-sm text-signal-rose">
+          {error} — <button onClick={load} className="underline">retry</button>
+        </div>
+      )}
+
+      {loading ? (
         <div className="text-cream-muted text-sm">Loading…</div>
       ) : rows.length === 0 ? (
-        <EmptyState
-          icon={FileText}
-          title="No invoices"
-          description="Invoices generate when sales orders reach the deposit step."
-        />
+        <EmptyState icon={FileText} title="No invoices" description="ERPNext invoices will appear here." />
       ) : (
-        <DataTable rows={rows} columns={columns} rowKey={(r) => r.id} />
+        <div className="glass-panel overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="border-b border-brass/10 bg-forest-raised/30">
+              <tr className="text-left">
+                {["Invoice", "Order", "Customer", "Date", "Due", "Status", "Outstanding", "Total"].map((h) => (
+                  <th key={h} className="px-4 py-2.5 ui-label text-[9px]">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((i) => (
+                <tr key={i.id} className="border-t border-brass/8 hover:bg-brass/3 transition-colors">
+                  <td className="px-4 py-3 font-display italic text-brass-light text-sm">{i.erpnextId}</td>
+                  <td className="px-4 py-3 text-cream-dim text-xs">{i.salesOrderErpName ?? "—"}</td>
+                  <td className="px-4 py-3 text-cream">{i.customer?.name ?? "—"}</td>
+                  <td className="px-4 py-3 text-cream-dim text-xs">{i.postingDate ? formatDate(i.postingDate) : "—"}</td>
+                  <td className="px-4 py-3 text-cream-dim text-xs">{i.dueDate ? formatDate(i.dueDate) : "—"}</td>
+                  <td className="px-4 py-3"><StatusPill status={i.status} /></td>
+                  <td className="px-4 py-3 text-right font-display italic text-signal-amber tabular-nums">
+                    {i.outstandingAmount > 0 ? formatUSD(i.outstandingAmount) : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right font-display italic text-brass-shimmer tabular-nums">
+                    {formatUSD(i.grandTotal)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
