@@ -6,6 +6,8 @@
     "@hono/zod-validator": "^0.8.0",
     "@supabase/supabase-js": "^2.106.2",
     "hono": "4.6.0",
+    "html5-qrcode": "^2.3.8",
+    "qrcode.react": "^4.2.0",
     "zod": "4.1.11"
   },
   "devDependencies": {

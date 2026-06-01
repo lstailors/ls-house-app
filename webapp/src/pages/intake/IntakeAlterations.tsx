@@ -1,306 +1,1128 @@
-import { useState } from "react";
-import { Scissors, Plus, Trash2, Calendar as CalendarIcon, Hammer, AlertCircle } from "lucide-react";
-import { toast } from "sonner";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { CustomerField, type CustomerDraft } from "@/components/pos/CustomerField";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { useCreateAlteration, useCustomers, useTailors } from "@/lib/queries";
-import { useActiveLocation } from "@/lib/locationContext";
-import { formatUSD } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import {
+  Plus, X, Check, ChevronDown, Printer, Tag, RefreshCw,
+  AlertCircle, Loader2, ShoppingBag, Zap, CreditCard,
+  Banknote, ClipboardList, Search, User, Phone, Mail
+} from 'lucide-react'
+import { api } from '@/lib/api'
+import { cn } from '@/lib/utils'
 
-const PRESET_ITEMS = [
-  { label: "Hem trousers", price: 60 },
-  { label: "Shorten sleeves", price: 100 },
-  { label: "Take in waist", price: 80 },
-  { label: "Press 2 garments", price: 60 },
-  { label: "Replace zipper", price: 90 },
-  { label: "Reline jacket", price: 280 },
-  { label: "Adjust shoulders", price: 280 },
-  { label: "Taper trousers", price: 120 },
-];
+// ─── Formatters ──────────────────────────────────────────────────────────────
+const formatUSD = (n: number) => '$' + n.toFixed(2)
 
-interface LineItem { label: string; price: number }
+// ─── Types ────────────────────────────────────────────────────────────────────
+type AlterationLine = {
+  preset: string
+  description: string
+  price: number
+  estMinutes: number | null
+}
 
-export default function IntakeAlterations() {
-  const { activeLocationId } = useActiveLocation();
-  const { data: customers = [] } = useCustomers();
-  const { data: tailors = [] } = useTailors();
-  const createAlteration = useCreateAlteration();
+type GarmentItem = {
+  id: string
+  ref: string
+  garmentType: string
+  description: string
+  color: string
+  notes: string
+  lines: AlterationLine[]
+}
 
-  const [customer, setCustomer] = useState<CustomerDraft>({ name: "", phone: "", email: "" });
-  const [items, setItems] = useState<LineItem[]>([]);
-  const [tailorId, setTailorId] = useState<string>("");
-  const [dueDate, setDueDate] = useState<string>("");
-  const [notes, setNotes] = useState("");
+type Customer = { id?: string; name: string; phone: string; email: string } | null
 
-  const scopedTailors = tailors.filter(
-    (t) => !activeLocationId || t.locationId === activeLocationId,
-  );
+type PaymentMethod = 'pay_now' | 'deposit' | 'on_account'
 
-  const total = items.reduce((s, i) => s + i.price, 0);
-  const valid = customer.name.length >= 2 && customer.phone.length >= 7 && items.length > 0;
+type Preset = {
+  id: string
+  preset_name: string
+  garment_types: string[]
+  price: number
+  est_minutes: number | null
+}
 
-  const addPreset = (p: LineItem) => setItems([...items, p]);
-  const addBlank = () => setItems([...items, { label: "", price: 0 }]);
-  const removeItem = (idx: number) => setItems(items.filter((_, i) => i !== idx));
-  const updateItem = (idx: number, partial: Partial<LineItem>) =>
-    setItems(items.map((it, i) => (i === idx ? { ...it, ...partial } : it)));
+// ─── SVG Components ───────────────────────────────────────────────────────────
+const GarmentSVGs: Record<string, JSX.Element> = {
+  Jacket: (
+    <svg viewBox="0 0 60 80" stroke="currentColor" strokeWidth={1.5} fill="none" className="w-full h-full">
+      <path d="M20 5 L10 20 L5 22 L5 70 L20 70 L20 50 L40 50 L40 70 L55 70 L55 22 L50 20 L40 5" />
+      <path d="M20 5 L25 12 L30 8 L35 12 L40 5" />
+      <path d="M5 22 L15 25 L20 50" />
+      <path d="M55 22 L45 25 L40 50" />
+      <path d="M25 12 L25 50" strokeDasharray="2 2" />
+    </svg>
+  ),
+  Trouser: (
+    <svg viewBox="0 0 60 80" stroke="currentColor" strokeWidth={1.5} fill="none" className="w-full h-full">
+      <path d="M10 5 L8 5 L5 35 L5 75 L25 75 L30 45 L35 75 L55 75 L55 35 L52 5 L10 5" />
+      <path d="M10 5 L50 5" />
+      <path d="M8 15 L52 15" />
+      <path d="M15 35 L30 45 L45 35" />
+    </svg>
+  ),
+  Shirt: (
+    <svg viewBox="0 0 60 80" stroke="currentColor" strokeWidth={1.5} fill="none" className="w-full h-full">
+      <path d="M22 5 L10 15 L5 13 L5 35 L15 35 L15 75 L45 75 L45 35 L55 35 L55 13 L50 15 L38 5" />
+      <path d="M22 5 Q25 10 30 8 Q35 10 38 5" />
+      <path d="M30 8 L30 75" strokeDasharray="2 2" />
+      <path d="M5 22 L15 25" />
+      <path d="M55 22 L45 25" />
+      <circle cx="30" cy="25" r="1" fill="currentColor" />
+      <circle cx="30" cy="35" r="1" fill="currentColor" />
+      <circle cx="30" cy="45" r="1" fill="currentColor" />
+    </svg>
+  ),
+  Dress: (
+    <svg viewBox="0 0 60 80" stroke="currentColor" strokeWidth={1.5} fill="none" className="w-full h-full">
+      <path d="M25 3 Q30 1 35 3 L38 8 L45 12 L42 25 L38 28 L38 40 Q42 55 48 78 L12 78 Q18 55 22 40 L22 28 L18 25 L15 12 L22 8 Z" />
+      <path d="M22 28 Q30 32 38 28" />
+      <path d="M25 3 Q30 6 35 3" />
+    </svg>
+  ),
+  Coat: (
+    <svg viewBox="0 0 60 80" stroke="currentColor" strokeWidth={1.5} fill="none" className="w-full h-full">
+      <path d="M18 3 L8 18 L3 20 L3 78 L20 78 L20 55 L40 55 L40 78 L57 78 L57 20 L52 18 L42 3" />
+      <path d="M18 3 L23 11 L30 7 L37 11 L42 3" />
+      <path d="M3 20 L13 24 L20 55" />
+      <path d="M57 20 L47 24 L40 55" />
+      <path d="M23 11 L23 55" strokeDasharray="3 3" />
+      <path d="M10 40 L18 40" />
+    </svg>
+  ),
+  'Suit (2pc)': (
+    <svg viewBox="0 0 60 80" stroke="currentColor" strokeWidth={1.5} fill="none" className="w-full h-full">
+      <path d="M20 5 L10 18 L5 20 L5 48 L20 48 L20 38 L40 38 L40 48 L55 48 L55 20 L50 18 L40 5" />
+      <path d="M20 5 L25 11 L30 8 L35 11 L40 5" />
+      <path d="M5 20 L15 23 L20 38" />
+      <path d="M55 20 L45 23 L40 38" />
+      <path d="M12 52 L10 52 L8 80 L25 80 L28 62 L32 62 L35 80 L52 80 L50 52 L48 52 L12 52" />
+    </svg>
+  ),
+  'Suit (3pc)': (
+    <svg viewBox="0 0 60 80" stroke="currentColor" strokeWidth={1.5} fill="none" className="w-full h-full">
+      <path d="M20 3 L10 16 L5 18 L5 44 L20 44 L20 34 L40 34 L40 44 L55 44 L55 18 L50 16 L40 3" />
+      <path d="M20 3 L25 9 L30 6 L35 9 L40 3" />
+      <path d="M22 9 L22 20 L38 20 L38 9" />
+      <path d="M5 18 L15 21 L20 34" />
+      <path d="M55 18 L45 21 L40 34" />
+      <path d="M12 48 L10 48 L8 76 L24 76 L27 60 L33 60 L36 76 L52 76 L50 48 L12 48" />
+    </svg>
+  ),
+  Vest: (
+    <svg viewBox="0 0 60 80" stroke="currentColor" strokeWidth={1.5} fill="none" className="w-full h-full">
+      <path d="M20 5 L12 15 L8 70 L25 70 L28 40 L32 40 L35 70 L52 70 L48 15 L40 5" />
+      <path d="M20 5 L25 12 L30 8 L35 12 L40 5" />
+      <path d="M12 15 L20 18" />
+      <path d="M48 15 L40 18" />
+      <circle cx="30" cy="25" r="1" fill="currentColor" />
+      <circle cx="30" cy="33" r="1" fill="currentColor" />
+      <circle cx="30" cy="41" r="1" fill="currentColor" />
+    </svg>
+  ),
+  Skirt: (
+    <svg viewBox="0 0 60 80" stroke="currentColor" strokeWidth={1.5} fill="none" className="w-full h-full">
+      <path d="M15 8 L45 8 L45 22 L15 22 Z" />
+      <path d="M15 22 Q8 50 5 78 L55 78 Q52 50 45 22" />
+      <path d="M15 8 L15 22" />
+      <path d="M45 8 L45 22" />
+      <path d="M18 8 L18 22" strokeDasharray="2 2" />
+      <path d="M30 8 L30 78" strokeDasharray="3 3" />
+    </svg>
+  ),
+  Other: (
+    <svg viewBox="0 0 60 80" stroke="currentColor" strokeWidth={1.5} fill="none" className="w-full h-full">
+      <rect x="10" y="10" width="40" height="60" rx="4" />
+      <path d="M20 30 L40 30" />
+      <path d="M20 40 L40 40" />
+      <path d="M20 50 L32 50" />
+      <circle cx="30" cy="15" r="5" />
+    </svg>
+  ),
+}
 
-  const submit = async () => {
-    if (!valid) {
-      toast.error("Customer and at least one item required.");
-      return;
+// ─── Garment Definitions ──────────────────────────────────────────────────────
+const GARMENTS = [
+  { type: 'Jacket', label: 'Jacket' },
+  { type: 'Trouser', label: 'Trouser' },
+  { type: 'Shirt', label: 'Shirt' },
+  { type: 'Dress', label: 'Dress' },
+  { type: 'Coat', label: 'Coat' },
+  { type: 'Suit (2pc)', label: 'Suit 2pc' },
+  { type: 'Suit (3pc)', label: 'Suit 3pc' },
+  { type: 'Vest', label: 'Vest' },
+  { type: 'Skirt', label: 'Skirt' },
+  { type: 'Other', label: 'Other' },
+]
+
+// ─── Tax Rates ─────────────────────────────────────────────────────────────────
+const TAX_RATES: Record<string, number> = {
+  NYC: 0.08875,
+  HOU: 0.0825,
+}
+
+// ─── Utility ──────────────────────────────────────────────────────────────────
+const uuid = () => Math.random().toString(36).slice(2) + Date.now().toString(36)
+
+// ─── Customer Search ──────────────────────────────────────────────────────────
+type CustomerResult = { id: string; name: string; phone: string; email: string }
+
+function CustomerSearch({
+  customer,
+  onSelect,
+  onClear,
+}: {
+  customer: Customer
+  onSelect: (c: Customer) => void
+  onClear: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<CustomerResult[]>([])
+  const [loading, setLoading] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [manualMode, setManualMode] = useState(false)
+  const [manual, setManual] = useState({ name: '', phone: '', email: '' })
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
     }
-    try {
-      await createAlteration.mutateAsync({
-        customerName: customer.name,
-        customerPhone: customer.phone,
-        customerEmail: customer.email || undefined,
-        items: items.map((i) => ({ label: i.label, price: i.price })),
-        price: total,
-        tailorId: tailorId || null,
-        dueDate: dueDate || null,
-        notes: notes || null,
-      });
-      toast.success("Alteration ticket created");
-      setCustomer({ name: "", phone: "", email: "" });
-      setItems([]);
-      setTailorId("");
-      setDueDate("");
-      setNotes("");
-    } catch (e) {
-      toast.error((e as Error).message || "Could not create ticket");
-    }
-  };
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (query.length < 2) { setResults([]); setOpen(false); return }
+    debounceRef.current = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const res = await api.get<CustomerResult[]>(`/api/intake-alterations/customers/search?q=${encodeURIComponent(query)}`)
+        setResults(Array.isArray(res) ? res : [])
+        setOpen(true)
+      } catch {
+        setResults([])
+      } finally {
+        setLoading(false)
+      }
+    }, 300)
+  }, [query])
+
+  if (customer) {
+    return (
+      <div className="glass-panel p-4 flex items-start gap-3">
+        <div className="w-9 h-9 rounded-full bg-brass/20 border border-brass/30 flex items-center justify-center flex-shrink-0">
+          <User className="w-4 h-4 text-brass-shimmer" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-cream font-medium truncate">{customer.name}</p>
+          <p className="text-cream-muted text-xs">{customer.phone}</p>
+          {customer.email && <p className="text-cream-dim text-xs truncate">{customer.email}</p>}
+        </div>
+        <button
+          onClick={onClear}
+          className="text-cream-dim hover:text-cream transition-colors p-1"
+          title="Change customer"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    )
+  }
+
+  if (manualMode) {
+    return (
+      <div className="glass-panel p-4 space-y-3">
+        <div className="flex items-center justify-between mb-1">
+          <span className="ui-label text-brass-shimmer">New Customer</span>
+          <button
+            onClick={() => setManualMode(false)}
+            className="text-cream-dim hover:text-cream text-xs"
+          >
+            Search instead
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className="ui-label text-cream-muted mb-1 block">Name *</label>
+            <input
+              className="w-full bg-forest-deep border border-brass/20 rounded px-3 py-2 text-cream text-sm focus:border-brass/50 focus:outline-none"
+              placeholder="Full name"
+              value={manual.name}
+              onChange={e => setManual(m => ({ ...m, name: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="ui-label text-cream-muted mb-1 block">Phone</label>
+            <input
+              className="w-full bg-forest-deep border border-brass/20 rounded px-3 py-2 text-cream text-sm focus:border-brass/50 focus:outline-none"
+              placeholder="+1..."
+              value={manual.phone}
+              onChange={e => setManual(m => ({ ...m, phone: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="ui-label text-cream-muted mb-1 block">Email</label>
+            <input
+              className="w-full bg-forest-deep border border-brass/20 rounded px-3 py-2 text-cream text-sm focus:border-brass/50 focus:outline-none"
+              placeholder="email@..."
+              value={manual.email}
+              onChange={e => setManual(m => ({ ...m, email: e.target.value }))}
+            />
+          </div>
+        </div>
+        <button
+          disabled={!manual.name.trim()}
+          onClick={() => {
+            onSelect({ name: manual.name.trim(), phone: manual.phone.trim(), email: manual.email.trim() })
+            setManualMode(false)
+            setManual({ name: '', phone: '', email: '' })
+          }}
+          className="w-full py-2 rounded bg-brass/80 hover:bg-brass text-forest-deep font-semibold text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Set Customer
+        </button>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-5 md:space-y-6 animate-fade-up pb-32 lg:pb-0">
-      <SectionHeader
-        eyebrow="Intake · Alterations"
-        title={<>A new <span className="text-brass-shimmer">alteration</span> ticket.</>}
-        description="Drop the customer in, tap line items, set who handles it. Done in twenty seconds."
-      />
-
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-5 md:gap-6 items-start">
-        <div className="space-y-4 md:space-y-5">
-          {/* Customer */}
-          <GlassCard className="p-4 md:p-5">
-            <CustomerField value={customer} onChange={setCustomer} recentCustomers={customers} />
-          </GlassCard>
-
-          {/* Presets */}
-          <GlassCard className="p-4 md:p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="ui-label">Line items</div>
-              <div className="text-[10px] text-cream-dim hidden sm:block">Tap a preset or add a custom row</div>
-            </div>
-
-            <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 mb-4">
-              {PRESET_ITEMS.map((p) => (
-                <button
-                  key={p.label}
-                  type="button"
-                  onClick={() => addPreset(p)}
-                  className="rounded-xl border border-brass/20 bg-forest-raised/40 hover:border-brass/40 hover:bg-brass/10 active:bg-brass/15 px-3 py-3 sm:py-2 text-sm sm:text-xs text-cream-muted hover:text-cream transition-all flex items-center justify-between sm:justify-start gap-1.5 min-h-[48px] sm:min-h-[36px]"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <Plus className="h-4 w-4 sm:h-3 sm:w-3" />
-                    {p.label}
-                  </span>
-                  <span className="text-brass-light/80 text-xs sm:text-[10px] tabular-nums">{formatUSD(p.price)}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* Items list */}
-            {items.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-brass/15 bg-brass/[0.03] py-8 text-center">
-                <Scissors className="h-5 w-5 text-brass-light/40 mx-auto mb-1.5" />
-                <div className="text-sm text-cream-muted">No items yet</div>
-                <div className="text-[10px] text-cream-dim mt-0.5">Tap a preset above</div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {items.map((it, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center gap-2 rounded-lg border border-brass/15 bg-forest-raised/40 p-2"
-                  >
-                    <span className="ui-label text-[9px] text-cream-dim tabular-nums shrink-0 w-6 text-center">
-                      {idx + 1}
-                    </span>
-                    <Input
-                      value={it.label}
-                      onChange={(e) => updateItem(idx, { label: e.target.value })}
-                      placeholder="Line item"
-                      className="flex-1 bg-transparent border-0 focus-visible:ring-0 text-cream h-10 sm:h-8 px-2 text-sm"
-                    />
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-cream-dim text-sm">$</span>
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        value={it.price}
-                        onChange={(e) => updateItem(idx, { price: Math.max(0, Number(e.target.value)) })}
-                        className="w-20 bg-forest-raised/60 border border-brass/15 rounded px-2 py-2 sm:py-1 text-cream text-sm focus:outline-none focus:ring-1 focus:ring-brass/40 tabular-nums"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeItem(idx)}
-                      className="text-cream-dim hover:text-signal-rose transition-colors p-2 -mr-1 min-h-[40px] min-w-[40px] flex items-center justify-center"
-                      aria-label="Remove item"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={addBlank}
-                  className="w-full rounded-lg border border-dashed border-brass/15 hover:border-brass/40 hover:bg-brass/5 py-3 sm:py-2 text-sm sm:text-xs text-cream-muted hover:text-cream transition-all flex items-center justify-center gap-1.5"
-                >
-                  <Plus className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> Add custom row
-                </button>
-              </div>
-            )}
-          </GlassCard>
-
-          {/* Routing */}
-          <GlassCard className="p-4 md:p-5">
-            <div className="ui-label mb-3">Assignment</div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-3">
-              <div>
-                <Label className="ui-label text-[10px] mb-2 block">Tailor</Label>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setTailorId("")}
-                    className={cn(
-                      "rounded-full px-4 py-2.5 sm:py-1.5 text-sm sm:text-xs border transition-all min-h-[44px] sm:min-h-0",
-                      !tailorId
-                        ? "border-brass bg-brass/15 text-cream"
-                        : "border-brass/15 bg-forest-raised/40 text-cream-muted hover:border-brass/40 active:bg-brass/10",
-                    )}
-                  >
-                    Unassigned
-                  </button>
-                  {scopedTailors.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setTailorId(t.id)}
-                      className={cn(
-                        "rounded-full px-4 py-2.5 sm:py-1.5 text-sm sm:text-xs border transition-all flex items-center gap-1.5 min-h-[44px] sm:min-h-0",
-                        tailorId === t.id
-                          ? "border-brass bg-brass/15 text-cream shadow-brass-glow"
-                          : "border-brass/15 bg-forest-raised/40 text-cream-muted hover:border-brass/40 active:bg-brass/10",
-                      )}
-                    >
-                      <Hammer className="h-3.5 w-3.5" />
-                      {t.name}
-                    </button>
-                  ))}
-                  {scopedTailors.length === 0 ? (
-                    <div className="text-[10px] text-cream-dim italic px-2 py-1.5">
-                      No tailors for this location
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="due" className="ui-label text-[10px] mb-2 block">Due date</Label>
-                <div className="relative">
-                  <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-cream-dim pointer-events-none" />
-                  <Input
-                    id="due"
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="pl-10 h-12 sm:h-10 bg-forest-raised/40 border-brass/15 focus-visible:ring-brass/40 text-cream text-base sm:text-sm"
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="mt-4">
-              <Label htmlFor="alt-notes" className="ui-label text-[10px] mb-2 block">Notes</Label>
-              <Textarea
-                id="alt-notes"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={2}
-                placeholder="Tailor instructions, customer preferences…"
-                className="bg-forest-raised/40 border-brass/15 focus-visible:ring-brass/40 text-cream text-sm"
-              />
-            </div>
-          </GlassCard>
-        </div>
-
-        {/* Right rail — total. Desktop only. */}
-        <GlassCard variant="strong" className="hidden lg:block p-6 sticky top-4">
-          <div className="ui-label mb-3">Ticket Total</div>
-          <div className="flex items-end justify-between mb-5">
-            <span className="font-display italic text-5xl text-brass-shimmer leading-none">
-              {formatUSD(total)}
-            </span>
-          </div>
-          <div className="space-y-1 text-xs text-cream-muted mb-4">
-            <div className="flex justify-between">
-              <span>Line items</span>
-              <span>{items.length}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Tailor</span>
-              <span className="text-cream truncate max-w-[160px]">
-                {tailorId
-                  ? scopedTailors.find((t) => t.id === tailorId)?.name ?? "—"
-                  : "Unassigned"}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span>Due</span>
-              <span className="text-cream">{dueDate || "—"}</span>
-            </div>
-          </div>
-          <Button
-            className="w-full btn-brass h-11"
-            disabled={!valid || createAlteration.isPending}
-            onClick={submit}
-          >
-            {createAlteration.isPending ? "Creating…" : "Create ticket"}
-          </Button>
-          {!valid ? (
-            <div className="mt-3 flex items-start gap-2 text-[11px] text-cream-dim">
-              <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-              <span>Add customer name, phone, and at least one line item.</span>
-            </div>
-          ) : null}
-        </GlassCard>
+    <div ref={containerRef} className="relative">
+      <div className="glass-panel p-3 flex items-center gap-2">
+        <Search className="w-4 h-4 text-cream-muted flex-shrink-0" />
+        <input
+          className="flex-1 bg-transparent text-cream text-sm placeholder:text-cream-dim focus:outline-none"
+          placeholder="Search customer by name or phone…"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          onFocus={() => results.length > 0 && setOpen(true)}
+        />
+        {loading && <Loader2 className="w-4 h-4 text-brass-shimmer animate-spin flex-shrink-0" />}
+        <button
+          onClick={() => { setManualMode(true); setQuery(''); setOpen(false) }}
+          className="text-xs text-brass-light hover:text-brass-shimmer transition-colors flex-shrink-0"
+        >
+          + New
+        </button>
       </div>
 
-      {/* Mobile/tablet sticky bottom bar */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-brass/25 bg-forest-deep/95 backdrop-blur-2xl px-3 sm:px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <div className="mx-auto max-w-[1400px] flex items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="ui-label text-[9px] text-cream-dim">Ticket Total · {items.length} item{items.length === 1 ? "" : "s"}</div>
-            <div className="font-display italic text-3xl text-brass-shimmer leading-none truncate">
-              {formatUSD(total)}
-            </div>
+      {open && results.length > 0 && (
+        <div className="absolute z-50 top-full mt-1 left-0 right-0 glass-panel border border-brass/20 rounded-lg overflow-hidden shadow-xl">
+          {results.map(r => (
+            <button
+              key={r.id}
+              className="w-full px-4 py-3 text-left hover:bg-brass/10 transition-colors border-b border-brass/10 last:border-0"
+              onClick={() => { onSelect(r); setQuery(''); setOpen(false) }}
+            >
+              <p className="text-cream text-sm font-medium">{r.name}</p>
+              <p className="text-cream-muted text-xs">{r.phone} {r.email && `· ${r.email}`}</p>
+            </button>
+          ))}
+        </div>
+      )}
+      {open && !loading && results.length === 0 && query.length >= 2 && (
+        <div className="absolute z-50 top-full mt-1 left-0 right-0 glass-panel border border-brass/20 rounded-lg px-4 py-3 shadow-xl">
+          <p className="text-cream-muted text-sm">No customers found. <button className="text-brass-light underline" onClick={() => setManualMode(true)}>Add new?</button></p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Garment Tile ─────────────────────────────────────────────────────────────
+function GarmentTile({
+  type,
+  label,
+  count,
+  isActive,
+  onClick,
+}: {
+  type: string
+  label: string
+  count: number
+  isActive: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'relative flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-all group',
+        'bg-forest-raised hover:border-brass/50',
+        isActive
+          ? 'border-brass/70 shadow-[0_0_12px_rgba(180,140,60,0.2)]'
+          : 'border-brass/20'
+      )}
+    >
+      <div className={cn(
+        'w-10 h-14 transition-colors',
+        isActive ? 'text-brass-shimmer' : 'text-cream-dim group-hover:text-cream-muted'
+      )}>
+        {GarmentSVGs[type] || GarmentSVGs['Other']}
+      </div>
+      <span className={cn(
+        'text-xs font-medium transition-colors',
+        isActive ? 'text-brass-shimmer' : 'text-cream-muted group-hover:text-cream'
+      )}>
+        {label}
+      </span>
+      {count > 0 && (
+        <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-brass text-forest-deep text-xs font-bold flex items-center justify-center shadow">
+          {count}
+        </span>
+      )}
+    </button>
+  )
+}
+
+// ─── Active Garment Card ──────────────────────────────────────────────────────
+function ActiveGarmentCard({
+  garment,
+  presets,
+  onUpdate,
+  onRemove,
+}: {
+  garment: GarmentItem
+  presets: Preset[]
+  onUpdate: (g: GarmentItem) => void
+  onRemove: () => void
+}) {
+  const [showCustom, setShowCustom] = useState(false)
+  const [customDesc, setCustomDesc] = useState('')
+  const [customPrice, setCustomPrice] = useState('')
+
+  const relevantPresets = presets.filter(p =>
+    p.garment_types.includes(garment.garmentType) || p.garment_types.includes('All')
+  )
+
+  const activePresets = new Set(garment.lines.filter(l => l.preset).map(l => l.preset))
+
+  const togglePreset = (preset: Preset) => {
+    if (activePresets.has(preset.id)) {
+      onUpdate({ ...garment, lines: garment.lines.filter(l => l.preset !== preset.id) })
+    } else {
+      onUpdate({
+        ...garment,
+        lines: [
+          ...garment.lines,
+          { preset: preset.id, description: preset.preset_name, price: preset.price, estMinutes: preset.est_minutes },
+        ],
+      })
+    }
+  }
+
+  const addCustom = () => {
+    const price = parseFloat(customPrice)
+    if (!customDesc.trim() || isNaN(price)) return
+    onUpdate({
+      ...garment,
+      lines: [
+        ...garment.lines,
+        { preset: '', description: customDesc.trim(), price, estMinutes: null },
+      ],
+    })
+    setCustomDesc('')
+    setCustomPrice('')
+    setShowCustom(false)
+  }
+
+  const subtotal = garment.lines.reduce((s, l) => s + l.price, 0)
+
+  return (
+    <div className="glass-panel p-5 mt-4 border border-brass/30 rounded-2xl">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-brass/20 border border-brass/40 text-brass-shimmer font-bold text-sm">
+            {garment.ref}
+          </span>
+          <h3 className="text-cream font-semibold text-lg">{garment.garmentType}</h3>
+        </div>
+        <button
+          onClick={onRemove}
+          className="p-1.5 rounded-lg hover:bg-red-900/30 text-cream-dim hover:text-red-400 transition-colors"
+          title="Remove garment"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Detail Inputs */}
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        <div>
+          <label className="ui-label text-cream-muted mb-1 block">Description</label>
+          <input
+            className="w-full bg-forest-deep border border-brass/20 rounded-lg px-3 py-2 text-cream text-sm focus:border-brass/50 focus:outline-none"
+            placeholder="e.g. Navy blazer"
+            value={garment.description}
+            onChange={e => onUpdate({ ...garment, description: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="ui-label text-cream-muted mb-1 block">Color</label>
+          <input
+            className="w-full bg-forest-deep border border-brass/20 rounded-lg px-3 py-2 text-cream text-sm focus:border-brass/50 focus:outline-none"
+            placeholder="e.g. Navy"
+            value={garment.color}
+            onChange={e => onUpdate({ ...garment, color: e.target.value })}
+          />
+        </div>
+        <div className="col-span-2">
+          <label className="ui-label text-cream-muted mb-1 block">Notes</label>
+          <textarea
+            rows={2}
+            className="w-full bg-forest-deep border border-brass/20 rounded-lg px-3 py-2 text-cream text-sm focus:border-brass/50 focus:outline-none resize-none"
+            placeholder="Special instructions, fabric notes…"
+            value={garment.notes}
+            onChange={e => onUpdate({ ...garment, notes: e.target.value })}
+          />
+        </div>
+      </div>
+
+      {/* Alteration Chips */}
+      <div className="mb-4">
+        <p className="ui-label text-cream-muted mb-2">Alterations</p>
+        {relevantPresets.length === 0 ? (
+          <p className="text-cream-dim text-sm italic">No presets for this garment type</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {relevantPresets.map(preset => {
+              const selected = activePresets.has(preset.id)
+              return (
+                <button
+                  key={preset.id}
+                  onClick={() => togglePreset(preset)}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-all',
+                    selected
+                      ? 'bg-brass/80 border-brass text-forest-deep shadow-sm'
+                      : 'bg-transparent border-brass/30 text-cream-muted hover:border-brass/60 hover:text-cream'
+                  )}
+                >
+                  {selected && <Check className="w-3 h-3" />}
+                  <span>{preset.preset_name}</span>
+                  <span className={cn('text-xs', selected ? 'text-forest-deep/70' : 'text-cream-dim')}>
+                    {formatUSD(preset.price)}
+                  </span>
+                </button>
+              )
+            })}
           </div>
-          <Button
-            className="btn-brass h-14 px-6 text-base shrink-0"
-            disabled={!valid || createAlteration.isPending}
-            onClick={submit}
+        )}
+      </div>
+
+      {/* Custom Lines */}
+      {garment.lines.filter(l => !l.preset).map((line, idx) => (
+        <div key={idx} className="flex items-center gap-2 mb-2">
+          <div className="flex-1 bg-brass/10 border border-brass/20 rounded-lg px-3 py-1.5 flex items-center justify-between">
+            <span className="text-cream text-sm">{line.description}</span>
+            <span className="text-brass-shimmer text-sm font-medium ml-2">{formatUSD(line.price)}</span>
+          </div>
+          <button
+            className="p-1 text-cream-dim hover:text-red-400 transition-colors"
+            onClick={() => {
+              const customLines = garment.lines.filter(l => !l.preset)
+              const toRemove = customLines[idx]
+              const newLines = garment.lines.filter(l => l !== toRemove)
+              onUpdate({ ...garment, lines: newLines })
+            }}
           >
-            {createAlteration.isPending ? "Creating…" : "Create ticket"}
-          </Button>
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+
+      {/* Custom Alteration Form */}
+      {showCustom ? (
+        <div className="flex items-end gap-2 mt-3 p-3 bg-brass/5 border border-brass/20 rounded-xl">
+          <div className="flex-1">
+            <label className="ui-label text-cream-muted mb-1 block">Description</label>
+            <input
+              autoFocus
+              className="w-full bg-forest-deep border border-brass/20 rounded px-3 py-1.5 text-cream text-sm focus:border-brass/50 focus:outline-none"
+              placeholder="e.g. Hem tape repair"
+              value={customDesc}
+              onChange={e => setCustomDesc(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addCustom()}
+            />
+          </div>
+          <div className="w-24">
+            <label className="ui-label text-cream-muted mb-1 block">Price</label>
+            <input
+              className="w-full bg-forest-deep border border-brass/20 rounded px-3 py-1.5 text-cream text-sm focus:border-brass/50 focus:outline-none"
+              placeholder="25.00"
+              value={customPrice}
+              onChange={e => setCustomPrice(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addCustom()}
+            />
+          </div>
+          <button
+            onClick={addCustom}
+            disabled={!customDesc.trim() || !customPrice}
+            className="px-3 py-1.5 rounded bg-brass/80 hover:bg-brass text-forest-deep font-semibold text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Add
+          </button>
+          <button
+            onClick={() => { setShowCustom(false); setCustomDesc(''); setCustomPrice('') }}
+            className="p-1.5 text-cream-dim hover:text-cream"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setShowCustom(true)}
+          className="mt-3 flex items-center gap-1.5 text-sm text-brass-light hover:text-brass-shimmer transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          Custom alteration
+        </button>
+      )}
+
+      {/* Subtotal */}
+      {garment.lines.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-brass/20 flex items-center justify-between">
+          <span className="text-cream-muted text-sm">{garment.lines.length} alteration{garment.lines.length !== 1 ? 's' : ''}</span>
+          <span className="text-brass-shimmer font-semibold">{formatUSD(subtotal)}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Checkout Cart ─────────────────────────────────────────────────────────────
+function CheckoutCart({
+  garments,
+  customer,
+  isRush,
+  onRushToggle,
+  paymentMethod,
+  onPaymentMethodChange,
+  deposit,
+  onDepositChange,
+  origin,
+  submitting,
+  onSubmit,
+}: {
+  garments: GarmentItem[]
+  customer: Customer
+  isRush: boolean
+  onRushToggle: () => void
+  paymentMethod: PaymentMethod
+  onPaymentMethodChange: (m: PaymentMethod) => void
+  deposit: string
+  onDepositChange: (v: string) => void
+  origin: 'NYC' | 'HOU'
+  submitting: boolean
+  onSubmit: () => void
+}) {
+  const garmentSubtotal = garments.reduce((s, g) => s + g.lines.reduce((ss, l) => ss + l.price, 0), 0)
+  const rushFee = isRush ? 25 : 0
+  const taxRate = TAX_RATES[origin]
+  const subtotalWithRush = garmentSubtotal + rushFee
+  const tax = subtotalWithRush * taxRate
+  const total = subtotalWithRush + tax
+
+  const garmentsWithLines = garments.filter(g => g.lines.length > 0)
+  const canSubmit = !!customer && garmentsWithLines.length > 0 && !submitting
+
+  const ctaLabel = submitting
+    ? 'Processing…'
+    : paymentMethod === 'pay_now'
+    ? 'Create Ticket & Charge Square'
+    : paymentMethod === 'deposit'
+    ? 'Create Ticket & Take Deposit'
+    : 'Create Ticket'
+
+  return (
+    <div className="glass-panel rounded-2xl overflow-hidden">
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-brass/20 flex items-center justify-between">
+        <h2 className="text-cream font-semibold text-lg flex items-center gap-2">
+          <ShoppingBag className="w-5 h-5 text-brass-shimmer" />
+          Checkout
+        </h2>
+        {garments.length > 0 && (
+          <span className="text-cream-muted text-sm">{garments.length} garment{garments.length !== 1 ? 's' : ''}</span>
+        )}
+      </div>
+
+      <div className="p-5 space-y-4">
+        {/* Garment Lines */}
+        {garments.length === 0 ? (
+          <p className="text-cream-dim text-sm text-center py-4 italic">No garments added yet</p>
+        ) : (
+          <div className="space-y-2">
+            {garments.map(g => {
+              const sub = g.lines.reduce((s, l) => s + l.price, 0)
+              return (
+                <div key={g.id} className="flex items-center justify-between py-2 border-b border-brass/10 last:border-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-7 h-7 rounded-full bg-brass/15 border border-brass/30 text-brass-shimmer text-xs font-bold flex items-center justify-center flex-shrink-0">
+                      {g.ref}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-cream text-sm font-medium truncate">{g.garmentType}</p>
+                      <p className="text-cream-dim text-xs">{g.lines.length} alteration{g.lines.length !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                  <span className={cn('text-sm font-medium ml-2 flex-shrink-0', sub > 0 ? 'text-cream' : 'text-cream-dim')}>
+                    {sub > 0 ? formatUSD(sub) : '—'}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Rush Toggle */}
+        <div className="flex items-center justify-between py-2">
+          <button
+            onClick={onRushToggle}
+            className={cn(
+              'flex items-center gap-2 text-sm font-medium transition-colors',
+              isRush ? 'text-amber-400' : 'text-cream-muted hover:text-cream'
+            )}
+          >
+            <Zap className={cn('w-4 h-4', isRush && 'fill-amber-400')} />
+            Rush (+$25.00)
+          </button>
+          <div
+            onClick={onRushToggle}
+            className={cn(
+              'relative w-10 h-5 rounded-full cursor-pointer transition-colors',
+              isRush ? 'bg-amber-500/70' : 'bg-forest-deep border border-brass/30'
+            )}
+          >
+            <div className={cn(
+              'absolute top-0.5 w-4 h-4 rounded-full bg-cream transition-transform',
+              isRush ? 'translate-x-5' : 'translate-x-0.5'
+            )} />
+          </div>
+        </div>
+
+        {/* Tax & Total */}
+        <div className="border-t border-brass/20 pt-3 space-y-1.5">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-cream-muted">Subtotal</span>
+            <span className="text-cream">{formatUSD(subtotalWithRush)}</span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-cream-muted">Tax ({origin} {(taxRate * 100).toFixed(3)}%)</span>
+            <span className="text-cream">{formatUSD(tax)}</span>
+          </div>
+          <div className="flex items-center justify-between font-semibold pt-1 border-t border-brass/20">
+            <span className="text-cream">Total</span>
+            <span className="text-brass-shimmer text-lg">{formatUSD(total)}</span>
+          </div>
+        </div>
+
+        {/* Payment Method */}
+        <div>
+          <p className="ui-label text-cream-muted mb-2">Payment Method</p>
+          <div className="grid grid-cols-3 gap-1.5">
+            {([
+              { value: 'pay_now' as PaymentMethod, label: 'Pay Now', icon: CreditCard },
+              { value: 'deposit' as PaymentMethod, label: 'Deposit', icon: Banknote },
+              { value: 'on_account' as PaymentMethod, label: 'On Account', icon: ClipboardList },
+            ] as const).map(({ value, label, icon: Icon }) => (
+              <button
+                key={value}
+                onClick={() => onPaymentMethodChange(value)}
+                className={cn(
+                  'flex flex-col items-center gap-1 py-2 px-1 rounded-lg border text-xs font-medium transition-all',
+                  paymentMethod === value
+                    ? 'bg-brass/20 border-brass/60 text-brass-shimmer'
+                    : 'bg-transparent border-brass/20 text-cream-muted hover:border-brass/40 hover:text-cream'
+                )}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {paymentMethod === 'deposit' && (
+            <div className="mt-3">
+              <label className="ui-label text-cream-muted mb-1 block">Deposit Amount</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-cream-muted text-sm">$</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="w-full bg-forest-deep border border-brass/20 rounded-lg pl-7 pr-3 py-2 text-cream text-sm focus:border-brass/50 focus:outline-none"
+                  placeholder="0.00"
+                  value={deposit}
+                  onChange={e => onDepositChange(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* CTA */}
+        <button
+          disabled={!canSubmit}
+          onClick={onSubmit}
+          className={cn(
+            'w-full py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2',
+            canSubmit
+              ? 'bg-brass hover:bg-brass/90 text-forest-deep shadow-md hover:shadow-brass/20'
+              : 'bg-brass/20 text-cream-dim cursor-not-allowed'
+          )}
+        >
+          {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+          {ctaLabel}
+        </button>
+
+        {!customer && (
+          <p className="text-center text-cream-dim text-xs flex items-center justify-center gap-1">
+            <AlertCircle className="w-3 h-3" /> Select a customer to continue
+          </p>
+        )}
+        {customer && garmentsWithLines.length === 0 && (
+          <p className="text-center text-cream-dim text-xs flex items-center justify-center gap-1">
+            <AlertCircle className="w-3 h-3" /> Add at least one alteration
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Success State ─────────────────────────────────────────────────────────────
+function SuccessState({
+  ticketName,
+  customer,
+  garmentCount,
+  onReset,
+}: {
+  ticketName: string
+  customer: Customer
+  garmentCount: number
+  onReset: () => void
+}) {
+  return (
+    <div className="min-h-screen bg-forest-deep flex items-center justify-center p-6">
+      <div className="glass-panel rounded-2xl p-8 max-w-md w-full text-center border border-brass/30">
+        <div className="w-16 h-16 rounded-full bg-brass/20 border-2 border-brass/50 flex items-center justify-center mx-auto mb-5">
+          <Check className="w-8 h-8 text-brass-shimmer" />
+        </div>
+        <h2 className="text-cream text-2xl font-bold mb-1">Ticket Created</h2>
+        <p className="text-brass-shimmer text-xl font-mono font-semibold mb-4">{ticketName}</p>
+
+        {customer && (
+          <div className="mb-5 p-3 bg-brass/10 rounded-xl border border-brass/20">
+            <p className="text-cream font-medium">{customer.name}</p>
+            {customer.phone && <p className="text-cream-muted text-sm">{customer.phone}</p>}
+          </div>
+        )}
+
+        <p className="text-cream-muted text-sm mb-6">
+          {garmentCount} garment{garmentCount !== 1 ? 's' : ''} logged
+        </p>
+
+        <div className="space-y-3">
+          <button
+            onClick={() => window.open(`/intake/alterations/tickets/${ticketName}/print`)}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-brass/30 text-cream hover:bg-brass/10 transition-colors"
+          >
+            <Printer className="w-4 h-4 text-brass-shimmer" />
+            Print Receipt
+          </button>
+          <button
+            onClick={() => window.open(`/intake/alterations/tickets/${ticketName}/tags`)}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-brass/30 text-cream hover:bg-brass/10 transition-colors"
+          >
+            <Tag className="w-4 h-4 text-brass-shimmer" />
+            Print Garment Tags
+          </button>
+          <button
+            onClick={onReset}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-brass/80 hover:bg-brass text-forest-deep font-semibold transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            New Order
+          </button>
         </div>
       </div>
     </div>
-  );
+  )
+}
+
+// ─── Main Page ─────────────────────────────────────────────────────────────────
+export default function IntakeAlterations() {
+  const [customer, setCustomer] = useState<Customer>(null)
+  const [garments, setGarments] = useState<GarmentItem[]>([])
+  const [activeGarmentId, setActiveGarmentId] = useState<string | null>(null)
+  const [isRush, setIsRush] = useState(false)
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pay_now')
+  const [deposit, setDeposit] = useState('')
+  const [origin, setOrigin] = useState<'NYC' | 'HOU'>('NYC')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState<{ ticketName: string } | null>(null)
+
+  const { data: presetsData } = useQuery({
+    queryKey: ['presets', origin],
+    queryFn: () => api.get<Preset[]>(`/api/intake-alterations/presets?origin=${origin}`),
+    staleTime: 5 * 60 * 1000,
+  })
+  const presets: Preset[] = (presetsData as Preset[] | undefined) ?? []
+
+  useQuery({
+    queryKey: ['tailors'],
+    queryFn: () => api.get('/api/intake-alterations/tailors'),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const activeGarment = garments.find(g => g.id === activeGarmentId) ?? null
+
+  const addGarment = useCallback((type: string) => {
+    const newRef = `G${garments.length + 1}`
+    const newItem: GarmentItem = {
+      id: uuid(),
+      ref: newRef,
+      garmentType: type,
+      description: '',
+      color: '',
+      notes: '',
+      lines: [],
+    }
+    setGarments(prev => [...prev, newItem])
+    setActiveGarmentId(newItem.id)
+  }, [garments.length])
+
+  const updateGarment = useCallback((updated: GarmentItem) => {
+    setGarments(prev => prev.map(g => g.id === updated.id ? updated : g))
+  }, [])
+
+  const removeGarment = useCallback((id: string) => {
+    setGarments(prev => {
+      const remaining = prev.filter(g => g.id !== id)
+      // Re-number refs
+      return remaining.map((g, i) => ({ ...g, ref: `G${i + 1}` }))
+    })
+    setActiveGarmentId(prev => {
+      if (prev === id) return null
+      return prev
+    })
+  }, [])
+
+  const handleTileClick = useCallback((type: string) => {
+    addGarment(type)
+  }, [addGarment])
+
+  const handleSubmit = async () => {
+    if (!customer || garments.filter(g => g.lines.length > 0).length === 0) return
+    setSubmitting(true)
+    try {
+      const payload = {
+        customer,
+        garments: garments.filter(g => g.lines.length > 0),
+        isRush,
+        paymentMethod,
+        deposit: paymentMethod === 'deposit' ? parseFloat(deposit) || 0 : null,
+        origin,
+      }
+      const result = await api.post<{ ticketName: string }>('/api/intake-alterations/tickets', payload)
+      setSubmitted({ ticketName: result.ticketName })
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create ticket. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleReset = () => {
+    setCustomer(null)
+    setGarments([])
+    setActiveGarmentId(null)
+    setIsRush(false)
+    setPaymentMethod('pay_now')
+    setDeposit('')
+    setSubmitted(null)
+  }
+
+  if (submitted) {
+    return (
+      <SuccessState
+        ticketName={submitted.ticketName}
+        customer={customer}
+        garmentCount={garments.filter(g => g.lines.length > 0).length}
+        onReset={handleReset}
+      />
+    )
+  }
+
+  const garmentCounts = garments.reduce<Record<string, number>>((acc, g) => {
+    acc[g.garmentType] = (acc[g.garmentType] || 0) + 1
+    return acc
+  }, {})
+
+  return (
+    <div className="min-h-screen bg-forest-deep text-cream">
+      {/* Top Bar */}
+      <div className="border-b border-brass/20 px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h1 className="text-cream font-bold text-lg tracking-wide">Alteration Intake</h1>
+          <span className="text-cream-dim text-sm">·</span>
+          <div className="flex gap-1">
+            {(['NYC', 'HOU'] as const).map(loc => (
+              <button
+                key={loc}
+                onClick={() => setOrigin(loc)}
+                className={cn(
+                  'px-3 py-1 rounded-md text-sm font-medium transition-colors',
+                  origin === loc
+                    ? 'bg-brass/20 text-brass-shimmer border border-brass/40'
+                    : 'text-cream-muted hover:text-cream'
+                )}
+              >
+                {loc}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="text-cream-dim text-xs">
+          {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+        </div>
+      </div>
+
+      {/* Main Layout */}
+      <div className="flex flex-col lg:flex-row gap-0 lg:gap-6 p-4 lg:p-6 max-w-7xl mx-auto">
+
+        {/* LEFT: Garment Picker + Active Card */}
+        <div className="flex-1 lg:w-2/3 space-y-5 min-w-0">
+
+          {/* Customer Search */}
+          <div>
+            <p className="ui-label text-cream-muted mb-2">Customer</p>
+            <CustomerSearch
+              customer={customer}
+              onSelect={setCustomer}
+              onClear={() => setCustomer(null)}
+            />
+          </div>
+
+          {/* Garment Picker */}
+          <div>
+            <p className="ui-label text-cream-muted mb-2">Select Garment</p>
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+              {GARMENTS.map(g => (
+                <GarmentTile
+                  key={g.type}
+                  type={g.type}
+                  label={g.label}
+                  count={garmentCounts[g.type] || 0}
+                  isActive={activeGarment?.garmentType === g.type && activeGarment != null}
+                  onClick={() => handleTileClick(g.type)}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Garment Switcher — when multiple garments */}
+          {garments.length > 1 && (
+            <div>
+              <p className="ui-label text-cream-muted mb-2">Garments in Order</p>
+              <div className="flex flex-wrap gap-2">
+                {garments.map(g => (
+                  <button
+                    key={g.id}
+                    onClick={() => setActiveGarmentId(g.id)}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm transition-all',
+                      activeGarmentId === g.id
+                        ? 'bg-brass/20 border-brass/50 text-brass-shimmer'
+                        : 'border-brass/20 text-cream-muted hover:border-brass/40 hover:text-cream'
+                    )}
+                  >
+                    <span className="font-bold">{g.ref}</span>
+                    <span>{g.garmentType}</span>
+                    {g.lines.length > 0 && (
+                      <span className={cn(
+                        'w-4 h-4 rounded-full text-xs flex items-center justify-center',
+                        activeGarmentId === g.id ? 'bg-brass/40 text-forest-deep' : 'bg-brass/20 text-brass-light'
+                      )}>
+                        {g.lines.length}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Active Garment Card */}
+          {activeGarment && (
+            <ActiveGarmentCard
+              garment={activeGarment}
+              presets={presets}
+              onUpdate={updateGarment}
+              onRemove={() => removeGarment(activeGarment.id)}
+            />
+          )}
+
+          {!activeGarment && garments.length === 0 && (
+            <div className="glass-panel rounded-2xl p-8 text-center border border-dashed border-brass/20">
+              <ShoppingBag className="w-8 h-8 text-cream-dim mx-auto mb-3" />
+              <p className="text-cream-muted text-sm">Click a garment type above to start adding items</p>
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT: Checkout Cart */}
+        <div className="lg:w-1/3 lg:sticky lg:top-6 lg:self-start mt-5 lg:mt-0">
+          <CheckoutCart
+            garments={garments}
+            customer={customer}
+            isRush={isRush}
+            onRushToggle={() => setIsRush(r => !r)}
+            paymentMethod={paymentMethod}
+            onPaymentMethodChange={setPaymentMethod}
+            deposit={deposit}
+            onDepositChange={setDeposit}
+            origin={origin}
+            submitting={submitting}
+            onSubmit={handleSubmit}
+          />
+        </div>
+      </div>
+
+      {/* Mobile Sticky Bottom Summary */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 glass-panel border-t border-brass/30 px-4 py-3 flex items-center justify-between">
+        <div>
+          <p className="text-cream text-sm font-semibold">
+            {garments.length} garment{garments.length !== 1 ? 's' : ''}
+            {garments.some(g => g.lines.length > 0) && (
+              <span className="text-cream-muted ml-1">·</span>
+            )}
+            {garments.some(g => g.lines.length > 0) && (
+              <span className="text-brass-shimmer ml-1">
+                {formatUSD(
+                  garments.reduce((s, g) => s + g.lines.reduce((ss, l) => ss + l.price, 0), 0) +
+                  (isRush ? 25 : 0)
+                )}
+              </span>
+            )}
+          </p>
+          {customer && <p className="text-cream-dim text-xs">{customer.name}</p>}
+        </div>
+        <button
+          disabled={!customer || garments.filter(g => g.lines.length > 0).length === 0 || submitting}
+          onClick={handleSubmit}
+          className="px-5 py-2.5 rounded-xl bg-brass text-forest-deep font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+          {submitting ? 'Processing…' : 'Checkout'}
+        </button>
+      </div>
+    </div>
+  )
 }

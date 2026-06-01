@@ -31,6 +31,8 @@ import Academy from "./pages/Academy";
 import MissionControl from "./pages/MissionControl";
 import AgentDetail from "./pages/mission-control/AgentDetail";
 import NotFound from "./pages/NotFound";
+import TicketDetail from "./pages/intake/TicketDetail";
+import QRScanner from "./pages/intake/QRScanner";
 
 const Tasks = lazy(() => import('./pages/Tasks'));
 const Comms = lazy(() => import('./pages/Comms'));
@@ -103,6 +105,22 @@ const App = () => (
               element={
                 <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
                   <OrdersAlterations />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/orders/alterations/:ticketName"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
+                  <TicketDetail />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/scan"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "driver"]}>
+                  <QRScanner />
                 </RoleGuard>
               }
             />

@@ -49,6 +49,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: "/orders/custom", label: "Custom Orders", icon: ClipboardList, roles: STAFF },
       { to: "/orders/alterations", label: "Alterations", icon: Scissors, roles: STAFF },
+      { to: "/scan", label: "QR Scanner", icon: Zap, roles: ALL },
       { to: "/sales-orders", label: "Sales Orders", icon: Receipt, roles: MGMT },
       { to: "/invoices", label: "Invoices", icon: FileText, roles: MGMT },
     ],
