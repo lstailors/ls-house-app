@@ -21,7 +21,7 @@ const DEMO_LOGINS = [
   { label: "Driver", email: "driver@lstailors.com" },
 ];
 
-const DEMO_PASSWORD = "LStailors2026!";
+const DEMO_PASSWORD = "LS-Reset-9k4n!";
 
 export default function Login() {
   const navigate = useNavigate();

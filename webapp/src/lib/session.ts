@@ -12,7 +12,8 @@ export function useMe() {
     queryKey: ME_KEY,
     queryFn: async () => {
       try {
-        return await api.get<Profile>("/api/me");
+        const result = await api.get<Profile>("/api/me");
+        return result ?? null;
       } catch {
         return null;
       }
