@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import {
   Plus, X, Check, ChevronDown, Printer, Tag, RefreshCw,
   AlertCircle, Loader2, ShoppingBag, Zap, CreditCard,
-  Banknote, ClipboardList, Search, User, Phone, Mail
+  Banknote, ClipboardList, Search, User, Phone, Mail, MapPin
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -166,7 +166,7 @@ const TAX_RATES: Record<string, number> = {
 const uuid = () => Math.random().toString(36).slice(2) + Date.now().toString(36)
 
 // ─── Customer Search ──────────────────────────────────────────────────────────
-type CustomerResult = { id: string; name: string; phone: string; email: string }
+type CustomerResult = { id: string; name: string; phone: string; email: string; address?: string }
 
 function CustomerSearch({
   customer,
@@ -339,22 +339,26 @@ function CustomerSearch({
               <div className="w-9 h-9 rounded-full bg-brass/15 border border-brass/25 flex items-center justify-center flex-shrink-0">
                 <span className="text-brass-shimmer font-semibold text-sm">{r.name.charAt(0).toUpperCase()}</span>
               </div>
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 space-y-0.5">
                 <p className="text-cream text-sm font-semibold truncate">{r.name}</p>
-                <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
                   {r.phone && (
-                    <span className="flex items-center gap-1 text-cream-muted text-xs">
-                      <Phone className="w-3 h-3 text-brass-light/60" />{r.phone}
+                    <span className="flex items-center gap-1 text-cream-muted text-xs whitespace-nowrap">
+                      <Phone className="w-3 h-3 text-brass-light/60 shrink-0" />{r.phone}
                     </span>
                   )}
                   {r.email && (
+                    <span className="flex items-center gap-1 text-cream-dim text-xs truncate max-w-[160px]">
+                      <Mail className="w-3 h-3 text-brass-light/60 shrink-0" />{r.email}
+                    </span>
+                  )}
+                  {(r as CustomerResult).address && (
                     <span className="flex items-center gap-1 text-cream-dim text-xs truncate max-w-[180px]">
-                      <Mail className="w-3 h-3 text-brass-light/60 flex-shrink-0" />{r.email}
+                      <MapPin className="w-3 h-3 text-brass-light/60 shrink-0" />{(r as CustomerResult).address}
                     </span>
                   )}
                 </div>
               </div>
-              <span className="text-brass-light/50 text-xs flex-shrink-0">Select →</span>
             </button>
           ))}
         </div>

@@ -120,59 +120,118 @@ intakeAlterationsRouter.get('/tailors', async (c) => {
 });
 
 // 3. GET /customers/search?q=
-// Searches ERPNext Customer doctype (primary source for alteration customers)
-// and falls back to Supabase customers table for MTM customers.
+// Fuzzy search across ERPNext Customer + Contact + Address.
+// Returns enriched results: name, phone, email, address line, city.
 intakeAlterationsRouter.get('/customers/search', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
-  const q = c.req.query('q') ?? '';
-  if (q.length < 2) return c.json({ data: [] });
+  const q = (c.req.query('q') ?? '').trim();
+  if (q.length < 1) return c.json({ data: [] });
 
-  // Search ERPNext customers (covers all alteration + MTM customers)
   const erpBase = process.env.ERPNEXT_BASE_URL ?? '';
-  const erpKey  = process.env.ERPNEXT_API_KEY  ?? '';
+  const erpKey  = process.env.ERPNEXT_API_KEY   ?? '';
   const erpSec  = process.env.ERPNEXT_API_SECRET ?? '';
 
-  const erpResults: any[] = [];
-  if (erpBase && erpKey && erpSec) {
+  if (!erpBase || !erpKey || !erpSec) return c.json({ data: [] });
+
+  const auth = { Authorization: `token ${erpKey}:${erpSec}`, Accept: 'application/json' };
+
+  // Use ERPNext's built-in link search which does fuzzy matching on customer_name
+  // AND searches across customer_name, mobile_no, email_id simultaneously.
+  const searchUrl = `${erpBase}/api/method/frappe.desk.search.search_link?` +
+    `txt=${encodeURIComponent(q)}&doctype=Customer&ignore_user_permissions=0&reference_doctype=Alteration+Ticket&page_length=10`;
+
+  let rawHits: { value: string; description?: string }[] = [];
+  try {
+    const res = await fetch(searchUrl, { headers: auth });
+    if (res.ok) {
+      const json: any = await res.json();
+      rawHits = json.results ?? json.message ?? [];
+    }
+  } catch { /* fall back to simple filter */ }
+
+  // Fallback: plain filter on name + mobile if search_link returned nothing
+  if (!rawHits.length) {
     try {
-      const fields = JSON.stringify(['name', 'customer_name', 'mobile_no', 'email_id']);
-      const filters = JSON.stringify([['customer_name', 'like', `%${q}%`]]);
-      const url = `${erpBase}/api/resource/Customer?fields=${encodeURIComponent(fields)}&filters=${encodeURIComponent(filters)}&limit_page_length=8&order_by=modified%20desc`;
-      const res = await fetch(url, {
-        headers: { Authorization: `token ${erpKey}:${erpSec}`, Accept: 'application/json' },
-      });
+      const f = JSON.stringify([['customer_name', 'like', `%${q}%`]]);
+      const res = await fetch(
+        `${erpBase}/api/resource/Customer?filters=${encodeURIComponent(f)}&fields=${encodeURIComponent(JSON.stringify(['name','customer_name']))}&limit_page_length=10`,
+        { headers: auth }
+      );
       if (res.ok) {
         const json: any = await res.json();
-        for (const row of (json.data ?? [])) {
-          erpResults.push({
-            id: row.name,
-            full_name: row.customer_name,
-            phone: row.mobile_no ?? '',
-            email: row.email_id ?? null,
-            customer_number: row.name,
-          });
-        }
+        rawHits = (json.data ?? []).map((r: any) => ({ value: r.name, description: r.customer_name }));
       }
-    } catch { /* fall through to Supabase */ }
+    } catch { /* no results */ }
+
+    // Also search by phone number
+    if (q.replace(/\D/g, '').length >= 4) {
+      try {
+        const phone = q.replace(/\D/g, '');
+        const f2 = JSON.stringify([['mobile_no', 'like', `%${phone}%`]]);
+        const res2 = await fetch(
+          `${erpBase}/api/resource/Customer?filters=${encodeURIComponent(f2)}&fields=${encodeURIComponent(JSON.stringify(['name','customer_name']))}&limit_page_length=5`,
+          { headers: auth }
+        );
+        if (res2.ok) {
+          const json2: any = await res2.json();
+          const phoneHits = (json2.data ?? []).map((r: any) => ({ value: r.name, description: r.customer_name }));
+          const seen = new Set(rawHits.map((h: any) => h.value));
+          rawHits = [...rawHits, ...phoneHits.filter((h: any) => !seen.has(h.value))];
+        }
+      } catch { /* ignore */ }
+    }
   }
 
-  // Also search Supabase for MTM customers not in ERPNext
-  const { data: sbResults } = await (supabaseAdmin
-    ?.from('customers')
-    .select('id,full_name,phone,email,customer_number')
-    .or(`full_name.ilike.%${q}%,phone.ilike.%${q}%`)
-    .limit(4) ?? { data: [] });
+  // Enrich each hit with Contact (phone/email) and Address data in parallel
+  const enriched = await Promise.all(rawHits.slice(0, 10).map(async (hit: any) => {
+    const custId = hit.value;
+    // search_link returns description as "Group, Territory" — use the customer_name (value == ERPNext name)
+    // Fetch clean customer_name directly
+    let custName = custId; // fallback
+    try {
+      const nr = await fetch(`${erpBase}/api/resource/Customer/${encodeURIComponent(custId)}?fields=["customer_name"]`, { headers: auth });
+      if (nr.ok) { const nj: any = await nr.json(); custName = nj.message?.customer_name || custId; }
+    } catch { /* use id */ }
 
-  // Merge, deduplicate by full_name
-  const seen = new Set(erpResults.map((r: any) => r.full_name?.toLowerCase()));
-  const merged = [
-    ...erpResults,
-    ...(sbResults ?? []).filter((r: any) => !seen.has(r.full_name?.toLowerCase())),
-  ].slice(0, 10);
+    let phone = '', email = '', addressLine = '', city = '';
 
-  return c.json({ data: merged });
+    try {
+      // Fetch customer primary contact + address in parallel
+      const [contactRes, addrRes] = await Promise.all([
+        fetch(
+          `${erpBase}/api/resource/Contact?filters=${encodeURIComponent(JSON.stringify([['Dynamic Link','link_doctype','=','Customer'],['Dynamic Link','link_name','=',custId]]))}&fields=${encodeURIComponent(JSON.stringify(['mobile_no','phone','email_id']))}&limit_page_length=1`,
+          { headers: auth }
+        ),
+        fetch(
+          `${erpBase}/api/resource/Address?filters=${encodeURIComponent(JSON.stringify([['Dynamic Link','link_doctype','=','Customer'],['Dynamic Link','link_name','=',custId]]))}&fields=${encodeURIComponent(JSON.stringify(['address_line1','city','state','pincode']))}&limit_page_length=1`,
+          { headers: auth }
+        ),
+      ]);
+      if (contactRes.ok) {
+        const cj: any = await contactRes.json();
+        const ct = cj.data?.[0];
+        if (ct) { phone = ct.mobile_no || ct.phone || ''; email = ct.email_id || ''; }
+      }
+      if (addrRes.ok) {
+        const aj: any = await addrRes.json();
+        const addr = aj.data?.[0];
+        if (addr) { addressLine = addr.address_line1 || ''; city = addr.city || ''; }
+      }
+    } catch { /* partial data ok */ }
+
+    return {
+      id: custId,
+      full_name: custName,
+      name: custName,
+      phone,
+      email,
+      address: addressLine ? `${addressLine}${city ? ', ' + city : ''}` : (city || ''),
+    };
+  }));
+
+  return c.json({ data: enriched });
 });
 
 // 4. GET /tickets?status=&origin=NYC|HOU&limit=100
