@@ -63,6 +63,15 @@ const AGENT_COLOR_CLASS: Record<string, string> = {
   filo:    "shadow-[0_0_24px_theme(colors.purple.500/15%)]  border-purple-500/20",
 };
 
+const AGENT_PHOTO: Record<string, string> = {
+  maestro: "/agents/maestro.jpg",
+  sofia:   "/agents/sofia.jpg",
+  mia:     "/agents/mia.jpg",
+  rocco:   "/agents/rocco.jpg",
+  melena:  "/agents/melena.jpg",
+  filo:    "/agents/filo.jpg",
+};
+
 const AGENT_DOT_CLASS: Record<AgentStatus, string> = {
   active:  "bg-signal-emerald animate-pulse",
   idle:    "bg-cream-dim",
@@ -302,8 +311,22 @@ function AgentCard({ agent, large = false, onDelegate }: { agent: Agent; large?:
       )}
 
       <div className="flex items-start gap-3 mb-3">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className={cn("h-2 w-2 rounded-full shrink-0", dotClass)} />
+        {/* Avatar */}
+        <div className="relative shrink-0">
+          {AGENT_PHOTO[agent.slug] ? (
+            <img
+              src={AGENT_PHOTO[agent.slug]}
+              alt={agent.name}
+              className="h-12 w-12 rounded-full object-cover border border-brass/20"
+            />
+          ) : (
+            <div className="h-12 w-12 rounded-full bg-cream/10 border border-brass/20 flex items-center justify-center">
+              <Bot className="h-5 w-5 text-brass-light" />
+            </div>
+          )}
+          <span className={cn("absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#0D1A10]", dotClass)} />
+        </div>
+        <div className="flex items-start gap-2 flex-1 min-w-0">
           <div className="min-w-0">
             <div className="display-heading text-xl leading-tight truncate">{agent.name}</div>
             <div className="text-xs text-cream-muted truncate">{agent.role}</div>
