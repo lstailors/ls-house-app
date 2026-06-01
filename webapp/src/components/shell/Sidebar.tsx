@@ -1,25 +1,15 @@
 import { NavLink } from "react-router-dom";
 import {
-  LayoutDashboard,
-  Zap,
-  Scissors,
-  ShoppingBag,
-  ClipboardList,
-  Receipt,
-  Truck,
-  MessageCircle,
-  Wallet,
-  Settings,
-  Shield,
-  Palette,
-  Layers,
-  GraduationCap,
-  BookOpen,
-  type LucideIcon,
+  LayoutDashboard, Zap, ClipboardList, Scissors, Receipt,
+  Truck, CheckSquare, Radio, MessageSquare, Users, Wallet,
+  Palette, Layers, Shield, Building2, Settings, Bell, type LucideIcon,
 } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useMaestroApprovalCount } from "@/lib/queries";
+import { useMe } from "@/lib/session";
 import type { UserRole } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Monogram } from "../glass/Monogram";
+import { initials } from "@/lib/format";
 
 interface NavItem {
   to: string;
@@ -35,81 +25,61 @@ interface NavSection {
 }
 
 const ALL: UserRole[] = ["super_admin", "store_manager", "salesperson", "driver"];
+const MGMT: UserRole[] = ["super_admin", "store_manager"];
+const STAFF: UserRole[] = ["super_admin", "store_manager", "salesperson"];
 
 const SECTIONS: NavSection[] = [
   {
-    title: "Overview",
+    title: "House",
     items: [
       { to: "/", label: "Dashboard", icon: LayoutDashboard, roles: ALL },
-      { to: "/mission-control", label: "Mission Control", icon: Zap, roles: ["super_admin", "store_manager"] },
+      { to: "/mission-control", label: "Mission Control", icon: Zap, roles: MGMT },
     ],
   },
   {
-    title: "Intake",
-    roles: ["super_admin", "store_manager", "salesperson"],
+    title: "Workshop",
+    roles: STAFF,
     items: [
-      { to: "/intake/alterations", label: "Alteration Ticket", icon: Scissors, roles: ["super_admin", "store_manager", "salesperson"] },
-      { to: "/intake/custom", label: "Custom Made (POS)", icon: ShoppingBag, roles: ["super_admin", "store_manager", "salesperson"] },
+      { to: "/orders/custom", label: "Custom Orders", icon: ClipboardList, roles: STAFF },
+      { to: "/orders/alterations", label: "Alterations", icon: Scissors, roles: STAFF },
+      { to: "/sales-orders", label: "Sales Orders", icon: Receipt, roles: MGMT },
+      { to: "/invoices", label: "Invoices", icon: Receipt, roles: MGMT },
     ],
   },
   {
-    title: "Orders",
-    roles: ["super_admin", "store_manager", "salesperson"],
-    items: [
-      { to: "/orders/alterations", label: "Alterations", icon: Scissors, roles: ["super_admin", "store_manager", "salesperson"] },
-      { to: "/orders/custom", label: "Custom Orders", icon: ClipboardList, roles: ["super_admin", "store_manager", "salesperson"] },
-      { to: "/sales-orders", label: "Sales Orders", icon: Receipt, roles: ["super_admin", "store_manager"] },
-      { to: "/invoices", label: "Invoices", icon: Receipt, roles: ["super_admin", "store_manager"] },
-    ],
-  },
-  {
-    title: "Logistics",
+    title: "Ops",
+    roles: MGMT,
     items: [
       { to: "/deliveries", label: "Deliveries", icon: Truck, roles: ALL },
+      { to: "/tasks", label: "Tasks", icon: CheckSquare, roles: MGMT },
+      { to: "/comms", label: "Intelligence", icon: Radio, roles: MGMT },
     ],
   },
   {
-    title: "Customer",
-    roles: ["super_admin", "store_manager", "salesperson"],
+    title: "Clients",
+    roles: STAFF,
     items: [
-      { to: "/communications", label: "Sofia — Comms", icon: MessageCircle, roles: ["super_admin", "store_manager", "salesperson"] },
+      { to: "/sofia", label: "Sofia — SMS", icon: MessageSquare, roles: STAFF },
+      { to: "/customers", label: "Customers", icon: Users, roles: MGMT },
     ],
   },
   {
     title: "Financials",
-    roles: ["super_admin", "store_manager"],
+    roles: MGMT,
     items: [
-      { to: "/financials", label: "Financials", icon: Wallet, roles: ["super_admin", "store_manager"] },
+      { to: "/financials", label: "Financials", icon: Wallet, roles: MGMT },
+      { to: "/reference/fabrics", label: "Fabric Pricing", icon: Palette, roles: MGMT },
+      { to: "/reference/styles", label: "Style Library", icon: Layers, roles: MGMT },
     ],
   },
   {
-    title: "Reference Data",
-    roles: ["super_admin", "store_manager"],
-    items: [
-      { to: "/reference/fabrics", label: "Fabric Pricing", icon: Palette, roles: ["super_admin", "store_manager"] },
-      { to: "/reference/styles", label: "Style Library", icon: Layers, roles: ["super_admin", "store_manager"] },
-    ],
-  },
-  {
-    title: "Super Admin Portal",
+    title: "Admin",
     roles: ["super_admin"],
     items: [
       { to: "/admin/users", label: "Users", icon: Shield, roles: ["super_admin"] },
-      { to: "/admin/locations", label: "Locations", icon: Shield, roles: ["super_admin"] },
+      { to: "/admin/locations", label: "Locations", icon: Building2, roles: ["super_admin"] },
       { to: "/admin/tailors", label: "Tailors", icon: Shield, roles: ["super_admin"] },
       { to: "/admin/overview", label: "Org Overview", icon: Shield, roles: ["super_admin"] },
-    ],
-  },
-  {
-    title: "L&S Academy",
-    items: [
-      { to: "/academy", label: "Coming Soon", icon: GraduationCap, roles: ALL },
-    ],
-  },
-  {
-    title: "Account",
-    items: [
-      { to: "/settings", label: "Settings", icon: Settings, roles: ALL },
     ],
   },
 ];
@@ -120,25 +90,48 @@ interface Props {
 }
 
 export function Sidebar({ role, onNavigate }: Props) {
+  const { data: approvalCount = 0 } = useMaestroApprovalCount();
+  const { data: me } = useMe();
+
   return (
     <aside className="flex h-full w-64 flex-col border-r border-brass/15 bg-forest-deep/80 backdrop-blur-2xl">
-      <div className="relative px-5 pt-6 pb-5">
-        <div className="flex items-center gap-3">
-          <Monogram size="md" />
-          <div className="leading-tight">
-            <div className="font-display italic text-xl text-cream">L&amp;S House</div>
-            <div className="ui-label mt-0.5 text-[9px]">Bespoke Operations</div>
+
+      {/* ── Header ── */}
+      <div className="px-5 pt-5 pb-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* Real L&S seal logo */}
+            <img
+              src="/ls-logo-seal.png"
+              alt="L&S"
+              className="h-9 w-9 rounded-full object-cover border border-brass/25 shadow-glass"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            />
+            <div className="leading-tight">
+              <div className="font-display italic text-lg text-cream">L&amp;S House</div>
+              <div className="ui-label mt-0 text-[9px]">Bespoke Operations</div>
+            </div>
+          </div>
+
+          {/* Notification bell */}
+          <div className="relative">
+            <Bell className="h-4 w-4 text-cream-dim" />
+            {approvalCount > 0 && (
+              <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-signal-amber" />
+            )}
           </div>
         </div>
-        <div className="brass-divider mt-5" />
+        <div className="brass-divider mt-4" />
       </div>
-      <nav className="flex-1 overflow-y-auto px-3 pb-6 scrollbar-none">
+
+      {/* ── Nav ── */}
+      <nav className="flex-1 overflow-y-auto px-3 pb-4 scrollbar-none">
         {SECTIONS.filter((s) => !s.roles || s.roles.includes(role)).map((section) => {
           const items = section.items.filter((i) => i.roles.includes(role));
           if (items.length === 0) return null;
           return (
-            <div key={section.title} className="mb-6">
-              <div className="ui-label px-3 mb-2">{section.title}</div>
+            <div key={section.title} className="mb-5">
+              <div className="ui-label px-3 mb-1.5 text-[9px] tracking-widest">{section.title}</div>
               <ul className="space-y-0.5">
                 {items.map((item) => {
                   const Icon = item.icon;
@@ -167,11 +160,33 @@ export function Sidebar({ role, onNavigate }: Props) {
           );
         })}
       </nav>
-      <div className="border-t border-brass/15 px-5 py-4">
-        <div className="flex items-center gap-2 text-[10px] uppercase tracking-widerer text-cream-dim">
-          <BookOpen className="h-3 w-3" />
-          v0.1 · Prototype
-        </div>
+
+      {/* ── Footer — profile + settings ── */}
+      <div className="border-t border-brass/15 px-4 py-4">
+        <NavLink
+          to="/settings"
+          onClick={onNavigate}
+          className={({ isActive }) =>
+            cn(
+              "flex items-center gap-3 rounded-md px-2 py-2 transition-colors",
+              "hover:bg-brass/5",
+              isActive && "sidebar-active",
+            )
+          }
+        >
+          <Avatar className="h-8 w-8 border border-brass/25 shrink-0">
+            <AvatarImage src={me?.image ?? undefined} />
+            <AvatarFallback className="bg-forest-raised text-brass-light text-xs">
+              {initials(me?.name ?? "?")}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm text-cream truncate">{me?.name ?? "Account"}</div>
+            <div className="text-[10px] text-cream-dim flex items-center gap-1.5">
+              <Settings className="h-2.5 w-2.5" /> Settings
+            </div>
+          </div>
+        </NavLink>
       </div>
     </aside>
   );

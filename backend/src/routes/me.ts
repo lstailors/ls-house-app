@@ -38,7 +38,7 @@ meRouter.get("/", async (c) => {
 
   const { data: profile, error } = await supabaseAdmin
     .from("profiles")
-    .select("id,full_name,email,avatar_url,status,home_location,can_view_all_locations")
+    .select("id,full_name,email,avatar_url,phone,status,home_location,can_view_all_locations")
     .eq("email", user.email)
     .single();
 
@@ -94,6 +94,8 @@ meRouter.patch("/", async (c) => {
   const updates: Record<string, unknown> = {};
   if (body.name !== undefined) updates.full_name = body.name;
   if (body.image !== undefined) updates.avatar_url = body.image;
+  if (body.phone !== undefined) updates.phone = body.phone;
+  if (body.email !== undefined) updates.email = body.email;
 
   const { error: updateError } = await supabaseAdmin
     .from("profiles")
@@ -107,7 +109,7 @@ meRouter.patch("/", async (c) => {
 
   const { data: profile } = await supabaseAdmin
     .from("profiles")
-    .select("id,full_name,email,avatar_url,status,home_location,can_view_all_locations")
+    .select("id,full_name,email,avatar_url,phone,status,home_location,can_view_all_locations")
     .eq("email", user.email)
     .single();
 

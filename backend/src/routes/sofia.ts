@@ -112,6 +112,97 @@ sofiaRouter.post("/conversations/:phone/handoff", async (c) => {
   return c.json({ data: { ok: true, agentName } });
 });
 
+// ── GET /api/sofia/threads ── deduplicated thread list (uses real column names)
+sofiaRouter.get("/threads", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!supabaseAdmin) return c.json({ data: [] });
+
+  const { data } = await supabaseAdmin
+    .from("sms_messages")
+    .select("id, client_id, client_phone, direction, content, timestamp")
+    .order("timestamp", { ascending: false })
+    .limit(500);
+
+  const seen = new Set<string>();
+  const threads = (data ?? []).filter((r: any) => {
+    if (!r.client_phone || seen.has(r.client_phone)) return false;
+    seen.add(r.client_phone);
+    return true;
+  }).map((r: any) => ({
+    id: r.id,
+    client_phone: r.client_phone,
+    client_id: r.client_id ?? null,
+    direction: r.direction,
+    body: r.content,
+    created_at: r.timestamp,
+  }));
+
+  return c.json({ data: threads });
+});
+
+// ── GET /api/sofia/thread/:phone ── full conversation
+sofiaRouter.get("/thread/:phone", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!supabaseAdmin) return c.json({ data: [] });
+
+  const phone = decodeURIComponent(c.req.param("phone"));
+  const { data } = await supabaseAdmin
+    .from("sms_messages")
+    .select("id, client_id, client_phone, direction, content, media_urls, timestamp")
+    .eq("client_phone", phone)
+    .order("timestamp", { ascending: true })
+    .limit(300);
+
+  return c.json({ data: (data ?? []).map((r: any) => ({
+    id: r.id,
+    client_phone: r.client_phone,
+    client_id: r.client_id ?? null,
+    direction: r.direction,
+    body: r.content,
+    media_urls: r.media_urls ?? [],
+    created_at: r.timestamp,
+  })) });
+});
+
+// ── POST /api/sofia/send ── send SMS via Twilio
+sofiaRouter.post("/send", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const body = await c.req.json().catch(() => ({}));
+  const { to, message, client_id } = body;
+  if (!to || !message) return c.json({ error: { message: "to and message required" } }, 400);
+
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (!accountSid || !authToken) return c.json({ error: { message: "Twilio not configured" } }, 500);
+
+  const params = new URLSearchParams({ To: to, From: "+12123084431", Body: message });
+  const auth = btoa(`${accountSid}:${authToken}`);
+  const twilioRes = await fetch(
+    `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+    { method: "POST", headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" }, body: params }
+  );
+  const twilioData: any = await twilioRes.json();
+  if (!twilioRes.ok) return c.json({ error: { message: twilioData.message ?? "Twilio error" } }, 502);
+
+  if (supabaseAdmin) {
+    await supabaseAdmin.from("sms_messages").insert({
+      client_phone: to,
+      client_id: client_id ?? null,
+      direction: "outbound",
+      content: message,
+      status: "sent",
+      timestamp: new Date().toISOString(),
+      twilio_sid: twilioData.sid,
+    });
+  }
+
+  return c.json({ data: { ok: true, sid: twilioData.sid } });
+});
+
 // ── GET /api/sofia/voice-approvals ──
 // Source: public.voice_approval_requests (separate from approval_queue)
 sofiaRouter.get("/voice-approvals", async (c) => {

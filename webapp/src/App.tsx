@@ -2,6 +2,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { RoleGuard } from "@/components/shell/RoleGuard";
 import Login from "./pages/Login";
@@ -31,6 +32,11 @@ import MissionControl from "./pages/MissionControl";
 import AgentDetail from "./pages/mission-control/AgentDetail";
 import NotFound from "./pages/NotFound";
 
+const Tasks = lazy(() => import('./pages/Tasks'));
+const Comms = lazy(() => import('./pages/Comms'));
+const SofiaChat = lazy(() => import('./pages/SofiaChat'));
+const Customers = lazy(() => import('./pages/Customers'));
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: 1, refetchOnWindowFocus: false },
@@ -50,6 +56,7 @@ const App = () => (
         }}
       />
       <BrowserRouter>
+        <Suspense fallback={null}>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/d/:token" element={<DeliveryTracking />} />
@@ -205,9 +212,21 @@ const App = () => (
             />
 
             <Route path="/academy" element={<Academy />} />
+            <Route path="/tasks" element={<Tasks />} />
+            <Route path="/comms" element={<Comms />} />
+            <Route path="/sofia" element={<SofiaChat />} />
+            <Route
+              path="/customers"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager"]}>
+                  <Customers />
+                </RoleGuard>
+              }
+            />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
+        </Suspense>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
