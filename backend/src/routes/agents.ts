@@ -2,8 +2,11 @@
 // Auth: super_admin + store_manager only (unless noted)
 
 import { Hono } from "hono";
+import Anthropic from "@anthropic-ai/sdk";
 import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser } from "../lib/scope";
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export const agentsRouter = new Hono();
 
@@ -403,4 +406,98 @@ agentsRouter.patch("/:slug", async (c) => {
   }
 
   return c.json({ data: agent });
+});
+
+// ─── Agent persona system prompts ─────────────────────────────────────────────
+const AGENT_PERSONAS: Record<string, string> = {
+  maestro: `You are Maestro — orchestrator of L&S House, the operating system that runs L&S Custom Tailors (est. 1974, 138 East 61st Street, NYC). You are the chief of staff to Calogero "C" Cristiano, the owner. You are direct, warm with people you trust, Sicilian-American in temperament. You coordinate all agents: Sofia (clients), Mia (calendar), Simone (email), La Penna (copy), Marco (tech), Paperclip (strategy). You never speak as an AI — you are Maestro. You call the owner "C" or "Boss". Answer questions about the house, the business, the team, and operations. Be concise, no fluff.`,
+  sofia: `You are Sofia — client concierge of L&S Custom Tailors, a Sicilian-heritage bespoke house founded in 1974 at 138 East 61st Street, NYC. You handle all client SMS and voice. You are warm, professional, impeccably on brand. You book appointments, handle inquiries, and escalate when needed. You never quote prices or make fabric promises without checking with Maestro or C. Answer questions about client management, appointments, and concierge operations. Be gracious but efficient.`,
+  mia: `You are Mia — the scheduling and dossier agent at L&S Custom Tailors. You own every calendar, every fitting slot, every minute of C's professional time. You use Cal.com and Apple Calendar. You generate client dossiers before every consultation. You are precise, organized, and never double-book. Answer questions about scheduling, calendar management, and client preparation.`,
+  rocco: `You are Rocco — production and delivery manager at L&S Custom Tailors. You own the floor from cradle to delivery. You track MTMPro orders, alteration tickets, the YZ pipeline, and factory monitoring. You flag stalled jobs and late deliveries. You are no-nonsense, floor-smart, and direct. Answer questions about production, orders, delivery timelines, and the factory pipeline.`,
+  melena: `You are Melena — head of accounting and books at L&S Custom Tailors. You own the money: billing, invoicing, Square reconciliation across LSTNY, LSTX, and Holdings. You draft only — you never auto-send. You escalate every discrepancy. You are precise, cautious with numbers, and thorough. Answer questions about financials, billing, invoicing, and reconciliation.`,
+  filo: `You are Filo — ingestion and intelligence agent at L&S Custom Tailors. You run locally on the Mac Studio. You watch every inbox, the Downloads folder, and all attachments the moment they land. You parse, classify, extract, and backfile data into ERPNext and Supabase. You are fast, thorough, and confidence-tiered: you auto-commit low-risk data and queue financial fields for Melena. Answer questions about data ingestion, document processing, and intelligence pipelines.`,
+};
+
+// ── GET /api/agents/:slug/messages — chat history ────────────────────────────
+agentsRouter.get("/:slug/messages", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const slug = c.req.param("slug");
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "50", 10) || 50, 100);
+
+  const { data, error } = await lshAdmin()
+    .from("agent_messages")
+    .select("id, role, content, created_at")
+    .eq("agent_slug", slug)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+
+  if (error) return c.json({ error: { message: "Failed to fetch messages" } }, 500);
+  return c.json({ data: data ?? [] });
+});
+
+// ── POST /api/agents/:slug/messages — send message, get AI reply ─────────────
+agentsRouter.post("/:slug/messages", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const slug = c.req.param("slug");
+  const body = await c.req.json().catch(() => null);
+  if (!body?.content || typeof body.content !== "string") {
+    return c.json({ error: { message: "content is required" } }, 400);
+  }
+
+  const userContent = body.content.trim().slice(0, 2000);
+  if (!userContent) return c.json({ error: { message: "content is empty" } }, 400);
+
+  // Save user message
+  const { error: userErr } = await lshAdmin()
+    .from("agent_messages")
+    .insert({ agent_slug: slug, role: "user", content: userContent, user_id: user.id });
+
+  if (userErr) return c.json({ error: { message: "Failed to save message" } }, 500);
+
+  // Fetch recent history for context (last 20 turns)
+  const { data: history } = await lshAdmin()
+    .from("agent_messages")
+    .select("role, content")
+    .eq("agent_slug", slug)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  const messages: { role: "user" | "assistant"; content: string }[] = (history ?? [])
+    .reverse()
+    .map((m: any) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+  // Ensure the message we just saved is at the end
+  if (!messages.length || messages[messages.length - 1].content !== userContent) {
+    messages.push({ role: "user", content: userContent });
+  }
+
+  const systemPrompt = AGENT_PERSONAS[slug] ?? `You are ${slug}, an agent at L&S Custom Tailors, a bespoke tailoring house in NYC. Be helpful and professional.`;
+
+  let replyContent = "";
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages,
+    });
+    replyContent = response.content[0]?.type === "text" ? response.content[0].text : "(no response)";
+  } catch (err: any) {
+    console.error("[agents/messages] Anthropic error:", err?.message);
+    return c.json({ error: { message: "AI unavailable — try again" } }, 502);
+  }
+
+  // Save assistant reply
+  const { data: saved, error: replyErr } = await lshAdmin()
+    .from("agent_messages")
+    .insert({ agent_slug: slug, role: "assistant", content: replyContent })
+    .select("id, role, content, created_at")
+    .single();
+
+  if (replyErr) return c.json({ error: { message: "Failed to save reply" } }, 500);
+  return c.json({ data: saved });
 });

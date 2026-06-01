@@ -467,3 +467,23 @@ export function useUpdateAgent(slug: string | undefined) {
     },
   });
 }
+
+export function useAgentMessages(slug: string | undefined) {
+  return useQuery({
+    queryKey: ["agents", slug, "messages"],
+    queryFn: () => api.get<any[]>(`/api/agents/${slug}/messages?limit=50`),
+    enabled: !!slug,
+    staleTime: 0,
+  });
+}
+
+export function useSendAgentMessage(slug: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (content: string) =>
+      api.post<any>(`/api/agents/${slug}/messages`, { content }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["agents", slug, "messages"] });
+    },
+  });
+}

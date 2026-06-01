@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Activity, Play, CheckCircle2, Send, Sparkles, Clock,
@@ -15,6 +15,8 @@ import {
   useDelegateTask,
   useUpdateAgent,
   useApproveAction,
+  useAgentMessages,
+  useSendAgentMessage,
 } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -229,6 +231,141 @@ function TasksList({ slug }: { slug: string }) {
 }
 
 // ─── Delegate Task Form ───────────────────────────────────────────────────────
+
+const AGENT_PHOTO: Record<string, string> = {
+  maestro: "/agents/maestro.jpg",
+  sofia:   "/agents/sofia.jpg",
+  mia:     "/agents/mia.jpg",
+  rocco:   "/agents/rocco.jpg",
+  melena:  "/agents/melena.jpg",
+  filo:    "/agents/filo.jpg",
+};
+
+// ─── Agent Chat ───────────────────────────────────────────────────────────────
+
+function AgentChat({ slug, agentName }: { slug: string; agentName: string }) {
+  const [input, setInput] = useState("");
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const { data: messages = [], isLoading } = useAgentMessages(slug);
+  const send = useSendAgentMessage(slug);
+  const photo = AGENT_PHOTO[slug];
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || send.isPending) return;
+    setInput("");
+    try {
+      await send.mutateAsync(text);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to send");
+    }
+  };
+
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+  };
+
+  return (
+    <GlassCard variant="strong" className="p-5 rounded-2xl flex flex-col" style={{ minHeight: 420 }}>
+      <div className="flex items-center gap-3 mb-4 border-b border-brass/10 pb-4">
+        {photo ? (
+          <img src={photo} alt={agentName} className="h-8 w-8 rounded-full object-cover border border-brass/20" />
+        ) : (
+          <div className="h-8 w-8 rounded-full bg-cream/10 border border-brass/20 flex items-center justify-center">
+            <Bot className="h-4 w-4 text-brass-light" />
+          </div>
+        )}
+        <div>
+          <div className="ui-label">{agentName}</div>
+          <div className="text-[10px] text-cream-dim">Direct channel</div>
+        </div>
+      </div>
+
+      {/* Message thread */}
+      <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-thin mb-4" style={{ maxHeight: 320 }}>
+        {isLoading ? (
+          <div className="text-cream-dim text-xs text-center py-6">Loading…</div>
+        ) : messages.length === 0 ? (
+          <div className="text-cream-dim text-xs text-center py-8 border border-dashed border-brass/15 rounded-xl">
+            No messages yet. Say something to {agentName}.
+          </div>
+        ) : (
+          messages.map((msg: any) => {
+            const isUser = msg.role === "user";
+            return (
+              <div key={msg.id} className={cn("flex gap-2", isUser ? "flex-row-reverse" : "flex-row")}>
+                {!isUser && (
+                  photo ? (
+                    <img src={photo} alt={agentName} className="h-7 w-7 rounded-full object-cover border border-brass/15 shrink-0 mt-0.5" />
+                  ) : (
+                    <div className="h-7 w-7 rounded-full bg-cream/10 border border-brass/15 flex items-center justify-center shrink-0 mt-0.5">
+                      <Bot className="h-3.5 w-3.5 text-brass-light" />
+                    </div>
+                  )
+                )}
+                <div className={cn(
+                  "max-w-[78%] px-3 py-2 rounded-2xl text-sm leading-snug",
+                  isUser
+                    ? "bg-brass/20 border border-brass/30 text-cream rounded-tr-sm"
+                    : "bg-cream/5 border border-brass/10 text-cream-muted rounded-tl-sm"
+                )}>
+                  {msg.content}
+                  <div className={cn("text-[9px] mt-1 opacity-50", isUser ? "text-right" : "text-left")}>
+                    {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+        {send.isPending && (
+          <div className="flex gap-2">
+            {photo ? (
+              <img src={photo} alt={agentName} className="h-7 w-7 rounded-full object-cover border border-brass/15 shrink-0" />
+            ) : (
+              <div className="h-7 w-7 rounded-full bg-cream/10 border border-brass/15 flex items-center justify-center shrink-0">
+                <Bot className="h-3.5 w-3.5 text-brass-light" />
+              </div>
+            )}
+            <div className="px-3 py-2 rounded-2xl rounded-tl-sm bg-cream/5 border border-brass/10">
+              <span className="flex gap-1 items-center h-4">
+                <span className="h-1.5 w-1.5 rounded-full bg-brass-light animate-bounce" style={{ animationDelay: "0ms" }} />
+                <span className="h-1.5 w-1.5 rounded-full bg-brass-light animate-bounce" style={{ animationDelay: "150ms" }} />
+                <span className="h-1.5 w-1.5 rounded-full bg-brass-light animate-bounce" style={{ animationDelay: "300ms" }} />
+              </span>
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      <div className="flex gap-2 items-end border-t border-brass/10 pt-3">
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKey}
+          placeholder={`Message ${agentName}…`}
+          rows={1}
+          className="flex-1 text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40 resize-none"
+          style={{ minHeight: 40, maxHeight: 120 }}
+        />
+        <Button
+          onClick={handleSend}
+          disabled={!input.trim() || send.isPending}
+          className="btn-brass h-10 w-10 p-0 shrink-0"
+          aria-label="Send"
+        >
+          <Send className="h-4 w-4" />
+        </Button>
+      </div>
+    </GlassCard>
+  );
+}
 
 function DelegateTaskPanel({ slug, onClose }: { slug: string; onClose: () => void }) {
   const [title, setTitle] = useState("");
@@ -712,6 +849,9 @@ export default function AgentDetail() {
               <AgentApprovals agent={agent} showFinancials={showFinancials} />
             </GlassCard>
           )}
+
+          {/* Chat */}
+          <AgentChat slug={slug!} agentName={agent.name} />
         </div>
       </div>
     </div>
