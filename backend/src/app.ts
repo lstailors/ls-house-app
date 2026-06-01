@@ -21,6 +21,7 @@ import { dashboardRouter } from "./routes/dashboard";
 import { maestroRouter } from "./routes/maestro";
 import { sofiaRouter } from "./routes/sofia";
 import { agentsRouter } from "./routes/agents";
+import { espressoRouter } from "./routes/espresso";
 
 const app = new Hono();
 
@@ -76,5 +77,6 @@ app.route("/api/dashboard", dashboardRouter);
 app.route("/api/maestro", maestroRouter);
 app.route("/api/sofia", sofiaRouter);
 app.route("/api/agents", agentsRouter);
+app.route("/api/espresso", espressoRouter);
 
 export default app;

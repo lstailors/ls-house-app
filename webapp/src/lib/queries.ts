@@ -327,6 +327,15 @@ export function useMaestroBrief() {
   });
 }
 
+export function useDailyEspresso() {
+  return useQuery({
+    queryKey: ["espresso"],
+    queryFn: () => api.get<any>("/api/espresso"),
+    refetchInterval: 5 * 60 * 1000, // refresh every 5 minutes
+    staleTime: 2 * 60 * 1000,
+  });
+}
+
 export function useMaestroApprovals() {
   return useQuery({
     queryKey: ["maestro", "approvals"],

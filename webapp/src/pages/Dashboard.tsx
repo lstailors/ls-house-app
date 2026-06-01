@@ -1,35 +1,259 @@
 import { useNavigate } from "react-router-dom";
-import { Wallet, Scissors, Truck, ShoppingBag, CheckCircle2, Sparkles, AlertTriangle, Hammer } from "lucide-react";
+import { Wallet, Scissors, Truck, ShoppingBag, CheckCircle2, Sparkles, AlertTriangle, Hammer, Coffee, Square } from "lucide-react";
 import { useMe } from "@/lib/session";
-import { useDashboardKpis, useMaestroApprovalCount, useMaestroBrief } from "@/lib/queries";
+import { useDashboardKpis, useMaestroApprovalCount, useDailyEspresso } from "@/lib/queries";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { KpiCard } from "@/components/glass/KpiCard";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { Button } from "@/components/ui/button";
 import { formatUSD, statusToLabel } from "@/lib/format";
 
-function MaestroBriefCard() {
+function weatherEmoji(code: number): string {
+  if (code <= 1) return "☀️";
+  if (code === 2) return "🌤";
+  if (code === 3) return "☁️";
+  if (code >= 45 && code <= 48) return "🌫";
+  if (code >= 51 && code <= 67) return "🌧";
+  if (code >= 71 && code <= 77) return "❄️";
+  if (code >= 80 && code <= 82) return "🌦";
+  if (code >= 95 && code <= 99) return "⛈";
+  return "☀️";
+}
+
+function formatApptTime(isoStr: string): string {
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "America/New_York",
+    });
+  } catch {
+    return isoStr;
+  }
+}
+
+function formatDateLabel(isoStr: string): string {
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      timeZone: "America/New_York",
+    });
+  } catch {
+    return isoStr;
+  }
+}
+
+const PRIORITY_COLORS: Record<string, string> = {
+  urgent: "text-red-400 bg-red-400/10",
+  high: "text-signal-amber bg-signal-amber/10",
+  medium: "text-brass-light bg-brass/10",
+  low: "text-cream-muted bg-cream-muted/10",
+};
+
+function DailyEspresso() {
   const navigate = useNavigate();
-  const { data: count = 0 } = useMaestroApprovalCount();
-  const { data: brief } = useMaestroBrief();
+  const { data: espresso } = useDailyEspresso();
+
+  const today = new Date();
+  const todayLabel = today.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+
+  const brief = espresso?.brief ?? null;
+  const weather = espresso?.weather ?? null;
+  const apptToday: any[] = espresso?.appointments?.today ?? [];
+  const apptTomorrow: any[] = espresso?.appointments?.tomorrow ?? [];
+  const approvals = espresso?.approvals ?? { total: 0, urgent: [] };
+  const tasks: any[] = espresso?.tasks ?? [];
+  const revenue = espresso?.revenue ?? { today: 0, sevenDay: 0, ar: 0, draftInvoices: 0 };
+  const news: any[] = espresso?.news ?? [];
+
   return (
-    <GlassCard hover className="p-5 cursor-pointer" onClick={() => navigate("/mission-control")}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="ui-label mb-1 flex items-center gap-1.5">
-            <Sparkles className="h-3 w-3 text-brass-light" /> Maestro Brief
-          </div>
-          <div className="text-sm text-cream-muted line-clamp-2 leading-relaxed">
-            {brief?.brief ? String(brief.brief).slice(0, 140) + (brief.brief.length > 140 ? "…" : "") : "No brief yet — Maestro will post daily."}
+    <GlassCard variant="strong" className="p-6 space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Coffee className="h-5 w-5 text-brass-light" />
+          <div>
+            <div className="display-heading text-lg font-semibold text-cream leading-tight">Daily Espresso</div>
+            <div className="text-xs text-cream-muted">{todayLabel}</div>
           </div>
         </div>
-        {count > 0 ? (
-          <div className="shrink-0 flex flex-col items-center">
-            <div className="kpi-number text-signal-amber">{count}</div>
-            <div className="ui-label text-[9px] text-signal-amber/80">pending</div>
+        {weather && (
+          <div className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-brass/20 bg-brass/5 text-sm text-cream">
+            <span>{weatherEmoji(weather.weathercode)}</span>
+            <span className="font-medium">{weather.temp}°F</span>
+            <span className="text-cream-muted text-xs">{weather.description}</span>
           </div>
-        ) : null}
+        )}
       </div>
+
+      <div className="border-t border-brass/10" />
+
+      {/* Brief */}
+      <div>
+        <div className="ui-label mb-2">Maestro Brief</div>
+        {brief?.body ? (
+          <div className="max-h-40 overflow-y-auto text-sm text-cream-muted italic leading-relaxed pr-1">
+            {brief.body}
+          </div>
+        ) : (
+          <div className="text-sm text-cream-muted italic leading-relaxed">
+            Espresso is brewing — first brief posts at 8:30 AM.
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-brass/10" />
+
+      {/* Calendar + Approvals */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {/* Calendar */}
+        <div>
+          <div className="ui-label mb-2">Today's Calendar</div>
+          {apptToday.length === 0 ? (
+            <div className="text-sm text-cream-muted">Floor is clear today.</div>
+          ) : (
+            <div className="space-y-1">
+              {apptToday.map((a: any, i: number) => (
+                <div key={i} className="text-sm text-cream leading-snug">
+                  <span className="text-brass-light">{formatApptTime(a.start_time)}</span>
+                  <span className="text-cream-muted"> — </span>
+                  <span>{a.event_type ?? "Appointment"}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {apptTomorrow.length > 0 && (
+            <div className="mt-3">
+              <div className="ui-label mb-1 text-[9px]">Tomorrow</div>
+              <div className="space-y-1">
+                {apptTomorrow.map((a: any, i: number) => (
+                  <div key={i} className="text-sm text-cream-muted leading-snug">
+                    <span className="text-brass-light/70">{formatApptTime(a.start_time)}</span>
+                    <span> — </span>
+                    <span>{a.event_type ?? "Appointment"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Approvals */}
+        <div>
+          <div className="ui-label mb-2">Approvals</div>
+          <div className={`kpi-number text-4xl mb-2 ${approvals.total > 0 ? "text-signal-amber" : "text-cream"}`}>
+            {approvals.total}
+          </div>
+          {approvals.urgent.length > 0 && (
+            <div className="space-y-1 mb-2">
+              {approvals.urgent.slice(0, 3).map((a: any) => (
+                <div key={a.id} className="text-xs text-cream-muted leading-snug truncate">
+                  · {a.title}
+                </div>
+              ))}
+            </div>
+          )}
+          <button
+            onClick={() => navigate("/mission-control?tab=approvals")}
+            className="text-xs text-brass-light hover:text-brass transition-colors"
+          >
+            Review →
+          </button>
+        </div>
+      </div>
+
+      <div className="border-t border-brass/10" />
+
+      {/* Tasks */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="ui-label">Open Tasks</div>
+          {tasks.length > 0 && (
+            <button
+              onClick={() => navigate("/mission-control")}
+              className="text-xs text-brass-light hover:text-brass transition-colors"
+            >
+              View all →
+            </button>
+          )}
+        </div>
+        {tasks.length === 0 ? (
+          <div className="text-sm text-cream-muted">No open tasks.</div>
+        ) : (
+          <div className="space-y-1.5">
+            {tasks.slice(0, 6).map((t: any) => (
+              <div key={t.id} className="flex items-center gap-2 text-sm text-cream">
+                <Square className="h-3.5 w-3.5 text-brass/40 shrink-0" />
+                <span className="flex-1 leading-snug truncate">{t.title}</span>
+                {t.priority && (
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wide ${PRIORITY_COLORS[t.priority] ?? PRIORITY_COLORS.low}`}>
+                    {t.priority}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-brass/10" />
+
+      {/* Revenue strip */}
+      <div>
+        <div className="ui-label mb-2">Revenue</div>
+        <div className="flex items-center gap-6 flex-wrap">
+          <div className="text-sm">
+            <span className="text-cream-muted">Today </span>
+            <span className="text-cream font-medium">{formatUSD(revenue.today)}</span>
+          </div>
+          <div className="text-cream-muted/40 text-xs">|</div>
+          <div className="text-sm">
+            <span className="text-cream-muted">7-Day </span>
+            <span className="text-cream font-medium">{formatUSD(revenue.sevenDay)}</span>
+          </div>
+          <div className="text-cream-muted/40 text-xs">|</div>
+          <div className="text-sm">
+            <span className="text-cream-muted">AR </span>
+            <span className="text-cream font-medium">{formatUSD(revenue.ar)}</span>
+          </div>
+          {revenue.draftInvoices > 0 && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-signal-amber/15 text-signal-amber border border-signal-amber/20">
+              {revenue.draftInvoices} draft invoice{revenue.draftInvoices !== 1 ? "s" : ""} pending
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* News */}
+      {news.length > 0 && (
+        <>
+          <div className="border-t border-brass/10" />
+          <div>
+            <div className="ui-label mb-2">📰 Business</div>
+            <div className="space-y-1.5">
+              {news.slice(0, 4).map((item: any, i: number) => (
+                <a
+                  key={i}
+                  href={item.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block text-xs text-cream-muted hover:text-cream transition-colors leading-snug"
+                >
+                  {item.title}
+                </a>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </GlassCard>
   );
 }
@@ -194,7 +418,7 @@ export default function Dashboard() {
       </div>
 
       {(me?.role === "super_admin" || me?.role === "store_manager") ? (
-        <MaestroBriefCard />
+        <DailyEspresso />
       ) : null}
 
       {/* Custom Orders Pipeline */}
