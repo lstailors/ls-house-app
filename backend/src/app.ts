@@ -27,6 +27,7 @@ import { intakeAlterationsRouter } from "./routes/intake-alterations";
 import { commsRouter } from "./routes/comms";
 import { searchRouter } from "./routes/search";
 import { notificationsRouter } from "./routes/notifications";
+import { calendarRouter } from "./routes/calendar";
 
 const app = new Hono();
 
@@ -88,5 +89,6 @@ app.route("/api/intake-alterations", intakeAlterationsRouter);
 app.route("/api/comms", commsRouter);
 app.route("/api/search", searchRouter);
 app.route("/api/notifications", notificationsRouter);
+app.route("/api/calendar", calendarRouter);
 
 export default app;

@@ -38,6 +38,8 @@ const Tasks = lazy(() => import('./pages/Tasks'));
 const Comms = lazy(() => import('./pages/Comms'));
 const SofiaChat = lazy(() => import('./pages/SofiaChat'));
 const Customers = lazy(() => import('./pages/Customers'));
+const CustomerDetail = lazy(() => import('./pages/CustomerDetail'));
+const CalendarPage = lazy(() => import('./pages/Calendar'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -238,6 +240,30 @@ const App = () => (
               element={
                 <RoleGuard allow={["super_admin", "store_manager"]}>
                   <Customers />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/customers/new"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager"]}>
+                  <CustomerDetail />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/customers/:id"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager"]}>
+                  <CustomerDetail />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/calendar"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
+                  <CalendarPage />
                 </RoleGuard>
               }
             />
