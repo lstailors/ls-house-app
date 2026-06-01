@@ -18,6 +18,7 @@ import { referenceRouter } from "./routes/reference";
 import { adminRouter } from "./routes/admin";
 import { dashboardRouter } from "./routes/dashboard";
 import { maestroRouter } from "./routes/maestro";
+import { intakeAlterationsRouter } from "./routes/intake-alterations";
 import { sofiaRouter } from "./routes/sofia";
 
 const app = new Hono();
@@ -60,6 +61,11 @@ app.route("/api/admin", adminRouter);
 app.route("/api/dashboard", dashboardRouter);
 app.route("/api/maestro", maestroRouter);
 app.route("/api/sofia", sofiaRouter);
+app.route("/api/intake-alterations", intakeAlterationsRouter);
+import { searchRouter } from "./routes/search";
+import { notificationsRouter } from "./routes/notifications";
+app.route("/api/search", searchRouter);
+app.route("/api/notifications", notificationsRouter);
 
 const port = Number(process.env.PORT) || 3000;
 

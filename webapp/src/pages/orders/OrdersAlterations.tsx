@@ -132,8 +132,8 @@ export default function OrdersAlterations() {
       ) : rows.length === 0 ? (
         <EmptyState
           icon={Scissors}
-          title="Alteration tickets are managed in Geelus"
-          description="Sync integration coming soon. Alteration data will appear here once the Geelus connection is live."
+          title="No alteration tickets"
+          description="Tickets created in intake will appear here once synced from ERPNext."
           action={
             <Button asChild className="btn-brass">
               <Link to="/intake/alterations">New ticket</Link>

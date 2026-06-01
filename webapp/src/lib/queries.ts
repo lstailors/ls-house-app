@@ -348,6 +348,15 @@ export function useMaestroBrief() {
   });
 }
 
+export function useDailyEspresso() {
+  return useQuery({
+    queryKey: ["espresso"],
+    queryFn: () => api.get<any>("/api/espresso"),
+    refetchInterval: 5 * 60 * 1000, // refresh every 5 minutes
+    staleTime: 2 * 60 * 1000,
+  });
+}
+
 export function useMaestroApprovals() {
   return useQuery({
     queryKey: ["maestro", "approvals"],
@@ -408,5 +417,161 @@ export function useMaestroApprovalCount() {
       return (items ?? []).filter((i: any) => i.status === "pending" || i.status === "awaiting_second").length;
     },
     refetchInterval: 60 * 1000,
+  });
+}
+
+// ─── Agents (Mission Control) ─────────────────────────────────────────────────
+
+export function useAgents() {
+  return useQuery({
+    queryKey: ["agents"],
+    queryFn: () => api.get<any[]>("/api/agents"),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useAgent(slug: string | undefined) {
+  return useQuery({
+    queryKey: ["agents", slug],
+    queryFn: () => api.get<any>(`/api/agents/${slug}`),
+    enabled: !!slug,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useAgentEvents(slug: string | undefined, limit = 50) {
+  return useQuery({
+    queryKey: ["agents", slug, "events", limit],
+    queryFn: () => api.get<any[]>(`/api/agents/${slug}/events?limit=${limit}`),
+    enabled: !!slug,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useAgentTasks(slug: string | undefined, status?: string) {
+  return useQuery({
+    queryKey: ["agents", slug, "tasks", status],
+    queryFn: () =>
+      api.get<any[]>(`/api/agents/${slug}/tasks${status ? `?status=${status}` : ""}`),
+    enabled: !!slug,
+    refetchInterval: 30_000,
+  });
+}
+
+export function usePendingApprovals() {
+  return useQuery({
+    queryKey: ["agents", "approvals", "pending"],
+    queryFn: () => api.get<{ byAgent: Record<string, any[]>; total: number }>("/api/agents/approvals/pending"),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useAgentBriefs(limit = 20) {
+  return useQuery({
+    queryKey: ["agents", "briefs", limit],
+    queryFn: () => api.get<any[]>(`/api/agents/briefs?limit=${limit}`),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useDelegateTask(slug: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { title: string; description?: string; priority?: string; due_at?: string }) =>
+      api.post<any>(`/api/agents/${slug}/tasks`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["agents", slug, "tasks"] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}
+
+export function useUpdateAgent(slug: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Record<string, unknown>) =>
+      api.patch<any>(`/api/agents/${slug}`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["agents", slug] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}
+
+export function useAgentMessages(slug: string | undefined) {
+  return useQuery({
+    queryKey: ["agents", slug, "messages"],
+    queryFn: () => api.get<any[]>(`/api/agents/${slug}/messages?limit=50`),
+    enabled: !!slug,
+    staleTime: 0,
+  });
+}
+
+export function useSendAgentMessage(slug: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (content: string) =>
+      api.post<any>(`/api/agents/${slug}/messages`, { content }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["agents", slug, "messages"] });
+    },
+  });
+}
+
+// ─── Profile & Password ───────────────────────────────────────────────────────
+
+export function useUpdateMe() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name?: string; image?: string }) => api.patch<any>("/api/me", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
+  });
+}
+
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (password: string) => api.post<any>("/api/me/password", { password }),
+  });
+}
+
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; email: string; password: string; role: string; locationId?: string }) =>
+      api.post<any>("/api/admin/users", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }),
+  });
+}
+
+export function useUpdateUser(id: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name?: string; role?: string; locationId?: string; isActive?: boolean }) =>
+      api.patch<any>(`/api/admin/users/${id}`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }),
+  });
+}
+
+export function useResetUserPassword(id: string | undefined) {
+  return useMutation({
+    mutationFn: (password: string) => api.post<any>(`/api/admin/users/${id}/password`, { password }),
+  });
+}
+
+export function useCreateLocation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; code: string; address?: string; erpnextCompany?: string }) =>
+      api.post<any>("/api/admin/locations", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["locations"] }),
+  });
+}
+
+export function useUpdateLocation(id: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name?: string; isActive?: boolean; address?: string }) =>
+      api.patch<any>(`/api/admin/locations/${id}`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["locations"] }),
   });
 }

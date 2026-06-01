@@ -422,3 +422,82 @@ export const VoiceApproval = z.object({
   created_at: z.string(),
 }).passthrough();
 export type VoiceApproval = z.infer<typeof VoiceApproval>;
+
+// ─── Mission Control — Agents ─────────────────────────────────────────────────
+
+export const AgentStatus = z.enum(["active", "idle", "paused", "error", "offline"]);
+export type AgentStatus = z.infer<typeof AgentStatus>;
+
+export const AgentTaskPriority = z.enum(["low", "medium", "high", "urgent"]);
+export type AgentTaskPriority = z.infer<typeof AgentTaskPriority>;
+
+export const AgentTaskStatus = z.enum(["pending", "in_progress", "completed", "blocked", "cancelled"]);
+export type AgentTaskStatus = z.infer<typeof AgentTaskStatus>;
+
+export const AgentEventSeverity = z.enum(["info", "warning", "error", "critical"]);
+export type AgentEventSeverity = z.infer<typeof AgentEventSeverity>;
+
+export const Agent = z.object({
+  id: z.string(),
+  slug: z.string(),
+  name: z.string(),
+  role: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  status: AgentStatus.nullable().optional(),
+  model: z.string().nullable().optional(),
+  platform: z.string().nullable().optional(),
+  color: z.string().nullable().optional(),
+  icon: z.string().nullable().optional(),
+  current_task: z.string().nullable().optional(),
+  current_task_since: z.string().nullable().optional(),
+  last_action_at: z.string().nullable().optional(),
+  last_action_summary: z.string().nullable().optional(),
+  last_heartbeat_at: z.string().nullable().optional(),
+  health_score: z.number().nullable().optional(),
+  settings: z.record(z.string(), z.unknown()).nullable().optional(),
+  stats: z.record(z.string(), z.unknown()).nullable().optional(),
+  enabled: z.boolean().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type Agent = z.infer<typeof Agent>;
+
+export const AgentTask = z.object({
+  id: z.string(),
+  assigned_to: z.string(),
+  assigned_by: z.string().nullable().optional(),
+  title: z.string(),
+  description: z.string().nullable().optional(),
+  priority: AgentTaskPriority.nullable().optional(),
+  status: AgentTaskStatus,
+  due_at: z.string().nullable().optional(),
+  started_at: z.string().nullable().optional(),
+  completed_at: z.string().nullable().optional(),
+  result: z.string().nullable().optional(),
+  result_metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+  linked_approval_id: z.string().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type AgentTask = z.infer<typeof AgentTask>;
+
+export const AgentEvent = z.object({
+  id: z.string(),
+  agent_slug: z.string(),
+  event_type: z.string(),
+  title: z.string().nullable().optional(),
+  body: z.string().nullable().optional(),
+  severity: AgentEventSeverity.nullable().optional(),
+  task_id: z.string().nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+  created_at: z.string(),
+});
+export type AgentEvent = z.infer<typeof AgentEvent>;
+
+export const DelegateTaskBody = z.object({
+  title: z.string().min(1),
+  description: z.string().optional(),
+  priority: AgentTaskPriority.optional(),
+  due_at: z.string().optional(),
+});
+export type DelegateTaskBody = z.infer<typeof DelegateTaskBody>;

@@ -38,7 +38,7 @@ meRouter.get("/", async (c) => {
 
   const { data: profile, error } = await supabaseAdmin
     .from("profiles")
-    .select("id,full_name,email,avatar_url,status,home_location,can_view_all_locations")
+    .select("id,full_name,email,avatar_url,phone,status,home_location,can_view_all_locations")
     .eq("email", user.email)
     .single();
 
@@ -72,6 +72,7 @@ meRouter.get("/", async (c) => {
       id: profile.id,
       name: profile.full_name,
       email: profile.email,
+      phone: profile.phone ?? null,
       role: user.role,
       locationId: user.supabaseLocationId,
       location,
@@ -85,7 +86,7 @@ meRouter.patch("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
-  const body = (await c.req.json()) as { name?: string; image?: string };
+  const body = (await c.req.json()) as { name?: string; image?: string; phone?: string; email?: string };
 
   if (!supabaseAdmin) {
     return c.json({ error: { message: "Service unavailable" } }, 503);
@@ -94,6 +95,8 @@ meRouter.patch("/", async (c) => {
   const updates: Record<string, unknown> = {};
   if (body.name !== undefined) updates.full_name = body.name;
   if (body.image !== undefined) updates.avatar_url = body.image;
+  if (body.phone !== undefined) updates.phone = body.phone;
+  if (body.email !== undefined) updates.email = body.email;
 
   const { error: updateError } = await supabaseAdmin
     .from("profiles")
@@ -107,7 +110,7 @@ meRouter.patch("/", async (c) => {
 
   const { data: profile } = await supabaseAdmin
     .from("profiles")
-    .select("id,full_name,email,avatar_url,status,home_location,can_view_all_locations")
+    .select("id,full_name,email,avatar_url,phone,status,home_location,can_view_all_locations")
     .eq("email", user.email)
     .single();
 
@@ -126,6 +129,7 @@ meRouter.patch("/", async (c) => {
       id: profile?.id ?? user.id,
       name: profile?.full_name ?? user.name,
       email: profile?.email ?? user.email,
+      phone: profile?.phone ?? null,
       role: user.role,
       locationId: user.supabaseLocationId,
       location,
@@ -133,4 +137,22 @@ meRouter.patch("/", async (c) => {
       isActive: profile?.status === "active",
     },
   });
+});
+
+meRouter.post("/password", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const body = await c.req.json().catch(() => ({}));
+  const password = body.password;
+  if (!password || password.length < 8) {
+    return c.json({ error: { message: "Password must be at least 8 characters" } }, 400);
+  }
+
+  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
+
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(user.id, { password });
+  if (error) return c.json({ error: { message: error.message } }, 400);
+
+  return c.json({ data: { ok: true } });
 });

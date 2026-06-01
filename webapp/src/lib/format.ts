@@ -77,3 +77,23 @@ export function initials(name: string): string {
 export function garmentLabel(type: string): string {
   return type.charAt(0).toUpperCase() + type.slice(1);
 }
+
+export function formatRelative(iso: string | null | undefined, fallback = "—"): string {
+  if (!iso) return fallback;
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    if (diffSec < 60) return "just now";
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 7) return `${diffDay}d ago`;
+    return formatDate(iso);
+  } catch {
+    return fallback;
+  }
+}

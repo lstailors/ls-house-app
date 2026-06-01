@@ -2,6 +2,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { RoleGuard } from "@/components/shell/RoleGuard";
 import Login from "./pages/Login";
@@ -11,7 +12,6 @@ import IntakeCustom from "./pages/intake/IntakeCustom";
 import OrdersAlterations from "./pages/orders/OrdersAlterations";
 import OrdersCustom from "./pages/orders/OrdersCustom";
 import CustomOrderDetail from "./pages/orders/CustomOrderDetail";
-import AlterationDetail from "./pages/orders/AlterationDetail";
 import SalesOrders from "./pages/orders/SalesOrders";
 import Invoices from "./pages/orders/Invoices";
 import Deliveries from "./pages/Deliveries";
@@ -29,7 +29,17 @@ import FabricPricingPage from "./pages/reference/FabricPricingPage";
 import StyleLibraryPage from "./pages/reference/StyleLibraryPage";
 import Academy from "./pages/Academy";
 import MissionControl from "./pages/MissionControl";
+import AgentDetail from "./pages/mission-control/AgentDetail";
 import NotFound from "./pages/NotFound";
+import TicketDetail from "./pages/intake/TicketDetail";
+import QRScanner from "./pages/intake/QRScanner";
+
+const Tasks = lazy(() => import('./pages/Tasks'));
+const Comms = lazy(() => import('./pages/Comms'));
+const SofiaChat = lazy(() => import('./pages/SofiaChat'));
+const Customers = lazy(() => import('./pages/Customers'));
+const CustomerDetail = lazy(() => import('./pages/CustomerDetail'));
+const CalendarPage = lazy(() => import('./pages/Calendar'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,6 +60,7 @@ const App = () => (
         }}
       />
       <BrowserRouter>
+        <Suspense fallback={null}>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/d/:token" element={<DeliveryTracking />} />
@@ -61,6 +72,15 @@ const App = () => (
               element={
                 <RoleGuard allow={["super_admin", "store_manager"]}>
                   <MissionControl />
+                </RoleGuard>
+              }
+            />
+
+            <Route
+              path="/mission-control/agents/:slug"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager"]}>
+                  <AgentDetail />
                 </RoleGuard>
               }
             />
@@ -91,10 +111,18 @@ const App = () => (
               }
             />
             <Route
-              path="/orders/alterations/:id"
+              path="/orders/alterations/:ticketName"
               element={
                 <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
-                  <AlterationDetail />
+                  <TicketDetail />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/scan"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "driver"]}>
+                  <QRScanner />
                 </RoleGuard>
               }
             />
@@ -204,9 +232,45 @@ const App = () => (
             />
 
             <Route path="/academy" element={<Academy />} />
+            <Route path="/tasks" element={<Tasks />} />
+            <Route path="/comms" element={<Comms />} />
+            <Route path="/sofia" element={<SofiaChat />} />
+            <Route
+              path="/customers"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager"]}>
+                  <Customers />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/customers/new"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager"]}>
+                  <CustomerDetail />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/customers/:id"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager"]}>
+                  <CustomerDetail />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/calendar"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
+                  <CalendarPage />
+                </RoleGuard>
+              }
+            />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
+        </Suspense>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

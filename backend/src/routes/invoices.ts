@@ -1,99 +1,126 @@
 import { Hono } from "hono";
-import { getAuthedUser } from "../lib/scope";
-import { erpList, erpGet } from "../lib/erp";
+import { getAuthedUser, canSeeFinancials } from "../lib/scope";
 
 export const invoicesRouter = new Hono();
 
-// ERPNext Sales Invoice status → app status
-function mapStatus(s: string): string {
-  switch (s) {
-    case "Paid":     return "paid";
-    case "Unpaid":   return "sent";
-    case "Overdue":  return "sent";   // treat overdue as outstanding/sent
-    case "Draft":    return "draft";
-    case "Cancelled":
-    case "Return":   return "void";
-    default:         return "draft";
-  }
+const MCP_BASE = process.env.ERPNEXT_MCP_URL ?? 'https://erp-mcp.lstailors.com';
+const MCP_TOKEN = process.env.ERPNEXT_MCP_TOKEN ?? '';
+
+async function mcpList<T>(doctype: string, fields: string[], filters: any[] = [], limit = 200, orderBy = ''): Promise<T[]> {
+  const args: any = { doctype, fields, filters, limit };
+  if (orderBy) args.order_by = orderBy;
+  const res = await fetch(`${MCP_BASE}/mcp`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', id: 1, params: { name: 'erp_list', arguments: args } }),
+  });
+  if (!res.ok) throw new Error(`MCP ${res.status}`);
+  const json: any = await res.json();
+  const text = json?.result?.content?.[0]?.text ?? '{}';
+  const data = JSON.parse(text);
+  return (data?.documents ?? []) as T[];
 }
 
-interface ErpInvoice {
-  name: string;
-  customer: string;
-  customer_name: string | null;
-  status: string;
-  posting_date: string;
-  due_date: string | null;
-  grand_total: number;
-  outstanding_amount: number;
-  alteration_ticket_ref: string | null;
-  company: string;
-  modified: string;
-  creation: string;
+function detectType(row: any): 'alteration' | 'custom' {
+  const remarks = (row.remarks ?? '').toLowerCase();
+  if (remarks.includes('alteration ticket') || remarks.includes('alt-')) return 'alteration';
+  return 'custom';
 }
 
-function serialize(inv: ErpInvoice) {
-  const locationId = inv.company?.includes("TX") ? "HOU" : "NYC";
+function normalizeStatus(raw: string): string {
+  if (!raw) return 'draft';
+  const s = raw.toLowerCase();
+  if (s === 'paid') return 'paid';
+  if (s === 'partly paid') return 'partly_paid';
+  if (s === 'unpaid' || s === 'submitted') return 'unpaid';
+  if (s === 'overdue') return 'overdue';
+  if (s === 'cancelled') return 'void';
+  if (s === 'draft') return 'draft';
+  return s;
+}
+
+function serializeInvoice(row: any) {
   return {
-    id: inv.name,
-    salesOrderId: null,
-    alterationTicketRef: inv.alteration_ticket_ref ?? null,
-    locationId,
-    erpnextId: inv.name,
-    // Keep the raw ERPNext status string so the UI can show Overdue/Unpaid/Paid
-    status: inv.status,
-    appStatus: mapStatus(inv.status),
-    total: inv.grand_total ?? 0,
-    outstanding: inv.outstanding_amount ?? 0,
-    dueDate: inv.due_date ?? null,
-    pdfUrl: null,
-    createdAt: inv.posting_date ?? inv.creation,
-    customer: {
-      id: inv.customer,
-      name: inv.customer_name ?? inv.customer,
-      phone: "",
-      email: null,
-      locationId,
-      createdById: null,
-      dossier: { vip: false, preferences: null },
-      createdAt: inv.creation ?? inv.posting_date,
-      updatedAt: inv.modified ?? inv.posting_date,
-    },
+    id: row.name,
+    erpnextId: row.name,
+    customer: row.customer ? { name: row.customer } : null,
+    status: normalizeStatus(row.status),
+    total: Number(row.total ?? row.grand_total ?? 0),
+    grandTotal: Number(row.grand_total ?? 0),
+    outstandingAmount: Number(row.outstanding_amount ?? 0),
+    paidAmount: Number(row.paid_amount ?? 0),
+    postingDate: row.posting_date ?? null,
+    dueDate: row.due_date ?? null,
+    remarks: row.remarks ?? null,
+    type: detectType(row),
   };
 }
 
+// GET /api/invoices?type=custom|alteration|all
 invoicesRouter.get("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!canSeeFinancials(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
 
-  const locationCode = c.req.query("locationId") ?? user.locationCode;
+  const typeFilter = c.req.query("type") ?? "all"; // custom | alteration | all
+  const statusFilter = c.req.query("status") ?? ""; // paid | unpaid | draft | all
 
-  const filters: unknown[] = [["docstatus", "!=", 2]];
-  if (locationCode && locationCode !== "ALL") {
-    const frag = locationCode === "HOU" ? "TX" : "NY";
-    filters.push(["company", "like", `%${frag}%`]);
+  try {
+    const filters: any[] = [];
+    if (statusFilter && statusFilter !== 'all') {
+      // Map app status to ERP status values
+      const statusMap: Record<string, string[]> = {
+        paid: ['Paid'],
+        partly_paid: ['Partly Paid'],
+        unpaid: ['Unpaid'],
+        overdue: ['Overdue'],
+        draft: ['Draft'],
+        void: ['Cancelled'],
+      };
+      const erpStatuses = statusMap[statusFilter];
+      if (erpStatuses?.length === 1) filters.push(['status', '=', erpStatuses[0]]);
+    }
+
+    const rows = await mcpList<any>(
+      'Sales Invoice',
+      ['name', 'customer', 'status', 'grand_total', 'outstanding_amount', 'paid_amount', 'posting_date', 'due_date', 'remarks'],
+      filters, 300, 'posting_date desc'
+    );
+
+    let invoices = rows.map(serializeInvoice);
+
+    // Filter by type after fetch (remarks-based detection)
+    if (typeFilter === 'alteration') {
+      invoices = invoices.filter(i => i.type === 'alteration');
+    } else if (typeFilter === 'custom') {
+      invoices = invoices.filter(i => i.type === 'custom');
+    }
+
+    return c.json({ data: invoices });
+  } catch (e: any) {
+    console.error('invoices fetch failed:', e?.message);
+    return c.json({ data: [] });
   }
-
-  const invoices = await erpList<ErpInvoice>("Sales Invoice", {
-    filters,
-    fields: [
-      "name", "customer", "customer_name", "status",
-      "posting_date", "due_date", "grand_total", "outstanding_amount",
-      "alteration_ticket_ref", "company", "modified", "creation",
-    ],
-    limit: 300,
-    order_by: "modified desc",
-  });
-
-  return c.json({ data: invoices.map(serialize) });
 });
 
 invoicesRouter.get("/:id", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!canSeeFinancials(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
 
-  const inv = await erpGet<ErpInvoice>("Sales Invoice", c.req.param("id"));
-  if (!inv) return c.json({ error: { message: "Not found" } }, 404);
-
-  return c.json({ data: serialize(inv) });
+  const name = c.req.param("id");
+  try {
+    const res = await fetch(`${MCP_BASE}/mcp`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', id: 1, params: { name: 'erp_get', arguments: { doctype: 'Sales Invoice', name } } }),
+    });
+    if (!res.ok) return c.json({ error: { message: 'Not found' } }, 404);
+    const json: any = await res.json();
+    const text = json?.result?.content?.[0]?.text ?? '{}';
+    const doc = JSON.parse(text);
+    return c.json({ data: serializeInvoice(doc) });
+  } catch {
+    return c.json({ error: { message: 'Not found' } }, 404);
+  }
 });
