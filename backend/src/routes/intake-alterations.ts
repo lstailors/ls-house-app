@@ -235,10 +235,10 @@ intakeAlterationsRouter.patch('/tickets/:name/tailor', async (c) => {
   try {
     const res = await fetch(`${MCP_BASE}/mcp`, {
       method: 'POST',
-      headers: { Authorization: \`Bearer \${MCP_TOKEN}\`, Accept: 'application/json', 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, updates:{ assigned_tailor: tailorId } } } }),
     });
-    if (!res.ok) throw new Error(\`MCP \${res.status}\`);
+    if (!res.ok) throw new Error(`MCP ${res.status}`);
     return c.json({ data: { ok: true } });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
