@@ -118,18 +118,28 @@ export default function Deliveries() {
       />
 
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <KpiCard label="Scheduled" value={counts.scheduled} icon={<Clock className="h-4 w-4" />} />
+        <KpiCard
+          label="Scheduled"
+          value={counts.scheduled}
+          icon={<Clock className="h-4 w-4" />}
+          onClick={() => setFilter((f) => f === "scheduled" ? "all" : "scheduled")}
+          active={filter === "scheduled"}
+        />
         <KpiCard
           label="Out for Delivery"
           value={counts.out}
           icon={<Truck className="h-4 w-4" />}
           accent="amber"
+          onClick={() => setFilter((f) => f === "out_for_delivery" ? "all" : "out_for_delivery")}
+          active={filter === "out_for_delivery"}
         />
         <KpiCard
           label="Delivered"
           value={counts.done}
           icon={<CheckCircle2 className="h-4 w-4" />}
           accent="emerald"
+          onClick={() => setFilter((f) => f === "delivered" ? "all" : "delivered")}
+          active={filter === "delivered"}
         />
       </div>
 

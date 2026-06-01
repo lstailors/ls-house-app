@@ -9,6 +9,8 @@ interface Props {
   icon?: ReactNode;
   accent?: "default" | "emerald" | "amber" | "rose";
   className?: string;
+  onClick?: () => void;
+  active?: boolean;
 }
 
 const ACCENT_GLOW: Record<NonNullable<Props["accent"]>, string> = {
@@ -18,9 +20,18 @@ const ACCENT_GLOW: Record<NonNullable<Props["accent"]>, string> = {
   rose: "from-signal-rose/15 to-transparent",
 };
 
-export function KpiCard({ label, value, hint, icon, accent = "default", className }: Props) {
+export function KpiCard({ label, value, hint, icon, accent = "default", className, onClick, active }: Props) {
   return (
-    <GlassCard hover className={cn("p-3 sm:p-5 overflow-hidden", className)}>
+    <GlassCard
+      hover
+      onClick={onClick}
+      className={cn(
+        "p-3 sm:p-5 overflow-hidden",
+        onClick && "cursor-pointer",
+        active && "ring-1 ring-brass/50",
+        className,
+      )}
+    >
       <div
         className={cn(
           "pointer-events-none absolute -top-12 -right-12 h-32 w-32 rounded-full blur-3xl opacity-60 bg-gradient-radial",
