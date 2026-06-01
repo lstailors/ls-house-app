@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Bell, LogOut, Menu, Search, Settings, UserRound, X,
   Users, FileText, Receipt, Scissors, Cpu, MessageSquare,
-  AlertTriangle, CheckSquare, Zap, Clock, ChevronRight,
+  AlertTriangle, CheckSquare, Zap, Clock, ChevronRight, QrCode,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -380,6 +380,16 @@ export function TopBar({ user, onMenuClick }: Props) {
         </button>
 
         <div className="flex-1 md:hidden" />
+
+        {/* QR Scanner button */}
+        <button
+          onClick={() => navigate("/scan")}
+          className="h-9 w-9 rounded-full border border-brass/20 bg-forest-raised/40 hover:border-brass/40 transition-colors flex items-center justify-center"
+          aria-label="QR Scanner"
+          title="Scan QR code"
+        >
+          <QrCode className="h-4 w-4 text-cream-muted" />
+        </button>
 
         {/* Notification bell */}
         <button

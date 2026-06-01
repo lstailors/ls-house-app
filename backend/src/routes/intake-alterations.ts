@@ -7,6 +7,36 @@ import { getAuthedUser } from '../lib/scope';
 // ---------------------------------------------------------------------------
 const ERP_BASE = process.env.ERPNEXT_BASE_URL ?? 'https://erp.lstailors.com';
 const ERP_TOKEN = process.env.ERPNEXT_API_TOKEN ?? process.env.ERPNEXT_MCP_TOKEN ?? '';
+const MCP_BASE = process.env.ERPNEXT_MCP_URL ?? 'https://erp-mcp.lstailors.com';
+const MCP_TOKEN = process.env.ERPNEXT_MCP_TOKEN ?? '';
+
+// Query via MCP server (works without direct ERP API key)
+async function mcpList<T>(doctype: string, fields: string[], filters: any[] = [], limit = 200, orderBy = ''): Promise<T[]> {
+  const args: any = { doctype, fields, filters, limit };
+  if (orderBy) args.order_by = orderBy;
+  const res = await fetch(`${MCP_BASE}/mcp`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', id: 1, params: { name: 'erp_list', arguments: args } }),
+  });
+  if (!res.ok) throw new Error(`MCP ${res.status}`);
+  const json: any = await res.json();
+  const text = json?.result?.content?.[0]?.text ?? '{}';
+  const data = JSON.parse(text);
+  return (data?.documents ?? []) as T[];
+}
+
+async function mcpGet<T>(doctype: string, name: string): Promise<T> {
+  const res = await fetch(`${MCP_BASE}/mcp`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', id: 1, params: { name: 'erp_get', arguments: { doctype, name } } }),
+  });
+  if (!res.ok) throw new Error(`MCP ${res.status}`);
+  const json: any = await res.json();
+  const text = json?.result?.content?.[0]?.text ?? '{}';
+  return JSON.parse(text) as T;
+}
 
 function erpHeaders() {
   return {
@@ -54,11 +84,20 @@ intakeAlterationsRouter.get('/presets', async (c) => {
 
   const origin = c.req.query('origin') ?? 'NYC';
   try {
-    const presets = await erpGet<any[]>('ls_alterations.api.get_active_presets', {
-      origin_location: origin,
-    });
-    return c.json({ data: presets ?? [] });
-  } catch {
+    const list = await mcpList<any>('Alteration Preset',
+      ['name','preset_name','garment_type','alteration_category','default_price','default_price_hou','estimated_minutes','is_active'],
+      [['is_active','=','1']], 200, 'garment_type asc, preset_name asc');
+    const normalized = list.map((p: any) => ({
+      name: p.name,
+      preset_name: p.preset_name,
+      garment_type: p.garment_type,
+      category: p.alteration_category,
+      display_price: (origin === 'HOU' && p.default_price_hou > 0) ? p.default_price_hou : p.default_price,
+      est_minutes: p.estimated_minutes ?? null,
+    }));
+    return c.json({ data: normalized });
+  } catch (e: any) {
+    console.error('presets fetch failed:', e?.message);
     return c.json({ data: [] });
   }
 });
@@ -69,15 +108,7 @@ intakeAlterationsRouter.get('/tailors', async (c) => {
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   try {
-    const result = await erpGet<any[]>('frappe.client.get_list', {
-      doctype: 'Employee',
-      fields: JSON.stringify(['name', 'employee_name', 'designation']),
-      filters: JSON.stringify([
-        ['status', '=', 'Active'],
-        ['designation', 'like', '%Tailor%'],
-      ]),
-      limit_page_length: '50',
-    });
+    const result = await mcpList<any>('Employee', ['name','employee_name','designation'], [['status','=','Active'],['designation','like','%Tailor%']], 50);
     return c.json({ data: result ?? [] });
   } catch {
     return c.json({ data: [] });
@@ -110,28 +141,11 @@ intakeAlterationsRouter.get('/tickets', async (c) => {
   const limit = c.req.query('limit') ?? '100';
 
   try {
-    const rows = await erpGet<any[]>('frappe.client.get_list', {
-      doctype: 'Alteration Ticket',
-      fields: JSON.stringify([
-        'name',
-        'customer_name',
-        'origin_location',
-        'workflow_state',
-        'ticket_date',
-        'due_date',
-        'is_rush',
-        'ticket_total',
-        'payment_status',
-      ]),
-      filters: JSON.stringify(
-        status
-          ? [['workflow_state', '=', status]]
-          : [['workflow_state', '!=', 'Cancelled']]
-      ),
-      limit_page_length: limit,
-      order_by: 'modified desc',
-    });
-    return c.json({ data: rows ?? [] });
+    const filters = status ? [['workflow_state','=',status]] : [['workflow_state','!=','Cancelled']];
+    const rows = await mcpList<any>('Alteration Ticket',
+      ['name','customer_name','origin_location','workflow_state','ticket_date','due_date','is_rush','ticket_total','payment_status'],
+      filters, parseInt(limit) || 100, 'modified desc');
+    return c.json({ data: rows });
   } catch (e: any) {
     return c.json({ data: [], error: e.message });
   }
@@ -143,11 +157,12 @@ intakeAlterationsRouter.get('/tickets/:name', async (c) => {
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   const ticketName = c.req.param('name');
-  const doc = await erpGet<any>('frappe.client.get', {
-    doctype: 'Alteration Ticket',
-    name: ticketName,
-  });
-  return c.json({ data: doc });
+  try {
+    const doc = await mcpGet<any>('Alteration Ticket', ticketName);
+    return c.json({ data: doc });
+  } catch (e: any) {
+    return c.json({ error: { message: e.message } }, 404);
+  }
 });
 
 // 6. POST /tickets
@@ -218,12 +233,12 @@ intakeAlterationsRouter.patch('/tickets/:name/tailor', async (c) => {
   const { tailorId } = body;
 
   try {
-    await erpPost('frappe.client.set_value', {
-      doctype: 'Alteration Ticket',
-      name: ticketName,
-      fieldname: 'assigned_tailor',
-      value: tailorId,
+    const res = await fetch(`${MCP_BASE}/mcp`, {
+      method: 'POST',
+      headers: { Authorization: \`Bearer \${MCP_TOKEN}\`, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, updates:{ assigned_tailor: tailorId } } } }),
     });
+    if (!res.ok) throw new Error(\`MCP \${res.status}\`);
     return c.json({ data: { ok: true } });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -241,11 +256,11 @@ intakeAlterationsRouter.patch('/tickets/:name/status', async (c) => {
     status: 'Received' | 'In Progress' | 'Ready' | 'Picked Up';
   };
 
-  await erpPost('frappe.client.set_value', {
-    doctype: 'Alteration Ticket',
-    name: ticketName,
-    fieldname: 'workflow_state',
-    value: status,
+  const sres = await fetch(`${MCP_BASE}/mcp`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, updates:{ workflow_state: status } } } }),
   });
+  if (!sres.ok) return c.json({ error: { message: `MCP ${sres.status}` } }, 500);
   return c.json({ data: { ok: true } });
 });
