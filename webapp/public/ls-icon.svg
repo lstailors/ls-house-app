@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1F3A2E"/>
+      <stop offset="100%" style="stop-color:#0D1A10"/>
+    </linearGradient>
+    <linearGradient id="brass" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#C9A55A"/>
+      <stop offset="100%" style="stop-color:#8B6914"/>
+    </linearGradient>
+  </defs>
+  <!-- Background rounded square -->
+  <rect width="192" height="192" rx="42" fill="url(#bg)"/>
+  <!-- Subtle border -->
+  <rect width="192" height="192" rx="42" fill="none" stroke="#B08D57" stroke-width="3" stroke-opacity="0.35"/>
+  <!-- L&S text mark — Cormorant Garamond style italic serif -->
+  <text x="96" y="118"
+    font-family="Georgia, &#x27;Times New Roman&#x27;, serif"
+    font-style="italic"
+    font-weight="400"
+    font-size="82"
+    fill="url(#brass)"
+    text-anchor="middle"
+    letter-spacing="-2">L&amp;S</text>
+  <!-- Thin brass rule below -->
+  <line x1="44" y1="138" x2="148" y2="138" stroke="#B08D57" stroke-width="1.5" stroke-opacity="0.5"/>
+  <!-- "HOUSE" micro cap label -->
+  <text x="96" y="156"
+    font-family="&#x27;Helvetica Neue&#x27;, Arial, sans-serif"
+    font-weight="400"
+    font-size="16"
+    fill="#B08D57"
+    text-anchor="middle"
+    letter-spacing="7"
+    opacity="0.7">HOUSE</text>
+</svg>

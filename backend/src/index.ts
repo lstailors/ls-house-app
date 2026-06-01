@@ -59,6 +59,10 @@ app.route("/api/admin", adminRouter);
 app.route("/api/dashboard", dashboardRouter);
 app.route("/api/maestro", maestroRouter);
 app.route("/api/sofia", sofiaRouter);
+import { searchRouter } from "./routes/search";
+import { notificationsRouter } from "./routes/notifications";
+app.route("/api/search", searchRouter);
+app.route("/api/notifications", notificationsRouter);
 
 const port = Number(process.env.PORT) || 3000;
 
