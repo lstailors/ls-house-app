@@ -624,7 +624,7 @@ agentsRouter.get("/live", async (c) => {
   const since = new Date(Date.now() - 2 * 3600000).toISOString();
   const { data, error } = await lshAdmin()
     .from("agent_events")
-    .select("id, agent_slug, event_type, summary, severity, metadata, created_at")
+    .select("id, agent_slug, event_type, title, body, severity, metadata, created_at")
     .gte("created_at", since)
     .order("created_at", { ascending: false })
     .limit(200);

@@ -304,7 +304,8 @@ maestroRouter.post("/events", async (c) => {
   const rows = events.map((ev: any) => ({
     agent_slug: ev.agent_slug ?? ev.agent ?? "maestro",
     event_type: ev.event_type ?? ev.type ?? "info",
-    summary: ev.summary ?? ev.message ?? null,
+    title: ev.title ?? ev.summary ?? ev.message ?? ev.event_type ?? "event",
+    body: ev.body ?? ev.summary ?? ev.message ?? null,
     severity: ev.severity ?? "info",
     metadata: ev.metadata ?? {},
     tenant_id: ev.tenant_id ?? null,

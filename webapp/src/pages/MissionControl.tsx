@@ -541,11 +541,11 @@ function LiveFeedPanel() {
                     {formatRelative(ev.created_at)}
                   </span>
                 </div>
-                {(ev.summary || ev.message) && (
-                  <p className="text-xs text-cream-muted mt-0.5 line-clamp-2">
-                    {String(ev.summary ?? ev.message)}
-                  </p>
-                )}
+                  {(ev.body || ev.summary || ev.message) && (
+                    <p className="text-xs text-cream-muted mt-0.5 line-clamp-2">
+                      {String(ev.body ?? ev.summary ?? ev.message)}
+                    </p>
+                  )}
               </div>
             </div>
           ))}
