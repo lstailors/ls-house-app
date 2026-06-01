@@ -88,10 +88,14 @@ intakeAlterationsRouter.get('/presets', async (c) => {
       ['name','preset_name','garment_type','alteration_category','default_price','default_price_hou','estimated_minutes','is_active'],
       [['is_active','=','1']], 200, 'garment_type asc, preset_name asc');
     const normalized = list.map((p: any) => ({
+      id: p.name,
       name: p.name,
       preset_name: p.preset_name,
       garment_type: p.garment_type,
+      // Frontend expects garment_types as array; also include 'All' catch-all
+      garment_types: p.garment_type ? [p.garment_type] : ['All'],
       category: p.alteration_category,
+      price: (origin === 'HOU' && p.default_price_hou > 0) ? p.default_price_hou : p.default_price,
       display_price: (origin === 'HOU' && p.default_price_hou > 0) ? p.default_price_hou : p.default_price,
       est_minutes: p.estimated_minutes ?? null,
     }));

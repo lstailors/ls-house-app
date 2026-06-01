@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Receipt, RefreshCw, AlertTriangle, LayoutGrid, List } from "lucide-react";
+import { Receipt, RefreshCw, AlertTriangle, Scissors } from "lucide-react";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { FilterBar } from "@/components/glass/FilterBar";
 import { StatusPill } from "@/components/glass/StatusPill";
 import { EmptyState } from "@/components/glass/EmptyState";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { formatUSD, formatDate } from "@/lib/format";
+import { formatUSD, formatDate, relativeDay } from "@/lib/format";
+import { cn } from "@/lib/utils";
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 interface ErpSalesOrder {
   id: string;
@@ -22,12 +25,38 @@ interface ErpSalesOrder {
   createdAt: string;
 }
 
-const STATUS_FILTERS = [
+interface AlterationTicket {
+  id: string;
+  erpName: string;
+  customer: { name: string; phone: string } | null;
+  tailor: { name: string } | null;
+  items: { label: string }[];
+  dueDate: string | null;
+  status: string;
+  price: number;
+  isRush: boolean;
+  origin: string;
+  createdAt: string | null;
+}
+
+// ── Status filters ────────────────────────────────────────────────────────────
+
+const CUSTOM_FILTERS = [
   { value: "active", label: "Active" },
   { value: "all", label: "All" },
   { value: "Completed", label: "Completed" },
   { value: "Cancelled", label: "Cancelled" },
 ];
+
+const ALT_FILTERS = [
+  { value: "all", label: "All" },
+  { value: "intake", label: "Received" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "ready", label: "Ready" },
+  { value: "picked_up", label: "Picked Up" },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function priceBadge(status: string) {
   if (status === "placeholder")
@@ -49,13 +78,14 @@ function priceBadge(status: string) {
   );
 }
 
-export default function SalesOrders() {
+// ── Custom Made tab ───────────────────────────────────────────────────────────
+
+function CustomOrdersTab() {
   const [orders, setOrders] = useState<ErpSalesOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
-  const [view, setView] = useState<"list" | "kanban">("list");
 
   const load = async () => {
     setLoading(true);
@@ -90,23 +120,7 @@ export default function SalesOrders() {
   }), [rows]);
 
   return (
-    <div className="space-y-6 animate-fade-up">
-      <SectionHeader
-        eyebrow="Workshop · Sales Orders"
-        title={<>The <span className="text-brass-shimmer">sales</span> ledger.</>}
-        description="Live from ERPNext — every custom commission generates one of these."
-        actions={
-          <Button
-            variant="outline"
-            className="border-brass/20 hover:bg-brass/10 text-cream-muted"
-            onClick={load}
-          >
-            <RefreshCw className="h-4 w-4 mr-1.5" /> Refresh
-          </Button>
-        }
-      />
-
-      {/* KPI bar */}
+    <div className="space-y-4">
       {!loading && orders.length > 0 && (
         <div className="grid grid-cols-3 gap-3">
           {[
@@ -130,19 +144,11 @@ export default function SalesOrders() {
         searchPlaceholder="Search by order, customer, type…"
         filterValue={statusFilter}
         onFilterChange={setStatusFilter}
-        filterOptions={STATUS_FILTERS}
+        filterOptions={CUSTOM_FILTERS}
         right={
-          <div className="flex items-center gap-1 border border-brass/15 rounded-md p-0.5">
-            {(["list", "kanban"] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                className={`p-1.5 rounded transition-colors ${view === v ? "bg-brass/20 text-cream" : "text-cream-dim hover:text-cream"}`}
-              >
-                {v === "list" ? <List className="h-3.5 w-3.5" /> : <LayoutGrid className="h-3.5 w-3.5" />}
-              </button>
-            ))}
-          </div>
+          <Button variant="outline" className="border-brass/20 hover:bg-brass/10 text-cream-muted" onClick={load}>
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
         }
       />
 
@@ -155,7 +161,7 @@ export default function SalesOrders() {
       {loading ? (
         <div className="text-cream-muted text-sm">Loading…</div>
       ) : rows.length === 0 ? (
-        <EmptyState icon={Receipt} title="No sales orders" description="ERPNext orders will appear here." />
+        <EmptyState icon={Receipt} title="No custom orders" description="ERPNext sales orders will appear here." />
       ) : (
         <div className="glass-panel overflow-hidden">
           <table className="w-full text-sm">
@@ -184,6 +190,184 @@ export default function SalesOrders() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Alterations tab ───────────────────────────────────────────────────────────
+
+function AlterationsTab() {
+  const [tickets, setTickets] = useState<AlterationTicket[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get<AlterationTicket[]>(`/api/alterations?status=${statusFilter}`);
+      setTickets(res);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [statusFilter]);
+
+  const rows = useMemo(() => {
+    const s = search.toLowerCase();
+    if (!s) return tickets;
+    return tickets.filter(
+      (t) =>
+        (t.erpName ?? "").toLowerCase().includes(s) ||
+        (t.customer?.name ?? "").toLowerCase().includes(s) ||
+        (t.customer?.phone ?? "").includes(search),
+    );
+  }, [tickets, search]);
+
+  const kpis = useMemo(() => ({
+    open: rows.filter((r) => !["picked_up", "cancelled"].includes(r.status)).length,
+    rush: rows.filter((r) => r.isRush && !["picked_up", "cancelled"].includes(r.status)).length,
+    value: rows.filter((r) => r.status !== "cancelled").reduce((s, r) => s + r.price, 0),
+  }), [rows]);
+
+  const STATUS_LABELS: Record<string, string> = {
+    intake: "Received",
+    in_progress: "In Progress",
+    ready: "Ready",
+    picked_up: "Picked Up",
+    cancelled: "Cancelled",
+  };
+
+  return (
+    <div className="space-y-4">
+      {!loading && tickets.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: "Open Tickets", value: kpis.open },
+            { label: "Rush", value: kpis.rush, warn: kpis.rush > 0 },
+            { label: "Revenue", value: formatUSD(kpis.value, { compact: true }), mono: true },
+          ].map(({ label, value, warn, mono }: any) => (
+            <div key={label} className="glass-panel p-4">
+              <div className="ui-label mb-1">{label}</div>
+              <div className={`kpi-number ${warn ? "text-signal-amber" : mono ? "text-brass-shimmer" : "text-cream"}`}>
+                {value}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search by ticket, customer, phone…"
+        filterValue={statusFilter}
+        onFilterChange={setStatusFilter}
+        filterOptions={ALT_FILTERS}
+        right={
+          <Button variant="outline" className="border-brass/20 hover:bg-brass/10 text-cream-muted" onClick={load}>
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+        }
+      />
+
+      {error && (
+        <div className="glass-panel border-l-4 border-signal-rose p-3 text-sm text-signal-rose">
+          {error} — <button onClick={load} className="underline">retry</button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="text-cream-muted text-sm">Loading…</div>
+      ) : rows.length === 0 ? (
+        <EmptyState icon={Scissors} title="No alteration tickets" description="Alteration tickets from ERPNext will appear here." />
+      ) : (
+        <div className="glass-panel overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="border-b border-brass/10 bg-forest-raised/30">
+              <tr className="text-left">
+                {["Ticket", "Customer", "Location", "Status", "Due", "Total"].map((h) => (
+                  <th key={h} className="px-4 py-2.5 ui-label text-[9px]">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} className="border-t border-brass/8 hover:bg-brass/3 transition-colors">
+                  <td className="px-4 py-3 font-display italic text-brass-light text-sm">
+                    {r.erpName}
+                    {r.isRush && (
+                      <span className="ml-2 inline-flex px-1.5 py-0.5 rounded text-[8px] tracking-wide font-bold uppercase bg-signal-rose/20 text-signal-rose border border-signal-rose/30">
+                        Rush
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-cream">{r.customer?.name ?? "—"}</td>
+                  <td className="px-4 py-3 ui-label text-[10px]">{r.origin}</td>
+                  <td className="px-4 py-3">
+                    <StatusPill status={r.status} label={STATUS_LABELS[r.status] ?? r.status} />
+                  </td>
+                  <td className="px-4 py-3 text-cream-dim text-xs">
+                    {r.dueDate ? relativeDay(r.dueDate) : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right font-display italic text-brass-shimmer">
+                    {formatUSD(r.price)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
+type TabType = "custom" | "alterations";
+
+export default function SalesOrders() {
+  const [tab, setTab] = useState<TabType>("custom");
+
+  const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
+    { id: "custom", label: "Custom Made", icon: <Receipt className="h-3.5 w-3.5" /> },
+    { id: "alterations", label: "Alterations", icon: <Scissors className="h-3.5 w-3.5" /> },
+  ];
+
+  return (
+    <div className="space-y-6 animate-fade-up">
+      <SectionHeader
+        eyebrow="Workshop · Orders"
+        title={<>The <span className="text-brass-shimmer">orders</span> ledger.</>}
+        description="Custom commissions and alteration tickets — live from ERPNext."
+      />
+
+      {/* Tab switcher */}
+      <div className="flex items-center gap-1 border border-brass/15 rounded-xl p-1 w-fit bg-forest-raised/30">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+              tab === t.id
+                ? "bg-brass/20 text-cream border border-brass/30 shadow-sm"
+                : "text-cream-dim hover:text-cream hover:bg-brass/8"
+            )}
+          >
+            {t.icon}
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "custom" ? <CustomOrdersTab /> : <AlterationsTab />}
     </div>
   );
 }
