@@ -2,11 +2,37 @@
 // Auth: super_admin + store_manager only (unless noted)
 
 import { Hono } from "hono";
-import Anthropic from "@anthropic-ai/sdk";
 import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser } from "../lib/scope";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Call Anthropic via raw fetch — compatible with Edge runtime
+async function callAnthropic(system: string, messages: { role: string; content: string }[]): Promise<string> {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error("ANTHROPIC_API_KEY not set");
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-5",
+      max_tokens: 1024,
+      system,
+      messages,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Anthropic ${res.status}: ${err}`);
+  }
+
+  const data: any = await res.json();
+  return data.content?.[0]?.text ?? "(no response)";
+}
 
 export const agentsRouter = new Hono();
 
@@ -479,13 +505,7 @@ agentsRouter.post("/:slug/messages", async (c) => {
 
   let replyContent = "";
   try {
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5",
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages,
-    });
-    replyContent = response.content[0]?.type === "text" ? response.content[0].text : "(no response)";
+    replyContent = await callAnthropic(systemPrompt, messages);
   } catch (err: any) {
     console.error("[agents/messages] Anthropic error:", err?.message);
     return c.json({ error: { message: "AI unavailable — try again" } }, 502);
