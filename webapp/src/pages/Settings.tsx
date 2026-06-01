@@ -82,10 +82,7 @@ export default function Settings() {
   };
 
   const handleSaveProfile = () => {
-    const updates: any = {};
-    if (name !== me?.name) updates.name = name;
-    if (phone !== (me as any)?.phone) updates.phone = phone;
-    if (Object.keys(updates).length === 0) { toast.info("Nothing changed."); return; }
+    const updates: any = { name, phone };
     updateMe.mutate(updates);
   };
 

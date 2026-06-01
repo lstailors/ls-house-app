@@ -72,6 +72,7 @@ meRouter.get("/", async (c) => {
       id: profile.id,
       name: profile.full_name,
       email: profile.email,
+      phone: profile.phone ?? null,
       role: user.role,
       locationId: user.supabaseLocationId,
       location,
@@ -85,7 +86,7 @@ meRouter.patch("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
-  const body = (await c.req.json()) as { name?: string; image?: string };
+  const body = (await c.req.json()) as { name?: string; image?: string; phone?: string; email?: string };
 
   if (!supabaseAdmin) {
     return c.json({ error: { message: "Service unavailable" } }, 503);
@@ -128,6 +129,7 @@ meRouter.patch("/", async (c) => {
       id: profile?.id ?? user.id,
       name: profile?.full_name ?? user.name,
       email: profile?.email ?? user.email,
+      phone: profile?.phone ?? null,
       role: user.role,
       locationId: user.supabaseLocationId,
       location,

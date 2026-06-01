@@ -168,5 +168,5 @@ searchRouter.get("/", async (c) => {
     }
   } catch {}
 
-  return c.json({ results, query: q });
+  return c.json({ data: { results, query: q } });
 });

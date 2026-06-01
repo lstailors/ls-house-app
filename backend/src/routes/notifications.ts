@@ -154,5 +154,5 @@ notificationsRouter.get("/", async (c) => {
 
   const unread = notifications.filter((n) => !n.read).length;
 
-  return c.json({ notifications: notifications.slice(0, 40), unread });
+  return c.json({ data: { notifications: notifications.slice(0, 40), unread } });
 });
