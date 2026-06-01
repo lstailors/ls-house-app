@@ -1,30 +1,8 @@
 // Lightweight ERPNext REST client (server-only).
-// Bun auto-loads .env in the cwd, but the Vibecode launcher injects a custom
-// env that bypasses bun's .env auto-loading. Load the .env file explicitly so
-// credentials are always available regardless of how the process was started.
-
-import { readFileSync } from 'fs'
-import { join } from 'path'
-
-function loadDotEnv() {
-  try {
-    const envPath = join(process.cwd(), '.env')
-    const content = readFileSync(envPath, 'utf8')
-    for (const line of content.split('\n')) {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed.startsWith('#')) continue
-      const eqIdx = trimmed.indexOf('=')
-      if (eqIdx === -1) continue
-      const key = trimmed.slice(0, eqIdx).trim()
-      const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '')
-      if (key && !process.env[key]) process.env[key] = val
-    }
-  } catch {
-    // .env not found — rely on process env
-  }
-}
-
-loadDotEnv()
+// Credentials are read lazily from process.env at call time.
+// - Vercel production: env vars injected by platform.
+// - Local dev (Bun): loaded by index.ts → load-env.ts before any route runs.
+// No fs/path imports here so this module is safe on Vercel Edge runtime.
 
 function creds() {
   return {
