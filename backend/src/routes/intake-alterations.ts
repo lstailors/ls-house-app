@@ -39,8 +39,11 @@ async function mcpGet<T>(doctype: string, name: string): Promise<T> {
 }
 
 function erpHeaders() {
+  // Use key:secret token auth (same as erpFetch) — ERP_TOKEN is unused/empty
+  const key = process.env.ERPNEXT_API_KEY   ?? '';
+  const sec = process.env.ERPNEXT_API_SECRET ?? '';
   return {
-    Authorization: `token ${ERP_TOKEN}`,
+    Authorization: `token ${key}:${sec}`,
     Accept: 'application/json',
     'Content-Type': 'application/json',
   };
@@ -184,52 +187,36 @@ intakeAlterationsRouter.get('/customers/search', async (c) => {
     }
   }
 
-  // Enrich each hit with Contact (phone/email) and Address data in parallel
-  const enriched = await Promise.all(rawHits.slice(0, 10).map(async (hit: any) => {
-    const custId = hit.value;
-    // search_link returns description as "Group, Territory" — use the customer_name (value == ERPNext name)
-    // Fetch clean customer_name directly
-    let custName = custId; // fallback
-    try {
-      const nr = await fetch(`${erpBase}/api/resource/Customer/${encodeURIComponent(custId)}?fields=["customer_name"]`, { headers: auth });
-      if (nr.ok) { const nj: any = await nr.json(); custName = nj.message?.customer_name || custId; }
-    } catch { /* use id */ }
+  // Single bulk query — fetch customer_name, mobile_no, email_id in one request.
+  // ERPNext stores mobile_no / email_id as Read Only fields denormalized from
+  // the primary contact, so one API call per page of results is sufficient.
+  const ids = rawHits.slice(0, 10).map((h: any) => h.value).filter(Boolean);
+  if (!ids.length) return c.json({ data: [] });
 
-    let phone = '', email = '', addressLine = '', city = '';
+  let custRows: any[] = [];
+  try {
+    const f = JSON.stringify([['name', 'in', ids]]);
+    const fields = JSON.stringify(['name', 'customer_name', 'mobile_no', 'email_id']);
+    const res = await fetch(
+      `${erpBase}/api/resource/Customer?filters=${encodeURIComponent(f)}&fields=${encodeURIComponent(fields)}&limit_page_length=10`,
+      { headers: auth }
+    );
+    if (res.ok) { const j: any = await res.json(); custRows = j.data ?? []; }
+  } catch { /* use id as name */ }
 
-    try {
-      // Fetch customer primary contact + address in parallel
-      const [contactRes, addrRes] = await Promise.all([
-        fetch(
-          `${erpBase}/api/resource/Contact?filters=${encodeURIComponent(JSON.stringify([['Dynamic Link','link_doctype','=','Customer'],['Dynamic Link','link_name','=',custId]]))}&fields=${encodeURIComponent(JSON.stringify(['mobile_no','phone','email_id']))}&limit_page_length=1`,
-          { headers: auth }
-        ),
-        fetch(
-          `${erpBase}/api/resource/Address?filters=${encodeURIComponent(JSON.stringify([['Dynamic Link','link_doctype','=','Customer'],['Dynamic Link','link_name','=',custId]]))}&fields=${encodeURIComponent(JSON.stringify(['address_line1','city','state','pincode']))}&limit_page_length=1`,
-          { headers: auth }
-        ),
-      ]);
-      if (contactRes.ok) {
-        const cj: any = await contactRes.json();
-        const ct = cj.data?.[0];
-        if (ct) { phone = ct.mobile_no || ct.phone || ''; email = ct.email_id || ''; }
-      }
-      if (addrRes.ok) {
-        const aj: any = await addrRes.json();
-        const addr = aj.data?.[0];
-        if (addr) { addressLine = addr.address_line1 || ''; city = addr.city || ''; }
-      }
-    } catch { /* partial data ok */ }
+  const custMap = new Map(custRows.map((r: any) => [r.name, r]));
 
+  const enriched = ids.map((custId: string) => {
+    const row = custMap.get(custId);
     return {
-      id: custId,
-      full_name: custName,
-      name: custName,
-      phone,
-      email,
-      address: addressLine ? `${addressLine}${city ? ', ' + city : ''}` : (city || ''),
+      id:        custId,
+      full_name: row?.customer_name || custId,
+      name:      row?.customer_name || custId,
+      phone:     row?.mobile_no     || '',
+      email:     row?.email_id      || '',
+      address:   '',  // loaded on-demand in the edit sheet
     };
-  }));
+  });
 
   return c.json({ data: enriched });
 });
@@ -284,24 +271,36 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
   }
 
   // Build payload
+  const today = new Date().toISOString().split('T')[0];
+  // Default due_date = 7 days from ticket_date
+  const ticketDateStr = ticket_date ?? today;
+  const defaultDue = new Date(new Date(ticketDateStr).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
   const payload: Record<string, any> = {
     origin_location: origin ?? 'NYC',
     is_rush: isRush ? 1 : 0,
     payment_method: paymentMethod ?? 'on_account',
     deposit_amount: paymentMethod === 'deposit' ? parseFloat(deposit) || 0 : 0,
-    ticket_date: ticket_date ?? new Date().toISOString().split('T')[0],
+    ticket_date: ticketDateStr,
+    due_date: body.due_date ?? defaultDue,
+    // ERPNext create_ticket expects garments + lines as separate top-level arrays.
+    // garments: metadata only (garment_type, description, color, fabric_notes)
+    // lines: flat list of all alteration lines with garment_ref linking back to G1, G2...
     garments: garments.map((g: any) => ({
       garment_type: g.garmentType,
       garment_description: g.description || g.garmentType,
       color: g.color || '',
       fabric_notes: g.notes || '',
-      lines: (g.lines ?? []).map((l: any) => ({
-        preset: l.preset || '',
+    })),
+    lines: garments.flatMap((g: any) =>
+      (g.lines ?? []).map((l: any) => ({
+        garment_ref: g.ref,          // e.g. "G1", "G2"
+        preset: l.preset || null,
         description: l.description,
         price: l.price,
         est_minutes: l.estMinutes || null,
-      })),
-    })),
+      }))
+    ),
   };
 
   if (customer) {

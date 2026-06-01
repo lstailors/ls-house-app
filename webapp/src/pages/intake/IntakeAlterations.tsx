@@ -337,7 +337,7 @@ function CustomerSearch({
               onClick={() => { onSelect(r); setQuery(''); setOpen(false) }}
             >
               <div className="w-9 h-9 rounded-full bg-brass/15 border border-brass/25 flex items-center justify-center flex-shrink-0">
-                <span className="text-brass-shimmer font-semibold text-sm">{r.name.charAt(0).toUpperCase()}</span>
+                <span className="text-brass-shimmer font-semibold text-sm">{(r.name || r.id || '?').charAt(0).toUpperCase()}</span>
               </div>
               <div className="flex-1 min-w-0 space-y-0.5">
                 <p className="text-cream text-sm font-semibold truncate">{r.name}</p>
