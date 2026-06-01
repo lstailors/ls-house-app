@@ -1,0 +1,172 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&family=Montserrat:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* L&S House — Liquid Glass design system.
+   Forest green base, cream text, brushed brass accents, frosted glass surfaces. */
+
+@layer base {
+  :root {
+    /* Shadcn semantic tokens — mapped onto the L&S palette */
+    --background: 138 33% 7%;            /* forest deep #0D1A10 */
+    --foreground: 41 50% 90%;            /* cream #F1E9D6 */
+
+    --card: 138 30% 12%;                 /* forest base, slightly raised */
+    --card-foreground: 41 50% 90%;
+
+    --popover: 138 30% 12%;
+    --popover-foreground: 41 50% 90%;
+
+    --primary: 34 35% 52%;               /* brass #B08D57 */
+    --primary-foreground: 138 33% 7%;
+
+    --secondary: 138 32% 18%;            /* forest raised */
+    --secondary-foreground: 41 50% 90%;
+
+    --muted: 138 28% 14%;
+    --muted-foreground: 39 19% 73%;
+
+    --accent: 34 50% 65%;                /* brass light */
+    --accent-foreground: 138 33% 7%;
+
+    --destructive: 8 60% 64%;            /* rose */
+    --destructive-foreground: 41 50% 90%;
+
+    --border: 34 24% 30%;
+    --input: 138 32% 16%;
+    --ring: 34 35% 52%;
+
+    --radius: 0.625rem;
+
+    --sidebar-background: 138 35% 9%;
+    --sidebar-foreground: 41 50% 90%;
+    --sidebar-primary: 34 35% 52%;
+    --sidebar-primary-foreground: 138 33% 7%;
+    --sidebar-accent: 138 30% 14%;
+    --sidebar-accent-foreground: 41 50% 90%;
+    --sidebar-border: 34 24% 25%;
+    --sidebar-ring: 34 35% 52%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html, body, #root {
+    @apply h-full;
+  }
+
+  body {
+    @apply bg-forest-deep text-cream font-sans;
+    background-image:
+      radial-gradient(ellipse 1200px 600px at 50% -10%, rgba(176, 141, 87, 0.10) 0%, transparent 60%),
+      radial-gradient(ellipse 900px 700px at 100% 100%, rgba(31, 58, 46, 0.6) 0%, transparent 55%),
+      linear-gradient(180deg, #0D1A10 0%, #0A140E 100%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(176, 141, 87, 0.25);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(176, 141, 87, 0.45);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+  }
+
+  ::selection {
+    background: rgba(176, 141, 87, 0.35);
+    color: #F1E9D6;
+  }
+}
+
+@layer components {
+  /* Liquid Glass primitives */
+
+  .glass-panel {
+    @apply relative bg-glass-card backdrop-blur-xl border border-brass/15 shadow-glass rounded-2xl;
+  }
+
+  .glass-panel-hover {
+    @apply transition-all duration-300 hover:border-brass/30 hover:shadow-glass-lg;
+  }
+
+  .glass-panel-strong {
+    @apply relative bg-forest-raised/70 backdrop-blur-xl border border-brass/20 shadow-glass-lg rounded-2xl;
+  }
+
+  .display-heading {
+    @apply font-display italic font-medium tracking-tight text-cream;
+  }
+
+  .ui-label {
+    @apply font-sans text-[10px] font-medium uppercase tracking-widerer text-cream-dim;
+  }
+
+  .kpi-number {
+    @apply font-display italic font-medium text-4xl text-cream leading-none;
+  }
+
+  .brass-divider {
+    @apply h-px w-full bg-brass-line opacity-50;
+  }
+
+  .pill {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium uppercase tracking-widerer border;
+  }
+  .pill-emerald {
+    @apply bg-signal-emerald/10 text-signal-emerald border-signal-emerald/30;
+  }
+  .pill-amber {
+    @apply bg-signal-amber/10 text-signal-amber border-signal-amber/30;
+  }
+  .pill-rose {
+    @apply bg-signal-rose/10 text-signal-rose border-signal-rose/30;
+  }
+  .pill-brass {
+    @apply bg-brass/10 text-brass-light border-brass/30;
+  }
+  .pill-muted {
+    @apply bg-cream/5 text-cream-muted border-cream/15;
+  }
+
+  .btn-brass {
+    @apply relative bg-gradient-to-b from-brass-light to-brass text-forest-deep font-medium tracking-wide
+           hover:from-brass-glow hover:to-brass-light transition-colors shadow-brass-glow;
+  }
+
+  .sidebar-active {
+    @apply text-cream bg-brass/10 border-l-2 border-brass;
+  }
+}
+
+@layer utilities {
+  .text-brass-shimmer {
+    background: linear-gradient(90deg, #B08D57 0%, #E5C892 25%, #D4B27A 50%, #E5C892 75%, #B08D57 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: brass-shimmer 12s linear infinite;
+  }
+
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+  .scrollbar-none { scrollbar-width: none; }
+}

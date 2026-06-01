@@ -1,0 +1,261 @@
+import { useParams, useNavigate, Link } from "react-router-dom";
+import {
+  ArrowLeft, Sparkles, User, Phone, Mail, Calendar, CreditCard, Star, FileText, Printer,
+} from "lucide-react";
+import { toast } from "sonner";
+import { SectionHeader } from "@/components/glass/SectionHeader";
+import { GlassCard } from "@/components/glass/GlassCard";
+import { StatusPill } from "@/components/glass/StatusPill";
+import { Button } from "@/components/ui/button";
+import { useCustomOrder } from "@/lib/queries";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import type { CustomOrder } from "@/lib/types";
+import { GARMENT_LABEL } from "@/lib/pricing";
+import { formatUSD, formatDateTime } from "@/lib/format";
+import { cn } from "@/lib/utils";
+
+const STAGES: CustomOrder["status"][] = [
+  "quote",
+  "deposit_paid",
+  "in_production",
+  "ready",
+  "delivered",
+];
+
+const STAGE_LABELS: Record<CustomOrder["status"], string> = {
+  quote: "Quote",
+  deposit_paid: "Deposit Paid",
+  in_production: "In Production",
+  ready: "Ready",
+  delivered: "Delivered",
+  cancelled: "Cancelled",
+};
+
+export default function CustomOrderDetail() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { data: order, isLoading } = useCustomOrder(id);
+  const qc = useQueryClient();
+
+  const updateStatus = useMutation({
+    mutationFn: (status: string) =>
+      api.patch<CustomOrder>(`/api/custom-orders/${id}`, { status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["custom-orders"] });
+      toast.success("Status updated");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (isLoading) {
+    return <div className="text-cream-muted text-sm">Loading…</div>;
+  }
+  if (!order) {
+    return (
+      <div className="space-y-6">
+        <SectionHeader eyebrow="Custom order" title="Not found" />
+        <Button variant="outline" onClick={() => navigate(-1)}>
+          <ArrowLeft className="h-4 w-4 mr-1.5" /> Back
+        </Button>
+      </div>
+    );
+  }
+
+  const stageIndex = STAGES.indexOf(order.status as CustomOrder["status"]);
+
+  return (
+    <div className="space-y-6 animate-fade-up">
+      <div>
+        <Link
+          to="/orders/custom"
+          className="inline-flex items-center gap-1.5 text-xs text-cream-dim hover:text-cream transition-colors mb-3"
+        >
+          <ArrowLeft className="h-3 w-3" /> Back to commissions
+        </Link>
+        <SectionHeader
+          eyebrow={`Commission · #${order.id.slice(-8).toUpperCase()}`}
+          title={
+            <>
+              {order.customer?.name ?? "—"}
+              {order.customer?.dossier?.vip ? (
+                <Star className="inline h-5 w-5 ml-2 -mt-2 text-brass fill-brass" />
+              ) : null}
+            </>
+          }
+          description={`${GARMENT_LABEL[order.garmentType]} · ${formatDateTime(order.createdAt)}`}
+          actions={
+            <div className="flex items-center gap-2">
+              <StatusPill status={order.status} />
+              <Button variant="outline" className="border-brass/20 hover:bg-brass/10 text-cream-muted">
+                <Printer className="h-4 w-4 mr-1.5" /> Print
+              </Button>
+            </div>
+          }
+        />
+      </div>
+
+      {/* Stage stepper */}
+      <GlassCard variant="strong" className="p-5">
+        <div className="ui-label mb-4">Production Stage</div>
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          {STAGES.map((s, i) => {
+            const done = i < stageIndex;
+            const active = i === stageIndex;
+            return (
+              <div key={s} className="flex items-center shrink-0">
+                <button
+                  type="button"
+                  onClick={() => updateStatus.mutate(s)}
+                  disabled={updateStatus.isPending}
+                  className={cn(
+                    "rounded-full px-3 py-1.5 text-xs border transition-all",
+                    done
+                      ? "border-brass/30 bg-brass/10 text-brass-light"
+                      : active
+                        ? "border-brass bg-brass/20 text-cream shadow-brass-glow"
+                        : "border-brass/15 bg-forest-raised/40 text-cream-dim hover:border-brass/40",
+                  )}
+                >
+                  {STAGE_LABELS[s]}
+                </button>
+                {i < STAGES.length - 1 ? <div className="mx-1 h-px w-6 bg-brass/15" /> : null}
+              </div>
+            );
+          })}
+        </div>
+      </GlassCard>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
+        {/* Left — order detail */}
+        <div className="space-y-6">
+          {/* Customer */}
+          <GlassCard className="p-6">
+            <div className="ui-label mb-4">Customer</div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <Field icon={User} label="Name" value={order.customer?.name ?? "—"} />
+              <Field icon={Phone} label="Phone" value={order.customer?.phone ?? "—"} />
+              <Field icon={Mail} label="Email" value={order.customer?.email ?? "—"} />
+            </div>
+            {order.customer?.dossier?.preferences ? (
+              <div className="mt-4 pt-4 border-t border-brass/10">
+                <div className="ui-label text-[10px] mb-1">Preferences</div>
+                <div className="text-sm text-cream-muted italic">
+                  "{order.customer.dossier.preferences}"
+                </div>
+              </div>
+            ) : null}
+          </GlassCard>
+
+          {/* Specification */}
+          <GlassCard className="p-6">
+            <div className="ui-label mb-4">Specification</div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <SpecField label="Garment" value={GARMENT_LABEL[order.garmentType]} />
+              {order.spec.lapel ? <SpecField label="Lapel" value={order.spec.lapel} /> : null}
+              {order.spec.pockets ? <SpecField label="Pockets" value={order.spec.pockets} /> : null}
+              {order.spec.vent ? <SpecField label="Vent" value={order.spec.vent} /> : null}
+              {order.spec.lining ? <SpecField label="Lining" value={order.spec.lining} /> : null}
+              {order.spec.buttons ? <SpecField label="Buttons" value={order.spec.buttons} /> : null}
+              {order.spec.collar ? <SpecField label="Collar" value={order.spec.collar} /> : null}
+              {order.spec.cuff ? <SpecField label="Cuff" value={order.spec.cuff} /> : null}
+              {order.spec.placket ? <SpecField label="Placket" value={order.spec.placket} /> : null}
+            </div>
+            {order.notes ? (
+              <div className="mt-5 pt-4 border-t border-brass/10">
+                <div className="flex items-start gap-2">
+                  <FileText className="h-3.5 w-3.5 text-brass-light/70 mt-0.5" />
+                  <div>
+                    <div className="ui-label text-[10px] mb-1">Notes</div>
+                    <div className="text-sm text-cream-muted leading-relaxed">{order.notes}</div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </GlassCard>
+        </div>
+
+        {/* Right — pricing */}
+        <GlassCard variant="strong" className="p-6 sticky top-4">
+          <div className="ui-label mb-3">Financials</div>
+          {order.priceTbd ? (
+            <div className="rounded-lg border border-signal-amber/30 bg-signal-amber/5 p-3 mb-4">
+              <div className="ui-label text-signal-amber text-[10px] mb-1">Quote Mode</div>
+              <div className="text-xs text-cream-muted">
+                Master tailor to price within 48 hours.
+              </div>
+            </div>
+          ) : null}
+          <div className="space-y-2">
+            <Row label="Quoted price" value={order.priceTbd ? "TBD" : formatUSD(order.quotedPrice)} accent />
+            <Row label="Deposit paid" value={formatUSD(order.depositAmount)} />
+            {!order.priceTbd ? (
+              <Row label="Balance" value={formatUSD(Math.max(0, order.quotedPrice - order.depositAmount))} />
+            ) : null}
+          </div>
+          <div className="brass-divider my-4" />
+          <Button className="w-full btn-brass" disabled>
+            <CreditCard className="h-4 w-4 mr-1.5" /> Take additional payment
+          </Button>
+          <div className="mt-3 flex items-center gap-1.5 text-[10px] text-cream-dim">
+            <Calendar className="h-3 w-3" />
+            <span>Created {formatDateTime(order.createdAt)}</span>
+          </div>
+        </GlassCard>
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof User;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div>
+      <div className="ui-label text-[10px] mb-1 flex items-center gap-1.5">
+        <Icon className="h-3 w-3" /> {label}
+      </div>
+      <div className="text-cream truncate">{value}</div>
+    </div>
+  );
+}
+
+function SpecField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-brass/15 bg-brass/5 p-3">
+      <div className="ui-label text-[9px] mb-0.5">{label}</div>
+      <div className="text-sm text-cream font-medium">{value}</div>
+    </div>
+  );
+}
+
+function Row({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-cream-muted">{label}</span>
+      <span
+        className={
+          accent
+            ? "font-display italic text-2xl text-brass-shimmer"
+            : "text-cream font-medium tabular-nums"
+        }
+      >
+        {value}
+      </span>
+    </div>
+  );
+}

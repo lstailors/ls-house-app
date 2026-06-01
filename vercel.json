@@ -1,0 +1,10 @@
+{
+  "framework": null,
+  "installCommand": "bun install && cd webapp && bun install",
+  "buildCommand": "cd webapp && bun run build",
+  "outputDirectory": "webapp/dist",
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/[...path]" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
