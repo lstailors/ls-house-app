@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { CustomerEditSheet } from '@/components/pos/CustomerEditSheet'
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
 const formatUSD = (n: number) => '$' + n.toFixed(2)
@@ -212,25 +213,43 @@ function CustomerSearch({
     }, 300)
   }, [query])
 
+  const [editOpen, setEditOpen] = useState(false)
+
   if (customer) {
     return (
-      <div className="glass-panel p-4 flex items-start gap-3">
-        <div className="w-9 h-9 rounded-full bg-brass/20 border border-brass/30 flex items-center justify-center flex-shrink-0">
-          <User className="w-4 h-4 text-brass-shimmer" />
+      <>
+        <div className="glass-panel p-4 flex items-start gap-3">
+          <div className="w-9 h-9 rounded-full bg-brass/20 border border-brass/30 flex items-center justify-center flex-shrink-0">
+            <User className="w-4 h-4 text-brass-shimmer" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-cream font-medium truncate">{customer.name}</p>
+            <p className="text-cream-muted text-xs">{customer.phone}</p>
+            {customer.email && <p className="text-cream-dim text-xs truncate">{customer.email}</p>}
+          </div>
+          <button
+            onClick={() => setEditOpen(true)}
+            className="text-brass-light hover:text-brass transition-colors p-1 text-[10px] font-sans uppercase tracking-wider"
+            title="Edit customer details"
+          >
+            Edit
+          </button>
+          <button
+            onClick={onClear}
+            className="text-cream-dim hover:text-cream transition-colors p-1"
+            title="Change customer"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-cream font-medium truncate">{customer.name}</p>
-          <p className="text-cream-muted text-xs">{customer.phone}</p>
-          {customer.email && <p className="text-cream-dim text-xs truncate">{customer.email}</p>}
-        </div>
-        <button
-          onClick={onClear}
-          className="text-cream-dim hover:text-cream transition-colors p-1"
-          title="Change customer"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
+        {editOpen && customer.id && (
+          <CustomerEditSheet
+            customerId={customer.id}
+            customerName={customer.name}
+            onClose={() => setEditOpen(false)}
+          />
+        )}
+      </>
     )
   }
 
