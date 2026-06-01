@@ -44,14 +44,33 @@ export default function Deliveries() {
 
   const filtered = useMemo(() => {
     const s = search.toLowerCase();
-    return deliveries.filter((d) => {
-      if (filter !== "all" && d.status !== filter) return false;
-      if (!s) return true;
-      return (
-        (d.customer?.name ?? "").toLowerCase().includes(s) ||
-        (d.addressLine ?? "").toLowerCase().includes(s)
-      );
-    });
+    const STATUS_RANK: Record<string, number> = {
+      out_for_delivery: 0,
+      scheduled:        1,
+      failed:           2,
+      delivered:        3,
+    };
+
+    return deliveries
+      .filter((d) => {
+        if (filter !== "all" && d.status !== filter) return false;
+        if (!s) return true;
+        return (
+          (d.customer?.name ?? "").toLowerCase().includes(s) ||
+          (d.addressLine ?? "").toLowerCase().includes(s)
+        );
+      })
+      .sort((a, b) => {
+        // 1. Status priority (out for delivery → scheduled → failed → delivered)
+        const rankDiff = (STATUS_RANK[a.status] ?? 1) - (STATUS_RANK[b.status] ?? 1);
+        if (rankDiff !== 0) return rankDiff;
+        // 2. Scheduled date ascending (soonest first); nulls last
+        const aDate = a.scheduledAt ? new Date(a.scheduledAt).getTime() : Infinity;
+        const bDate = b.scheduledAt ? new Date(b.scheduledAt).getTime() : Infinity;
+        if (aDate !== bDate) return aDate - bDate;
+        // 3. Newest created last as tiebreaker
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      });
   }, [deliveries, filter, search]);
 
   const counts = useMemo(() => {
