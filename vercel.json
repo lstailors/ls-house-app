@@ -15,10 +15,6 @@
     {
       "path": "/api/sofia/briefing/trigger",
       "schedule": "0 20 * * 1-5"
-    },
-    {
-      "path": "/api/raven/sofia-poll",
-      "schedule": "* * * * *"
     }
   ]
 }
