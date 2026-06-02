@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
 import { erpList, erpGet } from "../lib/erp";
+import { sendSms } from "../lib/twilio";
 
 export const alterationsRouter = new Hono();
 
@@ -220,4 +221,32 @@ alterationsRouter.patch("/:id", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   return c.json({ error: { message: "Update tickets via intake.lstailors.com" } }, 501);
+});
+
+// ERPNext Server Script calls this when all garments are Ready
+alterationsRouter.post("/erp-webhook/ready", async (c) => {
+  const secret = process.env.ERP_WEBHOOK_SECRET;
+  if (secret && c.req.header("x-webhook-secret") !== secret) {
+    return c.json({ error: { message: "Forbidden" } }, 403);
+  }
+
+  const body = await c.req.json() as {
+    ticket: string;
+    customer_name: string;
+    customer_phone: string;
+    origin_location: string;
+    garment_count: number;
+    delivery_method?: string;
+  };
+
+  if (!body.customer_phone) {
+    return c.json({ error: { message: "No customer phone" } }, 400);
+  }
+
+  const store = body.origin_location === "HOU" ? "Houston" : "New York";
+  const message = `Hi ${body.customer_name || "there"}, your alteration${body.garment_count !== 1 ? "s are" : " is"} ready for pickup at our ${store} location! Reply or call us with any questions. — L&S Custom Tailors`;
+
+  await sendSms(body.customer_phone, message);
+
+  return c.json({ data: { sent: true, ticket: body.ticket } });
 });

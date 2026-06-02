@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser } from "../lib/scope";
+import { sendSms, alertCarl } from "../lib/twilio";
 
 // ── Constants ──
 const STAFF_PHONES = new Set(["+16319260917", "+16462087809", "+16463637906"]);
-const CARL_PHONE = "+16319260917";
 const GREETING_WORDS = ["hi", "hello", "hey", "ciao", "good morning", "good afternoon", "good evening"];
 const SCHEDULING_WORDS = ["book", "schedule", "appointment", "fitting", "consultation", "visit", "come in", "available", "availability", "slot", "time"];
 const ORDER_STATUS_WORDS = ["order", "status", "ready", "when", "alteration", "suit", "shirt", "pants", "jacket", "garment", "pickup", "done"];
@@ -23,25 +23,6 @@ async function callGrok(messages: { role: string; content: string }[], temperatu
   return data.choices?.[0]?.message?.content ?? "";
 }
 
-// ── Twilio SMS send helper ──
-async function sendSms(to: string, body: string): Promise<string | null> {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const msgSvcSid = process.env.TWILIO_MSG_SERVICE_SID;
-  if (!sid || !token) return null;
-  const params = new URLSearchParams({ To: to, Body: body });
-  if (msgSvcSid) params.set("MessagingServiceSid", msgSvcSid);
-  else params.set("From", "+12123084431");
-  const auth = btoa(`${sid}:${token}`);
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST",
-    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
-    body: params,
-  });
-  const data: any = await res.json();
-  return res.ok ? data.sid : null;
-}
-
 // ── Raven post helper (replaces Slack) ──
 async function postToRaven(text: string): Promise<void> {
   const webhookUrl = process.env.RAVEN_WEBHOOK_URL;
@@ -51,12 +32,6 @@ async function postToRaven(text: string): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
   }).catch(() => {});
-}
-
-// ── Alert Carl helper ──
-async function alertCarl(message: string): Promise<void> {
-  const ownerPhone = process.env.OWNER_MOBILE || CARL_PHONE;
-  await sendSms(ownerPhone, `[Sofia Alert] ${message}`);
 }
 
 export const sofiaRouter = new Hono();
