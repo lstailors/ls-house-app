@@ -2,9 +2,9 @@
 // Customer + Address are two separate ERPNext doctypes with different field
 // names (address_line1, pincode) and a Dynamic Link. Write them as two calls.
 
-const ERP_URL = process.env.ERP_URL ?? "https://erp.lstailors.com";
-const ERP_KEY = process.env.ERP_API_KEY!;
-const ERP_SECRET = process.env.ERP_API_SECRET!;
+const ERP_URL = process.env.ERPNEXT_BASE_URL ?? process.env.ERP_URL ?? "https://erp.lstailors.com";
+const ERP_KEY = process.env.ERPNEXT_API_KEY ?? process.env.ERP_API_KEY ?? "";
+const ERP_SECRET = process.env.ERPNEXT_API_SECRET ?? process.env.ERP_API_SECRET ?? "";
 
 const authHeaders = {
   Authorization: `token ${ERP_KEY}:${ERP_SECRET}`,

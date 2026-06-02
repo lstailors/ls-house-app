@@ -42,7 +42,7 @@ export async function commitParkedCart(id: string) {
   const cart = await getParkedCart(id);
   let customerName = cart.customer_ref;
   if (!customerName) { const res = await upsertCustomerWithAddress(cart.customer_snapshot as CustomerInput); customerName = res.name; }
-  const ERP_URL = process.env.ERP_URL ?? "https://erp.lstailors.com";
+  const ERP_URL = process.env.ERPNEXT_BASE_URL ?? process.env.ERP_URL ?? "https://erp.lstailors.com";
   const today = new Date().toISOString().slice(0, 10);
   const ticketDoc = {
     customer: customerName, customer_name: cart.customer_snapshot.fullName ?? customerName,
@@ -53,7 +53,7 @@ export async function commitParkedCart(id: string) {
   };
   const res = await fetch(`${ERP_URL}/api/resource/Alteration Ticket`, {
     method: "POST",
-    headers: { Authorization: `token ${process.env.ERP_API_KEY}:${process.env.ERP_API_SECRET}`, "Content-Type": "application/json" },
+    headers: { Authorization: `token ${process.env.ERPNEXT_API_KEY ?? process.env.ERP_API_KEY}:${process.env.ERPNEXT_API_SECRET ?? process.env.ERP_API_SECRET}`, "Content-Type": "application/json" },
     body: JSON.stringify(ticketDoc),
   });
   const body = await res.json();

@@ -14,10 +14,10 @@ export function computeCartTotals(lines: CartLine[], taxRate = 0.08875) {
 }
 
 export async function totalsFromErpInvoice(invoiceName: string) {
-  const ERP_URL = process.env.ERP_URL ?? "https://erp.lstailors.com";
+  const ERP_URL = process.env.ERPNEXT_BASE_URL ?? process.env.ERP_URL ?? "https://erp.lstailors.com";
   const res = await fetch(
     `${ERP_URL}/api/resource/Sales Invoice/${encodeURIComponent(invoiceName)}?fields=["net_total","total_taxes_and_charges","grand_total"]`,
-    { headers: { Authorization: `token ${process.env.ERP_API_KEY}:${process.env.ERP_API_SECRET}`, Accept: "application/json" } }
+    { headers: { Authorization: `token ${process.env.ERPNEXT_API_KEY ?? process.env.ERP_API_KEY}:${process.env.ERPNEXT_API_SECRET ?? process.env.ERP_API_SECRET}`, Accept: "application/json" } }
   );
   const { data } = await res.json();
   return { subtotal: data.net_total, tax: data.total_taxes_and_charges, total: data.grand_total };
