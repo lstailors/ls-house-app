@@ -30,6 +30,7 @@ import { notificationsRouter } from "./routes/notifications";
 import { calendarRouter } from "./routes/calendar";
 import { transfersRouter } from "./routes/transfers";
 import { printRouter } from "./routes/print";
+import { alternationsBoardRouter } from "./routes/alterations-board";
 import { ravenRouter } from "./routes/raven";
 import { mcpRouter } from "./routes/mcp";
 
@@ -96,6 +97,7 @@ app.route("/api/notifications", notificationsRouter);
 app.route("/api/calendar", calendarRouter);
 app.route("/api/transfers", transfersRouter);
 app.route("/api/print", printRouter);
+app.route("/api/alterations-board", alternationsBoardRouter);
 app.route("/api/raven", ravenRouter);
 app.route("/api/mcp", mcpRouter);
 

@@ -1,7 +1,15 @@
+import { useQuery } from "@tanstack/react-query";
 import { SectionHeader } from "@/components/glass/SectionHeader";
-import { AlterationsBoard } from "@/components/alterations/AlterationsBoard";
+import { AlterationsBoard, type AlterationRow } from "@/components/alterations/AlterationsBoard";
+import { api } from "@/lib/api";
 
 export default function AdminBoard() {
+  const { data: rows = [], isLoading } = useQuery({
+    queryKey: ["alterations-board"],
+    queryFn: () => api.get<AlterationRow[]>("/api/alterations-board"),
+    refetchInterval: 60_000,
+  });
+
   return (
     <div className="space-y-6 animate-fade-up">
       <SectionHeader
@@ -13,8 +21,11 @@ export default function AdminBoard() {
         }
         description="Real-time view of all alterations with status, blockers, and timeline."
       />
-
-      <AlterationsBoard />
+      {isLoading ? (
+        <div className="text-cream-muted text-sm py-8 text-center">Loading board…</div>
+      ) : (
+        <AlterationsBoard rows={rows} />
+      )}
     </div>
   );
 }

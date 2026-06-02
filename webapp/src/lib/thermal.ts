@@ -10,7 +10,7 @@
 export const PRINTER_IP_KEY = "lst_printer_ip"
 
 export function getPrinterIp(): string {
-  return localStorage.getItem(PRINTER_IP_KEY) ?? ""
+  return localStorage.getItem(PRINTER_IP_KEY) ?? "10.0.1.41"
 }
 
 export function setPrinterIp(ip: string): void {

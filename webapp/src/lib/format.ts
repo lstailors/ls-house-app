@@ -64,7 +64,8 @@ export function relativeDay(iso: string | null | undefined): string {
   return formatDate(iso);
 }
 
-export function initials(name: string): string {
+export function initials(name: string | null | undefined): string {
+  if (!name) return "?"
   return name
     .split(/\s+/)
     .map((p) => p[0])
