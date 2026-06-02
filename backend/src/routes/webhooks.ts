@@ -108,5 +108,39 @@ webhooksRouter.post("/unifi", async (c) => {
     }
   }
 
+  // ── SMS handling ──────────────────────────────────────────────────────────
+  // UniFi Talk number is separate from Sofia's Twilio number.
+  // Store in sms_messages table with source="unifi" so it shows in comms dashboard.
+  if (type === "sms") {
+    const fromPhone = callerPhone ?? body.from ?? body.sender ?? null;
+    const messageBody = body.message ?? body.body ?? body.text ?? transcript ?? rawText ?? null;
+
+    if (fromPhone && messageBody && supabaseAdmin) {
+      await supabaseAdmin.from("sms_messages").insert({
+        client_phone: fromPhone,
+        direction: "inbound",
+        body: messageBody,
+        content: messageBody,
+        timestamp: new Date().toISOString(),
+        metadata: { source: "unifi", raw: body },
+      }).then(() => {});
+
+      // Log to ERPNext customer timeline
+      const customer = await matchCustomerByPhone(fromPhone).catch(() => null);
+      if (customer) {
+        await logErpCommunication({
+          customerId: customer.id,
+          medium: "SMS",
+          subject: `SMS via UniFi — ${callerName ?? fromPhone}`,
+          content: messageBody,
+          direction: "Received",
+          date: new Date().toISOString(),
+          phoneNo: fromPhone,
+        });
+      }
+    }
+    return c.json({ ok: true });
+  }
+
   return c.json({ ok: true });
 });
