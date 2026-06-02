@@ -13,6 +13,7 @@ import OrdersAlterations from "./pages/orders/OrdersAlterations";
 import OrdersCustom from "./pages/orders/OrdersCustom";
 import CustomOrderDetail from "./pages/orders/CustomOrderDetail";
 import SalesOrders from "./pages/orders/SalesOrders";
+import SalesOrderDetail from "./pages/orders/SalesOrderDetail";
 import Invoices from "./pages/orders/Invoices";
 import Deliveries from "./pages/Deliveries";
 import DeliveryTracking from "./pages/DeliveryTracking";
@@ -160,6 +161,14 @@ const App = () => (
               element={
                 <RoleGuard allow={["super_admin", "store_manager"]}>
                   <SalesOrders />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/sales-orders/:id"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager"]}>
+                  <SalesOrderDetail />
                 </RoleGuard>
               }
             />

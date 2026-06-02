@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Receipt, RefreshCw } from "lucide-react";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { DataTable, type Column } from "@/components/glass/DataTable";
@@ -27,6 +28,7 @@ interface UnifiedRow {
 type FilterTab = "all" | "custom" | "alt";
 
 export default function SalesOrders() {
+  const navigate = useNavigate();
   const { data: orders = [], isLoading: loadingSO } = useSalesOrders();
   const { data: alterations = [], isLoading: loadingAlt } = useAlterations();
   const [search, setSearch] = useState("");
@@ -210,7 +212,12 @@ export default function SalesOrders() {
           description="Sales orders and alteration tickets will appear here once synced from ERPNext."
         />
       ) : (
-        <DataTable rows={filtered} columns={columns} rowKey={(r) => r.id} />
+        <DataTable
+          rows={filtered}
+          columns={columns}
+          rowKey={(r) => r.id}
+          onRowClick={(r) => { if (r.type === "custom") navigate("/sales-orders/" + r.id); }}
+        />
       )}
     </div>
   );

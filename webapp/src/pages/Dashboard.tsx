@@ -1,8 +1,8 @@
 import { useNavigate } from "react-router-dom";
-import { Wallet, Scissors, Truck, ShoppingBag, CheckCircle2, Sparkles, AlertTriangle, Hammer, Coffee, Square, MessageSquare, Clock, Zap } from "lucide-react";
+import { Wallet, Scissors, Truck, ShoppingBag, CheckCircle2, Sparkles, AlertTriangle, Hammer, Coffee, Square, MessageSquare, Clock, Zap, TrendingUp, TrendingDown, Receipt } from "lucide-react";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { useMe } from "@/lib/session";
-import { useDashboardKpis, useMaestroApprovalCount, useDailyEspresso } from "@/lib/queries";
+import { useDashboardKpis, useMaestroApprovalCount, useDailyEspresso, useFinancials } from "@/lib/queries";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { KpiCard } from "@/components/glass/KpiCard";
 import { GlassCard } from "@/components/glass/GlassCard";
@@ -394,6 +394,8 @@ export default function Dashboard() {
     );
   }
 
+  const { data: fin } = useFinancials();
+
   // super_admin / store_manager
   const stages = kpis?.ordersByStage ?? {};
   const altOverdue = kpis?.altOverdue ?? 0;
@@ -422,19 +424,41 @@ export default function Dashboard() {
         description="Operations overview across intake, production, and delivery."
       />
 
-      {/* 2. Top KPI strip — 6 tiles */}
-      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
-        <KpiCard
-          label="Revenue MTD"
-          value={isLoading ? "—" : formatUSD(kpis?.revenueMTD ?? kpis?.revenue ?? 0, { compact: true })}
-          icon={<Wallet className="h-4 w-4" />}
-          accent="emerald"
-        />
+      {/* 2. Top KPI strip — 7 tiles */}
+      <div className="grid grid-cols-3 lg:grid-cols-7 gap-3">
+        {/* Revenue MTD — with trend vs last month */}
+        <div className="lg:col-span-1">
+          <GlassCard className="p-4 h-full flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-1">
+              <span className="ui-label text-[9px]">Revenue MTD</span>
+              <Wallet className="h-3.5 w-3.5 text-signal-emerald opacity-70" />
+            </div>
+            <div className="font-display italic text-2xl text-signal-emerald leading-none">
+              {isLoading ? "—" : formatUSD(fin?.revenueMTD ?? kpis?.revenueMTD ?? 0, { compact: true })}
+            </div>
+            {fin?.revenueChange !== undefined && (
+              <div className={cn("flex items-center gap-1 text-[10px] mt-1.5 font-medium",
+                fin.revenueChange >= 0 ? "text-signal-emerald" : "text-signal-rose")}>
+                {fin.revenueChange >= 0
+                  ? <TrendingUp className="h-3 w-3" />
+                  : <TrendingDown className="h-3 w-3" />}
+                {fin.revenueChange >= 0 ? "+" : ""}{fin?.revenueChange ?? 0}% vs last mo
+              </div>
+            )}
+          </GlassCard>
+        </div>
+
         <KpiCard
           label="Deposits Pending"
           value={isLoading ? "—" : formatUSD(kpis?.depositsPendingAmount ?? kpis?.depositsPending ?? 0, { compact: true })}
           icon={<Sparkles className="h-4 w-4" />}
           accent="amber"
+        />
+        <KpiCard
+          label="AR Outstanding"
+          value={isLoading ? "—" : formatUSD((fin as any)?.arOutstanding ?? 0, { compact: true })}
+          icon={<Receipt className="h-4 w-4" />}
+          accent={(fin as any)?.arOutstanding > 0 ? "rose" : undefined}
         />
         <KpiCard
           label="Alterations Open"
