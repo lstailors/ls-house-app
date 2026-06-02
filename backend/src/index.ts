@@ -20,6 +20,7 @@ import { dashboardRouter } from "./routes/dashboard";
 import { maestroRouter } from "./routes/maestro";
 import { intakeAlterationsRouter } from "./routes/intake-alterations";
 import { sofiaRouter } from "./routes/sofia";
+import { ravenRouter } from "./routes/raven";
 
 const app = new Hono();
 
@@ -62,6 +63,7 @@ app.route("/api/dashboard", dashboardRouter);
 app.route("/api/maestro", maestroRouter);
 app.route("/api/sofia", sofiaRouter);
 app.route("/api/intake-alterations", intakeAlterationsRouter);
+app.route("/api/raven", ravenRouter);
 import { searchRouter } from "./routes/search";
 import { notificationsRouter } from "./routes/notifications";
 app.route("/api/search", searchRouter);
