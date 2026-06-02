@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser } from "../lib/scope";
+import { sendSms, alertCarl } from "../lib/twilio";
 
 // ── Constants ──
 const CARL_PHONE = "+16319260917";

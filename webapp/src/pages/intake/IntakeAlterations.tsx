@@ -8,7 +8,11 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useMe } from '@/lib/session'
 import { CustomerEditSheet } from '@/components/pos/CustomerEditSheet'
+import { SaveCartControls } from '@/components/alterations/SaveCartControls'
+import type { ParkedCart, CartPayload } from '@/lib/cart/parked'
+import type { CustomerInput } from '@/lib/erpnext/customer'
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
 const formatUSD = (n: number) => '$' + n.toFixed(2)
@@ -912,6 +916,7 @@ function SuccessState({
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function IntakeAlterations() {
+  const { data: me } = useMe()
   const [customer, setCustomer] = useState<Customer>(null)
   const [garments, setGarments] = useState<GarmentItem[]>([])
   const [activeGarmentId, setActiveGarmentId] = useState<string | null>(null)
@@ -1019,6 +1024,41 @@ export default function IntakeAlterations() {
     acc[g.garmentType] = (acc[g.garmentType] || 0) + 1
     return acc
   }, {})
+
+  const snapshot = useCallback(() => ({
+    customer: customer ?? {},
+    customerRef: customer?.id ?? null,
+    cart: {
+      garments: garments.map(g => ({
+        id: g.id,
+        ref: g.ref,
+        garmentType: g.garmentType,
+        description: g.description,
+        color: g.color,
+        notes: g.notes,
+        lines: g.lines,
+      })),
+      lines: garments.flatMap(g => g.lines),
+    } as CartPayload,
+  }), [customer, garments])
+
+  const handleResume = useCallback((cart: ParkedCart) => {
+    setCustomer(cart.customer ? {
+      id: cart.customer.id,
+      name: cart.customer.name || '',
+      phone: cart.customer.phone || '',
+      email: cart.customer.email || '',
+    } : null)
+    setGarments(cart.cart?.garments ?? [])
+    setActiveGarmentId(null)
+    setIsRush(false)
+    setPaymentMethod('pay_now')
+    setDeposit('')
+  }, [])
+
+  const handleCommitted = useCallback((ticket: string) => {
+    setSubmitted({ ticketName: ticket })
+  }, [])
 
   return (
     <div className="min-h-screen bg-forest-deep text-cream">
@@ -1133,7 +1173,15 @@ export default function IntakeAlterations() {
         </div>
 
         {/* RIGHT: Checkout Cart */}
-        <div className="lg:w-1/3 lg:sticky lg:top-6 lg:self-start mt-5 lg:mt-0">
+        <div className="lg:w-1/3 lg:sticky lg:top-6 lg:self-start mt-5 lg:mt-0 space-y-4">
+          <SaveCartControls
+            createdBy={me?.id || ''}
+            location={origin}
+            activeCartId={undefined}
+            snapshot={snapshot}
+            onResume={handleResume}
+            onCommitted={handleCommitted}
+          />
           <CheckoutCart
             garments={garments}
             customer={customer}

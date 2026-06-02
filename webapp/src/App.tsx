@@ -25,6 +25,7 @@ import AdminUsers from "./pages/admin/AdminUsers";
 import AdminLocations from "./pages/admin/AdminLocations";
 import AdminTailors from "./pages/admin/AdminTailors";
 import AdminOverview from "./pages/admin/AdminOverview";
+import AdminBoard from "./pages/admin/AdminBoard";
 import FabricPricingPage from "./pages/reference/FabricPricingPage";
 import StyleLibraryPage from "./pages/reference/StyleLibraryPage";
 import Academy from "./pages/Academy";
@@ -227,6 +228,14 @@ const App = () => (
               element={
                 <RoleGuard allow={["super_admin"]}>
                   <AdminOverview />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/admin/board"
+              element={
+                <RoleGuard allow={["super_admin"]}>
+                  <AdminBoard />
                 </RoleGuard>
               }
             />
