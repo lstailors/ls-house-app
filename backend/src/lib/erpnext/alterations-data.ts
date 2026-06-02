@@ -1,6 +1,9 @@
 // Enriched board rows in 3 batched calls. Server-only.
-const ERP_URL = process.env.ERP_URL ?? "https://erp.lstailors.com";
-const authHeaders = { Authorization: `token ${process.env.ERP_API_KEY}:${process.env.ERP_API_SECRET}`, Accept: "application/json" };
+const ERP_URL = process.env.ERPNEXT_BASE_URL ?? process.env.ERP_URL ?? "https://erp.lstailors.com";
+const authHeaders = {
+  Authorization: `token ${process.env.ERPNEXT_API_KEY ?? process.env.ERP_API_KEY}:${process.env.ERPNEXT_API_SECRET ?? process.env.ERP_API_SECRET}`,
+  Accept: "application/json",
+};
 
 export type BoardFilter = "all" | "in_progress" | "complete" | "delivered";
 const STATE_GROUPS: Record<Exclude<BoardFilter, "all">, string[]> = {
