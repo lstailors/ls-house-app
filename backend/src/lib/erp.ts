@@ -51,3 +51,65 @@ export async function erpGet<T = unknown>(doctype: string, name: string): Promis
   const json = await res.json() as { data: T }
   return json.data ?? null
 }
+
+export async function erpCreate<T = unknown>(doctype: string, doc: Record<string, unknown>): Promise<T | null> {
+  const { base, key, secret } = creds()
+  if (!base || !key || !secret) return null
+  const res = await fetch(`${base}/api/resource/${encodeURIComponent(doctype)}`, {
+    method: 'POST',
+    headers: { ...authHeaders(key, secret), 'Content-Type': 'application/json' },
+    body: JSON.stringify(doc),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as any
+    throw new Error(err._server_messages || err.exception || `ERP create failed: ${res.status}`)
+  }
+  const json = await res.json() as { data: T }
+  return json.data ?? null
+}
+
+export async function erpUpdate<T = unknown>(doctype: string, name: string, doc: Record<string, unknown>): Promise<T | null> {
+  const { base, key, secret } = creds()
+  if (!base || !key || !secret) return null
+  const res = await fetch(`${base}/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { ...authHeaders(key, secret), 'Content-Type': 'application/json' },
+    body: JSON.stringify(doc),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as any
+    throw new Error(err._server_messages || err.exception || `ERP update failed: ${res.status}`)
+  }
+  const json = await res.json() as { data: T }
+  return json.data ?? null
+}
+
+export async function erpSubmit(doctype: string, name: string): Promise<void> {
+  const { base, key, secret } = creds()
+  if (!base || !key || !secret) return
+  const res = await fetch(`${base}/api/method/frappe.client.submit`, {
+    method: 'POST',
+    headers: { ...authHeaders(key, secret), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ doc: JSON.stringify({ doctype, name }) }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as any
+    throw new Error(err._server_messages || err.exception || `ERP submit failed: ${res.status}`)
+  }
+}
+
+export async function erpRunMethod(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+  const { base, key, secret } = creds()
+  if (!base || !key || !secret) return null
+  const res = await fetch(`${base}/api/method/${method}`, {
+    method: 'POST',
+    headers: { ...authHeaders(key, secret), 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as any
+    throw new Error(err._server_messages || err.exception || `ERP method failed: ${res.status}`)
+  }
+  const json = await res.json() as { message: unknown }
+  return json.message ?? null
+}

@@ -28,6 +28,7 @@ import { commsRouter } from "./routes/comms";
 import { searchRouter } from "./routes/search";
 import { notificationsRouter } from "./routes/notifications";
 import { calendarRouter } from "./routes/calendar";
+import { transfersRouter } from "./routes/transfers";
 import { ravenRouter } from "./routes/raven";
 import { mcpRouter } from "./routes/mcp";
 
@@ -92,6 +93,7 @@ app.route("/api/comms", commsRouter);
 app.route("/api/search", searchRouter);
 app.route("/api/notifications", notificationsRouter);
 app.route("/api/calendar", calendarRouter);
+app.route("/api/transfers", transfersRouter);
 app.route("/api/raven", ravenRouter);
 app.route("/api/mcp", mcpRouter);
 

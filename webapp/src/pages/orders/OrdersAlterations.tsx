@@ -8,8 +8,11 @@ import { StatusPill } from "@/components/glass/StatusPill";
 import { EmptyState } from "@/components/glass/EmptyState";
 import { Button } from "@/components/ui/button";
 import { useAlterations } from "@/lib/queries";
-import { formatUSD, formatDate, relativeDay } from "@/lib/format";
+import { formatUSD, formatDate } from "@/lib/format";
 import type { Alteration } from "@/lib/types";
+import { AlterationKpiBar } from "@/components/alterations/AlterationKpiBar";
+import { AlterationDailyBrief } from "@/components/alterations/AlterationDailyBrief";
+import { TransferButton } from "@/components/alterations/TransferButton";
 
 const FILTERS = [
   { value: "all",          label: "All"         },
@@ -23,18 +26,15 @@ export default function OrdersAlterations() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
+  const [altKpis, setAltKpis] = useState<any>(null);
+  const [kpiFilter, setKpiFilter] = useState<string>("active");
 
   const rows = useMemo(() => {
     const s = search.toLowerCase();
     return alterations.filter((a) => {
-      // Map display tabs → underlying status values
-      // In Progress = intake (Received) + in_progress (In Progress)
-      // Complete    = ready (Ready)
-      // Delivered   = picked_up (Picked Up)
       if (filter === "in_progress" && a.status !== "intake" && a.status !== "in_progress") return false;
       if (filter === "complete"    && a.status !== "ready")     return false;
       if (filter === "delivered"   && a.status !== "picked_up") return false;
-      if (filter === "all") { /* no filter */ }
       if (!s) return true;
       return (
         a.customer?.name.toLowerCase().includes(s) ||
@@ -54,6 +54,11 @@ export default function OrdersAlterations() {
           <div className="text-cream font-medium truncate flex items-center gap-1.5">
             {a.customer?.name ?? "—"}
             {a.customer?.dossier?.vip ? <Star className="h-3 w-3 text-brass fill-brass" /> : null}
+            {(a as any).isRush ? (
+              <span className="px-1 py-0.5 text-[8px] font-bold uppercase tracking-widest bg-signal-amber/20 text-signal-amber border border-signal-amber/30 rounded">
+                RUSH
+              </span>
+            ) : null}
           </div>
           <div className="text-[11px] text-cream-dim truncate">{a.customer?.phone}</div>
         </div>
@@ -62,16 +67,20 @@ export default function OrdersAlterations() {
     {
       key: "items",
       header: "Items",
-      cell: (a) => (
-        <div className="min-w-0 max-w-[260px]">
-          <div className="text-cream-muted text-sm truncate">
-            {a.items.map((i) => i.label).join(" · ")}
+      cell: (a) => {
+        const first2 = a.items.slice(0, 2);
+        return (
+          <div className="min-w-0 max-w-[260px]">
+            <div className="text-cream-muted text-sm truncate">
+              {first2.map((i) => i.label).join(" · ")}
+              {a.items.length > 2 ? <span className="text-cream-dim"> +{a.items.length - 2}</span> : null}
+            </div>
+            <div className="text-[10px] text-cream-dim">
+              {a.items.length} item{a.items.length === 1 ? "" : "s"}
+            </div>
           </div>
-          <div className="text-[10px] text-cream-dim">
-            {a.items.length} item{a.items.length === 1 ? "" : "s"}
-          </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       key: "tailor",
@@ -88,12 +97,28 @@ export default function OrdersAlterations() {
       key: "due",
       header: "Due",
       accessor: (a) => a.dueDate ?? "",
-      cell: (a) => (
-        <div>
-          <div className="text-cream-muted">{relativeDay(a.dueDate)}</div>
-          <div className="text-[10px] text-cream-dim">{formatDate(a.dueDate)}</div>
-        </div>
-      ),
+      cell: (a) => {
+        if (!a.dueDate) return <span className="text-cream-dim">—</span>;
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const due = new Date(a.dueDate); due.setHours(0, 0, 0, 0);
+        const diff = Math.round((due.getTime() - today.getTime()) / 86400000);
+        let label: React.ReactNode;
+        if (diff < 0) {
+          label = <span className="text-red-400 font-medium text-xs">OVERDUE {Math.abs(diff)}d</span>;
+        } else if (diff === 0) {
+          label = <span className="text-signal-amber font-medium text-xs">Due Today</span>;
+        } else if (diff === 1) {
+          label = <span className="text-amber-300 text-xs">Due Tomorrow</span>;
+        } else {
+          label = <span className="text-cream-dim text-xs">Due in {diff}d</span>;
+        }
+        return (
+          <div>
+            {label}
+            <div className="text-[10px] text-cream-dim">{formatDate(a.dueDate)}</div>
+          </div>
+        );
+      },
     },
     {
       key: "status",
@@ -129,6 +154,9 @@ export default function OrdersAlterations() {
         }
       />
 
+      <AlterationKpiBar activeFilter={kpiFilter} onFilter={setKpiFilter} />
+      <AlterationDailyBrief kpis={altKpis} />
+
       <FilterBar
         search={search}
         onSearchChange={setSearch}
@@ -159,6 +187,8 @@ export default function OrdersAlterations() {
           onRowClick={(r) => navigate(`/orders/alterations/${r.id}`)}
         />
       )}
+
+      <TransferButton />
     </div>
   );
 }
