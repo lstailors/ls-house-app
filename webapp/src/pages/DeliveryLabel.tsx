@@ -58,10 +58,15 @@ export default function DeliveryLabel() {
     api.post(`/api/deliveries/${id}/log-label-print`, {}).catch(() => {});
   };
 
-  const handlePrint = () => {
-    logPrint();
-    window.print();
-  };
+  const autoPrinted = useRef(false);
+  useEffect(() => {
+    if (data && qrDataUrl && !autoPrinted.current) {
+      autoPrinted.current = true;
+      setTimeout(() => { logPrint(); window.print(); }, 800);
+    }
+  }, [data, qrDataUrl]);
+
+  const handlePrint = () => { logPrint(); window.print(); };
 
   if (isLoading) {
     return (
@@ -89,9 +94,15 @@ export default function DeliveryLabel() {
         * { box-sizing: border-box; }
         body { margin: 0; }
         @media print {
+          @page { size: 4in 6in; margin: 0; }
+          html, body { margin: 0 !important; padding: 0 !important; width: 4in !important; height: 6in !important; background: white !important; }
           .no-print { display: none !important; }
-          body { background: white; }
-          .print-label { box-shadow: none !important; }
+          .print-label {
+            box-shadow: none !important;
+            width: 4in !important;
+            height: 6in !important;
+            transform: none !important;
+          }
         }
       `}</style>
 

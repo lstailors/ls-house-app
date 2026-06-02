@@ -72,6 +72,7 @@ const App = () => (
           {/* Standalone print pages — outside AppShell so only content renders */}
           <Route path="/orders/alterations/:ticketName/tags" element={<AlterationTags />} />
           <Route path="/orders/alterations/:ticketName/receipt" element={<AlterationReceipt />} />
+          <Route path="/deliveries/:id/label" element={<DeliveryLabel />} />
           <Route element={<AppShell />}>
             <Route path="/" element={<Dashboard />} />
 
@@ -173,7 +174,6 @@ const App = () => (
 
             <Route path="/deliveries" element={<Deliveries />} />
             <Route path="/deliveries/:id" element={<DeliveryDetail />} />
-            <Route path="/deliveries/:id/label" element={<DeliveryLabel />} />
             <Route
               path="/communications"
               element={
