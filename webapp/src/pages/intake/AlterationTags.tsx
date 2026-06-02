@@ -1,40 +1,23 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
 import { Printer, ArrowLeft, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
 import { buildTagsXml, sendToEpson, getPrinterIp } from '@/lib/thermal'
 
 interface AlterationTicketDoc {
   name: string
   customer_name: string
-  customer: string
   origin_location: string
-  workflow_state: string
-  ticket_date: string
   due_date: string
   is_rush: 0 | 1
-  ticket_total: number
-  payment_status: string
-  garments?: Array<{
-    name: string
-    garment_id: string
-    garment_type: string
-    garment_description: string
-    color?: string
-  }>
-  lines?: Array<{
-    name: string
-    garment_ref: string
-    description: string
-    price: number
-  }>
+  garments?: Array<{ name: string; garment_id: string; garment_type: string; garment_description: string; color?: string }>
+  lines?: Array<{ name: string; garment_ref: string; description: string; price: number }>
 }
 
-function formatDate(s: string) {
+function fmt(s: string) {
   if (!s) return '—'
   return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
@@ -43,6 +26,7 @@ export default function AlterationTags() {
   const { ticketName } = useParams<{ ticketName: string }>()
   const navigate = useNavigate()
   const [printing, setPrinting] = useState(false)
+  const printed = useRef(false)
 
   const { data: ticket, isLoading } = useQuery<AlterationTicketDoc>({
     queryKey: ['intake-ticket', ticketName],
@@ -50,22 +34,23 @@ export default function AlterationTags() {
     enabled: !!ticketName,
   })
 
+  // Auto-open print dialog once loaded
+  useEffect(() => {
+    if (ticket && !printed.current) {
+      printed.current = true
+      setTimeout(() => window.print(), 600)
+    }
+  }, [ticket])
+
   const handleEpsonPrint = async () => {
     if (!ticket) return
-    if (!getPrinterIp()) {
-      toast.error('No printer IP set — go to Settings to add it')
-      return
-    }
+    if (!getPrinterIp()) { toast.error('No printer IP — go to Settings'); return }
     setPrinting(true)
     try {
       const garments = (ticket.garments ?? []).map(g => ({
-        id: g.garment_id,
-        type: g.garment_type,
-        color: g.color,
-        dueDate: formatDate(ticket.due_date),
-        lines: (ticket.lines ?? [])
-          .filter(l => l.garment_ref === g.garment_id)
-          .map(l => ({ description: l.description })),
+        id: g.garment_id, type: g.garment_type, color: g.color,
+        dueDate: fmt(ticket.due_date),
+        lines: (ticket.lines ?? []).filter(l => l.garment_ref === g.garment_id).map(l => ({ description: l.description })),
       }))
       const xml = buildTagsXml({
         ticketName: ticket.name,
@@ -76,145 +61,124 @@ export default function AlterationTags() {
         garments,
       })
       await sendToEpson(xml)
-      toast.success(`${garments.length} tag${garments.length !== 1 ? 's' : ''} sent to printer`)
+      toast.success(`${garments.length} tag${garments.length !== 1 ? 's' : ''} sent to Epson`)
     } catch (e: any) {
-      toast.error(e.message || 'Print failed — check printer is on and on same WiFi')
-    } finally {
-      setPrinting(false)
-    }
+      toast.error(e.message || 'Print failed — ensure iPad and printer are on same WiFi')
+    } finally { setPrinting(false) }
   }
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-forest-deep flex items-center justify-center">
-        <div className="w-8 h-8 rounded-full border-2 border-brass/30 border-t-brass animate-spin" />
-      </div>
-    )
-  }
+  if (isLoading) return (
+    <div className="min-h-screen bg-white flex items-center justify-center">
+      <div className="w-8 h-8 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin" />
+    </div>
+  )
 
-  if (!ticket) {
-    return (
-      <div className="min-h-screen bg-forest-deep flex items-center justify-center text-cream-dim">
-        Ticket not found.
-      </div>
-    )
-  }
+  if (!ticket) return (
+    <div className="min-h-screen bg-white flex items-center justify-center text-gray-500">Ticket not found.</div>
+  )
 
   const garments = ticket.garments ?? []
+  const lines = ticket.lines ?? []
 
   return (
     <>
-      {/* 80mm thermal print styles */}
       <style>{`
+        * { box-sizing: border-box; }
         @media print {
           @page { size: 80mm auto; margin: 2mm; }
-          body { background: white !important; color: black !important; }
           .no-print { display: none !important; }
-          .tag-card { break-inside: avoid; page-break-inside: avoid; border: 1px solid #ccc; padding: 4mm; margin-bottom: 2mm; font-family: monospace; font-size: 10px; color: black; width: 76mm; }
+          body { margin: 0; background: white; }
+          .tag { page-break-inside: avoid; break-inside: avoid; }
         }
       `}</style>
 
-      <div className="min-h-screen bg-forest-deep text-cream">
-        {/* Toolbar */}
-        <div className="no-print flex items-center justify-between px-5 py-4 border-b border-brass/15">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-2 text-cream-muted hover:text-cream transition-colors text-sm"
-          >
-            <ArrowLeft size={16} /> Back
+      {/* Screen toolbar */}
+      <div className="no-print bg-gray-900 text-white flex items-center justify-between px-4 py-3">
+        <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-gray-300 hover:text-white text-sm">
+          <ArrowLeft size={15} /> Back
+        </button>
+        <span className="text-sm font-medium text-gray-200">
+          {ticket.name} · {garments.length} Tag{garments.length !== 1 ? 's' : ''}
+        </span>
+        <div className="flex gap-2">
+          <button onClick={handleEpsonPrint} disabled={printing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium disabled:opacity-50">
+            <Zap size={12} /> {printing ? 'Sending…' : 'Epson'}
           </button>
-          <h1 className="text-cream font-medium text-sm">
-            {ticket.name} — {garments.length} Garment Tag{garments.length !== 1 ? 's' : ''}
-          </h1>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleEpsonPrint}
-              disabled={printing}
-              className={cn(
-                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
-                'bg-brass/20 border border-brass/40 text-brass-shimmer',
-                'hover:bg-brass/30 disabled:opacity-50 disabled:cursor-not-allowed',
-              )}
-            >
-              <Zap size={14} />
-              {printing ? 'Printing…' : 'Print to Epson'}
-            </button>
-            <button
-              onClick={() => window.print()}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-forest-raised border border-brass/20 text-cream-muted text-sm hover:border-brass/40 hover:text-cream transition-all"
-            >
-              <Printer size={14} /> Print Dialog
-            </button>
-          </div>
+          <button onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium">
+            <Printer size={12} /> Print
+          </button>
         </div>
+      </div>
 
-        {/* Tags */}
-        <div className="p-5 max-w-2xl mx-auto">
-          {garments.length === 0 ? (
-            <p className="text-cream-dim text-center py-12">No garments on this ticket.</p>
-          ) : (
-            <div className="grid grid-cols-2 gap-3 print:grid-cols-1 print:gap-2">
-              {garments.map(g => {
-                const gLines = (ticket.lines ?? []).filter(l => l.garment_ref === g.garment_id)
-                const tagUrl = `${window.location.origin}/garments/${ticket.name}/${g.garment_id}`
+      {/* Tags — clean white grid */}
+      <div style={{ background: '#fff', padding: '8px' }}>
+        {garments.length === 0 && (
+          <p style={{ textAlign: 'center', color: '#888', padding: '40px', fontFamily: 'sans-serif' }}>No garments on this ticket.</p>
+        )}
 
-                return (
-                  <div
-                    key={g.name}
-                    className={cn(
-                      'tag-card rounded-xl border p-4 space-y-3 font-mono text-xs',
-                      'bg-forest-raised border-brass/20',
-                      ticket.is_rush === 1 && 'border-red-500/50',
-                    )}
-                  >
-                    {/* Rush */}
-                    {ticket.is_rush === 1 && (
-                      <div className="text-center text-red-400 font-bold text-sm print:text-red-600 tracking-widest">
-                        ⚡ RUSH ⚡
-                      </div>
-                    )}
+        {/* 2-up grid on screen, single column on print */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', maxWidth: '180mm', margin: '0 auto' }}
+          className="print:block print:max-w-none">
+          {garments.map(g => {
+            const gLines = lines.filter(l => l.garment_ref === g.garment_id)
+            const tagUrl = `${window.location.origin}/garments/${ticket.name}/${g.garment_id}`
 
-                    {/* Top row: info + QR */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0 space-y-0.5">
-                        <p className="text-brass-shimmer font-bold print:text-black text-[11px]">{ticket.name}</p>
-                        <p className="text-cream font-bold text-sm print:text-black truncate">{ticket.customer_name}</p>
-                        <p className="text-cream font-semibold print:text-black">
-                          {g.garment_type}
-                          {g.color ? <span className="text-cream-dim print:text-gray-500 font-normal"> · {g.color}</span> : null}
-                        </p>
-                        <p className="text-cream-dim print:text-gray-500 text-[10px]">ID: {g.garment_id}</p>
-                      </div>
-                      <div className="shrink-0 p-1.5 bg-white rounded-lg">
-                        <QRCodeSVG value={tagUrl} size={72} level="M" />
-                      </div>
-                    </div>
-
-                    {/* Alteration lines */}
-                    {gLines.length > 0 && (
-                      <div className="border-t border-brass/10 print:border-gray-200 pt-2 space-y-0.5">
-                        {gLines.map(l => (
-                          <p key={l.name} className="text-cream-dim print:text-gray-600 text-[10px] truncate">
-                            · {l.description}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Footer */}
-                    <div className="border-t border-brass/10 print:border-gray-200 pt-2 flex justify-between">
-                      <span className="text-cream-dim print:text-gray-500 text-[10px]">
-                        Due {formatDate(ticket.due_date)}
-                      </span>
-                      <span className="text-cream-dim print:text-gray-500 text-[10px] uppercase tracking-wide">
-                        {ticket.origin_location}
-                      </span>
-                    </div>
+            return (
+              <div key={g.name} className="tag" style={{
+                border: ticket.is_rush === 1 ? '2px solid #cc0000' : '1px solid #ccc',
+                borderRadius: '6px',
+                padding: '8px',
+                fontFamily: 'monospace',
+                fontSize: '10px',
+                color: '#000',
+                background: '#fff',
+                marginBottom: '4px',
+              }}>
+                {/* Rush banner */}
+                {ticket.is_rush === 1 && (
+                  <div style={{ background: '#cc0000', color: '#fff', textAlign: 'center', fontWeight: 'bold', fontSize: '10px', letterSpacing: '2px', padding: '2px', marginBottom: '6px', borderRadius: '3px' }}>
+                    ★ RUSH ★
                   </div>
-                )
-              })}
-            </div>
-          )}
+                )}
+
+                {/* Header row */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '6px' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontFamily: 'Georgia, serif', fontWeight: 'bold', fontSize: '13px', marginBottom: '2px' }}>
+                      {ticket.customer_name}
+                    </div>
+                    <div style={{ fontSize: '9px', color: '#555', fontFamily: 'monospace' }}>{ticket.name}</div>
+                    <div style={{ fontSize: '11px', fontWeight: 'bold', marginTop: '4px' }}>
+                      {g.garment_type}
+                      {g.color ? <span style={{ fontWeight: 'normal', color: '#555' }}> · {g.color}</span> : null}
+                    </div>
+                    <div style={{ fontSize: '9px', color: '#777', marginTop: '1px' }}>ID: {g.garment_id}</div>
+                  </div>
+                  {/* QR code */}
+                  <div style={{ flexShrink: 0, padding: '3px', border: '1px solid #ddd', borderRadius: '4px', background: '#fff' }}>
+                    <QRCodeSVG value={tagUrl} size={72} level="M" />
+                  </div>
+                </div>
+
+                {/* Alteration lines */}
+                {gLines.length > 0 && (
+                  <div style={{ borderTop: '1px dashed #ccc', paddingTop: '4px', marginTop: '2px' }}>
+                    {gLines.map(l => (
+                      <div key={l.name} style={{ fontSize: '9px', color: '#333', padding: '1px 0' }}>· {l.description}</div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Footer */}
+                <div style={{ borderTop: '1px dashed #ccc', marginTop: '6px', paddingTop: '4px', display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
+                  <span>Due {fmt(ticket.due_date)}</span>
+                  <span>{ticket.origin_location}</span>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
     </>

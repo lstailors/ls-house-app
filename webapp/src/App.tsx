@@ -69,6 +69,9 @@ const App = () => (
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/d/:token" element={<DeliveryTracking />} />
+          {/* Standalone print pages — outside AppShell so only content renders */}
+          <Route path="/orders/alterations/:ticketName/tags" element={<AlterationTags />} />
+          <Route path="/orders/alterations/:ticketName/receipt" element={<AlterationReceipt />} />
           <Route element={<AppShell />}>
             <Route path="/" element={<Dashboard />} />
 
@@ -120,22 +123,6 @@ const App = () => (
               element={
                 <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
                   <TicketDetail />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/orders/alterations/:ticketName/tags"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
-                  <AlterationTags />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/orders/alterations/:ticketName/receipt"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
-                  <AlterationReceipt />
                 </RoleGuard>
               }
             />

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Printer, ArrowLeft, Zap } from 'lucide-react'
@@ -16,35 +16,20 @@ interface AlterationTicketDoc {
   workflow_state: string
   ticket_date: string
   due_date: string
-  promised_date?: string
   is_rush: 0 | 1
   ticket_total: number
   payment_status: string
   delivery_method?: string
-  internal_notes?: string
   customer_notes?: string
-  garments?: Array<{
-    name: string
-    garment_id: string
-    garment_type: string
-    garment_description: string
-    color?: string
-    garment_total?: number
-  }>
-  lines?: Array<{
-    name: string
-    garment_ref: string
-    description: string
-    price: number
-  }>
+  garments?: Array<{ name: string; garment_id: string; garment_type: string; garment_description: string; color?: string }>
+  lines?: Array<{ name: string; garment_ref: string; description: string; price: number }>
 }
 
-function formatDate(s: string) {
+function fmt(s: string) {
   if (!s) return '—'
   return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
-
-function formatUSD(n: number) {
+function usd(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
 }
 
@@ -52,6 +37,7 @@ export default function AlterationReceipt() {
   const { ticketName } = useParams<{ ticketName: string }>()
   const navigate = useNavigate()
   const [printing, setPrinting] = useState(false)
+  const printed = useRef(false)
 
   const { data: ticket, isLoading } = useQuery<AlterationTicketDoc>({
     queryKey: ['intake-ticket', ticketName],
@@ -59,12 +45,17 @@ export default function AlterationReceipt() {
     enabled: !!ticketName,
   })
 
+  // Auto-open print dialog once data is loaded
+  useEffect(() => {
+    if (ticket && !printed.current) {
+      printed.current = true
+      setTimeout(() => window.print(), 600)
+    }
+  }, [ticket])
+
   const handleEpsonPrint = async () => {
     if (!ticket) return
-    if (!getPrinterIp()) {
-      toast.error('No printer IP set — go to Settings to add it')
-      return
-    }
+    if (!getPrinterIp()) { toast.error('No printer IP — go to Settings'); return }
     setPrinting(true)
     try {
       const xml = buildReceiptXml({
@@ -72,176 +63,140 @@ export default function AlterationReceipt() {
         customerName: ticket.customer_name,
         customerPhone: ticket.customer_phone,
         location: ticket.origin_location === 'HOU' ? 'Houston' : 'New York City',
-        ticketDate: formatDate(ticket.ticket_date),
-        dueDate: formatDate(ticket.due_date),
+        ticketDate: fmt(ticket.ticket_date),
+        dueDate: fmt(ticket.due_date),
         isRush: ticket.is_rush === 1,
         deliveryMethod: ticket.delivery_method,
         paymentStatus: ticket.payment_status ?? '—',
         customerNotes: ticket.customer_notes,
         total: ticket.ticket_total,
         garments: (ticket.garments ?? []).map(g => ({
-          id: g.garment_id,
-          type: g.garment_type,
-          color: g.color,
-          lines: (ticket.lines ?? [])
-            .filter(l => l.garment_ref === g.garment_id)
-            .map(l => ({ description: l.description, price: l.price })),
+          id: g.garment_id, type: g.garment_type, color: g.color,
+          lines: (ticket.lines ?? []).filter(l => l.garment_ref === g.garment_id).map(l => ({ description: l.description, price: l.price })),
         })),
       })
       await sendToEpson(xml)
-      toast.success('Receipt sent to printer')
+      toast.success('Receipt sent to Epson')
     } catch (e: any) {
-      toast.error(e.message || 'Print failed — check printer is on and on same WiFi')
-    } finally {
-      setPrinting(false)
-    }
+      toast.error(e.message || 'Print failed — ensure iPad and printer are on same WiFi')
+    } finally { setPrinting(false) }
   }
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-forest-deep flex items-center justify-center">
-        <div className="w-8 h-8 rounded-full border-2 border-brass/30 border-t-brass animate-spin" />
-      </div>
-    )
-  }
+  if (isLoading) return (
+    <div className="min-h-screen bg-white flex items-center justify-center">
+      <div className="w-8 h-8 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin" />
+    </div>
+  )
 
-  if (!ticket) {
-    return (
-      <div className="min-h-screen bg-forest-deep flex items-center justify-center text-cream-dim">
-        Ticket not found.
-      </div>
-    )
-  }
+  if (!ticket) return (
+    <div className="min-h-screen bg-white flex items-center justify-center text-gray-500">Ticket not found.</div>
+  )
 
   const garments = ticket.garments ?? []
   const lines = ticket.lines ?? []
 
   return (
     <>
-      {/* 80mm thermal print styles */}
       <style>{`
+        * { box-sizing: border-box; }
         @media print {
-          @page { size: 80mm auto; margin: 2mm; }
-          body { background: white !important; color: black !important; }
+          @page { size: 80mm auto; margin: 3mm 2mm; }
           .no-print { display: none !important; }
-          .receipt-body { width: 76mm; font-family: monospace; font-size: 11px; color: black; }
+          body { margin: 0; background: white; }
         }
       `}</style>
 
-      <div className="min-h-screen bg-forest-deep text-cream">
-        {/* Toolbar — hidden on print */}
-        <div className="no-print flex items-center justify-between px-5 py-4 border-b border-brass/15">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-2 text-cream-muted hover:text-cream transition-colors text-sm"
-          >
-            <ArrowLeft size={16} /> Back
+      {/* Screen toolbar — hidden on print */}
+      <div className="no-print bg-gray-900 text-white flex items-center justify-between px-4 py-3 gap-3">
+        <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-gray-300 hover:text-white text-sm">
+          <ArrowLeft size={15} /> Back
+        </button>
+        <span className="text-sm font-medium text-gray-200">{ticket.name} · Receipt</span>
+        <div className="flex gap-2">
+          <button onClick={handleEpsonPrint} disabled={printing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium disabled:opacity-50">
+            <Zap size={12} /> {printing ? 'Sending…' : 'Epson'}
           </button>
-          <h1 className="text-cream font-medium text-sm">{ticket.name} — Receipt</h1>
-          <div className="flex items-center gap-2">
-            {/* Direct Epson print */}
-            <button
-              onClick={handleEpsonPrint}
-              disabled={printing}
-              className={cn(
-                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
-                'bg-brass/20 border border-brass/40 text-brass-shimmer',
-                'hover:bg-brass/30 disabled:opacity-50 disabled:cursor-not-allowed',
-              )}
-            >
-              <Zap size={14} />
-              {printing ? 'Printing…' : 'Print to Epson'}
-            </button>
-            {/* System print dialog (AirPrint) */}
-            <button
-              onClick={() => window.print()}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-forest-raised border border-brass/20 text-cream-muted text-sm hover:border-brass/40 hover:text-cream transition-all"
-            >
-              <Printer size={14} /> Print Dialog
-            </button>
+          <button onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium">
+            <Printer size={12} /> Print
+          </button>
+        </div>
+      </div>
+
+      {/* Receipt — clean white, 80mm-constrained */}
+      <div style={{ width: '76mm', margin: '12px auto', fontFamily: 'monospace', fontSize: '11px', color: '#000', background: '#fff', padding: '4mm 2mm' }}>
+
+        {/* Header */}
+        <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '6px', marginBottom: '6px' }}>
+          <div style={{ fontFamily: 'Georgia, serif', fontSize: '16px', fontWeight: 'bold' }}>L&S Custom Tailors</div>
+          <div style={{ fontSize: '10px', marginTop: '2px' }}>
+            {ticket.origin_location === 'HOU' ? 'Houston' : 'New York City'}
           </div>
         </div>
 
-        {/* Receipt — 80mm-width constrained */}
-        <div className="receipt-body max-w-[80mm] mx-auto p-3 font-mono text-xs">
-
-          {/* Header */}
-          <div className="text-center border-b border-current pb-2 mb-2">
-            <p className="font-bold text-sm text-brass-shimmer print:text-black">L&S Custom Tailors</p>
-            <p className="text-cream-dim print:text-gray-600 text-[10px]">
-              {ticket.origin_location === 'HOU' ? 'Houston' : 'New York City'}
-            </p>
-          </div>
-
-          {/* Ticket info */}
-          <div className="space-y-0.5 mb-2">
+        {/* Ticket info */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '6px', fontSize: '10px' }}>
+          <tbody>
             {[
               ['Ticket', ticket.name],
               ['Customer', ticket.customer_name],
               ticket.customer_phone ? ['Phone', ticket.customer_phone] : null,
-              ['Date', formatDate(ticket.ticket_date)],
-              ['Due', formatDate(ticket.due_date) + (ticket.is_rush === 1 ? ' ** RUSH **' : '')],
+              ['Date', fmt(ticket.ticket_date)],
+              ['Due', fmt(ticket.due_date) + (ticket.is_rush === 1 ? '  ★ RUSH' : '')],
               ticket.delivery_method ? ['Delivery', ticket.delivery_method] : null,
             ].filter(Boolean).map(([label, value]) => (
-              <div key={label} className="flex justify-between">
-                <span className="text-cream-dim print:text-gray-500">{label}:</span>
-                <span className={cn(
-                  'text-cream print:text-black ml-2 text-right',
-                  label === 'Due' && ticket.is_rush === 1 && 'text-red-400 font-bold print:text-red-600',
-                )}>{value}</span>
-              </div>
+              <tr key={label as string}>
+                <td style={{ color: '#555', paddingRight: '8px', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{label}:</td>
+                <td style={{ fontWeight: label === 'Customer' || label === 'Due' ? 'bold' : 'normal', color: label === 'Due' && ticket.is_rush === 1 ? '#cc0000' : '#000' }}>{value}</td>
+              </tr>
             ))}
-          </div>
+          </tbody>
+        </table>
 
-          <div className="border-t border-current my-2" />
+        <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
 
-          {/* Line items */}
-          {garments.map(g => {
-            const gLines = lines.filter(l => l.garment_ref === g.garment_id)
-            const gTotal = gLines.reduce((s, l) => s + (l.price ?? 0), 0)
-            return (
-              <div key={g.name} className="mb-2">
-                <div className="flex justify-between font-bold">
-                  <span className="text-cream print:text-black">
-                    {g.garment_type}{g.color ? ` - ${g.color}` : ''} ({g.garment_id})
-                  </span>
-                  {gTotal > 0 && <span className="text-cream print:text-black">{formatUSD(gTotal)}</span>}
-                </div>
-                {gLines.map(l => (
-                  <div key={l.name} className="flex justify-between ml-2 text-cream-dim print:text-gray-600">
-                    <span>{l.description}</span>
-                    <span>{formatUSD(l.price)}</span>
-                  </div>
-                ))}
+        {/* Line items */}
+        {garments.map(g => {
+          const gLines = lines.filter(l => l.garment_ref === g.garment_id)
+          const gTotal = gLines.reduce((s, l) => s + (l.price ?? 0), 0)
+          return (
+            <div key={g.name} style={{ marginBottom: '6px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '10px' }}>
+                <span>{g.garment_type}{g.color ? ` · ${g.color}` : ''} ({g.garment_id})</span>
+                {gTotal > 0 && <span>{usd(gTotal)}</span>}
               </div>
-            )
-          })}
+              {gLines.map(l => (
+                <div key={l.name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', paddingLeft: '8px', color: '#333' }}>
+                  <span>{l.description}</span>
+                  <span>{usd(l.price)}</span>
+                </div>
+              ))}
+            </div>
+          )
+        })}
 
-          <div className="border-t-2 border-current my-2" />
+        <div style={{ borderTop: '2px solid #000', margin: '6px 0' }} />
 
-          {/* Total */}
-          <div className="flex justify-between font-bold text-sm">
-            <span className="text-cream print:text-black">TOTAL</span>
-            <span className="text-brass-shimmer print:text-black">{formatUSD(ticket.ticket_total)}</span>
-          </div>
-          <div className="flex justify-between text-cream-dim print:text-gray-600">
-            <span>Payment:</span>
-            <span className={ticket.payment_status === 'Paid' ? 'text-emerald-400 print:text-green-700' : 'text-signal-amber print:text-orange-600'}>
-              {ticket.payment_status ?? '—'}
-            </span>
-          </div>
+        {/* Total */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '13px', marginBottom: '4px' }}>
+          <span>TOTAL</span>
+          <span>{usd(ticket.ticket_total)}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#555' }}>
+          <span>Payment:</span>
+          <span style={{ fontWeight: 'bold', color: ticket.payment_status === 'Paid' ? '#006600' : '#cc6600' }}>{ticket.payment_status ?? '—'}</span>
+        </div>
 
-          {ticket.customer_notes && (
-            <>
-              <div className="border-t border-current my-2" />
-              <p className="text-cream-dim print:text-gray-600 italic">{ticket.customer_notes}</p>
-            </>
-          )}
+        {ticket.customer_notes && (
+          <>
+            <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
+            <div style={{ fontSize: '9px', color: '#444', fontStyle: 'italic' }}>{ticket.customer_notes}</div>
+          </>
+        )}
 
-          <div className="border-t border-current my-2" />
-          <p className="text-center text-cream-dim print:text-gray-500 text-[10px]">
-            Thank you for choosing L&S Custom Tailors.
-          </p>
+        <div style={{ borderTop: '1px dashed #000', margin: '8px 0 4px', textAlign: 'center', fontSize: '9px', color: '#555' }}>
+          Thank you for choosing L&S Custom Tailors.
         </div>
       </div>
     </>
