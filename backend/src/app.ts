@@ -28,6 +28,7 @@ import { commsRouter } from "./routes/comms";
 import { searchRouter } from "./routes/search";
 import { notificationsRouter } from "./routes/notifications";
 import { calendarRouter } from "./routes/calendar";
+import { ravenRouter } from "./routes/raven";
 
 const app = new Hono();
 
@@ -90,5 +91,6 @@ app.route("/api/comms", commsRouter);
 app.route("/api/search", searchRouter);
 app.route("/api/notifications", notificationsRouter);
 app.route("/api/calendar", calendarRouter);
+app.route("/api/raven", ravenRouter);
 
 export default app;
