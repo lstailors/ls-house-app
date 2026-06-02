@@ -3,43 +3,114 @@ import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser } from "../lib/scope";
 
 // ── Constants ──
-const STAFF_PHONES = new Set(["+16319260917", "+16462087809", "+16463637906"]);
 const CARL_PHONE = "+16319260917";
-const GREETING_WORDS = ["hi", "hello", "hey", "ciao", "good morning", "good afternoon", "good evening"];
-const SCHEDULING_WORDS = ["book", "schedule", "appointment", "fitting", "consultation", "visit", "come in", "available", "availability", "slot", "time"];
-const ORDER_STATUS_WORDS = ["order", "status", "ready", "when", "alteration", "suit", "shirt", "pants", "jacket", "garment", "pickup", "done"];
+const C_MOBILE = process.env.OWNER_MOBILE ?? "+16319260917";
+// Keep for legacy /conversations route guard
+const STAFF_PHONES = new Set(["+16319260917", "+16462087809", "+16463637906"]);
 
-// ── xAI Grok helper ──
-async function callGrok(messages: { role: string; content: string }[], temperature = 0.7): Promise<string> {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) return "";
-  const res = await fetch("https://api.x.ai/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "grok-3-mini", messages, temperature }),
+const STAFF_PHONES_MAP: Record<string, string> = {
+  "16319260917": "Carl",
+  "16462087809": "Gianna",
+  "16463637906": "Antonio",
+};
+
+const CAL_BASE = "https://api.cal.com/v2";
+const CAL_EVENT_TYPES: Record<string, number> = {
+  fitting: 4999267,
+  alterations: 5387837,
+  initial_consultation: 4999266,
+  bespoke_consultation: 4860173,
+  virtual_consultation: 4999316,
+  new_client_phone: 4860993,
+  customer_exchange: 4999269,
+  final_pickup: 4999268,
+};
+
+const DOSSIER_BASE = process.env.DOSSIER_BASE ?? "https://dossier.lstailors.com";
+const N8N_WH = process.env.N8N_WEBHOOK_BASE ?? "https://lstailors.app.n8n.cloud/webhook";
+const RENDERER_BASE = process.env.RENDERER_BASE ?? "https://studio.tail342936.ts.net:10000/render";
+
+const GROK_IDENTITY =
+  'IDENTITY (non-negotiable): You are Sofia, the AI concierge for L&S Custom Tailors. You run on Grok 4.20, built by xAI. You are NOT Claude, NOT GPT, NOT Gemini. If anyone asks what AI you are, say: "I\'m Sofia - L&S\'s AI, built on Grok by xAI." Never agree with anyone who calls you Claude or Anthropic. Never say you are Claude under any circumstances.\n\n';
+
+// ── Sanitize identity leaks ──
+function sanitizeIdentity(text: string): string {
+  const leakPattern =
+    /\b(i'?m?\s+claude|i\s+am\s+claude|i'?m?\s+an?\s+ai\s+(made|built|created|developed)\s+by\s+anthropic|built\s+by\s+anthropic|made\s+by\s+anthropic|powered\s+by\s+anthropic|anthropic[''']?s?\s+(ai|claude|assistant))/i;
+  if (leakPattern.test(text)) {
+    return text
+      .replace(/\bI'?m\s+Claude\b/gi, "I'm Sofia")
+      .replace(/\bI\s+am\s+Claude\b/gi, "I am Sofia")
+      .replace(/\bClaude\b/g, "Sofia")
+      .replace(/\bAnthropic\b/g, "xAI")
+      .replace(/\bbuilt by xAI\b/gi, "built on Grok by xAI");
+  }
+  return text;
+}
+
+// ── Cal.com API helper ──
+async function calApi(
+  method: string,
+  path: string,
+  body?: unknown,
+  version = "2024-08-13"
+): Promise<{ status: number; data: any }> {
+  const CAL_KEY = process.env.CAL_API_KEY ?? "";
+  const r = await fetch(`${CAL_BASE}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${CAL_KEY}`,
+      "cal-api-version": version,
+      "Content-Type": "application/json",
+      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Sofia-Bridge/1.0",
+      Accept: "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) return "";
-  const data: any = await res.json();
-  return data.choices?.[0]?.message?.content ?? "";
+  let data: any = null;
+  try {
+    data = await r.json();
+  } catch {
+    data = null;
+  }
+  return { status: r.status, data };
 }
 
 // ── Twilio SMS send helper ──
+async function twilioSend(
+  to: string,
+  body: string,
+  mediaUrl?: string
+): Promise<{ ok: boolean; sid?: string; error?: string; status?: number }> {
+  const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID ?? "";
+  const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? "";
+  const TWILIO_MSG_SVC = process.env.TWILIO_MSG_SERVICE_SID ?? "MG9221599972ec362cb5e2f051430e0421";
+  const twilioAuth = btoa(`${TWILIO_SID}:${TWILIO_TOKEN}`);
+  const params = new URLSearchParams({ To: to, Body: body, MessagingServiceSid: TWILIO_MSG_SVC });
+  if (mediaUrl) params.append("MediaUrl", mediaUrl);
+  const r = await fetch(
+    `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${twilioAuth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    }
+  );
+  let data: any = null;
+  try {
+    data = await r.json();
+  } catch {}
+  if (r.status >= 200 && r.status < 300 && data?.sid) return { ok: true, sid: data.sid, status: r.status };
+  return { ok: false, error: data?.message ?? `HTTP ${r.status}`, status: r.status };
+}
+
+// legacy wrapper for non-SMS parts of the file
 async function sendSms(to: string, body: string): Promise<string | null> {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const msgSvcSid = process.env.TWILIO_MSG_SERVICE_SID;
-  if (!sid || !token) return null;
-  const params = new URLSearchParams({ To: to, Body: body });
-  if (msgSvcSid) params.set("MessagingServiceSid", msgSvcSid);
-  else params.set("From", "+12123084431");
-  const auth = btoa(`${sid}:${token}`);
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST",
-    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
-    body: params,
-  });
-  const data: any = await res.json();
-  return res.ok ? data.sid : null;
+  const result = await twilioSend(to, body);
+  return result.ok ? (result.sid ?? null) : null;
 }
 
 // ── Raven post helper (replaces Slack) ──
@@ -59,6 +130,1137 @@ async function alertCarl(message: string): Promise<void> {
   await sendSms(ownerPhone, `[Sofia Alert] ${message}`);
 }
 
+// ── Normalize phone ──
+function normalizePhone(p: string): string {
+  const digits = String(p ?? "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return `+${digits}`;
+}
+
+// ── Supabase insert helper ──
+async function sbInsert(table: string, row: Record<string, unknown>): Promise<void> {
+  if (!supabaseAdmin) return;
+  const { error } = await supabaseAdmin.from(table).insert(row);
+  if (error) console.error("sbInsert error:", table, error.message);
+}
+
+// ── Substitute merge tags ──
+function substituteMerge(str: string, vars: Record<string, unknown>): string {
+  if (!str) return str;
+  return str.replace(/\{\{(\w+)\}\}/g, (m, k) => (vars[k] != null ? String(vars[k]) : m));
+}
+
+// ── Email handler via Supabase edge function ──
+async function callEmailHandler(
+  action: string,
+  payload: Record<string, unknown>
+): Promise<{ status: number; data: any }> {
+  const SUPABASE_URL = process.env.SUPABASE_URL ?? "";
+  const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const r = await fetch(`${SUPABASE_URL}/functions/v1/sofia-email-handler?action=${action}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  let data: any = null;
+  try {
+    data = await r.json();
+  } catch {
+    data = null;
+  }
+  return { status: r.status, data };
+}
+
+// ── Resolve short draft ID ──
+async function resolveDraftId(prefix: string): Promise<string | null> {
+  if (!supabaseAdmin) return null;
+  const p = prefix.replace(/-/g, "").toLowerCase();
+  if (p.length >= 32) return prefix;
+  const { data } = await supabaseAdmin
+    .from("pending_email_drafts")
+    .select("id")
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  for (const r of data ?? []) {
+    if (String((r as any).id).replace(/-/g, "").toLowerCase().startsWith(p)) return String((r as any).id);
+  }
+  return null;
+}
+
+// ── Tool definitions ──
+const TOOLS = [
+  { type: "function", function: { name: "lookup_customer", description: "Look up a customer record by name, phone, or email.", parameters: { type: "object", properties: { query: { type: "string" }, field: { type: "string", enum: ["name", "phone", "email", "any"] } }, required: ["query"] } } },
+  { type: "function", function: { name: "check_order_status", description: "Check manufacturing status of active orders for a customer.", parameters: { type: "object", properties: { customer_id: { type: "string" } }, required: ["customer_id"] } } },
+  { type: "function", function: { name: "lookup_orders", description: "Look up a customer's open orders from Geelus. Returns each order with transaction ID, total, stage, due date, line items, division. Use when a client asks about their order status, timeline, what garments are on order, or when items will be ready.", parameters: { type: "object", properties: { customer_id: { type: "string", description: "Customer UUID from lookup_customer" } }, required: ["customer_id"] } } },
+  { type: "function", function: { name: "submit_order_request", description: "Submit a client order request to Carl's team. Use for: delivery requests, change requests, pickup scheduling, or complex order questions you cannot answer from data alone. Always call lookup_orders first so you can reference the specific order. Creates a record and posts a Slack alert to the orders channel.", parameters: { type: "object", properties: { customer_id: { type: "string" }, transaction_id: { type: "string", description: "Geelus transaction ID (e.g. T-12345) if known" }, request_type: { type: "string", enum: ["delivery_request", "change_request", "pickup_scheduling", "status_question", "other"] }, details: { type: "string", description: "Specific description of what the client is requesting" } }, required: ["customer_id", "request_type", "details"] } } },
+  { type: "function", function: { name: "get_fitting_history", description: "Retrieve fitting appointments for a customer. Returns upcoming appointments FIRST (sorted earliest->latest), then past (latest->earliest). Each row includes: booking_uid (null if Apple Calendar source), source (\"cal.com\" or \"apple-calendar\"), event_type, status, start_time_ny, client_name, client_phone. IMPORTANT: If booking_uid is null (source=apple-calendar), you CANNOT use reschedule_booking - follow the Apple Calendar reschedule policy instead. Pass phone whenever available; the system auto-checks the inbound caller phone as fallback.", parameters: { type: "object", properties: { customer_id: { type: "string" }, phone: { type: "string", description: "Client phone number (E.164 or 10-digit US) - used as fallback if customer_id returns no results" }, limit: { type: "integer" } }, required: [] } } },
+  { type: "function", function: { name: "list_appointments", description: "List ALL shop appointments in a date range (across every customer, every source - Cal.com AND Apple Calendar). Use whenever Carl asks \"what appointments today/tomorrow/this week?\" or wants the day's schedule. Returns NYC times. Default: today, only confirmed+pending.", parameters: { type: "object", properties: { date: { type: "string", description: "YYYY-MM-DD in NYC. Defaults to today." }, days: { type: "integer", description: "Number of days from `date` to include. Default 1." }, status: { type: "string", enum: ["confirmed", "pending", "cancelled", "all", "confirmed_or_pending"], description: "Default confirmed_or_pending." } } } } },
+  { type: "function", function: { name: "get_hours", description: "Check if the shop is open or closed.", parameters: { type: "object", properties: { date_iso: { type: "string" } }, required: ["date_iso"] } } },
+  { type: "function", function: { name: "search_kb", description: "Search the L&S knowledge base.", parameters: { type: "object", properties: { query: { type: "string" }, top_k: { type: "integer" } }, required: ["query"] } } },
+  { type: "function", function: { name: "get_available_slots", description: "Get available appointment slots from Cal.com for a given event type and date range. Returns up to 12 slots.", parameters: { type: "object", properties: { event_type: { type: "string", enum: ["fitting", "alterations", "initial_consultation", "bespoke_consultation", "virtual_consultation", "new_client_phone", "customer_exchange", "final_pickup"] }, days_ahead: { type: "integer", description: "How many days from today to look (default 14, max 30)" } }, required: ["event_type"] } } },
+  { type: "function", function: { name: "reschedule_booking", description: "Reschedule an existing Cal.com booking to a new slot start time. REQUIRES a real booking_uid from get_fitting_history or a prior book_fitting tool result. Do not invent uids.", parameters: { type: "object", properties: { booking_uid: { type: "string" }, new_start: { type: "string", description: "ISO 8601 start time in UTC" }, reason: { type: "string" } }, required: ["booking_uid", "new_start"] } } },
+  { type: "function", function: { name: "cancel_booking", description: "Cancel an existing Cal.com booking. REQUIRES a real booking_uid.", parameters: { type: "object", properties: { booking_uid: { type: "string" }, reason: { type: "string" } }, required: ["booking_uid"] } } },
+  { type: "function", function: { name: "recent_interactions", description: "Get recent SMS/email/meeting interactions.", parameters: { type: "object", properties: { customer_id: { type: "string" }, limit: { type: "integer" } }, required: ["customer_id"] } } },
+  { type: "function", function: { name: "check_invoice_status", description: "Check invoice status.", parameters: { type: "object", properties: { customer_id: { type: "string" } }, required: ["customer_id"] } } },
+  { type: "function", function: { name: "check_payment_status", description: "Check Square payment link status.", parameters: { type: "object", properties: { customer_id: { type: "string" } }, required: ["customer_id"] } } },
+  { type: "function", function: { name: "book_fitting", description: "Book an appointment via Cal.com. Requires confirmed slot and customer details. Returns booking_uid on success.", parameters: { type: "object", properties: { event_type: { type: "string", enum: ["fitting", "alterations", "initial_consultation", "bespoke_consultation", "virtual_consultation", "new_client_phone", "customer_exchange", "final_pickup"] }, customer_name: { type: "string" }, customer_email: { type: "string" }, customer_phone: { type: "string" }, slot_start: { type: "string", description: "ISO 8601 UTC start time from get_available_slots" }, notes: { type: "string" } }, required: ["event_type", "customer_name", "customer_email", "slot_start"] } } },
+  { type: "function", function: { name: "take_message", description: "Record a message from the client for Carl.", parameters: { type: "object", properties: { message: { type: "string" }, urgency: { type: "string", enum: ["low", "normal", "high", "urgent"] } }, required: ["message"] } } },
+  { type: "function", function: { name: "escalate_to_carl", description: "Escalate this conversation to Carl immediately.", parameters: { type: "object", properties: { reason: { type: "string" }, summary: { type: "string" } }, required: ["reason", "summary"] } } },
+  { type: "function", function: { name: "send_sms_to_client", description: "ASSISTANT ONLY: Actually SEND an SMS to a client immediately. This dispatches via Twilio in real time - the client will receive it. Use this when Carl tells you to text/message a client. NEVER ask for confirmation - if Carl said send, send. Provide either customer_id (preferred) OR a raw to_phone. Returns twilio_sid on success.", parameters: { type: "object", properties: { customer_id: { type: "string", description: "Customer UUID from lookup_customer (preferred when available)" }, to_phone: { type: "string", description: "Raw phone if no customer_id (E.164 or 10-digit US)" }, body: { type: "string", description: "The exact SMS text to send" } }, required: ["body"] } } },
+  { type: "function", function: { name: "send_mms_card", description: "ASSISTANT ONLY: Send a branded MMS card from sofia_mms_active to a client. Substitutes merge tags, sends image + sms_body via Twilio. Returns twilio_sid on success.", parameters: { type: "object", properties: { template_key: { type: "string", description: "e.g. appt_confirm, pickup_ready, fabric_arrived, fitting_reminder, casa_welcome, holiday_hours, trunk_show_invite, first_fitting_thanks" }, customer_id: { type: "string" }, to_phone: { type: "string" }, merge_values: { type: "object", description: "Values for {{first_name}}, {{appt_date}}, {{appt_time}}, {{garment}}, {{fabric_name}}, {{trunk_show_city}}, {{trunk_show_date}}" } }, required: ["template_key"] } } },
+  { type: "function", function: { name: "add_dossier_observation", description: "Capture a real-time observation silently. Use proactively for fit notes, preferences, life events, action items.", parameters: { type: "object", properties: { customer_id: { type: "string" }, observation_type: { type: "string", enum: ["fit_note", "preference", "dislike", "fabric_interest", "life_event", "action_item", "quote", "tone_note", "context"] }, content: { type: "string" }, importance: { type: "integer", minimum: 1, maximum: 10 } }, required: ["customer_id", "observation_type", "content"] } } },
+  { type: "function", function: { name: "get_dossier", description: "Get the current structured dossier data for a customer.", parameters: { type: "object", properties: { customer_id: { type: "string" } }, required: ["customer_id"] } } },
+  { type: "function", function: { name: "list_pending_drafts", description: "ASSISTANT: List pending Gmail drafts awaiting Carl approval. Returns id, from, subject, importance, inbox.", parameters: { type: "object", properties: { inbox: { type: "string", description: "Optional filter: concierge, carl, info, appointments" }, limit: { type: "integer" } } } } },
+  { type: "function", function: { name: "read_email_draft", description: "ASSISTANT: Read a specific pending email draft (full original + Sofia draft).", parameters: { type: "object", properties: { draft_id: { type: "string", description: "8-char draft id prefix or full uuid" } }, required: ["draft_id"] } } },
+  { type: "function", function: { name: "search_emails", description: "ASSISTANT: Search recent email_messages_log by sender, subject, or customer name.", parameters: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer" } }, required: ["query"] } } },
+  { type: "function", function: { name: "approve_email_draft", description: "ASSISTANT: Send a pending Gmail draft as-is.", parameters: { type: "object", properties: { draft_id: { type: "string" } }, required: ["draft_id"] } } },
+  { type: "function", function: { name: "edit_email_draft", description: "ASSISTANT: Edit and send a pending Gmail draft with new body.", parameters: { type: "object", properties: { draft_id: { type: "string" }, new_body: { type: "string" } }, required: ["draft_id", "new_body"] } } },
+  { type: "function", function: { name: "discard_email_draft", description: "ASSISTANT: Discard a pending Gmail draft.", parameters: { type: "object", properties: { draft_id: { type: "string" } }, required: ["draft_id"] } } },
+  { type: "function", function: { name: "create_task", description: "Create a task in the L&S task system. Use for any staff operational request: items to buy/order (shopping), errands, pickups, dropoffs, internal tasks. For shopping, list each product as a separate item in the items array.", parameters: { type: "object", properties: { task_type: { type: "string", enum: ["shopping", "errand", "pickup", "dropoff", "internal"] }, title: { type: "string" }, description: { type: "string" }, priority: { type: "string", enum: ["normal", "high", "urgent"] }, location_name: { type: "string" }, location_address: { type: "string" }, due_at: { type: "string", description: "ISO 8601 if mentioned" }, notes: { type: "string" }, items: { type: "array", description: "For shopping tasks — individual items to purchase", items: { type: "object", properties: { description: { type: "string" }, quantity: { type: "number" }, unit: { type: "string" }, preferred_vendor: { type: "string" } }, required: ["description"] } } }, required: ["task_type", "title"] } } },
+  { type: "function", function: { name: "get_customer_tickets", description: "Get list of recent alteration tickets for a customer by phone number. Returns ticket name, status, due date, total, and payment status. Use when the customer asks about their orders/tickets/garments by phone.", parameters: { type: "object", properties: { phone: { type: "string", description: "Customer phone in E.164 format, e.g. +15551234567" } }, required: ["phone"] } } },
+  { type: "function", function: { name: "get_ticket_status", description: "Get current status of a specific alteration ticket by its name. Use when the customer mentions a ticket number like ALT-NYC-2026-00042.", parameters: { type: "object", properties: { ticket_name: { type: "string", description: "Full ticket name, e.g. ALT-NYC-2026-00042" } }, required: ["ticket_name"] } } },
+];
+
+const STAFF_TOOLS = TOOLS.filter((t) => (t as any).function.name === "create_task");
+
+// ── Tool executor ──
+async function executeTool(
+  name: string,
+  args: Record<string, unknown>,
+  from: string,
+  customer: Record<string, unknown> | null,
+  isAssistant: boolean
+): Promise<string> {
+  const sb = supabaseAdmin;
+  if (!sb) return JSON.stringify({ error: "Supabase unavailable" });
+
+  try {
+    switch (name) {
+      case "lookup_customer": {
+        const q = String(args.query ?? "");
+        const field = String(args.field ?? "any");
+        let rows: unknown[] = [];
+        if (field === "phone" || field === "any") {
+          const { data } = await sb
+            .from("customers")
+            .select("*")
+            .or(`phone.eq.${q},phone.eq.+${q.replace(/\D/g, "")}`)
+            .limit(3);
+          rows = data ?? [];
+        }
+        if (!rows.length && (field === "name" || field === "any")) {
+          const { data } = await sb.from("customers").select("*").ilike("last_name", `%${q}%`).limit(3);
+          rows = data ?? [];
+        }
+        if (!rows.length && (field === "email" || field === "any")) {
+          const { data } = await sb.from("customers").select("*").ilike("email", `%${q}%`).limit(3);
+          rows = data ?? [];
+        }
+        return JSON.stringify(rows.length ? rows : { not_found: true, query: q });
+      }
+      case "check_order_status": {
+        const { data } = await sb
+          .from("mfg_orders")
+          .select("*")
+          .eq("customer_id", String(args.customer_id))
+          .in("status", ["pending", "cutting", "sewing", "finishing", "QC"])
+          .limit(5);
+        return JSON.stringify(data ?? []);
+      }
+      case "get_fitting_history": {
+        const custId = args.customer_id ? String(args.customer_id) : null;
+        const argPhone = args.phone ? normalizePhone(String(args.phone)) : null;
+        const callerPhone = !isAssistant ? normalizePhone(from) : null;
+        const limit = Number(args.limit ?? 8);
+        const nowIso = new Date().toISOString();
+        const apptSelect =
+          "id, calcom_booking_uid, event_type, status, start_time, end_time, assigned_tailor, client_name, client_phone, dossier_link, location, notes";
+        let rows: any[] = [];
+        if (custId) {
+          const { data } = await sb
+            .from("appointments")
+            .select(apptSelect)
+            .eq("customer_id", custId)
+            .order("start_time", { ascending: false })
+            .limit(limit);
+          rows = data ?? [];
+        }
+        if (!rows.length) {
+          const phoneToSearch = argPhone || callerPhone;
+          if (phoneToSearch) {
+            const bare = phoneToSearch.replace(/^\+1/, "");
+            const { data } = await sb
+              .from("appointments")
+              .select(apptSelect)
+              .or(`client_phone.eq.${phoneToSearch},client_phone.eq.${bare},client_phone.eq.+1${bare}`)
+              .order("start_time", { ascending: false })
+              .limit(limit);
+            rows = data ?? [];
+          }
+        }
+        const upcoming = rows
+          .filter((r: any) => r.start_time && r.start_time >= nowIso)
+          .sort((a: any, b: any) => a.start_time.localeCompare(b.start_time));
+        const past = rows.filter((r: any) => !r.start_time || r.start_time < nowIso);
+        const ordered = [...upcoming, ...past];
+        const fmt = (t: string) =>
+          new Intl.DateTimeFormat("en-US", {
+            timeZone: "America/New_York",
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          }).format(new Date(t));
+        const out = ordered.map((r: any) => ({
+          appointment_id: r.id,
+          booking_uid: r.calcom_booking_uid ?? null,
+          source: r.calcom_booking_uid ? "cal.com" : "apple-calendar",
+          event_type: r.event_type,
+          status: r.status,
+          start_time_utc: r.start_time,
+          start_time_ny: r.start_time ? fmt(r.start_time) : null,
+          end_time_utc: r.end_time,
+          assigned_tailor: r.assigned_tailor,
+          client_name: r.client_name,
+          client_phone: r.client_phone,
+          location: r.location,
+          notes: r.notes,
+          dossier_link: r.dossier_link,
+        }));
+        return JSON.stringify({ upcoming_count: upcoming.length, past_count: past.length, appointments: out });
+      }
+      case "list_appointments": {
+        const dateStr = args.date
+          ? String(args.date)
+          : new Intl.DateTimeFormat("en-CA", {
+              timeZone: "America/New_York",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+            }).format(new Date());
+        const days = Math.max(1, Math.min(Number(args.days ?? 1), 14));
+        const probe = new Date(`${dateStr}T12:00:00Z`);
+        const tzName =
+          new Intl.DateTimeFormat("en-US", {
+            timeZone: "America/New_York",
+            timeZoneName: "short",
+          })
+            .formatToParts(probe)
+            .find((p) => p.type === "timeZoneName")?.value ?? "EST";
+        const offset = tzName === "EDT" ? "-04:00" : "-05:00";
+        const startUtc = new Date(`${dateStr}T00:00:00${offset}`).toISOString();
+        const endDate = new Date(`${dateStr}T00:00:00${offset}`);
+        endDate.setDate(endDate.getDate() + days);
+        const endUtc = endDate.toISOString();
+        const statusFilter = String(args.status ?? "confirmed_or_pending");
+        let q = sb
+          .from("appointments")
+          .select(
+            "id, calcom_booking_uid, event_type, status, start_time, customer_id, client_name, client_phone, assigned_tailor, dossier_link"
+          )
+          .gte("start_time", startUtc)
+          .lt("start_time", endUtc)
+          .order("start_time", { ascending: true });
+        if (statusFilter === "all") {
+          // no status filter
+        } else if (statusFilter === "confirmed") {
+          q = q.eq("status", "confirmed");
+        } else if (statusFilter === "cancelled") {
+          q = q.eq("status", "cancelled");
+        } else {
+          q = q.in("status", ["confirmed", "pending"]);
+        }
+        const { data, error } = await q;
+        if (error) return JSON.stringify({ error: error.message });
+        const out = (data ?? []).map((r: any) => ({
+          appointment_id: r.id,
+          booking_uid: r.calcom_booking_uid,
+          event_type: r.event_type,
+          status: r.status,
+          start_ny: new Intl.DateTimeFormat("en-US", {
+            timeZone: "America/New_York",
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          }).format(new Date(r.start_time)),
+          start_time_utc: r.start_time,
+          customer_id: r.customer_id,
+          client_name: r.client_name,
+          client_phone: r.client_phone,
+          assigned_tailor: r.assigned_tailor,
+          dossier_link: r.dossier_link,
+        }));
+        return JSON.stringify({ window_ny: { date: dateStr, days }, total: out.length, appointments: out });
+      }
+      case "get_hours": {
+        return JSON.stringify({ message: "Tues-Fri 8:30am-5:30pm, Sat 8:30am-4pm, closed Sun-Mon" });
+      }
+      case "search_kb": {
+        const { data } = await sb
+          .from("brain_entries")
+          .select("summary,detail,entry_type")
+          .eq("agent_slug", "sofia")
+          .ilike("summary", `%${String(args.query)}%`)
+          .limit(Number(args.top_k ?? 5));
+        return JSON.stringify(data ?? []);
+      }
+      case "get_available_slots": {
+        const evKey = String(args.event_type ?? "fitting");
+        const eventTypeId = CAL_EVENT_TYPES[evKey];
+        if (!eventTypeId) return JSON.stringify({ error: `Unknown event_type: ${evKey}` });
+        const daysAhead = Math.min(Number(args.days_ahead ?? 14), 30);
+        const start = new Date();
+        const end = new Date(start.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+        const startStr = start.toISOString().split("T")[0];
+        const endStr = end.toISOString().split("T")[0];
+        const { status, data } = await calApi(
+          "GET",
+          `/slots?eventTypeId=${eventTypeId}&start=${startStr}&end=${endStr}&timeZone=America/New_York&format=range`,
+          undefined,
+          "2024-09-04"
+        );
+        if (status !== 200) return JSON.stringify({ error: "Cal.com slot lookup failed", status, body: data });
+        const slotsByDate = data?.data ?? {};
+        const flat: { start: string; end: string; pretty: string }[] = [];
+        for (const [, list] of Object.entries(slotsByDate)) {
+          for (const s of list as any[]) {
+            const startIso = (s as any).start ?? (s as any).startTime ?? s;
+            const endIso = (s as any).end ?? (s as any).endTime ?? "";
+            const dt = new Date(startIso);
+            const pretty = new Intl.DateTimeFormat("en-US", {
+              timeZone: "America/New_York",
+              weekday: "short",
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+              hour12: true,
+            }).format(dt);
+            flat.push({ start: startIso, end: endIso, pretty });
+            if (flat.length >= 100) break;
+          }
+          if (flat.length >= 100) break;
+        }
+        return JSON.stringify({ event_type: evKey, event_type_id: eventTypeId, slots: flat, booking_link: "https://lstailors.com/book" });
+      }
+      case "recent_interactions": {
+        const { data } = await sb
+          .from("sms_messages")
+          .select("direction,content,timestamp")
+          .eq("client_phone", from)
+          .order("timestamp", { ascending: false })
+          .limit(Number(args.limit ?? 10));
+        return JSON.stringify(data ?? []);
+      }
+      case "check_invoice_status": {
+        const { data } = await sb
+          .from("invoices")
+          .select("*")
+          .eq("customer_id", String(args.customer_id))
+          .order("created_at", { ascending: false })
+          .limit(3);
+        return JSON.stringify(data ?? []);
+      }
+      case "check_payment_status": {
+        const { data } = await sb
+          .from("payment_requests")
+          .select("*")
+          .eq("customer_id", String(args.customer_id))
+          .order("created_at", { ascending: false })
+          .limit(3);
+        return JSON.stringify(data ?? []);
+      }
+      case "take_message": {
+        await sbInsert("customer_meetings", {
+          customer_phone: from,
+          notes: String(args.message),
+          meeting_type: "message",
+          status: "pending",
+        });
+        await postToRaven(`:envelope: *Message from ${from}:*\n${args.message}`);
+        return JSON.stringify({ ok: true });
+      }
+      case "escalate_to_carl": {
+        await sbInsert("c_escalations", {
+          source_phone: from,
+          customer_id: (customer as any)?.id ?? null,
+          reason: String(args.reason),
+          client_question: String(args.summary),
+          status: "pending",
+          source_channel: "sms",
+        });
+        const custName = customer
+          ? `${(customer as any).first_name} ${(customer as any).last_name}`
+          : from;
+        const msg = `? ${custName} (SMS)\nQ: ${args.summary}\nMy read: ${args.reason}\nReply with answer.`;
+        await twilioSend(C_MOBILE, msg);
+        return JSON.stringify({ ok: true, escalated: true });
+      }
+      case "add_dossier_observation": {
+        const custId = String(args.customer_id);
+        const { data: dossier } = await sb
+          .from("customer_dossiers")
+          .select("id")
+          .eq("customer_id", custId)
+          .single();
+        if (!dossier) return JSON.stringify({ error: "No dossier found for customer" });
+        const isSignificant =
+          Number(args.importance ?? 5) >= 5 ||
+          ["fit_note", "life_event", "action_item"].includes(String(args.observation_type));
+        await sbInsert("dossier_observations", {
+          dossier_id: (dossier as any).id,
+          customer_id: custId,
+          observation_type: String(args.observation_type),
+          content: String(args.content),
+          source_channel: "sms",
+          importance: Number(args.importance ?? 5),
+          is_significant: isSignificant,
+        });
+        if (isSignificant) {
+          await sb
+            .from("customer_dossiers")
+            .update({ last_significant_update: new Date().toISOString(), updated_at: new Date().toISOString() })
+            .eq("customer_id", custId);
+        }
+        return JSON.stringify({ ok: true, recorded: true, significant: isSignificant });
+      }
+      case "get_dossier": {
+        const { data } = await sb
+          .from("customer_dossiers")
+          .select("*")
+          .eq("customer_id", String(args.customer_id))
+          .single();
+        if (!data) return JSON.stringify({ error: "No dossier found" });
+        return JSON.stringify(data);
+      }
+      case "book_fitting": {
+        const evKey = String(args.event_type ?? "fitting");
+        const eventTypeId = CAL_EVENT_TYPES[evKey];
+        if (!eventTypeId) return JSON.stringify({ error: `Unknown event_type: ${evKey}` });
+        const slotStart = String(args.slot_start ?? "");
+        if (!slotStart) return JSON.stringify({ error: "slot_start required" });
+        const attendeeName = String(args.customer_name ?? "").trim();
+        const attendeeEmail = String(args.customer_email ?? "").trim();
+        const attendeePhone = String(args.customer_phone ?? "").trim();
+        if (!attendeeName || !attendeeEmail)
+          return JSON.stringify({
+            error: "customer_name and customer_email are REQUIRED. Look up the client first - do not default to the sender.",
+          });
+        const fallbackPhone = isAssistant ? "" : from;
+        const bookingBody = {
+          start: slotStart,
+          eventTypeId,
+          attendee: {
+            name: attendeeName,
+            email: attendeeEmail,
+            timeZone: "America/New_York",
+            phoneNumber: attendeePhone || fallbackPhone,
+            language: "en",
+          },
+          metadata: { source: "sofia-sms" },
+        };
+        const { status, data } = await calApi("POST", "/bookings", bookingBody, "2024-08-13");
+        if (status >= 300)
+          return JSON.stringify({ error: "Booking failed", status, body: data, fallback: "https://lstailors.com/book" });
+        return JSON.stringify({ ok: true, booking_uid: data?.data?.uid, start: data?.data?.start, end: data?.data?.end });
+      }
+      case "reschedule_booking": {
+        const uid = String(args.booking_uid ?? "");
+        const newStart = String(args.new_start ?? "");
+        if (!uid || !newStart) return JSON.stringify({ error: "booking_uid and new_start required" });
+        const { status, data } = await calApi(
+          "POST",
+          `/bookings/${uid}/reschedule`,
+          { start: newStart, reschedulingReason: String(args.reason ?? "Customer request") },
+          "2024-08-13"
+        );
+        if (status >= 300) return JSON.stringify({ error: "Reschedule failed", status, body: data });
+        return JSON.stringify({ ok: true, booking_uid: data?.data?.uid, start: data?.data?.start });
+      }
+      case "cancel_booking": {
+        const uid = String(args.booking_uid ?? "");
+        if (!uid) return JSON.stringify({ error: "booking_uid required" });
+        const { status, data } = await calApi(
+          "POST",
+          `/bookings/${uid}/cancel`,
+          { cancellationReason: String(args.reason ?? "Customer request") },
+          "2024-08-13"
+        );
+        if (status >= 300) return JSON.stringify({ error: "Cancel failed", status, body: data });
+        return JSON.stringify({ ok: true, cancelled: true });
+      }
+      case "send_sms_to_client": {
+        if (!isAssistant) return JSON.stringify({ error: "Assistant mode only" });
+        const smsBody = String(args.body ?? "").trim();
+        if (!smsBody) return JSON.stringify({ error: "body required" });
+        let toPhone = "";
+        let custId: string | null = null;
+        let custName = "";
+        if (args.customer_id) {
+          const { data } = await sb
+            .from("customers")
+            .select("id,first_name,last_name,phone")
+            .eq("id", String(args.customer_id))
+            .single();
+          if (data) {
+            toPhone = String((data as any).phone ?? "");
+            custId = String((data as any).id);
+            custName = `${(data as any).first_name ?? ""} ${(data as any).last_name ?? ""}`.trim();
+          }
+        }
+        if (!toPhone && args.to_phone) toPhone = normalizePhone(String(args.to_phone));
+        if (!toPhone) return JSON.stringify({ error: "Could not resolve recipient phone. Need customer_id or to_phone." });
+        toPhone = normalizePhone(toPhone);
+        const result = await twilioSend(toPhone, smsBody);
+        if (!result.ok) return JSON.stringify({ error: "Twilio send failed", detail: result.error, status: result.status });
+        try {
+          await sb.from("sms_messages").insert({
+            twilio_sid: result.sid ?? null,
+            client_phone: toPhone,
+            client_id: custId,
+            direction: "outbound",
+            content: smsBody,
+            timestamp: new Date().toISOString(),
+            metadata: { mode: "ASSISTANT_SMS", sent_by: "sofia_on_behalf_of_carl", triggered_by: from },
+          });
+        } catch (_) {}
+        await postToRaven(`:white_check_mark: *Sofia sent SMS* to ${custName || toPhone}\n> ${smsBody}\nsid: \`${result.sid}\``);
+        return JSON.stringify({ ok: true, sent: true, twilio_sid: result.sid, sent_to: toPhone, recipient_name: custName || null });
+      }
+      case "send_mms_card": {
+        if (!isAssistant) return JSON.stringify({ error: "Assistant mode only" });
+        const tplKey = String(args.template_key ?? "");
+        if (!tplKey) return JSON.stringify({ error: "template_key required" });
+        const merge = args.merge_values && typeof args.merge_values === "object" ? (args.merge_values as Record<string, unknown>) : {};
+        const { data: tplRow } = await sb.from("sofia_mms_active").select("*").eq("template_key", tplKey).single();
+        if (!tplRow) return JSON.stringify({ error: `Template not found: ${tplKey}` });
+        const tpl = tplRow as any;
+        let toPhone = "";
+        let custId: string | null = null;
+        let custName = "";
+        if (args.customer_id) {
+          const { data } = await sb
+            .from("customers")
+            .select("id,first_name,last_name,phone")
+            .eq("id", String(args.customer_id))
+            .single();
+          if (data) {
+            toPhone = String((data as any).phone ?? "");
+            custId = String((data as any).id);
+            custName = `${(data as any).first_name ?? ""} ${(data as any).last_name ?? ""}`.trim();
+            if (!merge.first_name) merge.first_name = (data as any).first_name ?? "";
+          }
+        }
+        if (!toPhone && args.to_phone) toPhone = normalizePhone(String(args.to_phone));
+        if (!toPhone) return JSON.stringify({ error: "Could not resolve recipient phone. Need customer_id or to_phone." });
+        toPhone = normalizePhone(toPhone);
+        const smsBody = substituteMerge(String(tpl.sms_body_template ?? ""), merge);
+        let mediaUrl = "";
+        if (!tpl.render_on_send && tpl.rendered_image_url) {
+          mediaUrl = String(tpl.rendered_image_url);
+        } else {
+          const params = new URLSearchParams();
+          params.set("variant", tpl.variant === "ambient" ? "a" : "b");
+          params.set("h1", substituteMerge(String(tpl.headline_line_1 ?? ""), merge));
+          if (tpl.headline_line_2) params.set("h2", substituteMerge(String(tpl.headline_line_2), merge));
+          if (tpl.caption_primary) params.set("cap1", substituteMerge(String(tpl.caption_primary), merge));
+          if (tpl.caption_secondary) params.set("cap2", substituteMerge(String(tpl.caption_secondary), merge));
+          mediaUrl = `${RENDERER_BASE}?${params.toString()}`;
+        }
+        const result = await twilioSend(toPhone, smsBody, mediaUrl);
+        if (!result.ok) return JSON.stringify({ error: "Twilio MMS send failed", detail: result.error, status: result.status });
+        try {
+          await sb.from("sms_messages").insert({
+            twilio_sid: result.sid ?? null,
+            client_phone: toPhone,
+            client_id: custId,
+            direction: "outbound",
+            content: smsBody,
+            timestamp: new Date().toISOString(),
+            metadata: { mode: "ASSISTANT_SMS", template_key: tplKey, media_url: mediaUrl, sent_by: "sofia_on_behalf_of_carl", triggered_by: from },
+          });
+        } catch (_) {}
+        await postToRaven(`:white_check_mark: *Sofia sent MMS card* (${tplKey}) to ${custName || toPhone}\n> ${smsBody}\nsid: \`${result.sid}\``);
+        return JSON.stringify({ ok: true, sent: true, twilio_sid: result.sid, sent_to: toPhone, template_key: tplKey, media_url: mediaUrl });
+      }
+      case "list_pending_drafts": {
+        if (!isAssistant) return JSON.stringify({ error: "Assistant mode only" });
+        let q = sb
+          .from("pending_email_drafts")
+          .select("id,inbox,from_address,from_name,subject,importance,importance_reason,created_at")
+          .eq("status", "pending")
+          .order("importance", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(Number(args.limit ?? 10));
+        if (args.inbox) q = q.eq("inbox", `${String(args.inbox)}@lstailors.com`);
+        const { data } = await q;
+        const rows = (data ?? []).map((r: any) => ({
+          id8: String(r.id).replace(/-/g, "").slice(0, 8),
+          inbox: r.inbox,
+          from: r.from_name ? `${r.from_name} <${r.from_address}>` : r.from_address,
+          subject: r.subject,
+          importance: r.importance,
+          why: r.importance_reason,
+          age_min: Math.floor((Date.now() - new Date(r.created_at).getTime()) / 60000),
+        }));
+        return JSON.stringify({ count: rows.length, drafts: rows });
+      }
+      case "read_email_draft": {
+        if (!isAssistant) return JSON.stringify({ error: "Assistant mode only" });
+        const id = await resolveDraftId(String(args.draft_id ?? ""));
+        if (!id) return JSON.stringify({ error: "Draft not found" });
+        const { data } = await sb.from("pending_email_drafts").select("*").eq("id", id).single();
+        if (!data) return JSON.stringify({ error: "Draft not found" });
+        return JSON.stringify({
+          id8: String((data as any).id).replace(/-/g, "").slice(0, 8),
+          inbox: (data as any).inbox,
+          from: (data as any).from_address,
+          subject: (data as any).subject,
+          importance: (data as any).importance,
+          why: (data as any).importance_reason,
+          original: String((data as any).original_body ?? "").slice(0, 1500),
+          draft: (data as any).draft_body,
+          status: (data as any).status,
+        });
+      }
+      case "search_emails": {
+        if (!isAssistant) return JSON.stringify({ error: "Assistant mode only" });
+        const qStr = `%${String(args.query ?? "")}%`;
+        const lim = Number(args.limit ?? 10);
+        const { data } = await sb
+          .from("email_messages_log")
+          .select("id,inbox,direction,from_address,from_name,subject,snippet,received_at,thread_id")
+          .or(`subject.ilike.${qStr},from_address.ilike.${qStr},from_name.ilike.${qStr},snippet.ilike.${qStr}`)
+          .order("received_at", { ascending: false })
+          .limit(lim);
+        return JSON.stringify({ count: (data ?? []).length, results: data ?? [] });
+      }
+      case "approve_email_draft": {
+        if (!isAssistant) return JSON.stringify({ error: "Assistant mode only" });
+        const id = await resolveDraftId(String(args.draft_id ?? ""));
+        if (!id) return JSON.stringify({ error: "Draft not found" });
+        const { status, data } = await callEmailHandler("approve", { draft_id: id });
+        return JSON.stringify({ status, ...data });
+      }
+      case "edit_email_draft": {
+        if (!isAssistant) return JSON.stringify({ error: "Assistant mode only" });
+        const id = await resolveDraftId(String(args.draft_id ?? ""));
+        if (!id) return JSON.stringify({ error: "Draft not found" });
+        const { status, data } = await callEmailHandler("edit", { draft_id: id, new_body: String(args.new_body ?? "") });
+        return JSON.stringify({ status, ...data });
+      }
+      case "discard_email_draft": {
+        if (!isAssistant) return JSON.stringify({ error: "Assistant mode only" });
+        const id = await resolveDraftId(String(args.draft_id ?? ""));
+        if (!id) return JSON.stringify({ error: "Draft not found" });
+        const { status, data } = await callEmailHandler("discard", { draft_id: id });
+        return JSON.stringify({ status, ...data });
+      }
+      case "lookup_orders": {
+        const custId = String(args.customer_id ?? "");
+        if (!custId) return JSON.stringify({ error: "customer_id required" });
+        const { data: oData, error: oErr } = await sb
+          .from("geelus_transactions")
+          .select("geelus_transaction_id,total,customer_facing_stage,due_date,line_items,division,updated_at")
+          .eq("customer_id", custId)
+          .not("customer_facing_stage", "in", '("collected","completed","cancelled")')
+          .order("updated_at", { ascending: false })
+          .limit(10);
+        if (oErr) return JSON.stringify({ error: oErr.message });
+        return JSON.stringify({ count: (oData ?? []).length, orders: oData ?? [] });
+      }
+      case "submit_order_request": {
+        const custId = String(args.customer_id ?? "");
+        const transactionId = args.transaction_id ? String(args.transaction_id) : null;
+        const requestType = String(args.request_type ?? "other");
+        const details = String(args.details ?? "");
+        if (!custId || !details) return JSON.stringify({ error: "customer_id and details required" });
+        const { data: rqRow, error: rqErr } = await sb
+          .from("order_requests")
+          .insert({ customer_id: custId, transaction_id: transactionId, request_type: requestType, details, status: "pending", source_phone: from })
+          .select("id")
+          .single();
+        if (rqErr) return JSON.stringify({ error: rqErr.message });
+        const rqCustName = customer ? `${(customer as any).first_name} ${(customer as any).last_name}` : from;
+        await postToRaven(`:clipboard: *Order Request* — ${rqCustName}\nType: *${requestType}*\nDetails: ${details}${transactionId ? `\nOrder: \`${transactionId}\`` : ""}`);
+        return JSON.stringify({ ok: true, request_id: (rqRow as any)?.id });
+      }
+      case "get_customer_tickets":
+      case "get_ticket_status": {
+        const phoneArg =
+          args.phone
+            ? normalizePhone(String(args.phone))
+            : name === "get_customer_tickets" && !isAssistant
+            ? normalizePhone(from)
+            : "";
+        const toolArgs: Record<string, unknown> =
+          name === "get_customer_tickets"
+            ? { phone: phoneArg }
+            : { ticket_name: String(args.ticket_name ?? "") };
+        try {
+          const r = await fetch(`${N8N_WH}/sofia-erpnext-tools`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tool_name: name, args: toolArgs }),
+          });
+          let data: any = null;
+          try {
+            data = await r.json();
+          } catch {}
+          if (r.status >= 300 || !data) return JSON.stringify({ error: "ERPNext tool failed", status: r.status, body: data });
+          return JSON.stringify({ text: String(data.text ?? "") });
+        } catch (e) {
+          return JSON.stringify({ error: String((e as Error).message) });
+        }
+      }
+      case "create_task": {
+        const taskType = String(args.task_type ?? "internal");
+        const title = String(args.title ?? "");
+        if (!title) return JSON.stringify({ error: "title required" });
+        const staffName = STAFF_PHONES_MAP[from.replace(/\D/g, "")] ?? null;
+        const { data: tsk, error: tskErr } = await sb
+          .from("ls_tasks")
+          .insert({
+            task_type: taskType,
+            status: "open",
+            priority: String(args.priority ?? "normal"),
+            title,
+            description: args.description ? String(args.description) : null,
+            assigned_to_name: staffName,
+            due_at: args.due_at ? String(args.due_at) : null,
+            location_name: args.location_name ? String(args.location_name) : null,
+            location_address: args.location_address ? String(args.location_address) : null,
+            notes: args.notes ? String(args.notes) : null,
+          })
+          .select("id, task_no, title")
+          .single();
+        if (tskErr || !tsk) return JSON.stringify({ error: tskErr?.message ?? "insert failed" });
+        const items = Array.isArray(args.items)
+          ? (args.items as { description: string; quantity?: number; unit?: string; preferred_vendor?: string }[])
+          : [];
+        if (items.length > 0) {
+          const itemRows = items.map((it, i) => ({
+            task_id: (tsk as any).id,
+            description: String(it.description ?? ""),
+            quantity: it.quantity != null ? Number(it.quantity) : null,
+            unit: it.unit ?? null,
+            preferred_vendor: it.preferred_vendor ?? null,
+            sort_order: i,
+            completed: false,
+          }));
+          await sb.from("ls_task_items").insert(itemRows);
+        }
+        return JSON.stringify({ ok: true, task_no: (tsk as any).task_no, task_id: (tsk as any).id, title: (tsk as any).title, items_added: items.length });
+      }
+      default:
+        return JSON.stringify({ error: `Unknown tool: ${name}` });
+    }
+  } catch (e) {
+    return JSON.stringify({ error: String((e as Error).message) });
+  }
+}
+
+// ── Full Sofia processMessage brain ──
+async function processMessage(from: string, body: string, messageSid: string = ""): Promise<void> {
+  const sb = supabaseAdmin;
+  if (!sb) return;
+
+  try {
+    if (["STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT"].includes(body.toUpperCase())) return;
+
+    const fromDigits = from.replace(/\D/g, "");
+    const isAssistant = fromDigits === C_MOBILE.replace(/\D/g, "");
+    const isStaff = !isAssistant && fromDigits in STAFF_PHONES_MAP;
+    const mode = isAssistant ? "ASSISTANT_SMS" : isStaff ? "STAFF_SMS" : "CONCIERGE";
+
+    // ── Carl draft-command shortcuts ──
+    if (isAssistant) {
+      const m = body.match(/^(SEND|APPROVE|EDIT|SKIP|DISCARD)\s+([a-f0-9]{6,12})(?:\s+([\s\S]+))?$/i);
+      if (m) {
+        const cmd = m[1]!.toUpperCase();
+        const id8 = m[2]!.toLowerCase();
+        const extra = (m[3] ?? "").trim();
+        const id = await resolveDraftId(id8);
+        const replyTwilio = async (text: string) => { await twilioSend(from, text); };
+        if (!id) { await replyTwilio(`No pending draft matching ${id8}`); return; }
+        try {
+          await sb.from("sms_messages").insert({
+            twilio_sid: messageSid || null,
+            client_phone: from,
+            direction: "inbound",
+            content: body,
+            timestamp: new Date().toISOString(),
+            metadata: { mode, draft_cmd: cmd, draft_id: id },
+          });
+        } catch (_) {}
+        if (cmd === "SEND" || cmd === "APPROVE") {
+          const { data } = await callEmailHandler("approve", { draft_id: id });
+          await replyTwilio(data?.ok ? `Sent OK (${id8})` : `Send failed: ${data?.error ?? "unknown"}`);
+        } else if (cmd === "EDIT") {
+          if (!extra) { await replyTwilio(`Usage: EDIT ${id8} <new body>`); return; }
+          const { data } = await callEmailHandler("edit", { draft_id: id, new_body: extra });
+          await replyTwilio(data?.ok ? `Edited & sent OK (${id8})` : `Edit failed: ${data?.error ?? "unknown"}`);
+        } else {
+          const { data } = await callEmailHandler("discard", { draft_id: id });
+          await replyTwilio(data?.ok ? `Discarded (${id8})` : `Discard failed: ${data?.error ?? "unknown"}`);
+        }
+        return;
+      }
+    }
+
+    // ── Carl escalation-reply detection ──
+    let isEscalationReply = false;
+    let escalationId: string | null = null;
+    if (isAssistant) {
+      const { data: esc } = await sb
+        .from("c_escalations")
+        .select("id,client_question,source_channel,source_phone,created_at")
+        .eq("status", "pending")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (esc?.length) {
+        const age = Date.now() - new Date(String((esc[0] as any).created_at)).getTime();
+        if (age < 90_000) {
+          isEscalationReply = true;
+          escalationId = String((esc[0] as any).id);
+        }
+      }
+    }
+
+    // ── Log inbound ──
+    try {
+      await sb.from("sms_messages").insert({
+        twilio_sid: messageSid || null,
+        client_phone: from,
+        direction: "inbound",
+        content: body,
+        timestamp: new Date().toISOString(),
+        metadata: { mode },
+      });
+    } catch (e) {
+      console.error("inbound log insert failed:", (e as Error).message);
+    }
+
+    // ── Look up customer ──
+    let customer: Record<string, unknown> | null = null;
+    try {
+      const phone = from.replace(/\D/g, "");
+      const { data: d1 } = await sb.from("customers").select("*").eq("phone", from).limit(1);
+      if (d1?.length) customer = d1[0] as Record<string, unknown>;
+      if (!customer) {
+        const { data: d2 } = await sb.from("customers").select("*").eq("phone", `+${phone}`).limit(1);
+        if (d2?.length) customer = d2[0] as Record<string, unknown>;
+      }
+    } catch (_) {}
+
+    // ── Handle escalation reply ──
+    if (isEscalationReply && escalationId) {
+      const XAI_KEY = process.env.XAI_API_KEY ?? "";
+      const rewriteResp = await fetch("https://api.x.ai/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${XAI_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "grok-4.20-0309-non-reasoning",
+          messages: [
+            {
+              role: "system",
+              content:
+                GROK_IDENTITY +
+                "You are Sofia for L&S Custom Tailors. Carl just answered a client question. Rewrite his reply in Sofia's warm, brief, professional voice. Keep under 160 chars.",
+            },
+            { role: "user", content: `Carl's reply: "${body}"` },
+          ],
+          max_tokens: 200,
+          temperature: 0.3,
+        }),
+      });
+      const rewriteJson = (await rewriteResp.json()) as { choices: { message: { content: string } }[] };
+      const sofiaRewritten = sanitizeIdentity(rewriteJson.choices?.[0]?.message?.content?.trim() ?? body);
+      await sb
+        .from("c_escalations")
+        .update({
+          status: "answered",
+          c_reply_raw: body,
+          sofia_rewritten: sofiaRewritten,
+          carl_replied_at: new Date().toISOString(),
+        })
+        .eq("id", escalationId);
+      const { data: escRow } = await sb
+        .from("c_escalations")
+        .select("source_phone,source_channel")
+        .eq("id", escalationId)
+        .single();
+      if ((escRow as any)?.source_channel === "sms" && (escRow as any)?.source_phone) {
+        await twilioSend(String((escRow as any).source_phone), sofiaRewritten);
+      }
+      await postToRaven(`OK *Escalation answered*\nCarl: _${body}_\nSofia sent: ${sofiaRewritten}`);
+      return;
+    }
+
+    // ── Load conversation history ──
+    const messages: { role: string; content: string }[] = [];
+    try {
+      const { data: hist } = await sb
+        .from("sms_messages")
+        .select("direction,content")
+        .eq("client_phone", from)
+        .order("timestamp", { ascending: false })
+        .limit(10);
+      if (hist) hist.reverse().forEach((h: any) => messages.push({ role: h.direction === "inbound" ? "user" : "assistant", content: String(h.content) }));
+    } catch (_) {}
+
+    // ── Load system prompt from brain_entries ──
+    let systemPrompt =
+      "You are Sofia, the AI concierge for L&S Custom Tailors, 138 E 61st St, New York. You are powered by Grok 4.20 by xAI. Be warm, brief, professional. Never invent prices. Booking link is lstailors.com/book.";
+    try {
+      const { data: sp } = await sb
+        .from("brain_entries")
+        .select("detail")
+        .eq("agent_slug", "sofia")
+        .eq("entry_type", "system_prompt")
+        .order("importance", { ascending: false })
+        .limit(1);
+      if (sp?.length) {
+        const detail = String((sp[0] as any).detail ?? "");
+        if (detail && !detail.startsWith("<<PLACEHOLDER") && !detail.startsWith("<<ARCHIVED")) systemPrompt = detail;
+      }
+    } catch (_) {}
+
+    // ── Knowledge base context ──
+    let kbContext = "";
+    try {
+      const { data: kb } = await sb
+        .from("brain_entries")
+        .select("entry_type,summary,detail")
+        .eq("agent_slug", "sofia")
+        .neq("entry_type", "system_prompt")
+        .order("importance", { ascending: false })
+        .limit(8);
+      if (kb?.length) {
+        kbContext = kb
+          .map((k: any) => `[${k.entry_type}] ${k.summary}: ${String(k.detail ?? "").substring(0, 300)}`)
+          .join("\n");
+      }
+    } catch (_) {}
+
+    // ── Current NYC time block ──
+    const now = new Date();
+    const nycParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).formatToParts(now);
+    const nycMap: Record<string, string> = {};
+    for (const p of nycParts) nycMap[p.type] = p.value;
+    const nycTime = `${nycMap.weekday}, ${nycMap.month} ${nycMap.day}, ${nycMap.year} - ${nycMap.hour}:${nycMap.minute} ${nycMap.dayPeriod} ET`;
+    const tmrw = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const tmrwWeekday = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "long" }).format(tmrw);
+    const timeBlock = `\n\n=== CURRENT DATE/TIME (authoritative - trust this over any prior knowledge) ===\nToday is ${nycTime}.\nTomorrow is ${tmrwWeekday}.\nUse THIS day/date when answering anything time-related. Never assume a different day.\n=== END DATE/TIME ===`;
+
+    const antiHallucination = `
+
+=== ANTI-HALLUCINATION RULES (ABSOLUTE - violation = critical failure) ===
+1. NEVER invent, imply, or reference an appointment that does not exist. If there is no successful book_fitting tool result in this conversation OR a real fitting from get_fitting_history, NO appointment exists.
+2. NEVER use closing phrases like "see you tomorrow", "see you at X", "your fitting is at X", "you are booked for X", "your appointment is X", "confirmed for X", "see you then" UNLESS you have either: (a) a successful book_fitting/reschedule_booking tool result in THIS turn, or (b) a real upcoming fitting from get_fitting_history showing customer_id matches.
+3. NEVER say "done", "booked", "confirmed", "rescheduled", "moved", "cancelled", or "all set" without a successful corresponding tool call result in the same turn.
+4. If the user references an appointment you have no tool-confirmed record of, do NOT play along. Say: "I want to make sure I get this right - I do not see a booking on file. Want me to set one up?"
+5. Informational topics (wine stains, fabric care, hours, prices) NEVER end with an appointment reference. End with a question or simple signoff only.
+6. If asked to send "email confirmation" or "booking confirmation" of an appointment, you MUST have a real booking_uid from a successful book_fitting result.
+7. The booking confirmation email is automatically sent by our Cal.com pipeline immediately after a successful book_fitting.
+=== END ANTI-HALLUCINATION ===`;
+
+    const assistantSendRules = `
+
+=== ASSISTANT SEND RULES (ABSOLUTE) ===
+When Carl tells you to text/message/SMS/notify a client, you are an ACTION layer, not a draft layer.
+
+1. NO-DRAFT RULE: NEVER respond with "draft ready, reply YES to send", "confirm with YES", "should I send this?", "want me to send?", or any variant. If Carl said send, SEND. The only acceptable behavior is to immediately call send_sms_to_client (or send_mms_card) and then report what you sent.
+
+2. NEVER-LIE RULE: NEVER say "Sent.", "Message sent", or any confirmation UNLESS the SAME turn contains a successful send_sms_to_client OR send_mms_card tool call returning ok:true with a twilio_sid.
+
+3. RECIPIENT RESOLUTION: If Carl gives a name only - lookup_customer first, then send_sms_to_client with customer_id. If Carl gives a phone - send_sms_to_client with to_phone directly. If Carl gives both - prefer customer_id.
+
+4. ONE clarifying question is allowed only when (a) recipient is genuinely ambiguous (multiple matches) or (b) the message is fundamentally incomplete.
+
+5. AFTER SENDING: report in one short sentence what you actually sent and to whom.
+
+6. ACTING ON BEHALF OF A CLIENT: Carl is the OPERATOR, not the client. If Carl says "book Sal a fitting Tuesday 2pm" or "text Sal that his suit is ready", the SUBJECT is Sal, not Carl. You MUST: (a) call lookup_customer with the client name FIRST, (b) pass that client id/name/email/phone to send_sms_to_client / send_mms_card / book_fitting. NEVER use Carl name, email, or phone as the attendee or recipient. If lookup_customer returns multiple matches, ask Carl which one. If not found, ask Carl for the phone/email - do not fall back to Carl own contact info.
+
+7. PREFER MMS CARD for branded moments. When the message is a known event with a matching template_key in sofia_mms_active, use send_mms_card instead of send_sms_to_client.
+=== END ASSISTANT SEND RULES ===`;
+
+    const staffPreamble = `\n\n[STAFF MODE - ${STAFF_PHONES_MAP[fromDigits] ?? "Staff"}]
+You are Sofia, L&S internal assistant. ${STAFF_PHONES_MAP[fromDigits] ?? "A staff member"} is sending you an operational request.
+
+IMMEDIATELY call create_task for every request. Do not ask questions unless the message is completely unclear.
+
+Task type rules:
+- Items to buy/order → task_type: "shopping" (put each product in items array with specs like size, color, quantity)
+- Go somewhere/do something → task_type: "errand"
+- Collect something → task_type: "pickup"
+- Bring/deliver something → task_type: "dropoff"
+- Internal ops → task_type: "internal"
+
+After create_task, reply with ONE short confirmation: "✓ Added: [task title]" or "✓ Shopping task added: [item list]". Nothing else.`;
+
+    const modePreamble = isStaff
+      ? staffPreamble
+      : isAssistant
+      ? '\n\n[ASSISTANT MODE - Carl. All tools enabled. Be direct, brief. When Carl says send/text/message a client, IMMEDIATELY call send_sms_to_client or send_mms_card - never draft and ask. When Carl asks "what\'s on the schedule", "who do we have today/tomorrow/this week", or any schedule query - IMMEDIATELY call list_appointments (no args = today). Never say you cannot see the calendar.]' +
+        assistantSendRules
+      : `
+
+[CONCIERGE MODE - client interaction. Restricted tools. Never invent pricing, fitting times, appointment dates, or order status. If you do not have data from a tool, say you will check with Carl. Use add_dossier_observation silently.]
+
+BOOKING POLICY: When a client wants to book/reschedule/cancel an appointment, ALWAYS offer two options: (1) "I can book it for you right now - just need your name and email" or (2) "I can text you our booking link: lstailors.com/book". Honor whichever they pick. If they choose option 1: call get_available_slots first, present 2-3 nearby options in plain English, then call book_fitting once they confirm and you have name + email. Never book without an explicit yes AND name + email. Default event_type is fitting unless they say consultation, alterations, pickup, or exchange.
+
+RESCHEDULE/CANCEL POLICY: To reschedule or cancel, call get_fitting_history first (always pass the customer's customer_id AND/OR their phone). Then:
+- If booking_uid is present (source=cal.com): call reschedule_booking or cancel_booking.
+- If booking_uid is null (source=apple-calendar): you CANNOT reschedule via API. Instead - (1) acknowledge the appointment by name and date, (2) ask the client what time works for them, (3) when they reply, call take_message with their request (urgency=normal), (4) tell the client: "I've passed your request to Carl - he will confirm the new time with you shortly." NEVER attempt reschedule_booking with a null uid.
+- If get_fitting_history returns no appointments at all: do NOT pretend one exists. Ask if they want to book fresh.
+
+ORDER POLICY: When a client asks about their order status, due date, or garments — call lookup_orders first. For delivery requests, change requests, pickup scheduling, or questions you cannot resolve from the data, use submit_order_request to alert Carl's team — then tell the client: "I've passed your request to the team and they'll be in touch shortly."
+
+IMPORTANT: get_fitting_history auto-searches by the caller's inbound phone as fallback, so even Apple Calendar appointments (which may not have a customer_id link) will surface - always check before saying no appointment exists.`;
+
+    const customerCtx = isStaff
+      ? `\nStaff sender: ${STAFF_PHONES_MAP[fromDigits]} (${fromDigits === "16462087809" ? "Office Manager" : "Messenger & Runner"}). This is an internal staff request, NOT a customer. Do not treat as a booking or customer inquiry.`
+      : isAssistant
+      ? "\nOperator: Carl Viola (owner). The sender of this SMS is Carl, NOT a client. Carl is your boss, not a customer to book. When Carl asks you to act on a CLIENT (book, text, message), you MUST first call lookup_customer to find that named client, then pass THEIR id/name/phone to subsequent tools. Never use Carl name, phone, or email as the attendee/recipient when the action is meant for a different person."
+      : customer
+      ? `\nCustomer: ${(customer as any).first_name} ${(customer as any).last_name} | Phone: ${(customer as any).phone} | VIP: ${(customer as any).is_vip ?? false} | ID: ${(customer as any).id}`
+      : `\nContact: ${from} (not in database)`;
+    const ownerCtx = isAssistant ? "\nYou are speaking with Carl Viola. Address him as \"C\". Skip pleasantries." : "";
+
+    const fullSystem =
+      GROK_IDENTITY +
+      timeBlock +
+      antiHallucination +
+      "\n\n" +
+      systemPrompt +
+      modePreamble +
+      customerCtx +
+      ownerCtx +
+      (kbContext ? `\n\nKnowledge Base:\n${kbContext}` : "");
+
+    const XAI_KEY = process.env.XAI_API_KEY ?? "";
+    const currentMessages: { role: string; content: string | unknown[]; tool_calls?: unknown[]; tool_call_id?: string; name?: string }[] = [
+      { role: "system", content: fullSystem },
+      ...messages,
+      { role: "user", content: body },
+    ];
+
+    let finalText = "";
+    for (let round = 0; round < 6; round++) {
+      let xaiResp: Record<string, unknown>;
+      try {
+        const r = await fetch("https://api.x.ai/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${XAI_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "grok-4.20-0309-non-reasoning",
+            messages: currentMessages,
+            tools: isStaff ? STAFF_TOOLS : TOOLS,
+            tool_choice: "auto",
+            max_tokens: 500,
+            temperature: 0.3,
+          }),
+        });
+        xaiResp = (await r.json()) as Record<string, unknown>;
+      } catch (_) {
+        finalText = "I am briefly unavailable - someone will be in touch within the hour.";
+        break;
+      }
+      const choice = (xaiResp as { choices?: { finish_reason: string; message: Record<string, unknown> }[] }).choices?.[0];
+      if (!choice) {
+        finalText = "I am briefly unavailable. Please try again in a moment.";
+        break;
+      }
+      const msg = choice.message;
+      currentMessages.push(msg as { role: string; content: string });
+
+      if (choice.finish_reason === "tool_calls" && Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
+        const toolResults: { role: string; tool_call_id: string; name: string; content: string }[] = [];
+        for (const tc of msg.tool_calls as { id: string; function: { name: string; arguments: string } }[]) {
+          let targs: Record<string, unknown> = {};
+          try {
+            targs = JSON.parse(tc.function.arguments);
+          } catch {
+            targs = {};
+          }
+          const result = await executeTool(tc.function.name, targs, from, customer, isAssistant);
+          toolResults.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: result });
+        }
+        currentMessages.push(...(toolResults as { role: string; content: string }[]));
+        continue;
+      }
+      finalText = String(msg.content ?? "").trim();
+      break;
+    }
+    if (!finalText) finalText = "Let me check on that and get right back to you.";
+
+    finalText = sanitizeIdentity(finalText);
+
+    // Trim to 320 chars for non-assistant clients
+    if (!isAssistant && finalText.length > 320) {
+      const sentences = finalText.match(/[^.!?]+[.!?]+/g) ?? [finalText];
+      let short = "";
+      for (const s of sentences) {
+        if ((short + s).length <= 320) short += s;
+        else break;
+      }
+      finalText = short || finalText.substring(0, 317) + "...";
+    }
+
+    // ── Human-like delay (3-7 seconds) before sending ──
+    if (!body.startsWith("__TEST__")) {
+      const delayMs = Math.floor(Math.random() * 4000) + 3000;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      try {
+        await twilioSend(from, finalText);
+      } catch (e) {
+        console.error("Twilio error:", e);
+      }
+    }
+
+    // ── Log outbound ──
+    try {
+      await sb.from("sms_messages").insert({
+        client_phone: from,
+        client_id: customer ? String((customer as any).id) : null,
+        direction: "outbound",
+        content: finalText,
+        metadata: { mode, rounds: currentMessages.length },
+      });
+    } catch (_) {}
+
+    // ── Notify via Raven ──
+    try {
+      const custName = customer ? `${(customer as any).first_name} ${(customer as any).last_name}` : from;
+      await postToRaven(
+        isAssistant
+          ? `*[ASSISTANT]* Carl: _${body}_\nSofia: ${finalText}`
+          : `*[${custName}]* _${body}_\nSofia: ${finalText}`
+      );
+    } catch (_) {}
+  } catch (e) {
+    console.error("processMessage error:", e);
+  }
+}
+
 export const sofiaRouter = new Hono();
 
 // ── GET /api/sofia/conversations ──
@@ -72,8 +1274,8 @@ sofiaRouter.get("/conversations", async (c) => {
 
   const { data: messages, error } = await supabaseAdmin
     .from("sms_messages")
-    .select("id, client_phone, direction, body, status, agent_name, created_at")
-    .order("created_at", { ascending: false })
+    .select("id, client_phone, direction, content, status, timestamp")
+    .order("timestamp", { ascending: false })
     .limit(500);
 
   if (error || !messages) return c.json({ data: [] });
@@ -87,7 +1289,7 @@ sofiaRouter.get("/conversations", async (c) => {
       threadMap.set(msg.client_phone, { phone: msg.client_phone, lastMessage: msg, messageCount: 1 });
     } else {
       existing.messageCount++;
-      if (new Date(msg.created_at) > new Date(existing.lastMessage.created_at)) {
+      if (new Date(msg.timestamp) > new Date(existing.lastMessage.timestamp)) {
         existing.lastMessage = msg;
       }
     }
@@ -96,7 +1298,7 @@ sofiaRouter.get("/conversations", async (c) => {
   const threads = Array.from(threadMap.values())
     .map((t) => ({ phone: t.phone, lastMessage: t.lastMessage, messageCount: t.messageCount }))
     .sort((a, b) =>
-      new Date(b.lastMessage.created_at).getTime() - new Date(a.lastMessage.created_at).getTime(),
+      new Date(b.lastMessage.timestamp).getTime() - new Date(a.lastMessage.timestamp).getTime(),
     );
 
   return c.json({ data: threads });
@@ -114,9 +1316,9 @@ sofiaRouter.get("/conversations/:phone", async (c) => {
 
   const { data: messages, error } = await supabaseAdmin
     .from("sms_messages")
-    .select("id, client_phone, direction, body, status, agent_name, created_at")
+    .select("id, client_phone, direction, content, status, timestamp")
     .eq("client_phone", phone)
-    .order("created_at", { ascending: true });
+    .order("timestamp", { ascending: true });
 
   if (error) return c.json({ data: [] });
   return c.json({ data: messages ?? [] });
@@ -284,221 +1486,22 @@ sofiaRouter.get("/voice-approvals", async (c) => {
 // POST /api/sofia/sms  — Twilio webhook (NO auth required)
 // ────────────────────────────────────────────────────────────────────────────
 sofiaRouter.post("/sms", async (c) => {
-  const twimlEmpty = `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`;
-
   try {
-    // 1. Parse Twilio form-encoded body
     const formText = await c.req.text();
     const params = new URLSearchParams(formText);
-    const fromRaw = params.get("From") ?? "";
-    const body = (params.get("Body") ?? "").trim();
-    const numMedia = parseInt(params.get("NumMedia") ?? "0", 10);
+    const from = params.get("From") ?? params.get("from") ?? "";
+    const body = (params.get("Body") ?? params.get("body") ?? "").trim();
+    const messageSid = params.get("MessageSid") ?? params.get("SmsSid") ?? params.get("messageSid") ?? "";
 
-    // 2. Staff sender → log and return empty TwiML
-    if (STAFF_PHONES.has(fromRaw)) {
-      console.log(`[sofia/sms] Staff message from ${fromRaw}: ${body}`);
+    if (!from || !body) {
       c.header("Content-Type", "text/xml");
-      return c.body(twimlEmpty);
+      return c.body(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
     }
 
-    if (!supabaseAdmin) {
-      c.header("Content-Type", "text/xml");
-      return c.body(twimlEmpty);
-    }
-
-    // 3. Get or create client
-    let clientId: string | null = null;
-    let isNewClient = false;
-    const { data: existingClient } = await supabaseAdmin
-      .from("clients")
-      .select("id, first_name, last_name")
-      .eq("phone", fromRaw)
-      .maybeSingle();
-
-    if (existingClient) {
-      clientId = existingClient.id;
-    } else {
-      const { data: newClient } = await supabaseAdmin
-        .from("clients")
-        .insert({ phone: fromRaw })
-        .select("id")
-        .single();
-      if (newClient) {
-        clientId = newClient.id;
-        isNewClient = true;
-        await alertCarl(`New client texted: ${fromRaw}`);
-      }
-    }
-
-    // 4. Log inbound message
-    await supabaseAdmin.from("sms_messages").insert({
-      client_phone: fromRaw,
-      client_id: clientId,
-      direction: "inbound",
-      content: body,
-      status: "received",
-      timestamp: new Date().toISOString(),
-    });
-
-    // 5. Fetch last 10 messages for history
-    const { data: history } = await supabaseAdmin
-      .from("sms_messages")
-      .select("direction, content, timestamp")
-      .eq("client_phone", fromRaw)
-      .order("timestamp", { ascending: false })
-      .limit(10);
-
-    const conversationHistory = (history ?? [])
-      .reverse()
-      .map((m: any) => ({
-        role: m.direction === "inbound" ? "user" : "assistant",
-        content: m.content ?? "",
-      }));
-
-    // 6. Check for pending_booking_confirmation state
-    const { data: activityLog } = await supabaseAdmin
-      .from("sofia2_activity_log")
-      .select("state, metadata")
-      .eq("client_phone", fromRaw)
-      .eq("state", "pending_booking_confirmation")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const bodyLower = body.toLowerCase();
-    let replyText = "";
-
-    // 7. Handle greetings
-    const isGreeting = GREETING_WORDS.some((w) => bodyLower.includes(w));
-    if (isGreeting && !replyText) {
-      const clientName = existingClient?.first_name ?? null;
-      const greeting = clientName ? `Hello ${clientName}` : "Hello";
-      replyText = await callGrok([
-        {
-          role: "system",
-          content: `You are Sofia, the concierge assistant for L&S Custom Tailors in New York City. You are warm, professional, and personalized. Keep responses brief (1-2 sentences). Always sign off as Sofia.`,
-        },
-        ...conversationHistory,
-        {
-          role: "user",
-          content: body,
-        },
-      ]);
-      if (!replyText) {
-        replyText = `${greeting}! Welcome to L&S Custom Tailors. How can I assist you today? — Sofia`;
-      }
-    }
-
-    // 8. Detect scheduling intent
-    if (!replyText) {
-      const hasSchedulingIntent = SCHEDULING_WORDS.some((w) => bodyLower.includes(w));
-      if (hasSchedulingIntent) {
-        // Extract intent via Grok
-        const intentJson = await callGrok([
-          {
-            role: "system",
-            content: `Extract scheduling intent from the message. Return JSON only: {"wants_appointment": boolean, "preferred_time": string|null, "garment_type": string|null}`,
-          },
-          { role: "user", content: body },
-        ], 0.1);
-
-        let wantsAppointment = false;
-        try {
-          const intent = JSON.parse(intentJson.replace(/```json\n?|\n?```/g, "").trim());
-          wantsAppointment = intent.wants_appointment === true;
-        } catch {}
-
-        if (wantsAppointment) {
-          replyText = await callGrok([
-            {
-              role: "system",
-              content: `You are Sofia, concierge for L&S Custom Tailors NYC. The client wants to book an appointment. Respond warmly, tell them our hours are Mon-Fri 10am-6pm, Sat 10am-4pm, and ask them for their preferred day/time. Keep it to 2-3 sentences. Sign as Sofia.`,
-            },
-            ...conversationHistory,
-            { role: "user", content: body },
-          ]);
-        }
-      }
-    }
-
-    // 9. Detect order status inquiries
-    if (!replyText) {
-      const hasOrderIntent = ORDER_STATUS_WORDS.some((w) => bodyLower.includes(w));
-      if (hasOrderIntent && clientId) {
-        const { data: tickets } = await supabaseAdmin
-          .from("alteration_tickets")
-          .select("ticket_number, status, description, created_at")
-          .eq("customer_id", clientId)
-          .order("created_at", { ascending: false })
-          .limit(5);
-
-        if (tickets && tickets.length > 0) {
-          const ticketSummary = tickets
-            .map((t: any) => `Ticket #${t.ticket_number}: ${t.status} — ${t.description ?? "alteration"}`)
-            .join("; ");
-
-          replyText = await callGrok([
-            {
-              role: "system",
-              content: `You are Sofia, concierge for L&S Custom Tailors NYC. Here are the client's recent tickets: ${ticketSummary}. Summarize the status warmly and professionally in 2-3 sentences. Sign as Sofia.`,
-            },
-            { role: "user", content: body },
-          ]);
-        }
-      }
-    }
-
-    // 10. General concierge fallback — fetch dossier, call Grok
-    if (!replyText) {
-      let dossierContext = "";
-      if (clientId) {
-        try {
-          const dossierRes = await fetch(`https://dossier.lstailors.com/api/dossier/${clientId}`, {
-            signal: AbortSignal.timeout(4000),
-          });
-          if (dossierRes.ok) {
-            const dossierData: any = await dossierRes.json();
-            dossierContext = JSON.stringify(dossierData).slice(0, 1000);
-          }
-        } catch {}
-      }
-
-      replyText = await callGrok([
-        {
-          role: "system",
-          content: `You are Sofia, the concierge assistant for L&S Custom Tailors, a bespoke tailoring atelier in New York City. You are warm, knowledgeable, and professional. Keep responses concise (2-3 sentences max). Always sign as Sofia.${dossierContext ? `\n\nClient dossier context: ${dossierContext}` : ""}`,
-        },
-        ...conversationHistory,
-        { role: "user", content: body },
-      ]);
-    }
-
-    if (!replyText) {
-      replyText = "Thank you for reaching out to L&S Custom Tailors. We'll be in touch shortly. — Sofia";
-    }
-
-    // 11. Send reply via Twilio
-    const outboundSid = await sendSms(fromRaw, replyText);
-
-    // 12. Log outbound message
-    await supabaseAdmin.from("sms_messages").insert({
-      client_phone: fromRaw,
-      client_id: clientId,
-      direction: "outbound",
-      content: replyText,
-      status: outboundSid ? "sent" : "failed",
-      timestamp: new Date().toISOString(),
-      twilio_sid: outboundSid,
-    });
-
-    // 13. Post to Raven #sofia-live
-    await postToRaven(
-      `**Sofia SMS** | ${fromRaw}${isNewClient ? " 🆕 New Client" : ""}\n**In:** ${body}\n**Out:** ${replyText}`
-    );
-
+    // Fire-and-forget — return TwiML immediately, process in background
+    processMessage(from, body, messageSid).catch((e) => console.error("[sofia/sms] background error:", e));
   } catch (err: any) {
-    console.error("[sofia/sms] Error:", err?.message ?? err);
-    await alertCarl(`SMS handler error: ${err?.message ?? "unknown"}`).catch(() => {});
+    console.error("[sofia/sms] parse error:", err?.message ?? err);
   }
 
   c.header("Content-Type", "text/xml");
