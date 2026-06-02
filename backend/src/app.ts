@@ -29,6 +29,7 @@ import { searchRouter } from "./routes/search";
 import { notificationsRouter } from "./routes/notifications";
 import { calendarRouter } from "./routes/calendar";
 import { ravenRouter } from "./routes/raven";
+import { mcpRouter } from "./routes/mcp";
 
 const app = new Hono();
 
@@ -92,5 +93,6 @@ app.route("/api/search", searchRouter);
 app.route("/api/notifications", notificationsRouter);
 app.route("/api/calendar", calendarRouter);
 app.route("/api/raven", ravenRouter);
+app.route("/api/mcp", mcpRouter);
 
 export default app;

@@ -1,0 +1,15 @@
+{
+  "name": "lst-mcp",
+  "version": "1.0.0",
+  "description": "L&S Custom Tailors unified MCP server",
+  "type": "module",
+  "bin": {
+    "lst-mcp": "./server.ts"
+  },
+  "scripts": {
+    "start": "bun run server.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  }
+}
