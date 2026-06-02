@@ -24,6 +24,8 @@ interface Props<T> {
   className?: string;
   toolbar?: ReactNode;
   density?: "default" | "compact";
+  highlightRow?: (row: T) => boolean;
+  highlightRef?: React.RefObject<HTMLTableRowElement>;
 }
 
 type SortDir = "asc" | "desc" | null;
@@ -37,6 +39,8 @@ export function DataTable<T>({
   className,
   toolbar,
   density = "default",
+  highlightRow,
+  highlightRef,
 }: Props<T>) {
   const pad = density === "compact" ? "py-2.5" : "py-3.5";
   const [sortKey, setSortKey] = useState<string | null>(null);
@@ -130,13 +134,17 @@ export function DataTable<T>({
                 </td>
               </tr>
             ) : (
-              sorted.map((row) => (
+              sorted.map((row) => {
+                const isHighlighted = highlightRow?.(row) ?? false;
+                return (
                 <tr
                   key={rowKey(row)}
+                  ref={isHighlighted ? (highlightRef as any) : undefined}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
                   className={cn(
                     "border-b border-brass/5 last:border-0 transition-colors",
                     onRowClick && "cursor-pointer hover:bg-brass/[0.06]",
+                    isHighlighted && "bg-brass/10 border-l-2 border-l-brass-shimmer",
                   )}
                 >
                   {columns.map((c) => (
@@ -155,7 +163,8 @@ export function DataTable<T>({
                     </td>
                   ))}
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>

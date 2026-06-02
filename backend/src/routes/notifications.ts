@@ -35,7 +35,7 @@ notificationsRouter.get("/", async (c) => {
         body: a.summary ?? null,
         category: a.category ?? null,
         ts: a.created_at,
-        href: "/mission-control",
+        href: `/mission-control?tab=approvals&id=${a.id}`,
         read: false,
       });
     }
@@ -64,7 +64,7 @@ notificationsRouter.get("/", async (c) => {
         body: t.assigned_to_name ? `Assigned to ${t.assigned_to_name}` : null,
         meta: t.due_at ? `Due ${new Date(t.due_at).toLocaleDateString()}` : null,
         ts: t.due_at ?? null,
-        href: "/tasks",
+        href: `/tasks?id=${t.id}`,
         read: false,
       });
     }
@@ -88,7 +88,7 @@ notificationsRouter.get("/", async (c) => {
         body: f.detail ?? null,
         meta: `${f.agent_slug} · ${f.entry_type}`,
         ts: f.created_at,
-        href: "/comms",
+        href: `/comms?flag=${f.id}`,
         read: false,
       });
     }
@@ -111,7 +111,7 @@ notificationsRouter.get("/", async (c) => {
         title: b.title ?? "Maestro Brief",
         body: b.summary?.slice(0, 120) + (b.summary?.length > 120 ? "…" : ""),
         ts: b.created_at,
-        href: "/mission-control",
+        href: `/mission-control?tab=brief&id=${b.id}`,
         read: false,
       });
     }
@@ -137,7 +137,7 @@ notificationsRouter.get("/", async (c) => {
           title: `Overdue Invoice — ${i.erp_name}`,
           body: `${i.end_customer ?? i.erp_customer} · $${Number(i.outstanding_amount).toLocaleString()} outstanding`,
           ts: i.due_date,
-          href: "/invoices",
+          href: `/invoices?id=${i.erp_name}`,
           read: false,
         });
       }

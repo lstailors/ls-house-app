@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { FileText, Scissors } from "lucide-react";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { DataTable, type Column } from "@/components/glass/DataTable";
@@ -30,6 +31,20 @@ export default function Invoices() {
   const { data: invoices = [], isLoading } = useInvoices();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get("id") ?? null;
+  const highlightRef = useRef<HTMLTableRowElement>(null);
+
+  // Auto-scroll to highlighted row and clear the filter so it's visible
+  useEffect(() => {
+    if (!highlightId || isLoading) return;
+    // If the invoice is overdue, switch to show all so it's visible
+    setFilter("all");
+    const timer = setTimeout(() => {
+      highlightRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [highlightId, isLoading]);
 
   const rows = useMemo(() => {
     const s = search.toLowerCase();
@@ -172,7 +187,13 @@ export default function Invoices() {
           description="Invoices generate from both custom commissions and alteration tickets."
         />
       ) : (
-        <DataTable rows={rows} columns={columns} rowKey={(r) => r.id} />
+        <DataTable
+          rows={rows}
+          columns={columns}
+          rowKey={(r) => r.id}
+          highlightRow={highlightId ? (r) => (r.erpnextId ?? r.id) === highlightId : undefined}
+          highlightRef={highlightRef}
+        />
       )}
     </div>
   );
