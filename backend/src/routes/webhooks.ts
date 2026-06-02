@@ -19,16 +19,24 @@ webhooksRouter.post("/unifi", async (c) => {
 
   if (!supabaseAdmin) return c.json({ ok: true }); // silently accept
 
-  // UniFi sends Slack-style payload. Extract what we need.
+  // Handle both Slack format ({ text, attachments }) and Teams format ({ @type, text, sections })
+  // UniFi may send either depending on which icon was selected — payload content is the same
   const attachments = body.attachments ?? [];
-  const callData = attachments[0] ?? {};
+  const sections = body.sections ?? [];
+  const callData = attachments[0] ?? sections[0] ?? {};
 
-  // Try to extract structured call info from various UniFi formats
-  const callId = body.call_id ?? body.id ?? body.metadata?.call_id ?? null;
-  const transcript = body.transcript ?? callData.text ?? callData.pretext ?? body.text ?? null;
-  const summary = body.summary ?? callData.title ?? null;
-  const recordingUrl = body.recording_url ?? body.metadata?.recording_url ?? null;
-  const callerPhone = body.from ?? body.caller ?? body.metadata?.from ?? null;
+  // Extract fields from any UniFi webhook format
+  const callId = body.call_id ?? body.id ?? body.metadata?.call_id ?? callData.activitySubtitle ?? null;
+  const transcript = body.transcript
+    ?? callData.text ?? callData.pretext
+    ?? body.text ?? body.summary
+    ?? sections.map((s: any) => s.text ?? s.activityText).filter(Boolean).join("\n")
+    ?? null;
+  const summary = body.summary ?? callData.title ?? callData.activityTitle ?? body.text?.slice(0, 100) ?? null;
+  const recordingUrl = body.recording_url ?? body.metadata?.recording_url
+    ?? callData.actions?.find((a: any) => a.name?.toLowerCase().includes("recording"))?.target ?? null;
+  const callerPhone = body.from ?? body.caller ?? body.metadata?.from
+    ?? callData.activitySubtitle?.match(/\+?[\d\s\-\(\)]{10,}/)?.[0] ?? null;
 
   if (callId) {
     // Update existing call log if we can match by id
