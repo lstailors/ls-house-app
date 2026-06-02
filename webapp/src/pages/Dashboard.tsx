@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
-import { Wallet, Scissors, Truck, ShoppingBag, CheckCircle2, Sparkles, AlertTriangle, Hammer, Coffee, Square } from "lucide-react";
+import { Wallet, Scissors, Truck, ShoppingBag, CheckCircle2, Sparkles, AlertTriangle, Hammer, Coffee, Square, MessageSquare, Clock, Zap } from "lucide-react";
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { useMe } from "@/lib/session";
 import { useDashboardKpis, useMaestroApprovalCount, useDailyEspresso } from "@/lib/queries";
 import { SectionHeader } from "@/components/glass/SectionHeader";
@@ -7,6 +8,7 @@ import { KpiCard } from "@/components/glass/KpiCard";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { Button } from "@/components/ui/button";
 import { formatUSD, statusToLabel } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 function weatherEmoji(code: number): string {
   if (code <= 1) return "☀️";
@@ -54,6 +56,18 @@ const PRIORITY_COLORS: Record<string, string> = {
   low: "text-cream-muted bg-cream-muted/10",
 };
 
+const ChartTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-forest-raised border border-brass/30 rounded-lg px-3 py-2 text-xs text-cream shadow-lg">
+      {label && <p className="text-cream-dim mb-1">{label}</p>}
+      {payload.map((p: any, i: number) => (
+        <p key={i} style={{ color: p.color }}>{p.name}: {p.value}</p>
+      ))}
+    </div>
+  );
+};
+
 function DailyEspresso() {
   const navigate = useNavigate();
   const { data: espresso } = useDailyEspresso();
@@ -85,13 +99,13 @@ function DailyEspresso() {
             <div className="text-xs text-cream-muted">{todayLabel}</div>
           </div>
         </div>
-        {weather && (
+        {weather ? (
           <div className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-brass/20 bg-brass/5 text-sm text-cream">
             <span>{weatherEmoji(weather.weathercode)}</span>
             <span className="font-medium">{weather.temp}°F</span>
             <span className="text-cream-muted text-xs">{weather.description}</span>
           </div>
-        )}
+        ) : null}
       </div>
 
       <div className="border-t border-brass/10" />
@@ -233,7 +247,7 @@ function DailyEspresso() {
       </div>
 
       {/* News */}
-      {news.length > 0 && (
+      {news.length > 0 ? (
         <>
           <div className="border-t border-brass/10" />
           <div>
@@ -253,7 +267,7 @@ function DailyEspresso() {
             </div>
           </div>
         </>
-      )}
+      ) : null}
     </GlassCard>
   );
 }
@@ -382,25 +396,43 @@ export default function Dashboard() {
 
   // super_admin / store_manager
   const stages = kpis?.ordersByStage ?? {};
+  const altOverdue = kpis?.altOverdue ?? 0;
+  const altRush = kpis?.altRush ?? 0;
+  const altReady = kpis?.altReady ?? 0;
+  const garmentsProd = kpis?.garmentsProd ?? 0;
+  const unansweredSms = kpis?.unansweredSms ?? 0;
+
+  const altStatusData = [
+    { name: "Received", value: kpis?.altByStatus?.received ?? 0, color: "#60a5fa" },
+    { name: "In Progress", value: kpis?.altByStatus?.inProgress ?? 0, color: "#f59e0b" },
+    { name: "Ready", value: kpis?.altByStatus?.ready ?? 0, color: "#34d399" },
+  ];
+
+  const pipelineData = PIPELINE_STAGES.map(s => ({ stage: statusToLabel(s), count: stages[s] ?? 0 }));
+
+  const prodStages = ["Ordered", "Pattern Draft", "Cutting", "Sewing", "Basting", "First Fitting", "Alterations", "Second Fitting", "Final QC"];
+  const garmentData = prodStages.map(s => ({ stage: s.replace(" ", "\n"), count: kpis?.garmentsByStage?.[s] ?? 0 }));
+
   return (
     <div className="space-y-8 animate-fade-up">
+      {/* 1. Header */}
       <SectionHeader
         eyebrow={`${greeting()}, ${firstName}`}
         title={<span className="text-brass-shimmer">The atelier is open.</span>}
         description="Operations overview across intake, production, and delivery."
       />
 
-      {/* Primary KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 2. Top KPI strip — 6 tiles */}
+      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
         <KpiCard
-          label="Revenue (MTD)"
-          value={isLoading ? "—" : formatUSD(kpis?.revenue ?? 0, { compact: true })}
+          label="Revenue MTD"
+          value={isLoading ? "—" : formatUSD(kpis?.revenueMTD ?? kpis?.revenue ?? 0, { compact: true })}
           icon={<Wallet className="h-4 w-4" />}
           accent="emerald"
         />
         <KpiCard
           label="Deposits Pending"
-          value={isLoading ? "—" : formatUSD(kpis?.depositsPending ?? 0, { compact: true })}
+          value={isLoading ? "—" : formatUSD(kpis?.depositsPendingAmount ?? kpis?.depositsPending ?? 0, { compact: true })}
           icon={<Sparkles className="h-4 w-4" />}
           accent="amber"
         />
@@ -410,18 +442,94 @@ export default function Dashboard() {
           icon={<Scissors className="h-4 w-4" />}
         />
         <KpiCard
+          label="Ready for Pickup"
+          value={isLoading ? "—" : altReady}
+          icon={<CheckCircle2 className="h-4 w-4" />}
+          accent="emerald"
+        />
+        <KpiCard
           label="In Production"
-          value={isLoading ? "—" : (kpis?.customInProduction ?? 0)}
+          value={isLoading ? "—" : garmentsProd}
           icon={<Hammer className="h-4 w-4" />}
           accent="amber"
         />
+        <KpiCard
+          label="Deliveries Due"
+          value={isLoading ? "—" : (kpis?.deliveriesDue ?? 0)}
+          icon={<Truck className="h-4 w-4" />}
+        />
       </div>
 
-      {(me?.role === "super_admin" || me?.role === "store_manager") ? (
-        <DailyEspresso />
-      ) : null}
+      {/* 3. Daily Espresso */}
+      <DailyEspresso />
 
-      {/* Custom Orders Pipeline */}
+      {/* 4. Alterations section */}
+      <GlassCard variant="strong" className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="ui-label">Alterations</div>
+          <button
+            onClick={() => navigate("/alterations")}
+            className="text-xs text-brass-light hover:text-brass transition-colors"
+          >
+            View all →
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-start">
+          <div>
+            {/* Mini stat cards */}
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className={cn("rounded-xl p-4 border text-center", altOverdue > 0 ? "bg-red-900/20 border-red-500/30" : "bg-forest-raised border-brass/15")}>
+                <Clock className={cn("h-3.5 w-3.5 mx-auto mb-1", altOverdue > 0 ? "text-red-400" : "text-cream-muted")} />
+                <div className="kpi-number text-2xl">{altOverdue}</div>
+                <div className="ui-label text-[9px] mt-1">Overdue</div>
+              </div>
+              <div className={cn("rounded-xl p-4 border text-center", altRush > 0 ? "bg-amber-900/20 border-amber-500/30" : "bg-forest-raised border-brass/15")}>
+                <Zap className={cn("h-3.5 w-3.5 mx-auto mb-1", altRush > 0 ? "text-signal-amber" : "text-cream-muted")} />
+                <div className="kpi-number text-2xl">{altRush}</div>
+                <div className="ui-label text-[9px] mt-1">Rush</div>
+              </div>
+              <div className="rounded-xl p-4 border text-center bg-emerald-900/20 border-emerald-500/30">
+                <CheckCircle2 className="h-3.5 w-3.5 mx-auto mb-1 text-emerald-400" />
+                <div className="kpi-number text-2xl">{altReady}</div>
+                <div className="ui-label text-[9px] mt-1">Ready</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Donut chart */}
+          <div>
+            <div className="ui-label mb-2 text-[9px]">Status Breakdown</div>
+            <ResponsiveContainer width="100%" height={160}>
+              <PieChart>
+                <Pie
+                  data={altStatusData}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={40}
+                  outerRadius={70}
+                  paddingAngle={2}
+                >
+                  {altStatusData.map((entry, index) => (
+                    <Cell key={index} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip content={<ChartTooltip />} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="flex flex-wrap gap-3 mt-1 justify-center">
+              {altStatusData.map((d) => (
+                <div key={d.name} className="flex items-center gap-1.5 text-[10px] text-cream-muted">
+                  <span className="w-2 h-2 rounded-full inline-block" style={{ background: d.color }} />
+                  {d.name}: {d.value}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </GlassCard>
+
+      {/* 5. Custom Orders section */}
       <GlassCard variant="strong" className="p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="ui-label">Custom Orders Pipeline</div>
@@ -432,7 +540,19 @@ export default function Dashboard() {
             View all →
           </button>
         </div>
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+
+        {/* Horizontal bar chart */}
+        <ResponsiveContainer width="100%" height={160}>
+          <BarChart data={pipelineData} layout="vertical">
+            <XAxis type="number" tick={{ fontSize: 10, fill: "#9a8a70" }} />
+            <YAxis type="category" dataKey="stage" width={80} tick={{ fontSize: 10, fill: "#9a8a70" }} />
+            <Tooltip content={<ChartTooltip />} />
+            <Bar dataKey="count" name="Orders" fill="#c9a96e" radius={[0, 4, 4, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+
+        {/* Stage mini tiles */}
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 mt-4">
           {PIPELINE_STAGES.map((stage) => (
             <div
               key={stage}
@@ -446,7 +566,56 @@ export default function Dashboard() {
         </div>
       </GlassCard>
 
-      {/* Secondary row */}
+      {/* 6. Production Floor section */}
+      <GlassCard variant="strong" className="p-6">
+        <div className="flex items-center justify-between mb-1">
+          <div className="ui-label">Production Floor</div>
+        </div>
+        <div className="flex items-baseline gap-2 mb-4">
+          <div className="kpi-number text-4xl">{isLoading ? "—" : garmentsProd}</div>
+          <div className="text-sm text-cream-muted">garments in production</div>
+        </div>
+
+        <ResponsiveContainer width="100%" height={180}>
+          <BarChart data={garmentData}>
+            <XAxis dataKey="stage" tick={{ fontSize: 9, fill: "#9a8a70" }} />
+            <YAxis tick={{ fontSize: 9, fill: "#9a8a70" }} />
+            <Tooltip content={<ChartTooltip />} />
+            <Bar dataKey="count" name="Garments" fill="#c9a96e" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </GlassCard>
+
+      {/* 7. Communications section */}
+      <GlassCard className="p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <MessageSquare className="h-5 w-5 text-brass-light" />
+              {unansweredSms > 0 ? (
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              ) : null}
+            </div>
+            <div>
+              <div className="ui-label mb-0.5">Communications</div>
+              <div className="flex items-baseline gap-1.5">
+                <span className={cn("kpi-number text-3xl", unansweredSms > 0 ? "text-red-400" : "text-cream")}>
+                  {isLoading ? "—" : unansweredSms}
+                </span>
+                <span className="text-sm text-cream-muted">unanswered thread{unansweredSms !== 1 ? "s" : ""}</span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate("/comms")}
+            className="text-xs text-brass-light hover:text-brass transition-colors"
+          >
+            Open inbox →
+          </button>
+        </div>
+      </GlassCard>
+
+      {/* 8. Logistics & Intake */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Logistics */}
         <GlassCard className="p-5">
@@ -495,7 +664,7 @@ export default function Dashboard() {
         </GlassCard>
       </div>
 
-      {/* Super admin watchlist */}
+      {/* 9. Location Watchlist */}
       {me?.role === "super_admin" && (kpis?.lowActivityLocations?.length ?? 0) > 0 ? (
         <GlassCard className="p-5 border-signal-amber/25">
           <div className="flex items-center gap-2 mb-3">

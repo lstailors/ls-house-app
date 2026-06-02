@@ -348,6 +348,16 @@ export const DashboardKpis = z.object({
     orders7d: z.number(),
   })).optional(),
   fabricDelayAlerts: z.number().optional(),
+  altReady: z.number().optional(),
+  altOverdue: z.number().optional(),
+  altRush: z.number().optional(),
+  altByStatus: z.object({ received: z.number(), inProgress: z.number(), ready: z.number() }).optional(),
+  altRevenueMTD: z.number().optional(),
+  revenueMTD: z.number().optional(),
+  garmentsByStage: z.record(z.string(), z.number()).optional(),
+  garmentsProd: z.number().optional(),
+  unansweredSms: z.number().optional(),
+  depositsPendingAmount: z.number().optional(),
 });
 export type DashboardKpis = z.infer<typeof DashboardKpis>;
 

@@ -101,8 +101,9 @@ dashboardRouter.get("/kpis", async (c) => {
     (() => {
       return supabaseAdmin!
         .from("garments")
-        .select("*", { count: "exact", head: true })
-        .in("status", ["Ordered", "Pattern Draft", "Cutting", "Sewing", "Basting", "First Fitting", "Alterations", "Second Fitting"]);
+        .select("status")
+        .in("status", ["Ordered", "Pattern Draft", "Cutting", "Sewing", "Basting", "First Fitting", "Alterations", "Second Fitting"])
+        .limit(500);
     })(),
 
     // Today's intake (orders created today)
@@ -135,6 +136,15 @@ dashboardRouter.get("/kpis", async (c) => {
   }
 
   const customInProduction = ordersByStage["in_production"] ?? 0;
+
+  const garmentRows = (garmentsProdRes as any).data ?? [];
+  const garmentsProd = garmentRows.length;
+  const garmentsByStage: Record<string, number> = {};
+  for (const g of garmentRows) {
+    garmentsByStage[g.status] = (garmentsByStage[g.status] ?? 0) + 1;
+  }
+
+  const depositsPendingAmount = orders.filter((o: any) => toAppStatus(o.status) === "quote").reduce((s: number, o: any) => s + Number(o.order_total ?? 0), 0);
 
   // Low-activity locations for super_admin
   let lowActivityLocations: any[] | undefined;
@@ -172,6 +182,56 @@ dashboardRouter.get("/kpis", async (c) => {
   }).catch(() => []);
   const openAlterations = openAltTickets.length;
 
+  // Additional alteration stats from ERPNext
+  const erpLocFilter: unknown[] = locCode ? [["origin_location", "=", locCode]] : [];
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const monthStartStr = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+
+  const [altReadyTickets, altOverdueTickets, altRushTickets, altRevTickets] = await Promise.all([
+    erpList("Alteration Ticket", { filters: [...erpLocFilter, ["workflow_state", "=", "Ready"]], fields: ["name"], limit: 500 }).catch(() => []),
+    erpList("Alteration Ticket", { filters: [...erpLocFilter, ["workflow_state", "in", ["Received", "In Progress"]], ["due_date", "<", todayStr]], fields: ["name"], limit: 200 }).catch(() => []),
+    erpList("Alteration Ticket", { filters: [...erpLocFilter, ["workflow_state", "in", ["Received", "In Progress"]], ["is_rush", "=", 1]], fields: ["name"], limit: 200 }).catch(() => []),
+    erpList<{ name: string; ticket_total: number }>("Alteration Ticket", { filters: [...erpLocFilter, ["ticket_date", ">=", monthStartStr]], fields: ["name", "ticket_total"], limit: 500 }).catch(() => []),
+  ]);
+
+  const altReady = altReadyTickets.length;
+  const altOverdue = altOverdueTickets.length;
+  const altRush = altRushTickets.length;
+  const altRevenueMTD = altRevTickets.reduce((s, t: any) => s + Number(t.ticket_total ?? 0), 0);
+
+  const altWithStatus = await erpList<{ name: string; workflow_state: string }>("Alteration Ticket", {
+    filters: [...erpLocFilter, ["workflow_state", "in", ["Received", "In Progress"]]],
+    fields: ["name", "workflow_state"],
+    limit: 500,
+  }).catch(() => []);
+  const altByStatus = {
+    received: altWithStatus.filter((t) => t.workflow_state === "Received").length,
+    inProgress: altWithStatus.filter((t) => t.workflow_state === "In Progress").length,
+    ready: altReady,
+  };
+
+  // Unanswered SMS threads
+  let unansweredSms = 0;
+  if (supabaseAdmin) {
+    const { data: recentSms } = await supabaseAdmin
+      .from("sms_messages")
+      .select("client_phone, direction, timestamp")
+      .order("timestamp", { ascending: false })
+      .limit(200);
+    if (recentSms) {
+      const lastByPhone = new Map<string, string>();
+      for (const msg of recentSms) {
+        if (!lastByPhone.has(msg.client_phone)) lastByPhone.set(msg.client_phone, msg.direction);
+      }
+      unansweredSms = Array.from(lastByPhone.values()).filter((d) => d === "inbound").length;
+    }
+  }
+
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const mtdOrders = orders.filter((o: any) => new Date(o.created_at) >= startOfMonth);
+  const customRevenueMTD = canSeeFinancials(user.role) ? mtdOrders.reduce((s: number, o: any) => s + Number(o.order_total ?? 0), 0) : 0;
+  const revenueMTD = customRevenueMTD + altRevenueMTD;
+
   return c.json({
     data: {
       revenue,
@@ -181,9 +241,18 @@ dashboardRouter.get("/kpis", async (c) => {
       customInProduction,
       depositsPending,
       todayIntakeCount: todayOrdersRes.count ?? 0,
-      garmentsProd: garmentsProdRes.count ?? 0,
+      garmentsProd,
+      garmentsByStage,
       lowActivityLocations,
       fabricDelayAlerts: user.role === "super_admin" ? 2 : undefined,
+      altReady,
+      altOverdue,
+      altRush,
+      altByStatus,
+      altRevenueMTD,
+      revenueMTD,
+      unansweredSms,
+      depositsPendingAmount,
     },
   });
 });
