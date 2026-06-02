@@ -4,6 +4,7 @@
 import { Hono } from "hono";
 import { canSeeFinancials, getAuthedUser, resolveLocationCode } from "../lib/scope";
 import { supabaseAdmin } from "../lib/supabase";
+import { erpList } from "../lib/erp";
 
 export const dashboardRouter = new Hono();
 
@@ -161,12 +162,22 @@ dashboardRouter.get("/kpis", async (c) => {
     }
   }
 
+  // Fetch open alteration tickets from ERPNext (Received + In Progress)
+  const erpFilters: unknown[] = [["workflow_state", "in", ["Received", "In Progress"]]];
+  if (locCode) erpFilters.push(["origin_location", "=", locCode]);
+  const openAltTickets = await erpList("Alteration Ticket", {
+    filters: erpFilters,
+    fields: ["name"],
+    limit: 500,
+  }).catch(() => []);
+  const openAlterations = openAltTickets.length;
+
   return c.json({
     data: {
       revenue,
       ordersByStage,
       deliveriesDue: deliveriesDueRes.count ?? 0,
-      openAlterations: 0, // Geelus pending
+      openAlterations,
       customInProduction,
       depositsPending,
       todayIntakeCount: todayOrdersRes.count ?? 0,
