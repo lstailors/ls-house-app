@@ -128,9 +128,11 @@ function MessageBubble({
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export default function RavenChat() {
+export default function RavenChat({ open: openProp, onClose }: { open?: boolean; onClose?: () => void } = {}) {
   const { data: user } = useMe();
-  const [open, setOpen] = useState(false);
+  const [openInternal, setOpenInternal] = useState(false);
+  const open = openProp !== undefined ? openProp : openInternal;
+  const setOpen = (v: boolean) => { setOpenInternal(v); if (!v) onClose?.(); };
   const [activeChannel, setActiveChannel] = useState<RavenChannel | null>(null);
   const [channels, setChannels] = useState<RavenChannel[]>([]);
   const [messages, setMessages] = useState<RavenMessage[]>([]);
@@ -164,7 +166,7 @@ export default function RavenChat() {
   }, [open, user]);
 
   const fetchMessages = useCallback((channel: RavenChannel) => {
-    const name = channel.channel_name || channel.name || "";
+    const name = channel.name || "";
     const encoded = encodeURIComponent(name);
     api.get<RavenMessage[]>(`/api/raven/channels/${encoded}/messages`)
       .then((data) => setMessages(data || []))
@@ -188,7 +190,7 @@ export default function RavenChat() {
     setActiveChannel(ch);
     setMessages([]);
     setLoadingMessages(true);
-    const name = ch.channel_name || ch.name || "";
+    const name = ch.name || "";
     const encoded = encodeURIComponent(name);
     api.get<RavenMessage[]>(`/api/raven/channels/${encoded}/messages`)
       .then((data) => setMessages(data || []))
@@ -206,7 +208,8 @@ export default function RavenChat() {
     const body = text.trim();
     setText("");
     setSending(true);
-    const name = activeChannel.channel_name || activeChannel.name || "";
+    // Use full Frappe document name (e.g. "L&S Tailors-general"), not short channel_name
+    const name = activeChannel.name || "";
     const encoded = encodeURIComponent(name);
     try {
       await api.post(`/api/raven/channels/${encoded}/messages`, { text: body });
@@ -241,27 +244,6 @@ export default function RavenChat() {
 
   return (
     <>
-      {/* ── Floating button ── */}
-      <button
-        onClick={() => setOpen(true)}
-        className={cn(
-          "fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full",
-          "bg-forest-deep border border-brass/40 shadow-lg",
-          "flex items-center justify-center text-brass",
-          "hover:bg-forest-raised hover:border-brass/60 hover:scale-105",
-          "transition-all duration-200",
-          open && "opacity-0 pointer-events-none"
-        )}
-        title="Team Chat"
-      >
-        <MessageSquare size={20} />
-        {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
-            {unreadCount > 9 ? "9+" : unreadCount}
-          </span>
-        )}
-      </button>
-
       {/* ── Backdrop ── */}
       {open && (
         <div

@@ -15,7 +15,8 @@ import type { Profile } from "@/lib/types";
 import { initials, formatDate } from "@/lib/format";
 import { LocationBanner } from "./LocationBanner";
 import { api } from "@/lib/api";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+const RavenChat = lazy(() => import("@/components/RavenChat"));
 import { cn } from "@/lib/utils";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -328,6 +329,7 @@ export function TopBar({ user, onMenuClick }: Props) {
   const qc = useQueryClient();
   const [searchOpen, setSearchOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   // Preload notification count
   const { data: notifData } = useQuery({
@@ -404,6 +406,16 @@ export function TopBar({ user, onMenuClick }: Props) {
           <QrCode className="h-4 w-4 text-cream-muted" />
         </button>
 
+        {/* Team Chat button */}
+        <button
+          onClick={() => setChatOpen(true)}
+          className="relative h-9 w-9 rounded-full border border-brass/20 bg-forest-raised/40 hover:border-brass/40 transition-colors flex items-center justify-center"
+          aria-label="Team Chat"
+          title="Team Chat"
+        >
+          <MessageSquare className="h-4 w-4 text-cream-muted" />
+        </button>
+
         {/* Notification bell */}
         <button
           onClick={() => setNotifOpen(true)}
@@ -461,6 +473,9 @@ export function TopBar({ user, onMenuClick }: Props) {
 
       {searchOpen && <SearchPalette onClose={() => setSearchOpen(false)} />}
       {notifOpen && <NotificationPanel onClose={() => setNotifOpen(false)} />}
+      <Suspense fallback={null}>
+        <RavenChat open={chatOpen} onClose={() => setChatOpen(false)} />
+      </Suspense>
     </>
   );
 }
