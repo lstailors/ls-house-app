@@ -1799,6 +1799,27 @@ End with: — Sofia`,
     await postRavenDm(briefing);
   } catch {}
 
+  // ── Save to lsh.agent_briefs → powers Daily Espresso card on dashboard ──
+  if (sb) {
+    try {
+      const lshClient = (sb as any).schema("lsh");
+      const nycHour = new Date().toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false });
+      const h = parseInt(nycHour);
+      const period = h < 12 ? "Morning" : h < 15 ? "Midday" : "Afternoon";
+      const nycTime = new Date().toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
+      await lshClient.from("agent_briefs").insert({
+        type: "brief",
+        title: `${period} Brief — ${nycTime}`,
+        body: briefing,
+        severity: "info",
+        source: "maestro",
+        metadata: { channel: "daily_briefing", generated_at: new Date().toISOString() },
+      });
+    } catch (e: any) {
+      console.error("[sofia/briefing] agent_briefs save:", e.message);
+    }
+  }
+
   // ── Log to sms_messages ──
   if (sb) {
     try {
