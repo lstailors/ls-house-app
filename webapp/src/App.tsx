@@ -23,6 +23,7 @@ import Financials from "./pages/Financials";
 import Settings from "./pages/Settings";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminLocations from "./pages/admin/AdminLocations";
+import LocationSettings from "./pages/admin/LocationSettings";
 import AdminTailors from "./pages/admin/AdminTailors";
 import AdminOverview from "./pages/admin/AdminOverview";
 import AdminBoard from "./pages/admin/AdminBoard";
@@ -235,6 +236,14 @@ const App = () => (
               element={
                 <RoleGuard allow={["super_admin"]}>
                   <AdminLocations />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/admin/locations/:code"
+              element={
+                <RoleGuard allow={["super_admin"]}>
+                  <LocationSettings />
                 </RoleGuard>
               }
             />

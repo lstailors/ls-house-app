@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Building2, MapPin, Plus, Power, Pencil, Phone, Wifi, DollarSign, Settings } from "lucide-react";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { GlassCard } from "@/components/glass/GlassCard";
@@ -257,7 +258,8 @@ function NewLocationModal({ onClose }: { onClose: () => void }) {
 
 // ─── Location Card ────────────────────────────────────────────────────────────
 
-function LocationCard({ location, onEdit }: { location: Location; onEdit: () => void }) {
+function LocationCard({ location }: { location: Location }) {
+  const navigate = useNavigate()
   const update = useUpdateLocation(location.id)
   const l = location as any
 
@@ -311,7 +313,7 @@ function LocationCard({ location, onEdit }: { location: Location; onEdit: () => 
 
       {/* Actions */}
       <div className="flex items-center gap-2 border-t border-brass/10 pt-3">
-        <Button variant="outline" size="sm" onClick={onEdit} className="border-brass/20 hover:bg-brass/10 text-cream-muted flex-1 flex items-center gap-1.5">
+        <Button variant="outline" size="sm" onClick={() => navigate(`/admin/locations/${location.id}`)} className="border-brass/20 hover:bg-brass/10 text-cream-muted flex-1 flex items-center gap-1.5">
           <Pencil className="h-3 w-3" /> Edit Settings
         </Button>
         <Button variant="outline" size="sm" onClick={handleToggle} disabled={update.isPending} className="border-brass/20 hover:bg-brass/10 text-cream-muted px-3" title={location.isActive ? "Close location" : "Open location"}>
@@ -327,7 +329,6 @@ function LocationCard({ location, onEdit }: { location: Location; onEdit: () => 
 export default function AdminLocations() {
   const { data: locations = [], isLoading } = useLocations()
   const [showNew, setShowNew] = useState(false)
-  const [editLocation, setEditLocation] = useState<Location | null>(null)
 
   return (
     <div className="space-y-6 animate-fade-up">
@@ -349,13 +350,12 @@ export default function AdminLocations() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {locations.map(l => (
-            <LocationCard key={l.id} location={l} onEdit={() => setEditLocation(l)} />
+            <LocationCard key={l.id} location={l} />
           ))}
         </div>
       )}
 
-      {showNew && <NewLocationModal onClose={() => setShowNew(false)} />}
-      {editLocation && <EditModal location={editLocation} onClose={() => setEditLocation(null)} />}
+      {showNew ? <NewLocationModal onClose={() => setShowNew(false)} /> : null}
     </div>
   )
 }
