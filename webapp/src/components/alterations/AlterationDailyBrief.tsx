@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, RotateCcw, Briefcase } from "lucide-react";
 import { api } from "@/lib/api";
 import { GlassCard } from "@/components/glass/GlassCard";
@@ -57,12 +58,21 @@ const PERIOD_LABEL: Record<string, string> = {
   eod: "EOD",
 };
 
-export function AlterationDailyBrief({ kpis }: Props) {
+export function AlterationDailyBrief({ kpis: kpisProp }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [brief, setBrief] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [period] = useState(getCurrentPeriod);
+
+  // Fetch KPIs directly — same cache key as AlterationKpiBar so no double request
+  const { data: kpisData } = useQuery({
+    queryKey: ["alteration-kpis"],
+    queryFn: () => api.get<AlterationKpis>("/api/alterations/kpis"),
+    staleTime: 60_000,
+  });
+
+  const kpis = kpisProp ?? kpisData;
 
   const cacheKey = `alteration-brief-${getTodayStr()}-${period}`;
 
@@ -85,6 +95,7 @@ export function AlterationDailyBrief({ kpis }: Props) {
       }
 
       if (!isBusinessHours() && !forceRefresh) return;
+      if (!kpis) return; // wait for KPI data before generating brief
 
       setIsLoading(true);
       try {
