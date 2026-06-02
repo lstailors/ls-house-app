@@ -662,6 +662,8 @@ function CheckoutCart({
   origin,
   submitting,
   onSubmit,
+  dueDate,
+  onDueDateChange,
 }: {
   garments: GarmentItem[]
   customer: Customer
@@ -674,6 +676,8 @@ function CheckoutCart({
   origin: 'NYC' | 'HOU'
   submitting: boolean
   onSubmit: () => void
+  dueDate: string
+  onDueDateChange: (v: string) => void
 }) {
   const garmentSubtotal = garments.reduce((s, g) => s + g.lines.reduce((ss, l) => ss + l.price, 0), 0)
   const rushFee = isRush ? 25 : 0
@@ -758,7 +762,46 @@ function CheckoutCart({
           </div>
         </div>
 
-        {/* Tax & Total */}
+        {/* Due Date */}
+        <div className="space-y-2">
+          <p className="ui-label text-cream-muted">Due Date</p>
+          <div className="flex gap-1.5 flex-wrap">
+            {[
+              { label: '3 days', days: 3 },
+              { label: '5 days', days: 5 },
+              { label: '1 week', days: 7 },
+              { label: '2 weeks', days: 14 },
+            ].map(({ label, days }) => {
+              const d = new Date()
+              d.setDate(d.getDate() + days)
+              const val = d.toISOString().slice(0, 10)
+              return (
+                <button
+                  key={days}
+                  type="button"
+                  onClick={() => onDueDateChange(val)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg text-xs font-medium border transition-all',
+                    dueDate === val
+                      ? 'bg-brass/20 border-brass/50 text-brass-shimmer'
+                      : 'border-brass/20 text-cream-muted hover:border-brass/40 hover:text-cream'
+                  )}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+          <input
+            type="date"
+            value={dueDate}
+            onChange={e => onDueDateChange(e.target.value)}
+            min={new Date().toISOString().slice(0, 10)}
+            className="w-full bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream text-sm focus:outline-none focus:border-brass/50 [color-scheme:dark]"
+          />
+        </div>
+
+        {/* Total */}
         <div className="border-t border-brass/20 pt-3 space-y-1.5">
           <div className="flex items-center justify-between text-sm">
             <span className="text-cream-muted">Subtotal</span>
@@ -967,8 +1010,16 @@ export default function IntakeAlterations() {
     addGarment(type)
   }, [addGarment])
 
+  const defaultDueDate = () => {
+    const d = new Date()
+    d.setDate(d.getDate() + 7)
+    return d.toISOString().slice(0, 10)
+  }
+  const [dueDate, setDueDate] = useState(defaultDueDate)
+
   const handleSubmit = async () => {
     if (!customer || garments.filter(g => g.lines.length > 0).length === 0) return
+    if (!dueDate) { toast.error('Please select a due date'); return }
     setSubmitting(true)
     try {
       const payload = {
@@ -978,7 +1029,8 @@ export default function IntakeAlterations() {
         paymentMethod,
         deposit: paymentMethod === 'deposit' ? parseFloat(deposit) || 0 : null,
         origin,
-        ticket_date: new Date().toISOString().split('T')[0], // YYYY-MM-DD — required by ERP
+        ticket_date: new Date().toISOString().split('T')[0],
+        due_date: dueDate,
       }
       const result = await api.post<{ ticketName: string }>('/api/intake-alterations/tickets', payload)
       setSubmitted({ ticketName: result.ticketName })
@@ -997,6 +1049,7 @@ export default function IntakeAlterations() {
     setPaymentMethod('pay_now')
     setDeposit('')
     setSubmitted(null)
+    setDueDate(defaultDueDate())
   }
 
   if (submitted) {
@@ -1184,6 +1237,8 @@ export default function IntakeAlterations() {
             origin={origin}
             submitting={submitting}
             onSubmit={handleSubmit}
+            dueDate={dueDate}
+            onDueDateChange={setDueDate}
           />
         </div>
       </div>
