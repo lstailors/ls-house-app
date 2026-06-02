@@ -1570,6 +1570,262 @@ sofiaRouter.post("/tasks", async (c) => {
   return c.json({ data }, 201);
 });
 
+// ────────────────────────────────────────────────────────────────────────────
+// POST /api/sofia/briefing  +  GET /api/sofia/briefing/trigger
+// Daily briefing: queries ERPNext + Supabase, feeds Grok, sends SMS + Raven DM
+// No auth required (called by Vercel cron at 8AM and 3PM ET)
+// ────────────────────────────────────────────────────────────────────────────
+
+const BRIEFING_SOFIA_DM_CHANNEL = "b56k4sapbj";
+
+async function erpNextFetch(path: string): Promise<any> {
+  const ERP_BASE = "https://erp.lstailors.com";
+  const key = process.env.ERPNEXT_API_KEY ?? "71ea2b1955d7b8e";
+  const secret = process.env.ERPNEXT_API_SECRET ?? "768c364b966b76e";
+  try {
+    const res = await fetch(`${ERP_BASE}${path}`, {
+      headers: { Authorization: `token ${key}:${secret}` },
+    });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function postRavenDm(text: string): Promise<void> {
+  const ERP_BASE = "https://erp.lstailors.com";
+  const key = process.env.ERPNEXT_CARL_API_KEY ?? "0c3a223606ede7c";
+  const secret = process.env.ERPNEXT_CARL_API_SECRET ?? "cd4fd503416f673";
+  try {
+    await fetch(`${ERP_BASE}/api/resource/Raven%20Message`, {
+      method: "POST",
+      headers: {
+        Authorization: `token ${key}:${secret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        channel_id: BRIEFING_SOFIA_DM_CHANNEL,
+        text,
+        message_type: "Text",
+        owner: "concierge@lstailors.com",
+      }),
+    });
+  } catch {}
+}
+
+async function runBriefing(): Promise<{ ok: boolean; briefing?: string; error?: string }> {
+  const sb = supabaseAdmin;
+  const XAI_KEY = process.env.XAI_API_KEY ?? "";
+  const ownerPhone = process.env.OWNER_MOBILE ?? "+16319260917";
+
+  const todayStr = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  const sections: string[] = [];
+
+  // ── ERPNext: Open Sales Orders ──
+  try {
+    const soData = await erpNextFetch(
+      `/api/resource/Sales%20Order?fields=${encodeURIComponent(JSON.stringify(["name","customer","status","grand_total","delivery_date"]))}&filters=${encodeURIComponent(JSON.stringify([["status","=","To Deliver and Bill"]]))}&limit=20`
+    );
+    const orders = soData?.data ?? [];
+    if (orders.length) {
+      sections.push(`OPEN SALES ORDERS (${orders.length}): ${orders.slice(0, 5).map((o: any) => `${o.name} – ${o.customer}${o.delivery_date ? ` due ${o.delivery_date}` : ""}`).join("; ")}${orders.length > 5 ? `… +${orders.length - 5} more` : ""}`);
+    }
+  } catch {}
+
+  // ── ERPNext: Delivery Notes pending ──
+  try {
+    const dnData = await erpNextFetch(
+      `/api/resource/Delivery%20Note?fields=${encodeURIComponent(JSON.stringify(["name","customer","status","posting_date"]))}&filters=${encodeURIComponent(JSON.stringify([["status","=","To Bill"]]))}&limit=10`
+    );
+    const dns = dnData?.data ?? [];
+    if (dns.length) sections.push(`PENDING DELIVERY NOTES (${dns.length}): ${dns.slice(0, 3).map((d: any) => `${d.name} – ${d.customer}`).join("; ")}${dns.length > 3 ? `… +${dns.length - 3} more` : ""}`);
+  } catch {}
+
+  // ── ERPNext: Overdue Invoices ──
+  try {
+    const invData = await erpNextFetch(
+      `/api/resource/Sales%20Invoice?fields=${encodeURIComponent(JSON.stringify(["name","customer","outstanding_amount","due_date"]))}&filters=${encodeURIComponent(JSON.stringify([["status","=","Overdue"],["outstanding_amount",">",0]]))}&limit=10`
+    );
+    const invs = invData?.data ?? [];
+    if (invs.length) {
+      const total = invs.reduce((s: number, i: any) => s + Number(i.outstanding_amount ?? 0), 0);
+      sections.push(`OVERDUE INVOICES (${invs.length}, $${total.toFixed(0)} total): ${invs.slice(0, 3).map((i: any) => `${i.name} – ${i.customer} $${Number(i.outstanding_amount).toFixed(0)}`).join("; ")}${invs.length > 3 ? `… +${invs.length - 3} more` : ""}`);
+    }
+  } catch {}
+
+  // ── Supabase: Open alteration tickets ──
+  if (sb) {
+    try {
+      const { data: tickets } = await sb
+        .from("alteration_tickets")
+        .select("name,status,due_date,customer_name")
+        .not("status", "in", '("Delivered","Cancelled")')
+        .order("due_date", { ascending: true })
+        .limit(30);
+      if (tickets?.length) {
+        const overdue = tickets.filter((t: any) => t.due_date && t.due_date < todayStr);
+        const dueToday = tickets.filter((t: any) => t.due_date === todayStr);
+        sections.push(`ALTERATION TICKETS open: ${tickets.length} total${dueToday.length ? `, ${dueToday.length} due TODAY` : ""}${overdue.length ? `, ${overdue.length} OVERDUE` : ""}`);
+      }
+    } catch {}
+  }
+
+  // ── Supabase: Open tasks ──
+  if (sb) {
+    try {
+      const { data: openTasks } = await sb
+        .from("tasks")
+        .select("title, priority, due_date, assigned_to")
+        .or("status.eq.open,is_completed.eq.false")
+        .order("priority", { ascending: false })
+        .limit(10);
+      if (openTasks?.length) {
+        sections.push(`OPEN TASKS (${openTasks.length}): ${openTasks.slice(0, 4).map((t: any) => `"${t.title}"${t.assigned_to ? ` → ${t.assigned_to}` : ""}`).join("; ")}${openTasks.length > 4 ? `… +${openTasks.length - 4} more` : ""}`);
+      }
+    } catch {}
+  }
+
+  // ── Supabase: Unresponded SMS (last 24h) ──
+  if (sb) {
+    try {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: unread } = await sb
+        .from("sms_messages")
+        .select("client_phone, content, timestamp")
+        .eq("direction", "inbound")
+        .in("status", ["received", "pending"])
+        .gte("timestamp", since)
+        .order("timestamp", { ascending: false })
+        .limit(20);
+      if (unread?.length) {
+        const uniquePhones = new Set((unread as any[]).map((m: any) => m.client_phone));
+        sections.push(`UNRESPONDED SMS: ${unread.length} messages from ${uniquePhones.size} clients in last 24h`);
+      }
+    } catch {}
+  }
+
+  // ── Supabase: Today's appointments ──
+  if (sb) {
+    try {
+      const startUtc = new Date(`${todayStr}T00:00:00-04:00`).toISOString();
+      const endUtc = new Date(`${todayStr}T23:59:59-04:00`).toISOString();
+      const { data: appts } = await sb
+        .from("appointments")
+        .select("event_type, client_name, start_time")
+        .gte("start_time", startUtc)
+        .lte("start_time", endUtc)
+        .in("status", ["confirmed", "pending"])
+        .order("start_time", { ascending: true });
+      if (appts?.length) {
+        const fmtTime = (t: string) =>
+          new Intl.DateTimeFormat("en-US", {
+            timeZone: "America/New_York",
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          }).format(new Date(t));
+        sections.push(`TODAY'S APPOINTMENTS (${appts.length}): ${appts.map((a: any) => `${fmtTime(a.start_time)} ${a.event_type} – ${a.client_name ?? "?"}`).join("; ")}`);
+      }
+    } catch {}
+  }
+
+  if (!sections.length) {
+    sections.push("No urgent items found across ERPNext and Supabase.");
+  }
+
+  const dataBlock = sections.join("\n");
+
+  // ── Call Grok to format the briefing ──
+  const nycTime = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date());
+
+  let briefing = "";
+  try {
+    const r = await fetch("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${XAI_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "grok-4.20-0309-non-reasoning",
+        messages: [
+          {
+            role: "system",
+            content: `You are Sofia preparing the daily briefing for Carl at L&S Custom Tailors.
+Be concise, prioritized, and actionable. Format for SMS (under 1000 chars total).
+Lead with most urgent items (overdue invoices, overdue tickets, today's appointments first).
+Include counts. Use plain English — no markdown, no asterisks, no bullet symbols.
+End with: — Sofia`,
+          },
+          {
+            role: "user",
+            content: `Current time: ${nycTime}\n\nData:\n${dataBlock}\n\nWrite the daily briefing now.`,
+          },
+        ],
+        max_tokens: 400,
+        temperature: 0.2,
+      }),
+    });
+    const grokData: any = await r.json();
+    briefing = (grokData?.choices?.[0]?.message?.content ?? "").trim();
+  } catch (e: any) {
+    briefing = `Daily Briefing (${todayStr}):\n${dataBlock}\n— Sofia`;
+  }
+
+  if (!briefing) briefing = `Daily Briefing:\n${dataBlock}\n— Sofia`;
+
+  // ── Send SMS to Carl ──
+  try {
+    await twilioSend(ownerPhone, briefing);
+  } catch (e: any) {
+    console.error("[sofia/briefing] SMS error:", e.message);
+  }
+
+  // ── Post to Raven DM ──
+  try {
+    await postRavenDm(briefing);
+  } catch {}
+
+  // ── Log to sms_messages ──
+  if (sb) {
+    try {
+      await sb.from("sms_messages").insert({
+        client_phone: ownerPhone,
+        direction: "outbound",
+        content: briefing,
+        timestamp: new Date().toISOString(),
+        metadata: { channel: "daily_briefing", generated_at: new Date().toISOString() },
+      });
+    } catch {}
+  }
+
+  return { ok: true, briefing };
+}
+
+sofiaRouter.post("/briefing", async (_c) => {
+  const result = await runBriefing();
+  if (!result.ok) return _c.json({ error: { message: result.error ?? "briefing failed" } }, 500);
+  return _c.json({ data: result });
+});
+
+sofiaRouter.get("/briefing/trigger", async (_c) => {
+  const result = await runBriefing();
+  if (!result.ok) return _c.json({ error: { message: result.error ?? "briefing failed" } }, 500);
+  return _c.json({ data: result });
+});
+
 // PATCH /api/sofia/tasks/:id
 sofiaRouter.patch("/tasks/:id", async (c) => {
   const user = await getAuthedUser(c);
