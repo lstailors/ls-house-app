@@ -148,6 +148,62 @@ const LIST_FIELDS = [
   "modified", "creation",
 ];
 
+// GET /api/alterations/kpis — must be before /:id
+alterationsRouter.get("/kpis", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const locationId = c.req.query("locationId");
+  const locCode = locationId ?? user.locationCode;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const locFilter: unknown[] = (locCode && locCode !== "ALL")
+    ? [["origin_location", "=", locCode]]
+    : [];
+
+  const notDoneFilter: unknown[] = [["workflow_state", "not in", ["Picked Up", "Cancelled"]]];
+
+  const [active, dueToday, overdue, rush, unassigned, stellaWip, hugoWip, readyForPickup] = await Promise.all([
+    erpList("Alteration Ticket", { filters: [...locFilter, ["workflow_state", "in", ["Received", "In Progress"]]], fields: ["name"], limit: 500 }).catch(() => []),
+    erpList("Alteration Ticket", { filters: [...locFilter, ...notDoneFilter, ["due_date", "=", today]], fields: ["name"], limit: 500 }).catch(() => []),
+    erpList("Alteration Ticket", { filters: [...locFilter, ["workflow_state", "not in", ["Picked Up", "Ready", "Cancelled"]], ["due_date", "<", today]], fields: ["name"], limit: 500 }).catch(() => []),
+    erpList("Alteration Ticket", { filters: [...locFilter, ...notDoneFilter, ["is_rush", "=", 1]], fields: ["name"], limit: 500 }).catch(() => []),
+    erpList("Alteration Ticket", { filters: [...locFilter, ...notDoneFilter, ["assigned_tailor", "=", ""]], fields: ["name"], limit: 500 }).catch(() => []),
+    erpList("Alteration Ticket", { filters: [...locFilter, ["assigned_tailor", "=", "HR-EMP-00020"], ["workflow_state", "=", "In Progress"]], fields: ["name"], limit: 500 }).catch(() => []),
+    erpList("Alteration Ticket", { filters: [...locFilter, ["assigned_tailor", "=", "HR-EMP-00021"], ["workflow_state", "=", "In Progress"]], fields: ["name"], limit: 500 }).catch(() => []),
+    erpList("Alteration Ticket", { filters: [...locFilter, ["workflow_state", "=", "Ready"]], fields: ["name"], limit: 500 }).catch(() => []),
+  ]);
+
+  return c.json({ data: {
+    active: active.length,
+    dueToday: dueToday.length,
+    overdue: overdue.length,
+    rush: rush.length,
+    unassigned: unassigned.length,
+    stellaWip: stellaWip.length,
+    hugoWip: hugoWip.length,
+    readyForPickup: readyForPickup.length,
+  }});
+});
+
+// POST /api/alterations/brief — must be before /:id
+alterationsRouter.post("/brief", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const body = await c.req.json() as {
+    period: "morning" | "midday" | "eod";
+    kpis: { active: number; dueToday: number; overdue: number; rush: number; unassigned: number; stellaWip: number; hugoWip: number; readyForPickup: number };
+  };
+
+  const periodLabel = body.period === "morning" ? "Morning" : body.period === "midday" ? "Midday" : "EOD";
+  const k = body.kpis;
+  const prompt = `You are the production manager at L&S Custom Tailors, a luxury bespoke tailoring house in NYC.\nTime of day: ${periodLabel}\nAnalyze today's alteration workload and give a concise brief (4-6 sentences max):\n- Tickets due today: ${k.dueToday}\n- Overdue: ${k.overdue}\n- Rush: ${k.rush}\n- Unassigned: ${k.unassigned}\n- Stella has ${k.stellaWip} pieces, Hugo has ${k.hugoWip} pieces\n- Ready for pickup: ${k.readyForPickup}\nFlag any risks. Suggest prioritization. Tone: direct, professional, no fluff.`;
+
+  const brief = await callGrok(prompt);
+  return c.json({ data: { brief, period: body.period, generatedAt: new Date().toISOString() } });
+});
+
 alterationsRouter.get("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
@@ -324,100 +380,6 @@ alterationsRouter.patch("/:ticketId/garments/:garmentId/status", async (c) => {
   return c.json({ data: { garment_id: garmentId, garment_status } });
 });
 
-// GET /api/alterations/kpis
-alterationsRouter.get("/kpis", async (c) => {
-  const user = await getAuthedUser(c);
-  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-
-  const locationId = c.req.query("locationId");
-  const locCode = locationId ?? user.locationCode;
-  const today = new Date().toISOString().slice(0, 10);
-
-  const locFilter = (locCode && locCode !== "ALL")
-    ? [["origin_location", "=", locCode]]
-    : [];
-
-  const notDone = ["Picked Up", "Cancelled"];
-  const notDoneFilter = notDone.map(s => ["workflow_state", "!=", s]);
-
-  const [active, dueToday, overdue, rush, unassigned, stellaWip, hugoWip, readyForPickup] = await Promise.all([
-    erpList("Alteration Ticket", {
-      filters: [...locFilter, ["workflow_state", "in", ["Received", "In Progress"]]],
-      fields: ["name"], limit: 500,
-    }),
-    erpList("Alteration Ticket", {
-      filters: [...locFilter, ...notDoneFilter, ["due_date", "=", today]],
-      fields: ["name"], limit: 500,
-    }),
-    erpList("Alteration Ticket", {
-      filters: [...locFilter, ["workflow_state", "not in", ["Picked Up", "Ready", "Cancelled"]], ["due_date", "<", today]],
-      fields: ["name"], limit: 500,
-    }),
-    erpList("Alteration Ticket", {
-      filters: [...locFilter, ...notDoneFilter, ["is_rush", "=", 1]],
-      fields: ["name"], limit: 500,
-    }),
-    erpList("Alteration Ticket", {
-      filters: [...locFilter, ...notDoneFilter, ["assigned_tailor", "=", ""]],
-      fields: ["name"], limit: 500,
-    }),
-    erpList("Alteration Ticket", {
-      filters: [...locFilter, ["assigned_tailor", "=", "HR-EMP-00020"], ["workflow_state", "=", "In Progress"]],
-      fields: ["name"], limit: 500,
-    }),
-    erpList("Alteration Ticket", {
-      filters: [...locFilter, ["assigned_tailor", "=", "HR-EMP-00021"], ["workflow_state", "=", "In Progress"]],
-      fields: ["name"], limit: 500,
-    }),
-    erpList("Alteration Ticket", {
-      filters: [...locFilter, ["workflow_state", "=", "Ready"]],
-      fields: ["name"], limit: 500,
-    }),
-  ]);
-
-  return c.json({ data: {
-    active: active.length,
-    dueToday: dueToday.length,
-    overdue: overdue.length,
-    rush: rush.length,
-    unassigned: unassigned.length,
-    stellaWip: stellaWip.length,
-    hugoWip: hugoWip.length,
-    readyForPickup: readyForPickup.length,
-  }});
-});
-
-// POST /api/alterations/brief
-alterationsRouter.post("/brief", async (c) => {
-  const user = await getAuthedUser(c);
-  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-
-  const body = await c.req.json() as {
-    period: "morning" | "midday" | "eod";
-    kpis: {
-      active: number; dueToday: number; overdue: number; rush: number;
-      unassigned: number; stellaWip: number; hugoWip: number; readyForPickup: number;
-    };
-  };
-
-  const periodLabel = body.period === "morning" ? "Morning" : body.period === "midday" ? "Midday" : "EOD";
-  const k = body.kpis;
-
-  const prompt = `You are the production manager at L&S Custom Tailors, a luxury bespoke tailoring house in NYC.
-Time of day: ${periodLabel}
-Analyze today's alteration workload and give a concise brief (4-6 sentences max):
-- Tickets due today: ${k.dueToday}
-- Overdue: ${k.overdue}
-- Rush: ${k.rush}
-- Unassigned: ${k.unassigned}
-- Stella has ${k.stellaWip} pieces, Hugo has ${k.hugoWip} pieces
-- Ready for pickup: ${k.readyForPickup}
-Flag any risks. Suggest prioritization. Tone: direct, professional, no fluff.`;
-
-  const brief = await callGrok(prompt);
-
-  return c.json({ data: { brief, period: body.period, generatedAt: new Date().toISOString() } });
-});
 
 // ERPNext Server Script calls this when all garments are Ready
 alterationsRouter.post("/erp-webhook/ready", async (c) => {
