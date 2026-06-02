@@ -294,7 +294,52 @@ alterationsRouter.patch("/:id/state", async (c) => {
 alterationsRouter.patch("/:id", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  return c.json({ error: { message: "Update tickets via intake.lstailors.com" } }, 501);
+
+  const id = c.req.param("id");
+  const body = await c.req.json() as {
+    dueDate?: string | null;
+    promisedDate?: string | null;
+    isRush?: boolean;
+    internalNotes?: string | null;
+    customerNotes?: string | null;
+    deliveryMethod?: string | null;
+  };
+
+  const { base, key, secret } = {
+    base: process.env.ERPNEXT_BASE_URL ?? "",
+    key: process.env.ERPNEXT_API_KEY ?? "",
+    secret: process.env.ERPNEXT_API_SECRET ?? "",
+  };
+
+  // Build only the fields that were provided
+  const updates: Record<string, unknown> = {};
+  if (body.dueDate !== undefined)      updates.due_date = body.dueDate ?? null;
+  if (body.promisedDate !== undefined) updates.promised_date = body.promisedDate ?? null;
+  if (body.isRush !== undefined)       updates.is_rush = body.isRush ? 1 : 0;
+  if (body.internalNotes !== undefined) updates.internal_notes = body.internalNotes ?? "";
+  if (body.customerNotes !== undefined) updates.customer_notes = body.customerNotes ?? "";
+  if (body.deliveryMethod !== undefined) updates.delivery_method = body.deliveryMethod ?? "";
+
+  if (Object.keys(updates).length === 0) {
+    return c.json({ error: { message: "No fields to update" } }, 400);
+  }
+
+  const res = await fetch(
+    `${base}/api/resource/Alteration%20Ticket/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      headers: { Authorization: `token ${key}:${secret}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(updates),
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as any;
+    return c.json({ error: { message: err._server_messages || err.exception || "Update failed" } }, 502);
+  }
+
+  const data = await res.json() as { data: unknown };
+  return c.json({ data: data.data ?? {} });
 });
 
 // GET /api/alterations/:ticketId/garments/:garmentId

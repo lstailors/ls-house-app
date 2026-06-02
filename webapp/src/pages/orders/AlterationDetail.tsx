@@ -1,4 +1,5 @@
 import { useParams, Link } from "react-router-dom";
+import { useState } from "react";
 import {
   ArrowLeft,
   Scissors,
@@ -186,8 +187,8 @@ export default function AlterationDetail() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <DateField label="Ticket Date"          value={ticketDate} />
-              <DateField label="Work Due"             value={dueDate} />
-              <DateField label="Promised to Customer" value={promisedDate} />
+              <DateField label="Work Due"             value={dueDate}       ticketId={ticket.id} field="dueDate" />
+              <DateField label="Promised to Customer" value={promisedDate}  ticketId={ticket.id} field="promisedDate" />
             </div>
           </GlassCard>
 
@@ -378,11 +379,55 @@ export default function AlterationDetail() {
 
 // ── Small helpers ────────────────────────────────────────────────────────────
 
-function DateField({ label, value }: { label: string; value: string | null | undefined }) {
+function DateField({ label, value, ticketId, field }: {
+  label: string; value: string | null | undefined;
+  ticketId?: string; field?: string;
+}) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? "");
+
+  const save = useMutation({
+    mutationFn: (newVal: string) => api.patch(`/api/alterations/${ticketId}`, { [field!]: newVal || null }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["alteration", ticketId] });
+      toast.success(`${label} updated`);
+      setEditing(false);
+    },
+    onError: (e: any) => toast.error(e.message || "Update failed"),
+  });
+
+  if (!ticketId || !field) {
+    return (
+      <div>
+        <div className="ui-label text-[10px] mb-1">{label}</div>
+        <div className="text-cream text-sm">{value ? formatDate(value) : <span className="text-cream-dim italic">—</span>}</div>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div className="ui-label text-[10px] mb-1">{label}</div>
-      <div className="text-cream text-sm">{value ? formatDate(value) : <span className="text-cream-dim italic">—</span>}</div>
+      <div className="ui-label text-[10px] mb-1 flex items-center gap-1.5">
+        {label}
+        {!editing && (
+          <button onClick={() => { setDraft(value ?? ""); setEditing(true); }}
+            className="text-brass/50 hover:text-brass transition-colors text-[8px] underline">edit</button>
+        )}
+      </div>
+      {editing ? (
+        <div className="flex items-center gap-1.5">
+          <input type="date" value={draft} onChange={e => setDraft(e.target.value)}
+            className="flex-1 bg-forest-raised border border-brass/30 rounded-lg px-2 py-1 text-cream text-xs focus:outline-none focus:border-brass/60 [color-scheme:dark]" />
+          <button onClick={() => save.mutate(draft)} disabled={save.isPending}
+            className="text-xs px-2 py-1 rounded bg-brass/20 text-brass-shimmer border border-brass/30 hover:bg-brass/30 disabled:opacity-50">
+            {save.isPending ? "…" : "Save"}
+          </button>
+          <button onClick={() => setEditing(false)} className="text-xs text-cream-dim hover:text-cream">✕</button>
+        </div>
+      ) : (
+        <div className="text-cream text-sm">{value ? formatDate(value) : <span className="text-cream-dim italic">—</span>}</div>
+      )}
     </div>
   );
 }
