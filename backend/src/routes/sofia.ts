@@ -42,14 +42,14 @@ async function sendSms(to: string, body: string): Promise<string | null> {
   return res.ok ? data.sid : null;
 }
 
-// ── Slack post helper ──
-async function postToSlack(text: string, channel = "C0AV292BK5L"): Promise<void> {
-  const token = process.env.SLACK_BOT_TOKEN;
-  if (!token) return;
-  await fetch("https://slack.com/api/chat.postMessage", {
+// ── Raven post helper (replaces Slack) ──
+async function postToRaven(text: string): Promise<void> {
+  const webhookUrl = process.env.RAVEN_WEBHOOK_URL;
+  if (!webhookUrl) return;
+  await fetch(webhookUrl, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ channel, text }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
   }).catch(() => {});
 }
 
@@ -493,10 +493,9 @@ sofiaRouter.post("/sms", async (c) => {
       twilio_sid: outboundSid,
     });
 
-    // 13. Post to Slack #concierge
-    await postToSlack(
-      `*Sofia SMS* | ${fromRaw}${isNewClient ? " 🆕" : ""}\n*In:* ${body}\n*Out:* ${replyText}`,
-      "C0AV292BK5L"
+    // 13. Post to Raven #sofia-live
+    await postToRaven(
+      `**Sofia SMS** | ${fromRaw}${isNewClient ? " 🆕 New Client" : ""}\n**In:** ${body}\n**Out:** ${replyText}`
     );
 
   } catch (err: any) {
