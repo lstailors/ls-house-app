@@ -5,6 +5,7 @@ import { Printer, ArrowLeft, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { buildReceiptXml, sendToEpson, getPrinterIp } from '@/lib/thermal'
 
 interface AlterationTicketDoc {
   name: string
@@ -60,18 +61,13 @@ export default function AlterationReceipt() {
 
   const handleEpsonPrint = async () => {
     if (!ticket) return
+    if (!getPrinterIp()) {
+      toast.error('No printer IP set — go to Settings to add it')
+      return
+    }
     setPrinting(true)
     try {
-      const garments = (ticket.garments ?? []).map(g => ({
-        id: g.garment_id,
-        type: g.garment_type,
-        color: g.color,
-        lines: (ticket.lines ?? [])
-          .filter(l => l.garment_ref === g.garment_id)
-          .map(l => ({ description: l.description, price: l.price })),
-      }))
-
-      await api.post('/api/print/receipt', {
+      const xml = buildReceiptXml({
         ticketName: ticket.name,
         customerName: ticket.customer_name,
         customerPhone: ticket.customer_phone,
@@ -83,13 +79,19 @@ export default function AlterationReceipt() {
         paymentStatus: ticket.payment_status ?? '—',
         customerNotes: ticket.customer_notes,
         total: ticket.ticket_total,
-        garments,
+        garments: (ticket.garments ?? []).map(g => ({
+          id: g.garment_id,
+          type: g.garment_type,
+          color: g.color,
+          lines: (ticket.lines ?? [])
+            .filter(l => l.garment_ref === g.garment_id)
+            .map(l => ({ description: l.description, price: l.price })),
+        })),
       })
+      await sendToEpson(xml)
       toast.success('Receipt sent to printer')
     } catch (e: any) {
-      toast.error(e.message?.includes('EPSON_PRINTER_IP')
-        ? 'Printer IP not configured — add EPSON_PRINTER_IP to Vercel env vars'
-        : e.message || 'Print failed')
+      toast.error(e.message || 'Print failed — check printer is on and on same WiFi')
     } finally {
       setPrinting(false)
     }

@@ -6,6 +6,7 @@ import { Printer, ArrowLeft, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { buildTagsXml, sendToEpson, getPrinterIp } from '@/lib/thermal'
 
 interface AlterationTicketDoc {
   name: string
@@ -51,6 +52,10 @@ export default function AlterationTags() {
 
   const handleEpsonPrint = async () => {
     if (!ticket) return
+    if (!getPrinterIp()) {
+      toast.error('No printer IP set — go to Settings to add it')
+      return
+    }
     setPrinting(true)
     try {
       const garments = (ticket.garments ?? []).map(g => ({
@@ -62,8 +67,7 @@ export default function AlterationTags() {
           .filter(l => l.garment_ref === g.garment_id)
           .map(l => ({ description: l.description })),
       }))
-
-      const result = await api.post<{ printed: boolean; count: number }>('/api/print/tags', {
+      const xml = buildTagsXml({
         ticketName: ticket.name,
         customerName: ticket.customer_name,
         location: ticket.origin_location === 'HOU' ? 'HOU' : 'NYC',
@@ -71,11 +75,10 @@ export default function AlterationTags() {
         appBaseUrl: window.location.origin,
         garments,
       })
-      toast.success(`${result.count} tag${result.count !== 1 ? 's' : ''} sent to printer`)
+      await sendToEpson(xml)
+      toast.success(`${garments.length} tag${garments.length !== 1 ? 's' : ''} sent to printer`)
     } catch (e: any) {
-      toast.error(e.message?.includes('EPSON_PRINTER_IP')
-        ? 'Printer IP not configured — add EPSON_PRINTER_IP to Vercel env vars'
-        : e.message || 'Print failed')
+      toast.error(e.message || 'Print failed — check printer is on and on same WiFi')
     } finally {
       setPrinting(false)
     }
