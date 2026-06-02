@@ -245,18 +245,18 @@ async function executeTool(
         let rows: unknown[] = [];
         if (field === "phone" || field === "any") {
           const { data } = await sb
-            .from("customers")
+            .from("clients")
             .select("*")
             .or(`phone.eq.${q},phone.eq.+${q.replace(/\D/g, "")}`)
             .limit(3);
           rows = data ?? [];
         }
         if (!rows.length && (field === "name" || field === "any")) {
-          const { data } = await sb.from("customers").select("*").ilike("last_name", `%${q}%`).limit(3);
+          const { data } = await sb.from("clients").select("*").ilike("last_name", `%${q}%`).limit(3);
           rows = data ?? [];
         }
         if (!rows.length && (field === "email" || field === "any")) {
-          const { data } = await sb.from("customers").select("*").ilike("email", `%${q}%`).limit(3);
+          const { data } = await sb.from("clients").select("*").ilike("email", `%${q}%`).limit(3);
           rows = data ?? [];
         }
         return JSON.stringify(rows.length ? rows : { not_found: true, query: q });
@@ -606,7 +606,7 @@ async function executeTool(
         let custName = "";
         if (args.customer_id) {
           const { data } = await sb
-            .from("customers")
+            .from("clients")
             .select("id,first_name,last_name,phone")
             .eq("id", String(args.customer_id))
             .single();
@@ -648,7 +648,7 @@ async function executeTool(
         let custName = "";
         if (args.customer_id) {
           const { data } = await sb
-            .from("customers")
+            .from("clients")
             .select("id,first_name,last_name,phone")
             .eq("id", String(args.customer_id))
             .single();
@@ -953,10 +953,10 @@ async function processMessage(from: string, body: string, messageSid: string = "
     let customer: Record<string, unknown> | null = null;
     try {
       const phone = from.replace(/\D/g, "");
-      const { data: d1 } = await sb.from("customers").select("*").eq("phone", from).limit(1);
+      const { data: d1 } = await sb.from("clients").select("*").eq("phone", from).limit(1);
       if (d1?.length) customer = d1[0] as Record<string, unknown>;
       if (!customer) {
-        const { data: d2 } = await sb.from("customers").select("*").eq("phone", `+${phone}`).limit(1);
+        const { data: d2 } = await sb.from("clients").select("*").eq("phone", `+${phone}`).limit(1);
         if (d2?.length) customer = d2[0] as Record<string, unknown>;
       }
     } catch (_) {}
@@ -1498,8 +1498,8 @@ sofiaRouter.post("/sms", async (c) => {
       return c.body(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
     }
 
-    // Fire-and-forget — return TwiML immediately, process in background
-    processMessage(from, body, messageSid).catch((e) => console.error("[sofia/sms] background error:", e));
+    // Process synchronously — Vercel serverless kills background tasks after response
+    await processMessage(from, body, messageSid).catch((e) => console.error("[sofia/sms] error:", e));
   } catch (err: any) {
     console.error("[sofia/sms] parse error:", err?.message ?? err);
   }
