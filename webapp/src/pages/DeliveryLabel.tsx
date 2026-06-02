@@ -95,13 +95,20 @@ export default function DeliveryLabel() {
         body { margin: 0; }
         @media print {
           @page { size: 4in 6in; margin: 0; }
-          html, body { margin: 0 !important; padding: 0 !important; width: 4in !important; height: 6in !important; background: white !important; }
-          .no-print { display: none !important; }
+          html, body { margin: 0 !important; padding: 0 !important; background: white !important; }
+          /* Hide everything on the page */
+          body * { visibility: hidden !important; }
+          /* Then show only the label */
+          .print-label, .print-label * { visibility: visible !important; }
           .print-label {
-            box-shadow: none !important;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
             width: 4in !important;
             height: 6in !important;
             transform: none !important;
+            box-shadow: none !important;
+            overflow: hidden !important;
           }
         }
       `}</style>
