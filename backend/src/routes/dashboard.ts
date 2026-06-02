@@ -261,139 +261,135 @@ dashboardRouter.get("/financials", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!canSeeFinancials(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
-  if (!supabaseAdmin) {
-    return c.json({ data: { revenue: 0, revenueMTD: 0, revenueLastMonth: 0, revenueChange: 0, salesOrderCount: 0, avgOrderValue: 0, depositsPendingTotal: 0, depositsPendingCount: 0, cogs: 0, grossProfit: 0, marginPct: 58, trend: [], pipeline: [], topGarments: [], arOutstanding: 0, invoiceCount: 0 } });
+
+  const now = new Date();
+  const locCode = resolveLocationCode(user, c.req.query("locationId"));
+  const empty = { revenue: 0, revenueMTD: 0, revenueLastMonth: 0, revenueChange: 0, salesOrderCount: 0, avgOrderValue: 0, depositsPendingTotal: 0, depositsPendingCount: 0, cogs: 0, grossProfit: 0, marginPct: 58, trend: [], pipeline: [], topGarments: [], arOutstanding: 0, invoiceCount: 0 };
+
+  // ── ERPNext Sales Orders (source of truth for revenue) ──────────────────
+  const soFilters: any[] = [["docstatus", "=", 1]]; // submitted only
+  if (locCode) soFilters.push(["company", "like", locCode === "HOU" ? "%TX%" : "%NY%"]);
+
+  const [allSalesOrders, arInvoices, soItems] = await Promise.all([
+    erpList<any>("Sales Order", {
+      filters: soFilters,
+      fields: ["name", "grand_total", "total", "advance_paid", "status", "transaction_date", "customer_name"],
+      limit: 2000,
+      order_by: "transaction_date desc",
+    }).catch(() => []),
+    erpList<any>("Sales Invoice", {
+      filters: [["docstatus", "=", 1], ["outstanding_amount", ">", 0]],
+      fields: ["name", "outstanding_amount"],
+      limit: 500,
+    }).catch(() => []),
+    erpList<any>("Sales Order Item", {
+      filters: soFilters.map(f => f[0] === "docstatus" ? ["docstatus", "=", 1] : f),
+      fields: ["item_name", "amount", "qty", "parent"],
+      limit: 5000,
+    }).catch(() => []),
+  ]);
+
+  if (!allSalesOrders.length) return c.json({ data: empty });
+
+  // ── ERPNext SO status → pipeline stage ──────────────────────────────────
+  function soStage(status: string): string {
+    if (["Draft", "On Hold", "To Pay"].includes(status)) return "quote";
+    if (status === "To Deliver and Bill" || status === "To Deliver") return "in_production";
+    if (status === "To Bill") return "ready";
+    if (status === "Completed" || status === "Closed") return "delivered";
+    return "other";
   }
 
-  const locCode = resolveLocationCode(user, c.req.query("locationId"));
-  const now = new Date();
-
-  // Fetch all orders with garment_type
-  let q = supabaseAdmin.from("orders").select("status,order_total,deposit_amount,created_at,garment_type");
-  if (locCode) q = q.eq("origin_location", locCode);
-  const { data: orders } = await q;
-  const allOrders = (orders as any[]) ?? [];
-
-  // Revenue totals
-  const revenue = allOrders.reduce((s: number, o: any) => s + Number(o.order_total ?? 0), 0);
-  const salesOrderCount = allOrders.length;
+  // ── Revenue totals ───────────────────────────────────────────────────────
+  const revenue = allSalesOrders.reduce((s: number, o: any) => s + Number(o.grand_total ?? 0), 0);
+  const salesOrderCount = allSalesOrders.length;
   const avgOrderValue = salesOrderCount > 0 ? Math.round(revenue / salesOrderCount) : 0;
 
-  // MTD and last month same period
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const samePointLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+  // ── MTD & last month ─────────────────────────────────────────────────────
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 10);
+  const samePointLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate()).toISOString().slice(0, 10);
 
-  const mtdOrders = allOrders.filter((o: any) => new Date(o.created_at) >= startOfMonth);
-  const lastMonthSamePeriod = allOrders.filter((o: any) => {
-    const d = new Date(o.created_at);
-    return d >= startOfLastMonth && d <= samePointLastMonth;
-  });
-  const revenueMTD = mtdOrders.reduce((s: number, o: any) => s + Number(o.order_total ?? 0), 0);
-  const revenueLastMonth = lastMonthSamePeriod.reduce((s: number, o: any) => s + Number(o.order_total ?? 0), 0);
+  const mtdOrders = allSalesOrders.filter((o: any) => (o.transaction_date ?? "") >= startOfMonth);
+  const lmOrders = allSalesOrders.filter((o: any) => (o.transaction_date ?? "") >= startOfLastMonth && (o.transaction_date ?? "") <= samePointLastMonth);
+  const revenueMTD = mtdOrders.reduce((s: number, o: any) => s + Number(o.grand_total ?? 0), 0);
+  const revenueLastMonth = lmOrders.reduce((s: number, o: any) => s + Number(o.grand_total ?? 0), 0);
   const revenueChange = revenueLastMonth > 0 ? Math.round(((revenueMTD - revenueLastMonth) / revenueLastMonth) * 100) : 0;
 
-  // Deposits pending
-  const depositsPendingOrders = allOrders.filter((o: any) => toAppStatus(o.status) === "quote");
-  const depositsPendingTotal = depositsPendingOrders.reduce((s: number, o: any) => s + Number(o.order_total ?? 0), 0);
-  const depositsPendingCount = depositsPendingOrders.length;
+  // ── Deposits pending (quote stage) ──────────────────────────────────────
+  const pendingOrders = allSalesOrders.filter((o: any) => soStage(o.status) === "quote");
+  const depositsPendingTotal = pendingOrders.reduce((s: number, o: any) => s + Number(o.grand_total ?? 0), 0);
+  const depositsPendingCount = pendingOrders.length;
 
-  // Monthly trend (last 6 months)
-  const sixMonthsAgo = new Date(now);
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-  const recentOrders = allOrders.filter((o: any) => new Date(o.created_at) >= sixMonthsAgo);
-
+  // ── 6-month trend ────────────────────────────────────────────────────────
   const trendMap = new Map<string, { revenue: number; orders: number }>();
-  for (const o of recentOrders) {
-    const month = (o.created_at as string).slice(0, 7);
-    const existing = trendMap.get(month) ?? { revenue: 0, orders: 0 };
-    existing.revenue += Number(o.order_total ?? 0);
-    existing.orders += 1;
-    trendMap.set(month, existing);
+  for (const o of allSalesOrders) {
+    const month = (o.transaction_date ?? "").slice(0, 7);
+    if (!month) continue;
+    const e = trendMap.get(month) ?? { revenue: 0, orders: 0 };
+    e.revenue += Number(o.grand_total ?? 0);
+    e.orders += 1;
+    trendMap.set(month, e);
   }
   const trend = [];
   for (let i = 5; i >= 0; i--) {
-    const d = new Date(now);
-    d.setMonth(d.getMonth() - i);
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const key = d.toISOString().slice(0, 7);
     const label = d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
-    const entry = trendMap.get(key) ?? { revenue: 0, orders: 0 };
-    trend.push({ month: label, revenue: entry.revenue, orders: entry.orders });
+    const e = trendMap.get(key) ?? { revenue: 0, orders: 0 };
+    trend.push({ month: label, revenue: e.revenue, orders: e.orders });
   }
 
-  // Pipeline by stage
-  const ordersByStage: Record<string, number> = {};
-  for (const o of allOrders) {
-    const stage = toAppStatus(o.status);
-    ordersByStage[stage] = (ordersByStage[stage] ?? 0) + 1;
+  // ── Pipeline by stage ────────────────────────────────────────────────────
+  const stageMap = new Map<string, { count: number; value: number }>();
+  for (const o of allSalesOrders) {
+    const stage = soStage(o.status);
+    if (stage === "other") continue;
+    const e = stageMap.get(stage) ?? { count: 0, value: 0 };
+    e.count += 1;
+    e.value += Number(o.grand_total ?? 0);
+    stageMap.set(stage, e);
   }
   const STAGE_LABELS: Record<string, string> = {
     quote: "Quote / Deposit Due",
-    deposit_paid: "Deposit Paid",
     in_production: "In Production",
     ready: "Ready for Pickup",
     delivered: "Delivered",
   };
-  const pipeline = Object.entries(ordersByStage)
-    .filter(([stage]) => stage !== "cancelled")
-    .map(([stage, count]) => {
-      const value = allOrders
-        .filter((o: any) => toAppStatus(o.status) === stage)
-        .reduce((s: number, o: any) => s + Number(o.order_total ?? 0), 0);
-      return { stage, label: STAGE_LABELS[stage] ?? stage, count: count as number, value };
-    })
-    .sort((a, b) => {
-      const order = ["quote", "deposit_paid", "in_production", "ready", "delivered"];
-      return order.indexOf(a.stage) - order.indexOf(b.stage);
-    });
+  const stageOrder = ["quote", "in_production", "ready", "delivered"];
+  const pipeline = stageOrder
+    .filter(s => stageMap.has(s))
+    .map(stage => ({ stage, label: STAGE_LABELS[stage], ...(stageMap.get(stage)!) }));
 
-  // Top garments
-  let gq = supabaseAdmin.from("orders").select("garment_type,order_total,status");
-  if (locCode) gq = gq.eq("origin_location", locCode);
-  const { data: garmentRows } = await gq;
+  // ── Top garments from SO Items ───────────────────────────────────────────
   const garmentMap = new Map<string, { units: number; revenue: number }>();
-  for (const o of (garmentRows ?? []) as any[]) {
-    const type = (o.garment_type as string | null) ?? "Other";
-    const entry = garmentMap.get(type) ?? { units: 0, revenue: 0 };
-    entry.units += 1;
-    entry.revenue += Number(o.order_total ?? 0);
-    garmentMap.set(type, entry);
+  for (const item of soItems) {
+    const type = (item.item_name as string | null) ?? "Other";
+    const e = garmentMap.get(type) ?? { units: 0, revenue: 0 };
+    e.units += Number(item.qty ?? 1);
+    e.revenue += Number(item.amount ?? 0);
+    garmentMap.set(type, e);
   }
   const topGarments = [...garmentMap.entries()]
     .map(([type, d]) => ({ type, units: d.units, revenue: d.revenue, avgPrice: d.units > 0 ? Math.round(d.revenue / d.units) : 0 }))
     .sort((a, b) => b.units - a.units)
     .slice(0, 8);
 
-  // AR Outstanding from ERPNext
-  const erpInvoices = await erpList<{ name: string; outstanding_amount: number }>("Sales Invoice", {
-    filters: [["docstatus", "=", 1], ["outstanding_amount", ">", 0]],
-    fields: ["name", "outstanding_amount"],
-    limit: 200,
-  }).catch(() => []);
-  const arOutstanding = erpInvoices.reduce((s, i) => s + Number((i as any).outstanding_amount ?? 0), 0);
-  const invoiceCount = erpInvoices.length;
+  // ── AR Outstanding ───────────────────────────────────────────────────────
+  const arOutstanding = arInvoices.reduce((s: any, i: any) => s + Number(i.outstanding_amount ?? 0), 0);
+  const invoiceCount = arInvoices.length;
 
   const cogs = revenue * 0.42;
   const grossProfit = revenue * 0.58;
 
   return c.json({
     data: {
-      revenue,
-      revenueMTD,
-      revenueLastMonth,
-      revenueChange,
-      salesOrderCount,
-      avgOrderValue,
-      depositsPendingTotal,
-      depositsPendingCount,
-      cogs,
-      grossProfit,
-      marginPct: 58,
-      trend,
-      pipeline,
-      topGarments,
-      arOutstanding,
-      invoiceCount,
+      revenue, revenueMTD, revenueLastMonth, revenueChange,
+      salesOrderCount, avgOrderValue,
+      depositsPendingTotal, depositsPendingCount,
+      cogs, grossProfit, marginPct: Math.round((grossProfit / revenue) * 100) || 58,
+      trend, pipeline, topGarments,
+      arOutstanding, invoiceCount,
     },
   });
 });
