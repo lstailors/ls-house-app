@@ -20,6 +20,9 @@ import { dashboardRouter } from "./routes/dashboard";
 import { maestroRouter } from "./routes/maestro";
 import { intakeAlterationsRouter } from "./routes/intake-alterations";
 import { sofiaRouter } from "./routes/sofia";
+import { erpnextCustomersRouter } from "./routes/erpnext-customers";
+import { cartsRouter } from "./routes/carts";
+import { alternationsBoardRouter } from "./routes/alterations-board";
 
 const app = new Hono();
 
@@ -66,6 +69,9 @@ import { searchRouter } from "./routes/search";
 import { notificationsRouter } from "./routes/notifications";
 app.route("/api/search", searchRouter);
 app.route("/api/notifications", notificationsRouter);
+app.route("/api/erpnext-customers", erpnextCustomersRouter);
+app.route("/api/carts", cartsRouter);
+app.route("/api/alterations/board", alternationsBoardRouter);
 
 const port = Number(process.env.PORT) || 3000;
 
