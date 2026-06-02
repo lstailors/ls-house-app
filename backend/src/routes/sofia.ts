@@ -320,7 +320,7 @@ sofiaRouter.post("/sms", async (c) => {
     } else {
       const { data: newClient } = await supabaseAdmin
         .from("clients")
-        .insert({ phone: fromRaw, source: "sms_inbound" })
+        .insert({ phone: fromRaw })
         .select("id")
         .single();
       if (newClient) {
@@ -338,7 +338,6 @@ sofiaRouter.post("/sms", async (c) => {
       content: body,
       status: "received",
       timestamp: new Date().toISOString(),
-      num_media: numMedia > 0 ? numMedia : null,
     });
 
     // 5. Fetch last 10 messages for history
@@ -488,7 +487,6 @@ sofiaRouter.post("/sms", async (c) => {
       direction: "outbound",
       content: replyText,
       status: outboundSid ? "sent" : "failed",
-      agent_name: "sofia",
       timestamp: new Date().toISOString(),
       twilio_sid: outboundSid,
     });
