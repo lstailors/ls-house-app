@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Bell, LogOut, Menu, Search, Settings, UserRound, X,
   Users, FileText, Receipt, Scissors, Cpu, MessageSquare,
-  AlertTriangle, CheckSquare, Zap, Clock, ChevronRight, QrCode,
+  AlertTriangle, CheckSquare, Zap, Clock, ChevronRight, QrCode, Activity,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -15,8 +15,8 @@ import type { Profile } from "@/lib/types";
 import { initials, formatDate } from "@/lib/format";
 import { LocationBanner } from "./LocationBanner";
 import { api } from "@/lib/api";
-import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
-const RavenChat = lazy(() => import("@/components/RavenChat"));
+import { useState, useEffect, useRef } from "react";
+import { UnifiedFeed } from "@/components/UnifiedFeed";
 import { cn } from "@/lib/utils";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -328,14 +328,13 @@ export function TopBar({ user, onMenuClick }: Props) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [searchOpen, setSearchOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
+  const [feedOpen, setFeedOpen] = useState(false);
 
-  // Preload notification count
+  // Preload notification count for badge
   const { data: notifData } = useQuery({
     queryKey: ["notifications"],
     queryFn: () => api.get<{ notifications: Notification[]; unread: number }>("/api/notifications"),
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
     staleTime: 30_000,
   });
   const unread = notifData?.unread ?? 0;
@@ -406,32 +405,21 @@ export function TopBar({ user, onMenuClick }: Props) {
           <QrCode className="h-4 w-4 text-cream-muted" />
         </button>
 
-        {/* Team Chat button */}
+        {/* Unified Activity Feed button */}
         <button
-          onClick={() => setChatOpen(true)}
+          onClick={() => setFeedOpen(true)}
           className="relative h-9 w-9 rounded-full border border-brass/20 bg-forest-raised/40 hover:border-brass/40 transition-colors flex items-center justify-center"
-          aria-label="Team Chat"
-          title="Team Chat"
+          aria-label="Activity Feed"
+          title="Activity Feed"
         >
-          <MessageSquare className="h-4 w-4 text-cream-muted" />
-        </button>
-
-        {/* Notification bell */}
-        <button
-          onClick={() => setNotifOpen(true)}
-          className="relative h-9 w-9 rounded-full border border-brass/20 bg-forest-raised/40 hover:border-brass/40 transition-colors flex items-center justify-center"
-          aria-label="Notifications"
-        >
-          <Bell className="h-4 w-4 text-cream-muted" />
+          <Activity className="h-4 w-4 text-cream-muted" />
           {unread > 0 && (
-            <>
-              <span className={cn(
-                "absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold flex items-center justify-center text-forest-deep",
-                hasCritical ? "bg-signal-rose" : "bg-signal-amber"
-              )}>
-                {unread > 9 ? "9+" : unread}
-              </span>
-            </>
+            <span className={cn(
+              "absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold flex items-center justify-center text-forest-deep",
+              hasCritical ? "bg-signal-rose" : "bg-signal-amber"
+            )}>
+              {unread > 9 ? "9+" : unread}
+            </span>
           )}
         </button>
 
@@ -472,10 +460,7 @@ export function TopBar({ user, onMenuClick }: Props) {
       </header>
 
       {searchOpen && <SearchPalette onClose={() => setSearchOpen(false)} />}
-      {notifOpen && <NotificationPanel onClose={() => setNotifOpen(false)} />}
-      <Suspense fallback={null}>
-        <RavenChat open={chatOpen} onClose={() => setChatOpen(false)} />
-      </Suspense>
+      {feedOpen && <UnifiedFeed onClose={() => setFeedOpen(false)} />}
     </>
   );
 }
