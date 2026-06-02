@@ -33,6 +33,8 @@ import MissionControl from "./pages/MissionControl";
 import AgentDetail from "./pages/mission-control/AgentDetail";
 import NotFound from "./pages/NotFound";
 import TicketDetail from "./pages/intake/TicketDetail";
+import AlterationTags from "./pages/intake/AlterationTags";
+import AlterationReceipt from "./pages/intake/AlterationReceipt";
 import QRScanner from "./pages/intake/QRScanner"
 import GarmentTag from "./pages/GarmentTag";
 
@@ -117,6 +119,22 @@ const App = () => (
               element={
                 <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
                   <TicketDetail />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/orders/alterations/:ticketName/tags"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
+                  <AlterationTags />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/orders/alterations/:ticketName/receipt"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
+                  <AlterationReceipt />
                 </RoleGuard>
               }
             />
