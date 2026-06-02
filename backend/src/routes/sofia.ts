@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { supabaseAdmin } from "../lib/supabase";
+import { supabaseAdmin, lshAdmin } from "../lib/supabase";
 import { getAuthedUser } from "../lib/scope";
 import { sendSms, alertCarl } from "../lib/twilio";
 
@@ -1800,14 +1800,12 @@ End with: — Sofia`,
   } catch {}
 
   // ── Save to lsh.agent_briefs → powers Daily Espresso card on dashboard ──
-  if (sb) {
+  if (lshAdmin) {
     try {
-      const lshClient = (sb as any).schema("lsh");
-      const nycHour = new Date().toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false });
-      const h = parseInt(nycHour);
-      const period = h < 12 ? "Morning" : h < 15 ? "Midday" : "Afternoon";
+      const nycHour = parseInt(new Date().toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }));
+      const period = nycHour < 12 ? "Morning" : nycHour < 15 ? "Midday" : "Afternoon";
       const nycTime = new Date().toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
-      await lshClient.from("agent_briefs").insert({
+      const { error } = await lshAdmin.from("agent_briefs").insert({
         type: "brief",
         title: `${period} Brief — ${nycTime}`,
         body: briefing,
@@ -1815,6 +1813,7 @@ End with: — Sofia`,
         source: "maestro",
         metadata: { channel: "daily_briefing", generated_at: new Date().toISOString() },
       });
+      if (error) console.error("[sofia/briefing] agent_briefs save error:", error.message);
     } catch (e: any) {
       console.error("[sofia/briefing] agent_briefs save:", e.message);
     }
