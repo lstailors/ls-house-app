@@ -96,14 +96,16 @@ export default function DeliveryLabel() {
         @media print {
           @page { size: 4in 6in; margin: 0; }
           html, body { margin: 0 !important; padding: 0 !important; background: white !important; }
-          /* Hide everything on the page */
-          body * { visibility: hidden !important; }
-          /* Then show only the label */
-          .print-label, .print-label * { visibility: visible !important; }
-          .print-label {
+          /* Hide the entire screen UI */
+          .screen-only { display: none !important; }
+          /* Show only the print-only label */
+          .print-only {
+            display: block !important;
             position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
+            top: 0 !important; left: 0 !important;
+            width: 4in !important; height: 6in !important;
+          }
+          .print-only .print-label {
             width: 4in !important;
             height: 6in !important;
             transform: none !important;
@@ -113,7 +115,13 @@ export default function DeliveryLabel() {
         }
       `}</style>
 
-      <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #16271E 0%, #0D1A10 100%)", padding: "24px 16px 60px", fontFamily: "Montserrat, sans-serif", color: "#F1E9D6" }}>
+      {/* Print-only: hidden on screen, renders at 4×6 on print */}
+      <div className="print-only" style={{ display: "none" }}>
+        <LabelPreview label={data} qrDataUrl={qrDataUrl} />
+      </div>
+
+      {/* Screen UI — hidden on print */}
+      <div className="screen-only" style={{ minHeight: "100vh", background: "linear-gradient(180deg, #16271E 0%, #0D1A10 100%)", padding: "24px 16px 60px", fontFamily: "Montserrat, sans-serif", color: "#F1E9D6" }}>
 
         {/* Top bar */}
         <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 900, margin: "0 auto 20px" }}>
