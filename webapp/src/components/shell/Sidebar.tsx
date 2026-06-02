@@ -89,6 +89,7 @@ const SECTIONS: NavSection[] = [
       { to: "/admin/locations", label: "Locations", icon: Building2, roles: ["super_admin"] },
       { to: "/admin/tailors", label: "Tailors", icon: Shield, roles: ["super_admin"] },
       { to: "/admin/overview", label: "Org Overview", icon: Shield, roles: ["super_admin"] },
+      { to: "/admin/board", label: "Alterations Board", icon: Scissors, roles: ["super_admin"] },
     ],
   },
 ];

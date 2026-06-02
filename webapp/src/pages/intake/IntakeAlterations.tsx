@@ -9,6 +9,7 @@ import {
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { CustomerEditSheet } from '@/components/pos/CustomerEditSheet'
+import { SaveCartControls } from '@/components/alterations/SaveCartControls'
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
 const formatUSD = (n: number) => '$' + n.toFixed(2)
@@ -1133,7 +1134,8 @@ export default function IntakeAlterations() {
         </div>
 
         {/* RIGHT: Checkout Cart */}
-        <div className="lg:w-1/3 lg:sticky lg:top-6 lg:self-start mt-5 lg:mt-0">
+        <div className="lg:w-1/3 lg:sticky lg:top-6 lg:self-start mt-5 lg:mt-0 space-y-4">
+          <SaveCartControls />
           <CheckoutCart
             garments={garments}
             customer={customer}
