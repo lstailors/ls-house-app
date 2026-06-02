@@ -160,11 +160,7 @@ const GARMENTS = [
   { type: 'Other', label: 'Other' },
 ]
 
-// ─── Tax Rates ─────────────────────────────────────────────────────────────────
-const TAX_RATES: Record<string, number> = {
-  NYC: 0.08875,
-  HOU: 0.0825,
-}
+// Alterations are tax-exempt (services, not goods)
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 const uuid = () => Math.random().toString(36).slice(2) + Date.now().toString(36)
@@ -681,10 +677,8 @@ function CheckoutCart({
 }) {
   const garmentSubtotal = garments.reduce((s, g) => s + g.lines.reduce((ss, l) => ss + l.price, 0), 0)
   const rushFee = isRush ? 25 : 0
-  const taxRate = TAX_RATES[origin]
   const subtotalWithRush = garmentSubtotal + rushFee
-  const tax = subtotalWithRush * taxRate
-  const total = subtotalWithRush + tax
+  const total = subtotalWithRush
 
   const garmentsWithLines = garments.filter(g => g.lines.length > 0)
   const canSubmit = !!customer && garmentsWithLines.length > 0 && !submitting
@@ -769,10 +763,6 @@ function CheckoutCart({
           <div className="flex items-center justify-between text-sm">
             <span className="text-cream-muted">Subtotal</span>
             <span className="text-cream">{formatUSD(subtotalWithRush)}</span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-cream-muted">Tax ({origin} {(taxRate * 100).toFixed(3)}%)</span>
-            <span className="text-cream">{formatUSD(tax)}</span>
           </div>
           <div className="flex items-center justify-between font-semibold pt-1 border-t border-brass/20">
             <span className="text-cream">Total</span>

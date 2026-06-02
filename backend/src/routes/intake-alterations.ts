@@ -288,6 +288,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
   const payload: Record<string, any> = {
     origin_location: origin ?? 'NYC',
     is_rush: isRush ? 1 : 0,
+    taxes_and_charges: '',   // Alterations are tax-exempt
     payment_method: paymentMethod ?? 'on_account',
     deposit_amount: paymentMethod === 'deposit' ? parseFloat(deposit) || 0 : 0,
     ticket_date: ticketDateStr,

@@ -6,7 +6,7 @@ import { GlassCard } from "@/components/glass/GlassCard";
 import { GarmentTiles } from "@/components/pos/GarmentTiles";
 import { FabricTiles } from "@/components/pos/FabricTiles";
 import { StyleChips } from "@/components/pos/StyleChips";
-import { PriceCard } from "@/components/pos/PriceCard";
+import { PriceCard, TAX_TEMPLATES } from "@/components/pos/PriceCard";
 import { SquareTerminal } from "@/components/pos/SquareTerminal";
 import { DepositReceipt } from "@/components/pos/DepositReceipt";
 import { CustomerField, type CustomerDraft } from "@/components/pos/CustomerField";
@@ -58,6 +58,7 @@ export default function IntakeCustom() {
   const [garment, setGarment] = useState<GarmentType | undefined>(undefined);
   const [spec, setSpec] = useState<SpecChoices>({});
   const [priceTbd, setPriceTbd] = useState(false);
+  const [isTaxable, setIsTaxable] = useState(true); // default taxable for in-store
   const [notes, setNotes] = useState("");
   const [depositAmount, setDepositAmount] = useState(0);
 
@@ -118,6 +119,10 @@ export default function IntakeCustom() {
     if (me?.role === "super_admin" && activeLocationId && !isAllLocations) {
       payload.locationId = activeLocationId;
     }
+    // Tax: pass template name for ERPNext, or empty string for tax-exempt
+    const locCode = activeLocationId ?? "NYC"
+    payload.taxTemplate = isTaxable ? (TAX_TEMPLATES[locCode] ?? "") : ""
+    payload.isTaxable = isTaxable
     return payload;
   };
 
@@ -313,6 +318,9 @@ export default function IntakeCustom() {
               onChargeDeposit={handleChargeDeposit}
               onSaveQuote={handleSaveQuote}
               isSubmitting={createOrder.isPending || takeDeposit.isPending}
+              isTaxable={isTaxable}
+              onTaxableChange={setIsTaxable}
+              location={activeLocationId ?? "NYC"}
             />
           </div>
         </div>
@@ -329,6 +337,9 @@ export default function IntakeCustom() {
             onChargeDeposit={handleChargeDeposit}
             onSaveQuote={handleSaveQuote}
             isSubmitting={createOrder.isPending || takeDeposit.isPending}
+            isTaxable={isTaxable}
+            onTaxableChange={setIsTaxable}
+            location={activeLocationId ?? "NYC"}
           />
         </div>
       </div>

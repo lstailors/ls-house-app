@@ -7,6 +7,16 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+// Tax templates per location
+export const TAX_TEMPLATES: Record<string, string> = {
+  NYC: "NYC Sales Tax 8.875% - LSTNY",
+  HOU: "Houston TX Sales Tax 8.25% - LSTX",
+}
+export const TAX_RATES: Record<string, number> = {
+  NYC: 0.08875,
+  HOU: 0.0825,
+}
+
 interface Props {
   breakdown: PriceBreakdown;
   priceTbd: boolean;
@@ -20,6 +30,10 @@ interface Props {
   onChargeFullPayment: () => void;
   onSaveQuote: () => void;
   isSubmitting?: boolean;
+  // Tax
+  isTaxable?: boolean;
+  onTaxableChange?: (v: boolean) => void;
+  location?: string;
 }
 
 export function PriceCard({
@@ -35,10 +49,15 @@ export function PriceCard({
   onChargeFullPayment,
   onSaveQuote,
   isSubmitting,
+  isTaxable = false,
+  onTaxableChange,
+  location = "NYC",
 }: Props) {
   const { fabric, fabricCost, laborLabel, laborCost, upcharges, upchargeTotal } = breakdown;
-  // Manual price overrides computed breakdown
-  const effectiveTotal = manualPrice > 0 ? manualPrice : breakdown.subtotal;
+  const effectiveSubtotal = manualPrice > 0 ? manualPrice : breakdown.subtotal;
+  const taxRate = isTaxable ? (TAX_RATES[location] ?? 0) : 0;
+  const taxAmount = effectiveSubtotal * taxRate;
+  const effectiveTotal = effectiveSubtotal + taxAmount;
   const hasBreakdown = fabric != null || laborCost > 0;
 
   return (
@@ -125,9 +144,37 @@ export function PriceCard({
 
       <div className="brass-divider mb-4" />
 
+      {/* Tax toggle */}
+      {onTaxableChange && (
+        <div className="flex items-center justify-between mb-3 px-1">
+          <div>
+            <div className="text-xs text-cream-muted">Sales Tax</div>
+            {isTaxable && (
+              <div className="text-[10px] text-brass-shimmer">{location} {(taxRate * 100).toFixed(3)}% = {formatUSD(taxAmount)}</div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="taxable"
+              checked={isTaxable}
+              onCheckedChange={onTaxableChange}
+              className="data-[state=checked]:bg-brass"
+            />
+            <Label htmlFor="taxable" className="text-xs text-cream-muted cursor-pointer">
+              {isTaxable ? "Taxable" : "Tax-exempt"}
+            </Label>
+          </div>
+        </div>
+      )}
+
       {/* Total display */}
       <div className="flex items-end justify-between mb-4">
-        <span className="ui-label text-xs">{priceTbd ? "Reference" : "Total"}</span>
+        <div>
+          <span className="ui-label text-xs">{priceTbd ? "Reference" : "Total"}</span>
+          {isTaxable && taxAmount > 0 && (
+            <div className="text-[10px] text-cream-dim">incl. {formatUSD(taxAmount)} tax</div>
+          )}
+        </div>
         <span
           className={cn(
             "font-display italic text-4xl leading-none transition-colors",
@@ -137,6 +184,7 @@ export function PriceCard({
           {formatUSD(effectiveTotal)}
         </span>
       </div>
+
 
       {/* Quote mode */}
       {priceTbd ? (

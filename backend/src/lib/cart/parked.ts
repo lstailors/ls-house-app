@@ -4,7 +4,7 @@ import { upsertCustomerWithAddress, type CustomerInput } from "../erpnext/custom
 
 export interface CartGarment { garmentId: string; garmentType: string; color?: string; total: number; }
 export interface CartLine { garmentRef: string; preset: string; description: string; price: number; }
-export interface CartPayload { garments: CartGarment[]; lines: CartLine[]; deliveryMethod?: "Pickup" | "Delivery"; isRush?: boolean; dueDate?: string | null; }
+export interface CartPayload { garments: CartGarment[]; lines: CartLine[]; deliveryMethod?: "Pickup" | "Delivery"; isRush?: boolean; dueDate?: string | null; isTaxable?: boolean; taxTemplate?: string; }
 export interface ParkedCart { id: string; location: string; label: string | null; customer_ref: string | null; customer_snapshot: Partial<CustomerInput>; cart: CartPayload; status: "parked" | "committed" | "abandoned"; updated_at: string; }
 
 export async function saveCart(input: { id?: string; createdBy: string; location: string; customer: Partial<CustomerInput>; customerRef?: string | null; cart: CartPayload; }) {
@@ -47,7 +47,7 @@ export async function commitParkedCart(id: string) {
   const ticketDoc = {
     customer: customerName, customer_name: cart.customer_snapshot.fullName ?? customerName,
     origin_location: cart.location, ticket_date: today, due_date: cart.cart.dueDate ?? null,
-    is_rush: cart.cart.isRush ? 1 : 0, workflow_state: "Received", delivery_method: cart.cart.deliveryMethod ?? "Pickup",
+    is_rush: cart.cart.isRush ? 1 : 0, workflow_state: "Received", delivery_method: cart.cart.deliveryMethod ?? "Pickup", taxes_and_charges: "",
     garments: cart.cart.garments.map((g) => ({ garment_id: g.garmentId, garment_type: g.garmentType, color: g.color ?? "", garment_total: g.total, garment_status: "Received" })),
     lines: cart.cart.lines.map((l) => ({ garment_ref: l.garmentRef, preset: l.preset, description: l.description, price: l.price, line_status: "Pending" })),
   };
