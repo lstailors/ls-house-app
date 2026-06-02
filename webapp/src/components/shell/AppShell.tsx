@@ -5,6 +5,7 @@ import { TopBar } from "./TopBar";
 import { useMe } from "@/lib/session";
 import { LocationProvider } from "@/lib/locationContext";
 import { Monogram } from "../glass/Monogram";
+import RavenChat from "@/components/RavenChat";
 import {
   Sheet,
   SheetContent,
@@ -92,6 +93,7 @@ export function AppShell() {
           </main>
         </div>
       </div>
+      <RavenChat />
     </LocationProvider>
   );
 }
