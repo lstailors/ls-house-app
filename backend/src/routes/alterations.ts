@@ -223,6 +223,89 @@ alterationsRouter.patch("/:id", async (c) => {
   return c.json({ error: { message: "Update tickets via intake.lstailors.com" } }, 501);
 });
 
+// GET /api/alterations/:ticketId/garments/:garmentId
+alterationsRouter.get("/:ticketId/garments/:garmentId", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const ticket = await erpGet<ErpTicket & {
+    garments: Array<{
+      name: string; garment_id: string; garment_type: string;
+      garment_description: string; color: string; fabric_notes: string;
+      garment_status: string; garment_total: number;
+    }>;
+    lines: Array<{ name: string; garment_ref: string; description: string; price: number; line_status: string }>;
+  }>("Alteration Ticket", c.req.param("ticketId"));
+
+  if (!ticket) return c.json({ error: { message: "Not found" } }, 404);
+
+  const garment = ticket.garments?.find((g) => g.garment_id === c.req.param("garmentId"));
+  if (!garment) return c.json({ error: { message: "Garment not found" } }, 404);
+
+  const lines = ticket.lines?.filter((l) => l.garment_ref === garment.garment_id) ?? [];
+
+  return c.json({
+    data: {
+      garment,
+      lines,
+      ticket: {
+        name: ticket.name,
+        customer: ticket.customer,
+        customerName: ticket.customer_name,
+        originLocation: ticket.origin_location,
+        workflowState: ticket.workflow_state,
+        promisedDate: ticket.promised_date,
+        dueDate: ticket.due_date,
+      },
+    },
+  });
+});
+
+// PATCH /api/alterations/:ticketId/garments/:garmentId — update status/notes
+alterationsRouter.patch("/:ticketId/garments/:garmentId/status", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const { garment_status } = await c.req.json() as { garment_status: string };
+  const ticketId = c.req.param("ticketId");
+  const garmentId = c.req.param("garmentId");
+
+  const { base, key, secret } = {
+    base: process.env.ERPNEXT_BASE_URL ?? "",
+    key: process.env.ERPNEXT_API_KEY ?? "",
+    secret: process.env.ERPNEXT_API_SECRET ?? "",
+  };
+
+  // Fetch ticket, update the garment row, and save
+  const res = await fetch(`${base}/api/resource/Alteration%20Ticket/${encodeURIComponent(ticketId)}`, {
+    headers: { Authorization: `token ${key}:${secret}`, Accept: "application/json" },
+  });
+  if (!res.ok) return c.json({ error: { message: "Ticket not found" } }, 404);
+
+  const { data: ticket } = await res.json() as { data: any };
+  const garment = ticket.garments?.find((g: any) => g.garment_id === garmentId);
+  if (!garment) return c.json({ error: { message: "Garment not found" } }, 404);
+
+  garment.garment_status = garment_status;
+
+  const saveRes = await fetch(`${base}/api/resource/Alteration%20Ticket/${encodeURIComponent(ticketId)}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `token ${key}:${secret}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(ticket),
+  });
+
+  if (!saveRes.ok) {
+    const err = await saveRes.json().catch(() => ({})) as any;
+    return c.json({ error: { message: err._server_messages || "Save failed" } }, 502);
+  }
+
+  return c.json({ data: { garment_id: garmentId, garment_status } });
+});
+
 // ERPNext Server Script calls this when all garments are Ready
 alterationsRouter.post("/erp-webhook/ready", async (c) => {
   const secret = process.env.ERP_WEBHOOK_SECRET;

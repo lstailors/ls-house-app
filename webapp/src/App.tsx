@@ -33,7 +33,8 @@ import MissionControl from "./pages/MissionControl";
 import AgentDetail from "./pages/mission-control/AgentDetail";
 import NotFound from "./pages/NotFound";
 import TicketDetail from "./pages/intake/TicketDetail";
-import QRScanner from "./pages/intake/QRScanner";
+import QRScanner from "./pages/intake/QRScanner"
+import GarmentTag from "./pages/GarmentTag";
 
 const Tasks = lazy(() => import('./pages/Tasks'));
 const Comms = lazy(() => import('./pages/Comms'));
@@ -118,6 +119,10 @@ const App = () => (
                   <TicketDetail />
                 </RoleGuard>
               }
+            />
+            <Route
+              path="/garments/:ticketId/:garmentId"
+              element={<GarmentTag />}
             />
             <Route
               path="/scan"

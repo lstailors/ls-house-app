@@ -167,7 +167,8 @@ function GarmentCard({
 }) {
   const garmentLines = lines?.filter((l) => l.garment_ref === garment.name) ?? []
   const garmentTotal = garmentLines.reduce((sum, l) => sum + (l.price ?? 0), 0)
-  const qrValue = window.location.origin + '/scan/' + garment.garment_id
+  const ticketName = useParams<{ ticketName: string }>().ticketName
+  const qrValue = window.location.origin + '/garments/' + ticketName + '/' + garment.garment_id
 
   return (
     <div className="glass-panel rounded-lg p-4 space-y-3">
