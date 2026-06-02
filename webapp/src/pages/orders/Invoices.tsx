@@ -86,16 +86,19 @@ export default function Invoices() {
     {
       key: "customer",
       header: "Customer",
+      accessor: (i) => i.customer?.name ?? "",
       cell: (i) => <span className="text-cream">{i.customer?.name ?? "—"}</span>,
     },
     {
       key: "date",
       header: "Date",
+      accessor: (i) => i.createdAt ?? "",
       cell: (i) => <span className="text-cream-dim text-xs">{formatDate(i.createdAt)}</span>,
     },
     {
       key: "dueDate" as any,
       header: "Due",
+      accessor: (i) => (i as any).dueDate ?? "",
       cell: (i) => (
         <span className="text-cream-dim text-xs">
           {i.dueDate ? formatDate(i.dueDate) : "—"}
@@ -105,12 +108,14 @@ export default function Invoices() {
     {
       key: "status",
       header: "Status",
+      accessor: (i) => i.status ?? "",
       cell: (i) => <StatusPill status={i.status} />,
     },
     {
       key: "total",
       header: "Outstanding",
       align: "right",
+      accessor: (i) => i.outstanding ?? 0,
       cell: (i) => (
         <span className="font-mono text-xs text-cream-dim tabular-nums">
           {(i.outstanding ?? 0) > 0 ? formatUSD(i.outstanding ?? 0) : "—"}
@@ -121,6 +126,7 @@ export default function Invoices() {
       key: "pdfUrl" as any,
       header: "Total",
       align: "right",
+      accessor: (i) => i.total ?? 0,
       cell: (i) => (
         <span className="font-display italic text-brass-shimmer text-base tabular-nums">
           {formatUSD(i.total)}

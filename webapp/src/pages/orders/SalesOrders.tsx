@@ -102,6 +102,7 @@ export default function SalesOrders() {
     {
       key: "customer",
       header: "Customer",
+      accessor: (r) => r.customerName ?? "",
       cell: (r) => (
         <span className="text-cream truncate">{r.customerName}</span>
       ),
@@ -109,6 +110,7 @@ export default function SalesOrders() {
     {
       key: "date",
       header: "Date",
+      accessor: (r) => r.date ?? "",
       cell: (r) => (
         <span className="text-cream-dim text-xs">{formatDate(r.date)}</span>
       ),
@@ -116,12 +118,14 @@ export default function SalesOrders() {
     {
       key: "status",
       header: "Status",
+      accessor: (r) => r.status ?? "",
       cell: (r) => <StatusPill status={r.status} />,
     },
     {
       key: "total",
       header: "Total",
       align: "right",
+      accessor: (r) => r.total ?? 0,
       cell: (r) => (
         <span className="font-display italic text-brass-shimmer text-base">
           {formatUSD(r.total)}

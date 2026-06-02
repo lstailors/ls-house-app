@@ -69,6 +69,7 @@ export default function OrdersCustom() {
     {
       key: "customer",
       header: "Customer",
+      accessor: (o) => o.customer?.name ?? "",
       cell: (o) => (
         <div className="min-w-0">
           <div className="text-cream font-medium truncate flex items-center gap-1.5">
@@ -82,6 +83,7 @@ export default function OrdersCustom() {
     {
       key: "garment",
       header: "Garment",
+      accessor: (o) => o.garmentType ?? "",
       cell: (o) => (
         <div className="flex items-center gap-2">
           <Sparkles className="h-3 w-3 text-brass-light/70" />
@@ -92,11 +94,13 @@ export default function OrdersCustom() {
     {
       key: "status",
       header: "Status",
+      accessor: (o) => o.status ?? "",
       cell: (o) => <StatusPill status={o.status} />,
     },
     {
       key: "deposit",
       header: "Deposit",
+      accessor: (o) => o.depositAmount ?? 0,
       cell: (o) => (
         <span className="text-cream-muted text-sm tabular-nums">
           {o.depositAmount > 0 ? formatUSD(o.depositAmount) : "—"}
@@ -107,6 +111,7 @@ export default function OrdersCustom() {
       key: "price",
       header: "Quoted",
       align: "right",
+      accessor: (o) => o.quotedPrice ?? 0,
       cell: (o) =>
         o.priceTbd ? (
           <span className="ui-label text-signal-amber">TBD</span>
@@ -119,6 +124,7 @@ export default function OrdersCustom() {
     {
       key: "date",
       header: "Created",
+      accessor: (o) => o.createdAt ?? "",
       cell: (o) => <span className="text-cream-dim text-xs">{formatDate(o.createdAt)}</span>,
     },
   ];

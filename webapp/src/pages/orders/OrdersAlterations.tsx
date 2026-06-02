@@ -48,6 +48,7 @@ export default function OrdersAlterations() {
     {
       key: "customer",
       header: "Customer",
+      accessor: (a) => a.customer?.name ?? "",
       cell: (a) => (
         <div className="min-w-0">
           <div className="text-cream font-medium truncate flex items-center gap-1.5">
@@ -75,6 +76,7 @@ export default function OrdersAlterations() {
     {
       key: "tailor",
       header: "Tailor",
+      accessor: (a) => a.tailor?.name ?? "",
       cell: (a) =>
         a.tailor ? (
           <span className="text-cream-muted">{a.tailor.name}</span>
@@ -85,6 +87,7 @@ export default function OrdersAlterations() {
     {
       key: "due",
       header: "Due",
+      accessor: (a) => a.dueDate ?? "",
       cell: (a) => (
         <div>
           <div className="text-cream-muted">{relativeDay(a.dueDate)}</div>
@@ -95,12 +98,14 @@ export default function OrdersAlterations() {
     {
       key: "status",
       header: "Status",
+      accessor: (a) => a.status ?? "",
       cell: (a) => <StatusPill status={a.status} />,
     },
     {
       key: "price",
       header: "Price",
       align: "right",
+      accessor: (a) => a.price ?? 0,
       cell: (a) => (
         <span className="font-display italic text-brass-shimmer text-base">
           {formatUSD(a.price)}
