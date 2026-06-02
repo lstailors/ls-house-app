@@ -1225,9 +1225,9 @@ IMPORTANT: get_fitting_history auto-searches by the caller's inbound phone as fa
       finalText = short || finalText.substring(0, 317) + "...";
     }
 
-    // ── Human-like delay (3-7 seconds) before sending ──
+    // ── Human-like delay (8-20 seconds) before sending ──
     if (!body.startsWith("__TEST__")) {
-      const delayMs = Math.floor(Math.random() * 4000) + 3000;
+      const delayMs = Math.floor(Math.random() * 12000) + 8000;
       await new Promise((resolve) => setTimeout(resolve, delayMs));
       try {
         await twilioSend(from, finalText);
