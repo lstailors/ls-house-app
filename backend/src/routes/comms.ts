@@ -74,10 +74,11 @@ commsRouter.get("/", async (c) => {
   const sms = (smsRes.data ?? []) as any[];
 
   // Group SMS by phone number (threads)
-  const threadMap = new Map<string, { phone: string; messages: any[]; lastMessage: any; unread: number }>();
+  type SmsThread = { phone: string; messages: any[]; lastMessage: any; unread: number };
+  const threadMap = new Map<string, SmsThread>();
   for (const msg of sms) {
     const phone = msg.client_phone ?? "unknown";
-    const thread = threadMap.get(phone) ?? { phone, messages: [], lastMessage: msg, unread: 0 };
+    const thread: SmsThread = threadMap.get(phone) ?? { phone, messages: [] as any[], lastMessage: msg, unread: 0 };
     thread.messages.push(msg);
     if (!thread.lastMessage || new Date(msg.timestamp) > new Date(thread.lastMessage.timestamp)) {
       thread.lastMessage = msg;

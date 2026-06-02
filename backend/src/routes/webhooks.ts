@@ -39,7 +39,7 @@ webhooksRouter.post("/unifi", async (c) => {
         recording_url: recordingUrl,
       })
       .eq("id", callId)
-      .catch(() => {});
+      .then(() => {});
   } else {
     // Log raw webhook for debugging
     await supabaseAdmin.from("unifi_call_logs").insert({
@@ -52,7 +52,7 @@ webhooksRouter.post("/unifi", async (c) => {
       transcript_raw: transcript,
       transcript_summary: summary,
       recording_url: recordingUrl,
-    }).catch(() => {});
+    }).then(() => {});
   }
 
   // Log to ERPNext Customer Communication timeline if we can match the caller

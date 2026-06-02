@@ -1,9 +1,629 @@
-import { SectionHeader } from "@/components/glass/SectionHeader";
-export default function Comms() {
+import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import {
+  Phone,
+  PhoneIncoming,
+  PhoneOutgoing,
+  PhoneMissed,
+  Mic,
+  MessageSquare,
+  Search,
+  Sparkles,
+  X,
+  User,
+  ChevronRight,
+  Lock,
+} from "lucide-react";
+import { api } from "@/lib/api";
+import { GlassCard } from "@/components/glass/GlassCard";
+import { cn } from "@/lib/utils";
+import { useComms, useSmsThread } from "@/lib/queries";
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function timeAgo(iso: string) {
+  if (!iso) return "—";
+  const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 172800) return "yesterday";
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function fmtDuration(sec: number) {
+  if (!sec) return "—";
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+function fmtPhone(phone: string) {
+  if (!phone) return "Unknown";
+  const d = phone.replace(/\D/g, "");
+  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  if (d.length === 11) return `+${d[0]} (${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
+  return phone;
+}
+
+// ── Types ──────────────────────────────────────────────────────────────────
+
+type Tab = "all" | "calls" | "sms" | "recordings";
+type SelectedItem =
+  | { type: "call"; data: any }
+  | { type: "sms_thread"; data: any }
+  | { type: "recording"; data: any }
+  | null;
+
+// ── Left sidebar item components ────────────────────────────────────────────
+
+function CallListItem({ item, active, onClick }: { item: any; active: boolean; onClick: () => void }) {
+  const dir = item.direction;
+  const Icon =
+    item.status === "missed"
+      ? PhoneMissed
+      : dir === "inbound" || dir === "in"
+        ? PhoneIncoming
+        : PhoneOutgoing;
+  const iconColor =
+    item.status === "missed" ? "text-red-400" : dir === "inbound" || dir === "in" ? "text-signal-emerald" : "text-brass";
+
   return (
-    <div className="space-y-6 animate-fade-up">
-      <SectionHeader eyebrow="L&S House · Intelligence" title={<span className="text-brass-shimmer">Intelligence Feed.</span>} description="Calls, recordings, messages — every signal in one place." />
-      <div className="text-cream-muted text-sm text-center py-16 border border-dashed border-brass/15 rounded-2xl">Building intelligence feed — check back shortly.</div>
+    <button
+      onClick={onClick}
+      className={cn(
+        "w-full text-left px-4 py-3 flex items-start gap-3 border-b border-brass/10 transition-colors",
+        active ? "bg-brass/20 border-l-2 border-l-brass-shimmer" : "hover:bg-forest-raised",
+      )}
+    >
+      <Icon className={cn("w-4 h-4 mt-0.5 flex-shrink-0", iconColor)} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-cream text-sm font-medium truncate">
+            {item.from_caller_name || fmtPhone(item.from || item.to || "Unknown")}
+          </span>
+          <span className="text-cream-dim text-xs flex-shrink-0">{timeAgo(item.time)}</span>
+        </div>
+        <div className="text-cream-muted text-xs mt-0.5">{fmtDuration(item.duration)}</div>
+      </div>
+    </button>
+  );
+}
+
+function SmsListItem({ item, active, onClick }: { item: any; active: boolean; onClick: () => void }) {
+  const preview = item.lastMessage?.content || item.lastMessage?.body || "";
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "w-full text-left px-4 py-3 flex items-start gap-3 border-b border-brass/10 transition-colors",
+        active ? "bg-brass/20 border-l-2 border-l-brass-shimmer" : "hover:bg-forest-raised",
+      )}
+    >
+      <MessageSquare className="w-4 h-4 mt-0.5 flex-shrink-0 text-brass" />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-cream text-sm font-medium truncate">{fmtPhone(item.phone)}</span>
+          <span className="text-cream-dim text-xs flex-shrink-0">{timeAgo(item.lastMessage?.timestamp)}</span>
+        </div>
+        <div className="text-cream-muted text-xs mt-0.5 truncate">{preview.slice(0, 40) || "No messages"}</div>
+        {item.unread > 0 && (
+          <span className="inline-block mt-1 px-1.5 py-0.5 bg-brass/30 text-brass text-xs rounded-full">
+            {item.unread} new
+          </span>
+        )}
+      </div>
+    </button>
+  );
+}
+
+function RecordingListItem({ item, active, onClick }: { item: any; active: boolean; onClick: () => void }) {
+  const title = item.title || item.summary_raw?.slice(0, 40) || "Recording";
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "w-full text-left px-4 py-3 flex items-start gap-3 border-b border-brass/10 transition-colors",
+        active ? "bg-brass/20 border-l-2 border-l-brass-shimmer" : "hover:bg-forest-raised",
+      )}
+    >
+      <Mic className="w-4 h-4 mt-0.5 flex-shrink-0 text-signal-amber" />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-cream text-sm font-medium truncate">{title}</span>
+          <span className="text-cream-dim text-xs flex-shrink-0">{timeAgo(item.recorded_at)}</span>
+        </div>
+        <div className="text-cream-muted text-xs mt-0.5">{fmtDuration(item.duration_seconds)}</div>
+      </div>
+    </button>
+  );
+}
+
+// ── KPI Tile ────────────────────────────────────────────────────────────────
+
+function KpiTile({ label, value, sub }: { label: string; value: number | string; sub?: string }) {
+  return (
+    <GlassCard className="flex flex-col items-center justify-center p-5 text-center gap-1">
+      <div className="font-display italic text-3xl text-brass-shimmer">{value}</div>
+      <div className="ui-label text-cream-muted">{label}</div>
+      {sub && <div className="text-xs text-cream-dim">{sub}</div>}
+    </GlassCard>
+  );
+}
+
+// ── Call Detail Panel ───────────────────────────────────────────────────────
+
+function CallPanel({ item, onBrief }: { item: any; onBrief: (phone: string) => void }) {
+  const phone = item.from || item.to || "";
+  const dir = item.direction;
+  const Icon =
+    item.status === "missed"
+      ? PhoneMissed
+      : dir === "inbound" || dir === "in"
+        ? PhoneIncoming
+        : PhoneOutgoing;
+
+  return (
+    <div className="flex flex-col h-full overflow-y-auto p-6 gap-6">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <Icon className="w-5 h-5 text-brass" />
+            <h2 className="text-cream text-xl font-semibold">
+              {item.from_caller_name || fmtPhone(phone)}
+            </h2>
+          </div>
+          <div className="text-cream-muted text-sm mt-1">{fmtPhone(phone)}</div>
+          <div className="flex gap-2 mt-2 flex-wrap">
+            <span className={cn(
+              "px-2 py-0.5 rounded text-xs font-medium",
+              item.status === "missed" ? "bg-red-900/40 text-red-300" : "bg-forest-raised text-cream-muted",
+            )}>
+              {item.status || "completed"}
+            </span>
+            <span className="px-2 py-0.5 rounded text-xs bg-forest-raised text-cream-muted">
+              {dir === "inbound" || dir === "in" ? "Inbound" : "Outbound"}
+            </span>
+          </div>
+        </div>
+        <div className="text-right text-cream-muted text-sm">
+          <div>{item.time ? new Date(item.time).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}</div>
+          <div>{item.time ? new Date(item.time).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : ""}</div>
+          <div className="mt-1 font-medium text-cream">{fmtDuration(item.duration)}</div>
+        </div>
+      </div>
+
+      {/* Brief button */}
+      {phone && (
+        <button
+          onClick={() => onBrief(phone)}
+          className="flex items-center gap-2 px-4 py-2 bg-brass/20 hover:bg-brass/30 border border-brass/30 rounded-lg text-brass text-sm font-medium transition-colors w-fit"
+        >
+          <Sparkles className="w-4 h-4" />
+          Brief this customer
+        </button>
+      )}
+
+      {/* Transcript */}
+      {item.transcript_raw && (
+        <GlassCard className="p-4">
+          <div className="ui-label text-cream-muted mb-3">Transcript</div>
+          <div className="text-cream-muted text-sm leading-relaxed whitespace-pre-wrap">
+            {item.transcript_raw}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* Summary */}
+      {item.transcript_summary && (
+        <GlassCard className="p-4">
+          <div className="ui-label text-cream-muted mb-3">AI Summary</div>
+          <div className="text-cream text-sm leading-relaxed">{item.transcript_summary}</div>
+        </GlassCard>
+      )}
+
+      {/* Recording */}
+      {item.recording_url && (
+        <GlassCard className="p-4">
+          <div className="ui-label text-cream-muted mb-3">Recording</div>
+          <audio controls className="w-full" src={item.recording_url}>
+            Your browser does not support audio playback.
+          </audio>
+        </GlassCard>
+      )}
+    </div>
+  );
+}
+
+// ── SMS Thread Panel ────────────────────────────────────────────────────────
+
+function SmsThreadPanel({ thread, onBrief }: { thread: any; onBrief: (phone: string) => void }) {
+  const phone = thread.phone;
+  const { data: threadData } = useSmsThread(phone);
+  const messages = threadData?.messages ?? thread.messages ?? [];
+  const customer = threadData?.customer;
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-brass/15 flex-shrink-0 flex items-center justify-between">
+        <div>
+          <div className="text-cream font-semibold">{customer ? customer.name : fmtPhone(phone)}</div>
+          <div className="text-cream-muted text-sm">{fmtPhone(phone)}</div>
+        </div>
+        <div className="flex items-center gap-2">
+          {customer && (
+            <span className="flex items-center gap-1 text-xs text-signal-emerald bg-signal-emerald/10 px-2 py-1 rounded-full">
+              <User className="w-3 h-3" />
+              {customer.id}
+            </span>
+          )}
+          <button
+            onClick={() => onBrief(phone)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-brass/20 hover:bg-brass/30 border border-brass/30 rounded-lg text-brass text-xs font-medium transition-colors"
+          >
+            <Sparkles className="w-3 h-3" />
+            Brief
+          </button>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+        {messages.length === 0 && (
+          <div className="text-cream-dim text-sm text-center py-8">No messages in this thread</div>
+        )}
+        {messages.map((msg: any) => {
+          const isOutbound = msg.direction === "outbound";
+          const content = msg.content || msg.body || "";
+          return (
+            <div key={msg.id} className={cn("flex", isOutbound ? "justify-end" : "justify-start")}>
+              <div
+                className={cn(
+                  "max-w-[75%] px-4 py-2.5 rounded-2xl",
+                  isOutbound
+                    ? "bg-brass/20 border border-brass/30 text-cream rounded-br-sm"
+                    : "bg-forest-raised text-cream rounded-bl-sm",
+                )}
+              >
+                <div className="text-sm leading-relaxed">{content}</div>
+                <div className={cn("text-xs mt-1", isOutbound ? "text-brass/70 text-right" : "text-cream-dim")}>
+                  {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : ""}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Recording Panel ─────────────────────────────────────────────────────────
+
+function RecordingPanel({ item }: { item: any }) {
+  const [showTranscript, setShowTranscript] = useState(false);
+  const summary = item.summary_raw || "";
+  const customers = item.detected_customer_names;
+
+  // Split summary into sections by ### headers
+  const sections = summary.split(/\n(?=###\s)/);
+
+  return (
+    <div className="flex flex-col h-full overflow-y-auto p-6 gap-6">
+      {/* Header */}
+      <div>
+        <h2 className="text-cream text-xl font-semibold">{item.title || "Recording"}</h2>
+        <div className="text-cream-muted text-sm mt-1">
+          {item.recorded_at ? new Date(item.recorded_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "—"}
+          {" · "}
+          {fmtDuration(item.duration_seconds)}
+        </div>
+        {item.detected_type && (
+          <span className="inline-block mt-2 px-2 py-0.5 bg-signal-amber/20 text-signal-amber text-xs rounded-full">
+            {item.detected_type}
+          </span>
+        )}
+      </div>
+
+      {/* Detected customers */}
+      {customers && customers.length > 0 && (
+        <GlassCard className="p-4">
+          <div className="ui-label text-cream-muted mb-2">Detected Customers</div>
+          <div className="flex flex-wrap gap-2">
+            {(Array.isArray(customers) ? customers : [customers]).map((name: string, i: number) => (
+              <span key={i} className="flex items-center gap-1 text-sm text-signal-emerald bg-signal-emerald/10 px-2 py-1 rounded-full">
+                <User className="w-3 h-3" />
+                {name}
+              </span>
+            ))}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* AI Summary */}
+      {summary && (
+        <GlassCard className="p-4">
+          <div className="ui-label text-cream-muted mb-3">AI Summary</div>
+          <div className="text-cream text-sm leading-relaxed space-y-4">
+            {sections.map((section: string, i: number) => {
+              const lines = section.split("\n").filter(Boolean);
+              const heading = lines[0]?.startsWith("###") ? lines[0].replace(/^###\s*/, "") : null;
+              const body = heading ? lines.slice(1) : lines;
+              return (
+                <div key={i}>
+                  {heading && <div className="font-semibold text-brass mb-1">{heading}</div>}
+                  {body.map((line: string, j: number) => (
+                    <div key={j} className={cn("text-cream-muted", line.startsWith("-") ? "pl-3" : "")}>
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* Full transcript toggle */}
+      {item.transcript_raw && (
+        <div>
+          <button
+            onClick={() => setShowTranscript(v => !v)}
+            className="text-brass text-sm hover:underline"
+          >
+            {showTranscript ? "Hide" : "Show"} full transcript
+          </button>
+          {showTranscript && (
+            <GlassCard className="p-4 mt-3">
+              <div className="text-cream-muted text-xs leading-relaxed whitespace-pre-wrap font-mono">
+                {item.transcript_raw}
+              </div>
+            </GlassCard>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Grok Brief Card ─────────────────────────────────────────────────────────
+
+function GrokBriefCard({ brief, customer, onClose }: { brief: string; customer: any; onClose: () => void }) {
+  return (
+    <div className="mx-6 mt-0 mb-4">
+      <GlassCard className="p-4 border border-brass/30 relative">
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 text-cream-dim hover:text-cream"
+        >
+          <X className="w-4 h-4" />
+        </button>
+        <div className="flex items-center gap-2 mb-2">
+          <Sparkles className="w-4 h-4 text-brass" />
+          <span className="ui-label text-brass">Customer Brief</span>
+          {customer && (
+            <span className="text-xs text-cream-dim">· {customer.name}</span>
+          )}
+        </div>
+        <p className="text-cream text-sm leading-relaxed pr-6">{brief}</p>
+      </GlassCard>
+    </div>
+  );
+}
+
+// ── Empty State ─────────────────────────────────────────────────────────────
+
+function EmptyState({ counts }: { counts: any }) {
+  if (!counts) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-cream-dim text-sm">
+        Select a conversation or call to view details.
+      </div>
+    );
+  }
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-8 p-8">
+      <div>
+        <h2 className="text-cream text-2xl font-semibold text-center mb-1">Comms Intelligence</h2>
+        <p className="text-cream-muted text-sm text-center">Calls, recordings, messages — every signal in one place.</p>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 w-full max-w-3xl">
+        <KpiTile label="Calls Today" value={counts.callsToday} />
+        <KpiTile label="Missed" value={counts.missedCalls} />
+        <KpiTile label="Recordings" value={counts.totalRecordings} />
+        <KpiTile label="SMS Threads" value={counts.smsThreads} />
+        <KpiTile label="Unread SMS" value={counts.unreadSms} />
+      </div>
+      <p className="text-cream-dim text-xs">Select an item on the left to view details.</p>
+    </div>
+  );
+}
+
+// ── Main Page ───────────────────────────────────────────────────────────────
+
+export default function Comms() {
+  const { data: commsData, isLoading } = useComms();
+  const [tab, setTab] = useState<Tab>("all");
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<SelectedItem>(null);
+  const [brief, setBrief] = useState<{ brief: string; customer: any } | null>(null);
+
+  const briefMutation = useMutation({
+    mutationFn: (phone: string) =>
+      api.post<{ brief: string; customer: any }>(`/api/comms/brief/${encodeURIComponent(phone)}`, {}),
+    onSuccess: (data) => {
+      if (data) setBrief(data);
+    },
+  });
+
+  const handleBrief = (phone: string) => {
+    setBrief(null);
+    briefMutation.mutate(phone);
+  };
+
+  // Build filtered list
+  const calls = commsData?.calls ?? [];
+  const recordings = commsData?.recordings ?? [];
+  const smsThreads = commsData?.smsThreads ?? [];
+  const timeline = commsData?.timeline ?? [];
+
+  const q = search.toLowerCase();
+
+  const filteredTimeline = (tab === "all" ? timeline : [
+    ...(tab === "calls" ? calls.map((c: any) => ({ type: "call", ts: c.time, data: c })) : []),
+    ...(tab === "sms" ? smsThreads.map((t: any) => ({ type: "sms_thread", ts: t.lastMessage?.timestamp, data: t })) : []),
+    ...(tab === "recordings" ? recordings.map((r: any) => ({ type: "recording", ts: r.recorded_at, data: r })) : []),
+  ]).filter((item: any) => {
+    if (!q) return true;
+    if (item.type === "call") {
+      return (
+        (item.data.from_caller_name || "").toLowerCase().includes(q) ||
+        (item.data.from || "").includes(q) ||
+        (item.data.to || "").includes(q)
+      );
+    }
+    if (item.type === "sms_thread") {
+      return (
+        (item.data.phone || "").includes(q) ||
+        (item.data.lastMessage?.content || "").toLowerCase().includes(q)
+      );
+    }
+    if (item.type === "recording") {
+      return (
+        (item.data.title || "").toLowerCase().includes(q) ||
+        (item.data.summary_raw || "").toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "all", label: "All" },
+    { id: "calls", label: "Calls" },
+    { id: "sms", label: "SMS" },
+    { id: "recordings", label: "Rec." },
+  ];
+
+  const isActive = (item: any) => {
+    if (!selected) return false;
+    if (item.type === "call" && selected.type === "call") return item.data.id === selected.data.id;
+    if (item.type === "sms_thread" && selected.type === "sms_thread") return item.data.phone === selected.data.phone;
+    if (item.type === "recording" && selected.type === "recording") return item.data.id === selected.data.id;
+    return false;
+  };
+
+  return (
+    <div className="flex h-[calc(100vh-64px)] overflow-hidden">
+      {/* ── LEFT SIDEBAR ── */}
+      <div className="w-80 flex-shrink-0 border-r border-brass/15 flex flex-col bg-forest-deep">
+        {/* Header + Search */}
+        <div className="px-4 pt-4 pb-3 flex-shrink-0 border-b border-brass/10">
+          <h1 className="text-cream font-semibold text-lg mb-3">Comms</h1>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-cream-dim" />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 bg-forest-raised border border-brass/15 rounded-lg text-cream text-sm placeholder:text-cream-dim focus:outline-none focus:border-brass/40"
+            />
+          </div>
+        </div>
+
+        {/* Tab bar */}
+        <div className="px-4 py-2 flex gap-1 flex-shrink-0 border-b border-brass/10">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={cn(
+                "flex-1 py-1 text-xs font-medium rounded transition-colors",
+                tab === t.id
+                  ? "bg-brass/25 text-brass-shimmer"
+                  : "text-cream-muted hover:text-cream hover:bg-forest-raised",
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto">
+          {isLoading && (
+            <div className="text-cream-dim text-xs text-center py-8">Loading...</div>
+          )}
+          {!isLoading && filteredTimeline.length === 0 && (
+            <div className="text-cream-dim text-xs text-center py-8">No items</div>
+          )}
+          {filteredTimeline.map((item: any, i: number) => {
+            const active = isActive(item);
+            if (item.type === "call") {
+              return (
+                <CallListItem
+                  key={`call-${item.data.id ?? i}`}
+                  item={item.data}
+                  active={active}
+                  onClick={() => { setSelected({ type: "call", data: item.data }); setBrief(null); }}
+                />
+              );
+            }
+            if (item.type === "sms_thread") {
+              return (
+                <SmsListItem
+                  key={`sms-${item.data.phone ?? i}`}
+                  item={item.data}
+                  active={active}
+                  onClick={() => { setSelected({ type: "sms_thread", data: item.data }); setBrief(null); }}
+                />
+              );
+            }
+            if (item.type === "recording") {
+              return (
+                <RecordingListItem
+                  key={`rec-${item.data.id ?? i}`}
+                  item={item.data}
+                  active={active}
+                  onClick={() => { setSelected({ type: "recording", data: item.data }); setBrief(null); }}
+                />
+              );
+            }
+            return null;
+          })}
+        </div>
+      </div>
+
+      {/* ── RIGHT PANEL ── */}
+      <div className="flex-1 flex flex-col bg-forest-deep overflow-hidden">
+        {/* Grok brief result */}
+        {briefMutation.isPending && (
+          <div className="mx-6 mt-4">
+            <GlassCard className="p-4 border border-brass/20">
+              <div className="flex items-center gap-2 text-brass text-sm">
+                <Sparkles className="w-4 h-4 animate-pulse" />
+                Generating brief...
+              </div>
+            </GlassCard>
+          </div>
+        )}
+        {brief && !briefMutation.isPending && (
+          <GrokBriefCard brief={brief.brief} customer={brief.customer} onClose={() => setBrief(null)} />
+        )}
+
+        {/* Main content */}
+        {selected === null ? (
+          <EmptyState counts={commsData?.counts} />
+        ) : selected.type === "call" ? (
+          <CallPanel item={selected.data} onBrief={handleBrief} />
+        ) : selected.type === "sms_thread" ? (
+          <SmsThreadPanel thread={selected.data} onBrief={handleBrief} />
+        ) : selected.type === "recording" ? (
+          <RecordingPanel item={selected.data} />
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -629,6 +629,38 @@ export function useLiveFeed() {
   });
 }
 
+// ─── Comms Intelligence ───────────────────────────────────────────────────────
+
+export interface CommsData {
+  calls: any[];
+  recordings: any[];
+  smsThreads: any[];
+  timeline: any[];
+  counts: {
+    callsToday: number;
+    missedCalls: number;
+    totalRecordings: number;
+    smsThreads: number;
+    unreadSms: number;
+  };
+}
+
+export function useComms() {
+  return useQuery({
+    queryKey: ["comms"],
+    queryFn: () => api.get<CommsData>("/api/comms"),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useSmsThread(phone: string | null) {
+  return useQuery({
+    queryKey: ["sms-thread", phone],
+    queryFn: () => api.get<{ messages: any[]; customer: any }>(`/api/comms/thread/${encodeURIComponent(phone!)}`),
+    enabled: !!phone,
+  });
+}
+
 export function useAllTasks(status?: string) {
   return useQuery({
     queryKey: ["agents", "tasks", "all", status],
