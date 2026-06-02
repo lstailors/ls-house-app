@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { supabaseAdmin } from '../lib/supabase';
 import { getAuthedUser } from '../lib/scope';
+import { erpList } from '../lib/erp';
 
 // ---------------------------------------------------------------------------
 // ERPNext config
@@ -115,8 +116,16 @@ intakeAlterationsRouter.get('/tailors', async (c) => {
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   try {
-    const result = await mcpList<any>('Employee', ['name','employee_name','designation'], [['status','=','Active'],['designation','like','%Tailor%']], 50);
-    return c.json({ data: result ?? [] });
+    const result = await erpList<{ name: string; employee_name: string; designation: string }>(
+      'Employee',
+      {
+        filters: [['status', '=', 'Active'], ['designation', 'like', '%Tailor%']],
+        fields: ['name', 'employee_name', 'designation'],
+        limit: 50,
+      }
+    );
+    // Frontend expects { name, full_name } shape
+    return c.json({ data: (result ?? []).map(e => ({ name: e.name, full_name: e.employee_name })) });
   } catch {
     return c.json({ data: [] });
   }
