@@ -52,13 +52,22 @@ export function useFinancials() {
     queryFn: () =>
       api.get<{
         revenue: number;
+        revenueMTD: number;
+        revenueLastMonth: number;
+        revenueChange: number;
         salesOrderCount: number;
+        avgOrderValue: number;
         invoicesTotal: number;
         invoiceCount: number;
         depositsPendingTotal: number;
         depositsPendingCount: number;
         cogs: number;
         grossProfit: number;
+        marginPct: number;
+        arOutstanding: number;
+        trend: Array<{ month: string; revenue: number; orders: number }>;
+        pipeline: Array<{ stage: string; label: string; count: number; value: number }>;
+        topGarments: Array<{ type: string; units: number; revenue: number; avgPrice: number }>;
       }>(`/api/dashboard/financials${locationQueryString(activeLocationId)}`),
   });
 }
