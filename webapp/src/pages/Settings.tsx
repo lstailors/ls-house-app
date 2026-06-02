@@ -32,9 +32,16 @@ function PrinterSettings() {
         <span className="text-sm text-cream font-medium">Epson TM-M30II Printer</span>
       </div>
       <p className="text-xs text-cream-dim leading-relaxed">
-        Enter your printer's IP address (find it by holding Feed while powering on — it prints a self-test with the IP).
-        Your phone/iPad must be on the same WiFi as the printer.
+        Enter your printer's IP (hold Feed while powering on to print a self-test with the IP).
+        Your iPad must be on the same WiFi as the printer.
       </p>
+      <div className="rounded-xl bg-brass/10 border border-brass/20 p-3 text-xs text-cream-muted space-y-1">
+        <p className="font-medium text-cream">One-time setup required:</p>
+        <p>1. Save the IP below</p>
+        <p>2. Open Safari and visit <span className="font-mono text-brass-shimmer">https://{ip || "10.0.1.41"}</span></p>
+        <p>3. Tap "Visit Website" to trust the printer's certificate</p>
+        <p>4. Come back — direct Epson printing will work</p>
+      </div>
       <div className="space-y-2">
         <label className="ui-label block">Printer IP Address</label>
         <div className="flex gap-2">
@@ -55,12 +62,12 @@ function PrinterSettings() {
       </div>
       {ip && (
         <a
-          href={`http://${ip}`}
+          href={`https://${ip}`}
           target="_blank"
           rel="noreferrer"
-          className="text-xs text-brass-shimmer underline"
+          className="flex items-center gap-1.5 text-xs text-brass-shimmer underline"
         >
-          Open http://{ip} in Safari first → allows local network printing
+          <Wifi className="h-3 w-3" /> Open https://{ip} in Safari to trust certificate →
         </a>
       )}
     </GlassCard>

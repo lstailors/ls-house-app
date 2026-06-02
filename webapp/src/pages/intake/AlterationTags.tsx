@@ -85,10 +85,11 @@ export default function AlterationTags() {
       <style>{`
         * { box-sizing: border-box; }
         @media print {
-          @page { size: 80mm auto; margin: 2mm; }
+          @page { size: 80mm auto; margin: 0; }
+          html, body { margin: 0 !important; padding: 0 !important; width: 80mm !important; background: white; }
           .no-print { display: none !important; }
-          body { margin: 0; background: white; }
-          .tag { page-break-inside: avoid; break-inside: avoid; }
+          .tag { page-break-inside: avoid; break-inside: avoid; width: 76mm !important; }
+          div[style*="gridTemplateColumns"] { display: block !important; }
         }
       `}</style>
 

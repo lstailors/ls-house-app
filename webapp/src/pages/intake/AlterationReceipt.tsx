@@ -100,9 +100,9 @@ export default function AlterationReceipt() {
       <style>{`
         * { box-sizing: border-box; }
         @media print {
-          @page { size: 80mm auto; margin: 3mm 2mm; }
+          @page { size: 80mm auto; margin: 0; }
+          html, body { margin: 0 !important; padding: 0 !important; width: 80mm !important; background: white; }
           .no-print { display: none !important; }
-          body { margin: 0; background: white; }
         }
       `}</style>
 
