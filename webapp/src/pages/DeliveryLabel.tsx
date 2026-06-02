@@ -95,22 +95,20 @@ export default function DeliveryLabel() {
         body { margin: 0; }
         @media print {
           @page { size: 4in 6in; margin: 0; }
-          html, body { margin: 0 !important; padding: 0 !important; background: white !important; }
-          /* Hide the entire screen UI */
+          html, body { margin: 0 !important; padding: 0 !important; background: white !important; overflow: hidden !important; }
           .screen-only { display: none !important; }
-          /* Show only the print-only label */
           .print-only {
             display: block !important;
             position: fixed !important;
             top: 0 !important; left: 0 !important;
             width: 4in !important; height: 6in !important;
-          }
-          .print-only .print-label {
-            width: 4in !important;
-            height: 6in !important;
-            transform: none !important;
-            box-shadow: none !important;
             overflow: hidden !important;
+          }
+          /* Label is 812×1218px; 4in at 96dpi = 384px → scale = 384/812 = 0.473 */
+          .print-only .print-label {
+            transform-origin: top left !important;
+            transform: scale(0.473) !important;
+            box-shadow: none !important;
           }
         }
       `}</style>
@@ -156,9 +154,14 @@ export default function DeliveryLabel() {
           </button>
         </div>
 
-        {/* Hint */}
-        <div className="no-print" style={{ maxWidth: 600, margin: "0 auto 32px", padding: "14px 18px", background: "rgba(176,141,87,0.08)", border: "1px solid rgba(176,141,87,0.25)", borderRadius: 8, fontSize: 12, fontFamily: "'Cormorant Garamond', serif", fontStyle: "italic", color: "#F1E9D6", textAlign: "center", lineHeight: 1.5 }}>
-          Print at "Actual Size" — true 4″ × 6″ thermal label. No scaling needed.
+        {/* Hints */}
+        <div className="no-print" style={{ maxWidth: 600, margin: "0 auto 32px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ padding: "12px 18px", background: "rgba(176,141,87,0.08)", border: "1px solid rgba(176,141,87,0.25)", borderRadius: 8, fontSize: 11, fontFamily: "Montserrat, sans-serif", fontWeight: 600, color: "#F1E9D6", letterSpacing: "0.05em" }}>
+            🖨 <strong>Label printer:</strong> Select your label printer → prints 4×6
+          </div>
+          <div style={{ padding: "12px 18px", background: "rgba(176,141,87,0.08)", border: "1px solid rgba(176,141,87,0.25)", borderRadius: 8, fontSize: 11, fontFamily: "Montserrat, sans-serif", fontWeight: 600, color: "#F1E9D6", letterSpacing: "0.05em" }}>
+            📄 <strong>LabelLife / PDF:</strong> Tap Print → swipe up on preview → tap Share icon → Save to Files → import to LabelLife
+          </div>
         </div>
 
         {/* Preview / printable */}
