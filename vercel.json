@@ -9,6 +9,18 @@
   ],
   "crons": [
     {
+      "path": "/api/maestro/brief/trigger",
+      "schedule": "0 12 * * 1-5"
+    },
+    {
+      "path": "/api/maestro/brief/trigger",
+      "schedule": "0 16 * * 1-5"
+    },
+    {
+      "path": "/api/maestro/brief/trigger",
+      "schedule": "0 19 * * 1-5"
+    },
+    {
       "path": "/api/sofia/briefing/trigger",
       "schedule": "0 12 * * 1-5"
     },

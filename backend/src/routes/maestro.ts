@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser } from "../lib/scope";
+import { erpList } from "../lib/erp";
 import type { ApprovalCategory } from "../types";
 
 export const maestroRouter = new Hono();
@@ -123,6 +124,87 @@ maestroRouter.post("/brief", async (c) => {
   }
 
   return c.json({ data: { ok: true } });
+});
+
+// ── GET /api/maestro/brief/trigger ── generate + save a fresh brief via Grok ──
+maestroRouter.get("/brief/trigger", async (_c) => {
+  try {
+    const now = new Date();
+    const todayStr = now.toISOString().split("T")[0]!;
+    const nycHour = parseInt(now.toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }));
+    const period = nycHour < 12 ? "Morning" : nycHour < 16 ? "Midday" : "Afternoon";
+
+    // ── Gather live data in parallel ──────────────────────────────────────
+    const sb = supabaseAdmin;
+    const [overdueInvoices, openApprovals, openTasks, altKpis, appointments] = await Promise.all([
+      erpList<any>("Sales Invoice", {
+        filters: [["docstatus","=",1],["outstanding_amount",">",0],["due_date","<",todayStr]],
+        fields: ["name","customer_name","outstanding_amount","due_date"],
+        limit: 10,
+      }).catch(() => []),
+      sb ? sb.from("approval_queue").select("id,title,priority,category").in("status",["pending","awaiting_second"]).order("created_at",{ascending:false}).limit(20) : Promise.resolve({ data: [] }),
+      sb ? (sb as any).schema("lsh").from("agent_tasks").select("id,title,priority,status,due_at").in("status",["pending","active"]).limit(10) : Promise.resolve({ data: [] }),
+      erpList<any>("Alteration Ticket", {
+        filters: [["workflow_state","in",["Received","In Progress"]]],
+        fields: ["name","workflow_state","due_date","is_rush"],
+        limit: 200,
+      }).catch(() => []),
+      sb ? sb.from("appointments").select("event_type,start_time").gte("start_time",`${todayStr}T00:00:00Z`).lte("start_time",`${todayStr}T23:59:59Z`).order("start_time").limit(5) : Promise.resolve({ data: [] }),
+    ]);
+
+    const approvals = (openApprovals.data ?? []) as any[];
+    const tasks = (openTasks.data ?? []) as any[];
+    const appts = (appointments.data ?? []) as any[];
+
+    const overdueAlt = altKpis.filter((t:any) => t.due_date && t.due_date < todayStr).length;
+    const rushAlt = altKpis.filter((t:any) => t.is_rush).length;
+    const totalAlt = altKpis.length;
+
+    const nycNow = new Date().toLocaleString("en-US", { timeZone: "America/New_York", weekday:"long", month:"long", day:"numeric", year:"numeric" });
+
+    const dataBlock = [
+      `Date: ${nycNow}`,
+      `Period: ${period}`,
+      `Alterations — Active: ${totalAlt} | Overdue: ${overdueAlt} | Rush: ${rushAlt}`,
+      overdueInvoices.length ? `Overdue Invoices: ${overdueInvoices.map((i:any)=>`${i.customer_name} $${Number(i.outstanding_amount).toLocaleString()}`).join(", ")}` : "No overdue invoices",
+      `Approvals pending: ${approvals.length}${approvals.filter((a:any)=>a.priority==="urgent").length > 0 ? ` (${approvals.filter((a:any)=>a.priority==="urgent").length} urgent)` : ""}`,
+      tasks.length ? `Open tasks: ${tasks.slice(0,3).map((t:any)=>t.title).join("; ")}` : "No open tasks",
+      appts.length ? `Today's appointments: ${appts.map((a:any)=>`${new Date(a.start_time).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",timeZone:"America/New_York"})} — ${a.event_type}`).join(", ")}` : "No appointments today",
+    ].join("\n");
+
+    // ── Call Grok ─────────────────────────────────────────────────────────
+    const apiKey = process.env.XAI_API_KEY;
+    let briefText = "";
+    if (apiKey) {
+      const prompt = `You are Maestro, the operations intelligence for L&S Custom Tailors — a luxury bespoke house in New York.\n\nWrite the ${period} Brief for Carl (the owner). Be direct, professional, specific. 4-8 sentences. Call out risks and priorities. Sign off as — Maestro.\n\nData:\n${dataBlock}`;
+      const res = await fetch("https://api.x.ai/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "grok-3-mini", messages: [{ role: "user", content: prompt }], max_tokens: 400, temperature: 0.5 }),
+      });
+      const grokData = await res.json() as any;
+      briefText = grokData?.choices?.[0]?.message?.content?.trim() ?? "";
+    }
+    if (!briefText) briefText = `${period} Brief:\n${dataBlock}\n— Maestro`;
+
+    // ── Save to lsh.agent_briefs ──────────────────────────────────────────
+    if (sb) {
+      const { error } = await (sb as any).schema("lsh").from("agent_briefs").insert({
+        type: "daily_brief",
+        title: `Maestro Brief — ${todayStr}`,
+        body: briefText,
+        severity: "info",
+        source: "maestro",
+        metadata: { date: todayStr, period, generated_at: now.toISOString() },
+      });
+      if (error) console.error("[maestro/brief/trigger] save error:", error.message);
+    }
+
+    return _c.json({ data: { ok: true, period, brief: briefText } });
+  } catch (e: any) {
+    console.error("[maestro/brief/trigger]", e.message);
+    return _c.json({ error: { message: e.message } }, 500);
+  }
 });
 
 // ── GET /api/maestro/brief ── latest brief
