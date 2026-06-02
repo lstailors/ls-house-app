@@ -51,7 +51,7 @@ const TILES: TileConfig[] = [
     key: "rush",
     filterKey: "rush",
     label: "Rush",
-    getValueClass: (v) => (v > 0 ? "text-signal-amber" : "text-brass-shimmer"),
+    getValueClass: (v) => (v > 0 ? "text-red-400" : "text-brass-shimmer"),
     pulse: (v) => v > 0,
   },
   {
