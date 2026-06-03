@@ -224,33 +224,14 @@ commsRouter.post("/brief/:phone", async (c) => {
       }).join("\n")
     : "  No call history";
 
-  const prompt = `You are Sofia, the intelligence assistant for L&S Custom Tailors — a luxury bespoke house in NYC.
+  const prompt = `You are Sofia at L&S Custom Tailors. Give a quick, practical brief on this customer. Keep it tight.
 
-Analyze ALL communications below for ${customer?.name ?? phone} and produce a structured client intelligence brief.
+Format:
+• 2-3 bullet highlights (what matters most)
+• Any dates or appointments mentioned
+• Call to actions — what needs to happen next (be specific)
 
-FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
-
-**SUMMARY**
-2-3 sentences: who they are, relationship status, what's happening with their order/account.
-
-**LAST CONTACT**
-Date, channel, key points discussed.
-
-**COMMITMENTS & PROMISES**
-List any commitments made by either party (e.g., "Customer said they'd drop off jacket Thursday", "We promised delivery by June 10").
-
-**ACTION ITEMS**
-- [ ] Task 1 (who owns it)
-- [ ] Task 2
-
-**FOLLOW-UPS NEEDED**
-List any open questions, pending decisions, or items needing follow-up.
-
-**CALENDAR / APPOINTMENTS**
-Any dates, appointments, or deadlines mentioned.
-
-**SENTIMENT**
-One line: customer mood/satisfaction and relationship health.
+No headers. No fluff. Just the useful stuff.
 
 ---
 SMS HISTORY:
