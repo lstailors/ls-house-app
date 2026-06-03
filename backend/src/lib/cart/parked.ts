@@ -9,7 +9,7 @@ export interface ParkedCart { id: string; location: string; label: string | null
 
 export async function saveCart(input: { id?: string; createdBy: string; location: string; customer: Partial<CustomerInput>; customerRef?: string | null; cart: CartPayload; }) {
   if (!supabaseAdmin) throw new Error("Supabase not configured");
-  const row = { created_by: input.createdBy, location: input.location, label: input.customer.fullName ?? "Walk-in", customer_ref: input.customerRef ?? null, customer_snapshot: input.customer, cart: input.cart, status: "parked" as const };
+  const row = { created_by: input.createdBy, location: input.location, label: input.customer.fullName ?? (input.customer as any).name ?? "Walk-in", customer_ref: input.customerRef ?? null, customer_snapshot: input.customer, cart: input.cart, status: "parked" as const };
   const q = input.id ? supabaseAdmin.from("parked_carts").update(row).eq("id", input.id).select().single() : supabaseAdmin.from("parked_carts").insert(row).select().single();
   const { data, error } = await q;
   if (error) throw new Error(error.message);
