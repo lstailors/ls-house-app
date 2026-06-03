@@ -59,12 +59,12 @@ commsRouter.get("/", async (c) => {
       .limit(limit),
     supabaseAdmin
       .from("plaud_captures")
-      .select("id, recorded_at, duration_seconds, detected_customer_names, summary_raw, transcript_raw, detected_type, status, title")
+      .select("id, recorded_at, duration_seconds, detected_customer_names, summary_raw, transcript_raw, capture_type, detected_type, status, detected_action_items, extracted_action_items, maestro_notes")
       .order("recorded_at", { ascending: false })
       .limit(50),
     supabaseAdmin
       .from("sms_messages")
-      .select("id, client_phone, client_id, direction, content, timestamp, body")
+      .select("id, client_phone, client_id, direction, content, timestamp, metadata")
       .order("timestamp", { ascending: false })
       .limit(limit),
   ]);
@@ -157,8 +157,8 @@ commsRouter.post("/brief/:phone", async (c) => {
   if (!supabaseAdmin) return c.json({ data: { brief: "Supabase not available" } });
 
   const [smsRes, callsRes] = await Promise.all([
-    supabaseAdmin.from("sms_messages").select("direction, content, timestamp").eq("client_phone", phone).order("timestamp", { ascending: false }).limit(20),
-    supabaseAdmin.from("unifi_call_logs").select("time, direction, duration, transcript_raw, transcript_whisper, from_caller_name").or(`from.eq.${phone},to.eq.${phone}`).order("time", { ascending: false }).limit(10),
+    supabaseAdmin.from("sms_messages").select("direction, content, timestamp").eq("client_phone", phone).order("timestamp", { ascending: true }).limit(30),
+    supabaseAdmin.from("unifi_call_logs").select("time, direction, duration, transcript_raw, transcript_whisper, from_caller_name, status").or(`from.eq.${phone},to.eq.${phone}`).order("time", { ascending: false }).limit(10),
   ]);
 
   const customer = await matchCustomerByPhone(phone);
@@ -168,19 +168,65 @@ commsRouter.post("/brief/:phone", async (c) => {
   const apiKey = process.env.XAI_API_KEY;
   if (!apiKey) return c.json({ data: { brief: "AI not configured" } });
 
-  const context = [
-    customer ? `Customer: ${customer.name} (${customer.id})` : `Phone: ${phone}`,
-    `Recent SMS (${sms.length}): ${sms.slice(0, 5).map((m: any) => `[${m.direction}] ${m.content?.slice(0, 80)}`).join(" | ")}`,
-    `Calls (${calls.length}): ${calls.slice(0, 3).map((call: any) => `${call.direction} ${Math.round((call.duration || 0) / 60)}min ${call.transcript_whisper?.slice(0, 100) || call.transcript_raw?.slice(0, 100) || ""}`).join(" | ")}`,
-  ].join("\n");
+  // Build rich context from all available data
+  const smsContext = sms.length
+    ? sms.map((m: any) => `  [${m.direction === "inbound" ? "Customer" : "Sofia"}] ${m.content}`).join("\n")
+    : "  No SMS history";
+
+  const callContext = calls.length
+    ? calls.map((call: any) => {
+        const mins = Math.round((call.duration || 0) / 60);
+        const transcript = call.transcript_raw || call.transcript_whisper || "";
+        return `  - ${call.direction} call, ${mins}m, status: ${call.status}\n    ${transcript ? `Transcript: ${transcript.slice(0, 500)}` : "No transcript"}`;
+      }).join("\n")
+    : "  No call history";
+
+  const prompt = `You are Sofia, the intelligence assistant for L&S Custom Tailors — a luxury bespoke house in NYC.
+
+Analyze ALL communications below for ${customer?.name ?? phone} and produce a structured client intelligence brief.
+
+FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
+
+**SUMMARY**
+2-3 sentences: who they are, relationship status, what's happening with their order/account.
+
+**LAST CONTACT**
+Date, channel, key points discussed.
+
+**COMMITMENTS & PROMISES**
+List any commitments made by either party (e.g., "Customer said they'd drop off jacket Thursday", "We promised delivery by June 10").
+
+**ACTION ITEMS**
+- [ ] Task 1 (who owns it)
+- [ ] Task 2
+
+**FOLLOW-UPS NEEDED**
+List any open questions, pending decisions, or items needing follow-up.
+
+**CALENDAR / APPOINTMENTS**
+Any dates, appointments, or deadlines mentioned.
+
+**SENTIMENT**
+One line: customer mood/satisfaction and relationship health.
+
+---
+SMS HISTORY:
+${smsContext}
+
+CALL HISTORY:
+${callContext}
+---
+
+Be specific. Use actual names, dates, amounts from the transcripts. If a 10-minute call happened, extract everything meaningful from it — don't summarize into one vague sentence.`;
 
   const res = await fetch("https://api.x.ai/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "grok-3-mini",
-      messages: [{ role: "user", content: `You are briefing the owner of L&S Custom Tailors about a customer. Be direct and specific. 3-5 sentences max. Include: last contact, what was discussed, any commitments or follow-ups needed.\n\nContext:\n${context}` }],
-      max_tokens: 250, temperature: 0.4,
+      model: "grok-3",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 1000,
+      temperature: 0.3,
     }),
   });
   const grokData = await res.json() as any;
