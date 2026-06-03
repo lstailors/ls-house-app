@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { supabaseAdmin } from "../lib/supabase";
+import { supabaseAdmin, lshAdmin } from "../lib/supabase";
 import { getAuthedUser } from "../lib/scope";
 import { erpList, erpCreate } from "../lib/erp";
 
@@ -127,7 +127,7 @@ commsRouter.get("/", async (c) => {
   let dailyBrief = null;
   try {
     if (supabaseAdmin) {
-      const { data: briefRows } = await (supabaseAdmin as any).schema("lsh")
+      const { data: briefRows } = await lshAdmin
         .from("agent_briefs")
         .select("title, body, created_at")
         .eq("source", "comms-daily")
@@ -446,12 +446,16 @@ Be specific — use names, amounts, dates. Extract every commitment and action i
   const brief = grokData?.choices?.[0]?.message?.content?.trim() ?? "Unable to generate brief.";
 
   // Save to lsh.agent_briefs
-  if (supabaseAdmin) {
-    await (supabaseAdmin as any).schema("lsh").from("agent_briefs").insert({
-      type: "daily_brief", title: `Comms Daily Brief — ${todayStr}`, body: brief,
-      severity: "info", source: "comms-daily",
-      metadata: { date: todayStr, calls: calls.length, sms: sms.length, recordings: recordings.length },
-    }).catch((e: any) => console.error("[comms/daily-brief]", e.message));
+  if (lshAdmin) {
+    try {
+      await lshAdmin.from("agent_briefs").insert({
+        type: "daily_brief", title: `Comms Daily Brief — ${todayStr}`, body: brief,
+        severity: "info", source: "comms-daily",
+        metadata: { date: todayStr, calls: calls.length, sms: sms.length, recordings: recordings.length },
+      });
+    } catch (e: any) {
+      console.error("[comms/daily-brief] save:", e.message);
+    }
   }
 
   return c.json({ data: { brief, date: todayStr, stats: { calls: calls.length, sms: sms.length, recordings: recordings.length } } });
