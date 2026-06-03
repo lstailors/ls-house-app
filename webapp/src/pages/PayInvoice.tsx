@@ -18,6 +18,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { formatUSD, formatDate } from "@/lib/format";
 
 const SQUARE_JS_URL = "https://web.squarecdn.com/v1/square.js";
+const API_BASE = import.meta.env.VITE_BACKEND_URL || "";
 
 declare global {
   interface Window {
@@ -27,7 +28,6 @@ declare global {
 }
 
 interface InvoiceRow {
-  id: string;
   erp_name: string;
   end_customer: string | null;
   erp_customer: string | null;
@@ -36,7 +36,7 @@ interface InvoiceRow {
   status: string | null;
   due_date: string | null;
   posting_date: string | null;
-  items: Array<{ item_name?: string; description?: string; amount?: number }>;
+  items: Array<{ item_name?: string; description?: string; amount?: number | null }>;
   currency: string | null;
 }
 
@@ -79,35 +79,46 @@ export default function PayInvoice() {
     document.head.appendChild(script);
   }, []);
 
-  // Fetch invoice
+  // Fetch invoice/ticket via backend pay-info endpoint (works for both types)
   useEffect(() => {
     if (!invoiceId) {
       setPageState("not_found");
       return;
     }
     (async () => {
-      const { data, error } = await supabase
-        .from("erp_sales_invoices")
-        .select(
-          "id, erp_name, end_customer, erp_customer, grand_total, outstanding_amount, status, due_date, posting_date, items, currency"
-        )
-        .eq("erp_name", invoiceId)
-        .single();
-
-      if (error || !data) {
+      try {
+        const res = await fetch(`${API_BASE}/api/pay-info/${encodeURIComponent(invoiceId)}`);
+        if (!res.ok) {
+          setPageState("not_found");
+          return;
+        }
+        const json = await res.json();
+        const d = json?.data;
+        if (!d) {
+          setPageState("not_found");
+          return;
+        }
+        const row: InvoiceRow = {
+          erp_name: d.id,
+          end_customer: d.customer_name ?? null,
+          erp_customer: d.customer_name ?? null,
+          grand_total: d.grand_total ?? 0,
+          outstanding_amount: d.outstanding_amount ?? 0,
+          status: d.status ?? null,
+          due_date: d.due_date ?? null,
+          posting_date: d.posting_date ?? null,
+          items: d.items ?? [],
+          currency: d.currency ?? "USD",
+        };
+        setInvoice(row);
+        const outstanding = row.outstanding_amount ?? 0;
+        if (row.status === "Paid" || outstanding <= 0) {
+          setPageState("already_paid");
+        } else {
+          setPageState("ready");
+        }
+      } catch {
         setPageState("not_found");
-        return;
-      }
-
-      setInvoice(data as InvoiceRow);
-      const outstanding = (data as InvoiceRow).outstanding_amount ?? 0;
-      if (
-        data.status === "Paid" ||
-        outstanding <= 0
-      ) {
-        setPageState("already_paid");
-      } else {
-        setPageState("ready");
       }
     })();
   }, [invoiceId]);

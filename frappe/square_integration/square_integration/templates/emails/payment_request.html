@@ -1,0 +1,63 @@
+{% set pay_url = "https://app.lstailors.com/pay/" + doc.name %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invoice {{ doc.name }} — L&S Custom Tailors</title>
+  <style>
+    body { margin: 0; padding: 0; background: #0f1a10; font-family: 'Georgia', serif; color: #f1e9d6; }
+    .wrapper { max-width: 560px; margin: 0 auto; padding: 40px 24px; }
+    .brand { text-align: center; margin-bottom: 32px; }
+    .brand h1 { font-style: italic; font-size: 26px; color: #f1e9d6; margin: 0 0 4px; letter-spacing: 0.02em; }
+    .brand p { font-family: 'Helvetica Neue', sans-serif; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: #b08d57; margin: 0; }
+    .card { background: rgba(15, 26, 16, 0.8); border: 1px solid rgba(176, 141, 87, 0.25); border-radius: 12px; padding: 28px; margin-bottom: 20px; }
+    .row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid rgba(176, 141, 87, 0.1); font-family: 'Helvetica Neue', sans-serif; font-size: 13px; }
+    .row:last-child { border-bottom: none; }
+    .label { color: rgba(241, 233, 214, 0.55); }
+    .value { color: #f1e9d6; font-weight: 500; }
+    .amount { color: #b08d57; font-size: 22px; font-style: italic; text-align: center; padding: 20px 0 4px; }
+    .pay-btn { display: block; text-align: center; background: #b08d57; color: #0f1a10; font-family: 'Helvetica Neue', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; text-decoration: none; border-radius: 8px; padding: 16px 32px; margin: 24px 0; }
+    .apple-note { text-align: center; font-family: 'Helvetica Neue', sans-serif; font-size: 11px; color: rgba(241, 233, 214, 0.45); margin-bottom: 8px; }
+    .link { color: #b08d57; font-family: 'Helvetica Neue', sans-serif; font-size: 12px; word-break: break-all; display: block; text-align: center; margin-bottom: 24px; }
+    .footer { text-align: center; font-family: 'Helvetica Neue', sans-serif; font-size: 11px; color: rgba(241, 233, 214, 0.35); line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="brand">
+      <h1>L&amp;S Custom Tailors</h1>
+      <p>Secure Invoice Payment</p>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <span class="label">Invoice</span>
+        <span class="value" style="font-family: monospace;">{{ doc.name }}</span>
+      </div>
+      <div class="row">
+        <span class="label">Customer</span>
+        <span class="value">{{ doc.customer_name }}</span>
+      </div>
+      {% if doc.due_date %}
+      <div class="row">
+        <span class="label">Due Date</span>
+        <span class="value">{{ frappe.format(doc.due_date, "Date") }}</span>
+      </div>
+      {% endif %}
+      <div class="amount">${{ "%.2f"|format(doc.outstanding_amount or doc.grand_total) }}</div>
+    </div>
+
+    <a href="{{ pay_url }}" class="pay-btn">Pay Now</a>
+
+    <p class="apple-note">Tap Pay Now on your iPhone or Mac to pay with Apple Pay, Google Pay, or card.</p>
+
+    <a href="{{ pay_url }}" class="link">{{ pay_url }}</a>
+
+    <div class="footer">
+      L&amp;S Custom Tailors · Secure payments powered by Square<br />
+      This link is unique to your invoice. Do not share it.
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,15 @@
+[
+  {
+    "doctype": "Notification",
+    "name": "Payment Request - Sales Invoice",
+    "subject": "Invoice {{ doc.name }} — ${{ '%.2f'|format(doc.outstanding_amount or doc.grand_total) }} due{% if doc.due_date %} {{ frappe.format(doc.due_date, 'Date') }}{% endif %}",
+    "document_type": "Sales Invoice",
+    "event": "Custom",
+    "method": "square_integration.api.send_payment_request_email",
+    "enabled": 1,
+    "send_to_all_assignees": 0,
+    "send_system_notification": 0,
+    "message_type": "Email",
+    "message": "{% set pay_url = 'https://app.lstailors.com/pay/' + doc.name %}\n\nHello {{ doc.customer_name }},\n\nYour invoice {{ doc.name }} for ${{ '%.2f'|format(doc.outstanding_amount or doc.grand_total) }} is ready.\n\nPay securely online (Apple Pay, Google Pay, or card):\n{{ pay_url }}\n\nThank you,\nL&S Custom Tailors"
+  }
+]

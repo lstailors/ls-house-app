@@ -83,3 +83,61 @@ def record_square_payment(invoice_id: str, square_payment_id: str, amount: float
         "invoice_id": invoice_id,
         "square_payment_id": square_payment_id,
     }
+
+
+@frappe.whitelist()
+def send_payment_request_email(invoice_id: str):
+    """
+    Sends a payment request email for a Sales Invoice with a Pay Now link
+    pointing to https://app.lstailors.com/pay/{invoice_id}.
+
+    Call from the ERPNext UI via:
+        frappe.call('square_integration.api.send_payment_request_email', { invoice_id: 'ACC-SINV-2026-00045' })
+
+    Or trigger automatically via the 'Payment Request - Sales Invoice' Notification.
+    """
+    invoice = frappe.get_doc("Sales Invoice", invoice_id)
+
+    if invoice.docstatus != 1:
+        frappe.throw(_(f"Invoice {invoice_id} must be submitted before sending a payment request."))
+
+    if invoice.outstanding_amount <= 0:
+        frappe.throw(_(f"Invoice {invoice_id} has no outstanding amount."))
+
+    pay_url = f"https://app.lstailors.com/pay/{invoice_id}"
+
+    recipient_email = frappe.db.get_value("Customer", invoice.customer, "email_id")
+    if not recipient_email:
+        frappe.throw(_(f"No email address on file for customer '{invoice.customer}'."))
+
+    subject = (
+        f"Invoice {invoice_id} — "
+        f"${invoice.outstanding_amount:.2f} due"
+        + (f" {frappe.utils.formatdate(invoice.due_date)}" if invoice.due_date else "")
+    )
+
+    template_path = frappe.get_app_path(
+        "square_integration", "templates", "emails", "payment_request.html"
+    )
+    with open(template_path, "r") as f:
+        html_template = f.read()
+
+    message = frappe.render_template(
+        html_template,
+        {"doc": invoice, "pay_url": pay_url},
+    )
+
+    frappe.sendmail(
+        recipients=[recipient_email],
+        subject=subject,
+        message=message,
+        reference_doctype="Sales Invoice",
+        reference_name=invoice_id,
+        now=True,
+    )
+
+    frappe.logger().info(
+        f"[square_integration] Payment request email sent for {invoice_id} to {recipient_email}"
+    )
+
+    return {"status": "sent", "recipient": recipient_email, "pay_url": pay_url}
