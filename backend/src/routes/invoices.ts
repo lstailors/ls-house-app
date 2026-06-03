@@ -16,8 +16,11 @@ async function mcpList<T>(doctype: string, fields: string[], filters: any[] = []
   });
   if (!res.ok) throw new Error(`MCP ${res.status}`);
   const json: any = await res.json();
+  // Surface JSON-RPC errors (HTTP 200 but error in payload)
+  if (json?.result?.isError) throw new Error(`MCP error: ${json.result?.content?.[0]?.text ?? 'unknown'}`);
   const text = json?.result?.content?.[0]?.text ?? '{}';
   const data = JSON.parse(text);
+  if (data?.error) throw new Error(`ERP error: ${JSON.stringify(data.error)}`);
   return (data?.documents ?? []) as T[];
 }
 
@@ -52,7 +55,6 @@ function serializeInvoice(row: any) {
     postingDate: row.posting_date ?? null,
     dueDate: row.due_date ?? null,
     remarks: row.remarks ?? null,
-    salesOrderId: row.sales_order ?? null,
     alterationTicketRef: (() => { const m = (row.remarks ?? '').match(/\b(ALT-\d+)\b/i); return m ? m[1] : null; })(),
     type: detectType(row),
   };
@@ -85,7 +87,7 @@ invoicesRouter.get("/", async (c) => {
 
     const rows = await mcpList<any>(
       'Sales Invoice',
-      ['name', 'customer', 'status', 'grand_total', 'outstanding_amount', 'paid_amount', 'posting_date', 'due_date', 'remarks', 'sales_order'],
+      ['name', 'customer', 'status', 'grand_total', 'outstanding_amount', 'paid_amount', 'posting_date', 'due_date', 'remarks'],
       filters, 300, 'posting_date desc'
     );
 
