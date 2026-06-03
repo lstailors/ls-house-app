@@ -1,0 +1,284 @@
+{
+  "name": "Square Terminal Webhook Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "square-terminal-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "a1b2c3d4-0001-0001-0001-000000000002"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "OK",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "a1b2c3d4-0002-0002-0002-000000000002",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 160]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verify Square webhook signature using HMAC-SHA256\n// Square-Signature header = HMAC_SHA256(notification_url + raw_body, SQUARE_WEBHOOK_SIGNATURE_KEY)\nconst crypto = require('crypto');\n\nconst signatureKey = $env.SQUARE_WEBHOOK_SIGNATURE_KEY;\nconst notificationUrl = $env.SQUARE_WEBHOOK_URL; // e.g. https://your-n8n.cloud/webhook/square-terminal-webhook\nconst rawBody = $input.first().json.rawBody ?? JSON.stringify($input.first().json.body);\nconst receivedSig = $input.first().json.headers['x-square-hmacsha256-signature'] \n                 ?? $input.first().json.headers['x-square-signature']\n                 ?? '';\n\nif (!signatureKey || !notificationUrl) {\n  throw new Error('Missing SQUARE_WEBHOOK_SIGNATURE_KEY or SQUARE_WEBHOOK_URL env vars');\n}\n\nconst expectedSig = crypto\n  .createHmac('sha256', signatureKey)\n  .update(notificationUrl + rawBody)\n  .digest('base64');\n\nif (expectedSig !== receivedSig) {\n  throw new Error('Invalid Square signature — request rejected');\n}\n\nreturn [{ json: { verified: true, body: $input.first().json.body } }];"
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000003",
+      "name": "Verify Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.type }}",
+              "operation": "equals",
+              "value2": "terminal.checkout.updated"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0004-0004-0004-000000000004",
+      "name": "Filter Checkout Updated",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const checkout = $input.first().json.body.data.object.checkout;\n\nconst squareStatus = checkout.status; // COMPLETED, CANCELED, CANCEL_REQUESTED\nconst statusMap = {\n  COMPLETED: 'completed',\n  CANCELED: 'cancelled',\n  CANCEL_REQUESTED: 'cancelled',\n};\n\nreturn [{\n  json: {\n    checkout_id: checkout.id,\n    invoice_id: checkout.reference_id,\n    status: statusMap[squareStatus] ?? 'failed',\n    square_status: squareStatus,\n    payment_ids: checkout.payment_ids ?? [],\n    payment_id: (checkout.payment_ids ?? [])[0] ?? null,\n  }\n}];"
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000005",
+      "name": "Extract Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "square_sync_log",
+          "mode": "list"
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "resource",
+              "fieldValue": "terminal_checkout"
+            },
+            {
+              "fieldId": "square_id",
+              "fieldValue": "={{ $json.checkout_id }}"
+            },
+            {
+              "fieldId": "phase",
+              "fieldValue": "webhook_received"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $json.status }}"
+            },
+            {
+              "fieldId": "erpnext_doctype",
+              "fieldValue": "Sales Invoice"
+            },
+            {
+              "fieldId": "erpnext_name",
+              "fieldValue": "={{ $json.invoice_id }}"
+            },
+            {
+              "fieldId": "message",
+              "fieldValue": "={{ 'Square terminal status: ' + $json.square_status }}"
+            },
+            {
+              "fieldId": "payload",
+              "fieldValue": "={{ JSON.stringify({ payment_ids: $json.payment_ids, square_status: $json.square_status }) }}"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0006-0006-0006-000000000006",
+      "name": "Update Supabase Sync Log",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1340, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-ls-house",
+          "name": "Supabase LS House"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equals",
+              "value2": "completed"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0007-0007-0007-000000000007",
+      "name": "If Completed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "square_sync_log",
+          "mode": "list"
+        },
+        "returnAll": false,
+        "limit": 1,
+        "filterByFormula": "square_id.eq.{{ $json.checkout_id }}&phase=eq.created&order=id.desc"
+      },
+      "id": "a1b2c3d4-0008-0008-0008-000000000008",
+      "name": "Fetch Original Log Row",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1780, 180],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-ls-house",
+          "name": "Supabase LS House"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.ERPNEXT_BASE_URL }}/api/method/square_integration.api.record_square_payment",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'token ' + $env.ERPNEXT_API_KEY + ':' + $env.ERPNEXT_API_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "invoice_id",
+              "value": "={{ $('Extract Fields').item.json.invoice_id }}"
+            },
+            {
+              "name": "square_payment_id",
+              "value": "={{ $('Extract Fields').item.json.payment_id }}"
+            },
+            {
+              "name": "amount",
+              "value": "={{ ($('Fetch Original Log Row').item.json.payload?.amount_cents ?? 0) / 100 }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "a1b2c3d4-0009-0009-0009-000000000009",
+      "name": "Record Payment in ERPNext",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2000, 180],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          { "node": "Respond 200", "type": "main", "index": 0 },
+          { "node": "Verify Signature", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Verify Signature": {
+      "main": [
+        [{ "node": "Filter Checkout Updated", "type": "main", "index": 0 }]
+      ]
+    },
+    "Filter Checkout Updated": {
+      "main": [
+        [{ "node": "Extract Fields", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Extract Fields": {
+      "main": [
+        [{ "node": "Update Supabase Sync Log", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update Supabase Sync Log": {
+      "main": [
+        [{ "node": "If Completed", "type": "main", "index": 0 }]
+      ]
+    },
+    "If Completed": {
+      "main": [
+        [{ "node": "Fetch Original Log Row", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Fetch Original Log Row": {
+      "main": [
+        [{ "node": "Record Payment in ERPNext", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromAList"
+  },
+  "versionId": "a1b2c3d4-0010-0010-0010-000000000010",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ls-house-n8n"
+  },
+  "id": "square-terminal-webhook-v1",
+  "tags": ["payments", "square", "terminal"]
+}

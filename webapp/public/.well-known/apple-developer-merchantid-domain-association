@@ -1,0 +1,10 @@
+PLACEHOLDER — Replace this file with the actual domain association file from Square Developer Dashboard.
+
+To enable Apple Pay:
+1. Log into https://developer.squareup.com
+2. Go to your app > Apple Pay tab
+3. Add domain: app.lstailors.com
+4. Download the domain association file Square provides
+5. Replace this file with the downloaded file (no extension, no modification)
+6. Deploy — Vercel will serve it at /.well-known/apple-developer-merchantid-domain-association
+7. Click Verify in Square Dashboard
