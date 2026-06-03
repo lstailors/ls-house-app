@@ -439,7 +439,8 @@ Be specific — use names, amounts, dates. Extract every commitment and action i
   const res = await fetch("https://api.x.ai/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "grok-3", messages: [{ role: "user", content: prompt }], max_tokens: 2000, temperature: 0.3 }),
+    body: JSON.stringify({ model: "grok-3-mini", messages: [{ role: "user", content: prompt }], max_tokens: 800, temperature: 0.3 }),
+    signal: AbortSignal.timeout(8000),
   });
   const grokData = await res.json() as any;
   const brief = grokData?.choices?.[0]?.message?.content?.trim() ?? "Unable to generate brief.";

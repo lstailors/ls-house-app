@@ -473,11 +473,15 @@ function EmptyState({ counts, dailyBrief, onFilter }: { counts: any; dailyBrief:
 
   const runBrief = async () => {
     setBriefLoading(true);
+    setGeneratedBrief(null);
     try {
       const r = await api.get<{ brief: string }>("/api/comms/daily-brief/trigger");
-      setGeneratedBrief(r?.brief ?? null);
-    } catch { /* silent */ }
-    finally { setBriefLoading(false); }
+      setGeneratedBrief(r?.brief ?? "No brief generated.");
+    } catch (e: any) {
+      setGeneratedBrief(`Error: ${e?.message ?? "Request timed out — try again."}`);
+    } finally {
+      setBriefLoading(false);
+    }
   };
 
   if (!counts) return (
