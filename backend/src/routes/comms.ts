@@ -233,3 +233,80 @@ Be specific. Use actual names, dates, amounts from the transcripts. If a 10-minu
   const brief = grokData?.choices?.[0]?.message?.content?.trim() ?? "Unable to generate brief.";
   return c.json({ data: { brief, customer } });
 });
+
+// ── POST /api/comms/brief/recording/:id — Grok brief for a Plaud recording ─
+commsRouter.post("/brief/recording/:id", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!supabaseAdmin) return c.json({ data: { brief: "Supabase not available" } });
+
+  const { data: rec } = await supabaseAdmin
+    .from("plaud_captures")
+    .select("id, recorded_at, duration_seconds, summary_raw, transcript_raw, transcript_whisper, detected_customer_names, capture_type, detected_type, detected_action_items, extracted_action_items, maestro_notes")
+    .eq("id", c.req.param("id"))
+    .single();
+
+  if (!rec) return c.json({ error: { message: "Recording not found" } }, 404);
+
+  const apiKey = process.env.XAI_API_KEY;
+  if (!apiKey) return c.json({ data: { brief: "AI not configured" } });
+
+  const transcript = rec.transcript_raw || rec.transcript_whisper || "";
+  const summary = rec.summary_raw || "";
+  const duration = Math.round((rec.duration_seconds || 0) / 60);
+  const date = rec.recorded_at ? new Date(rec.recorded_at).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }) : "unknown date";
+  const customers = Array.isArray(rec.detected_customer_names) ? rec.detected_customer_names.join(", ") : (rec.detected_customer_names || "unknown");
+  const existingActions = rec.extracted_action_items || rec.detected_action_items;
+
+  const prompt = `You are Sofia, the intelligence assistant for L&S Custom Tailors — a luxury bespoke house in NYC.
+
+A ${duration}-minute ${rec.capture_type || rec.detected_type || "meeting"} was recorded on ${date} with: ${customers}.
+
+Analyze the full content and produce a structured intelligence brief:
+
+**SUMMARY**
+What was this meeting/call about? 2-3 specific sentences.
+
+**KEY DECISIONS**
+Any decisions made or agreed upon.
+
+**ACTION ITEMS**
+- [ ] Task (Owner — due date if mentioned)
+List every concrete next step mentioned.
+
+**COMMITMENTS**
+What was promised by each party? Include any dates, amounts, deadlines.
+
+**FOLLOW-UPS NEEDED**
+Open questions or items needing resolution.
+
+**CALENDAR / APPOINTMENTS**
+Any appointments, fittings, delivery dates, or deadlines mentioned.
+
+**ORDERS / BUSINESS**
+Any order details, fabric choices, measurements, or product discussions.
+
+**SENTIMENT & RELATIONSHIP**
+How did the conversation go? Customer satisfaction, relationship health.
+
+---
+${summary ? `EXISTING SUMMARY:\n${summary.slice(0, 2000)}\n\n` : ""}${transcript ? `FULL TRANSCRIPT:\n${transcript.slice(0, 4000)}` : "No transcript available."}
+${existingActions ? `\nEXISTING ACTION ITEMS DETECTED:\n${JSON.stringify(existingActions)}` : ""}
+---
+
+Extract everything concrete. Use actual names, amounts, dates from the transcript. This is a ${duration}-minute recording — there should be substantial detail.`;
+
+  const res = await fetch("https://api.x.ai/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "grok-3",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 1500,
+      temperature: 0.3,
+    }),
+  });
+  const grokData = await res.json() as any;
+  const brief = grokData?.choices?.[0]?.message?.content?.trim() ?? "Unable to generate brief.";
+  return c.json({ data: { brief } });
+});

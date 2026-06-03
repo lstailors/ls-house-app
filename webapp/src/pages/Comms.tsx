@@ -304,8 +304,20 @@ function SmsThreadPanel({ thread, onBrief }: { thread: any; onBrief: (phone: str
 
 function RecordingPanel({ item }: { item: any }) {
   const [showTranscript, setShowTranscript] = useState(false);
+  const [brief, setBrief] = useState<string | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
   const summary = item.summary_raw || "";
   const customers = item.detected_customer_names;
+
+  const handleBrief = async () => {
+    setBriefLoading(true);
+    setBrief(null);
+    try {
+      const result = await api.post<{ brief: string }>(`/api/comms/brief/recording/${item.id}`, {});
+      setBrief(result?.brief ?? null);
+    } catch { setBrief("Unable to generate brief."); }
+    finally { setBriefLoading(false); }
+  };
 
   // Split summary into sections by ### headers
   const sections = summary.split(/\n(?=###\s)/);
@@ -326,6 +338,36 @@ function RecordingPanel({ item }: { item: any }) {
           </span>
         )}
       </div>
+
+      {/* Sofia Brief button */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleBrief}
+          disabled={briefLoading}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-brass/15 border border-brass/30 text-brass-shimmer text-sm hover:bg-brass/25 transition-all disabled:opacity-50"
+        >
+          <Sparkles className="w-4 h-4" />
+          {briefLoading ? "Generating brief…" : "⚡ Sofia Brief"}
+        </button>
+        {brief && (
+          <button onClick={() => setBrief(null)} className="text-xs text-cream-dim hover:text-cream">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      {/* Brief result */}
+      {brief && (
+        <GlassCard className="p-4 border border-brass/30">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="w-4 h-4 text-brass" />
+            <span className="ui-label text-brass">Sofia Intelligence Brief</span>
+          </div>
+          <div className="text-cream text-sm leading-relaxed whitespace-pre-wrap">
+            {brief}
+          </div>
+        </GlassCard>
+      )}
 
       {/* Detected customers */}
       {customers && customers.length > 0 && (
