@@ -81,11 +81,14 @@ unifiRouter.get("/events", async (c) => {
 // Called by Vercel cron (daily) OR Mac Studio crontab (every 1 min).
 // Accepts either a user session OR X-Sync-Secret header.
 unifiRouter.post("/sync", async (c) => {
-  const secret = process.env.UNIFI_SYNC_SECRET;
-  const provided = c.req.header("X-Sync-Secret");
-  const isAuthorized = (secret && provided === secret) ||
-    await getAuthedUser(c).then(u => !!u).catch(() => false);
-  if (!isAuthorized) return c.json({ error: { message: "Unauthorized" } }, 401);
+  const syncSecret = process.env.UNIFI_SYNC_SECRET;
+  const providedSecret = c.req.header("X-Sync-Secret");
+  if (syncSecret && providedSecret === syncSecret) {
+    // Authorized via sync secret — skip user session check
+  } else {
+    const user = await getAuthedUser(c);
+    if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  }
   if (!supabaseAdmin) return c.json({ error: { message: "Supabase unavailable" } }, 503);
 
   try {
