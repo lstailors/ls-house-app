@@ -35,6 +35,7 @@ import { cartsRouter } from "./routes/carts";
 import { ravenRouter } from "./routes/raven";
 import { mcpRouter } from "./routes/mcp";
 import { webhooksRouter } from "./routes/webhooks";
+import { unifiRouter } from "./routes/unifi";
 
 const app = new Hono();
 
@@ -104,5 +105,6 @@ app.route("/api/carts", cartsRouter);
 app.route("/api/raven", ravenRouter);
 app.route("/api/mcp", mcpRouter);
 app.route("/api/webhooks", webhooksRouter);
+app.route("/api/unifi", unifiRouter);
 
 export default app;
