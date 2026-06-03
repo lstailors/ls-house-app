@@ -1318,14 +1318,14 @@ function SuccessState({
 
         <div className="space-y-3">
           <button
-            onClick={() => window.open(`/intake/alterations/tickets/${ticketName}/print`)}
+            onClick={() => window.open(`/orders/alterations/${ticketName}/receipt`)}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-brass/30 text-cream hover:bg-brass/10 transition-colors"
           >
             <Printer className="w-4 h-4 text-brass-shimmer" />
             Print Receipt
           </button>
           <button
-            onClick={() => window.open(`/intake/alterations/tickets/${ticketName}/tags`)}
+            onClick={() => window.open(`/orders/alterations/${ticketName}/tags`)}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-brass/30 text-cream hover:bg-brass/10 transition-colors"
           >
             <Tag className="w-4 h-4 text-brass-shimmer" />
