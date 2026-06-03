@@ -301,6 +301,10 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
       garment_description: g.description || g.garmentType,
       color: g.color || '',
       fabric_notes: g.notes || '',
+      fabric_type: g.fabric || '',
+      garment_condition: g.condition || '',
+      fit_area: Array.isArray(g.fitAreas) ? g.fitAreas.join(', ') : (g.fitAreas || ''),
+      complexity: g.complexity || '',
     })),
     lines: garments.flatMap((g: any) =>
       (g.lines ?? []).map((l: any) => ({
@@ -471,6 +475,35 @@ intakeAlterationsRouter.get('/customers/:id', async (c) => {
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }
+});
+
+// POST /photos — upload garment photo to Supabase storage
+intakeAlterationsRouter.post('/photos', async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+  const formData = await c.req.formData();
+  const file = formData.get('file') as File | null;
+  const path = formData.get('path') as string | null;
+
+  if (!file || !path) return c.json({ error: 'file and path required' }, 400);
+
+  if (!supabaseAdmin) return c.json({ error: 'Storage unavailable' }, 503);
+
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = new Uint8Array(arrayBuffer);
+
+  const { data, error } = await supabaseAdmin.storage
+    .from('garment-photos')
+    .upload(path, buffer, { contentType: file.type, upsert: false });
+
+  if (error) return c.json({ error: error.message }, 500);
+
+  const { data: urlData } = supabaseAdmin.storage
+    .from('garment-photos')
+    .getPublicUrl(data.path);
+
+  return c.json({ data: { url: urlData.publicUrl, path: data.path } });
 });
 
 // PATCH /customers/:id — update phone, email, address, notes in ERPNext

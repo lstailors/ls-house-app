@@ -4,7 +4,8 @@ import { toast } from 'sonner'
 import {
   Plus, X, Check, ChevronDown, Printer, Tag, RefreshCw,
   AlertCircle, Loader2, ShoppingBag, Zap, CreditCard,
-  Banknote, ClipboardList, Search, User, Phone, Mail, MapPin
+  Banknote, ClipboardList, Search, User, Phone, Mail, MapPin,
+  Camera
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -33,6 +34,11 @@ type GarmentItem = {
   color: string
   notes: string
   lines: AlterationLine[]
+  fabric: string
+  condition: string
+  fitAreas: string[]
+  complexity: string
+  photos: string[]
 }
 
 type Customer = { id?: string; name: string; phone: string; email: string } | null
@@ -530,6 +536,253 @@ function ColorSwatchPicker({ value, onChange }: { value: string; onChange: (v: s
   )
 }
 
+// ─── Fabric Picker ────────────────────────────────────────────────────────────
+const FABRICS = ['Wool', 'Cotton', 'Linen', 'Cashmere', 'Silk', 'Denim', 'Leather', 'Synthetic']
+
+function FabricPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {FABRICS.map(label => {
+        const selected = value === label
+        return (
+          <button
+            key={label}
+            type="button"
+            onClick={() => onChange(selected ? '' : label)}
+            className={cn(
+              'px-3 py-1 rounded-full text-xs font-medium border transition-all',
+              selected
+                ? 'bg-brass/25 border-brass-shimmer text-brass-shimmer'
+                : 'border-brass/20 text-cream-muted hover:border-brass/40 hover:text-cream'
+            )}
+          >
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Condition Picker ─────────────────────────────────────────────────────────
+const CONDITIONS = [
+  { label: 'Excellent', color: 'emerald' },
+  { label: 'Good',      color: 'emerald' },
+  { label: 'Fair',      color: 'amber'   },
+  { label: 'Worn',      color: 'amber'   },
+  { label: 'Damaged',   color: 'rose'    },
+]
+
+const CONDITION_DOT: Record<string, string> = {
+  emerald: 'bg-emerald-400',
+  amber:   'bg-amber-400',
+  rose:    'bg-rose-400',
+}
+const CONDITION_SELECTED: Record<string, string> = {
+  emerald: 'bg-emerald-500/20 border-emerald-400/60 text-emerald-300',
+  amber:   'bg-amber-500/20 border-amber-400/60 text-amber-300',
+  rose:    'bg-rose-500/20 border-rose-400/60 text-rose-300',
+}
+
+function ConditionPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {CONDITIONS.map(({ label, color }) => {
+        const selected = value === label
+        return (
+          <button
+            key={label}
+            type="button"
+            onClick={() => onChange(selected ? '' : label)}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all',
+              selected
+                ? CONDITION_SELECTED[color]
+                : 'border-brass/20 text-cream-muted hover:border-brass/40 hover:text-cream'
+            )}
+          >
+            <span className={cn('w-2 h-2 rounded-full flex-shrink-0', CONDITION_DOT[color])} />
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Fit Area Picker ──────────────────────────────────────────────────────────
+const FIT_AREAS = ['Waist', 'Shoulders', 'Sleeves', 'Length', 'Seat', 'Chest', 'Hem', 'Collar', 'Lining']
+
+function FitAreaPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const toggle = (area: string) => {
+    if (value.includes(area)) {
+      onChange(value.filter(a => a !== area))
+    } else {
+      onChange([...value, area])
+    }
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      {FIT_AREAS.map(area => {
+        const selected = value.includes(area)
+        return (
+          <button
+            key={area}
+            type="button"
+            onClick={() => toggle(area)}
+            className={cn(
+              'px-3 py-1 rounded-full text-xs font-medium border transition-all',
+              selected
+                ? 'bg-brass/25 border-brass-shimmer text-brass-shimmer'
+                : 'border-brass/20 text-cream-muted hover:border-brass/40 hover:text-cream'
+            )}
+          >
+            {area}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Complexity Picker ────────────────────────────────────────────────────────
+const COMPLEXITIES = [
+  { label: 'Simple',   desc: '1–2 alterations'       },
+  { label: 'Standard', desc: '3–5 alterations'        },
+  { label: 'Complex',  desc: '6+ or structural'       },
+]
+
+function ComplexityPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {COMPLEXITIES.map(({ label, desc }) => {
+        const selected = value === label
+        return (
+          <button
+            key={label}
+            type="button"
+            onClick={() => onChange(selected ? '' : label)}
+            className={cn(
+              'flex flex-col items-start px-4 py-2 rounded-xl border transition-all text-left min-w-[90px]',
+              selected
+                ? 'bg-brass/25 border-brass-shimmer text-brass-shimmer'
+                : 'border-brass/20 text-cream-muted hover:border-brass/40 hover:text-cream'
+            )}
+          >
+            <span className="text-xs font-semibold">{label}</span>
+            <span className={cn('text-[10px] mt-0.5', selected ? 'text-brass-light/70' : 'text-cream-dim')}>{desc}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Garment Photo Capture ────────────────────────────────────────────────────
+interface GarmentPhotoCaptureProps {
+  garmentId: string
+  ticketRef: string
+  photos: string[]
+  onChange: (photos: string[]) => void
+}
+
+function GarmentPhotoCapture({ garmentId, ticketRef, photos, onChange }: GarmentPhotoCaptureProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState<Record<string, number>>({})
+
+  const uploadPhoto = async (file: File): Promise<string | null> => {
+    const path = `intake/${ticketRef}/${garmentId}/${Date.now()}-${file.name}`
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('path', path)
+
+    try {
+      const res = await fetch('/api/intake-alterations/photos', {
+        method: 'POST',
+        body: formData,
+      })
+      if (!res.ok) return null
+      const data = await res.json()
+      return (data as any).data?.url ?? null
+    } catch {
+      return null
+    }
+  }
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    const fileArr = Array.from(files)
+    for (const file of fileArr) {
+      const key = `${file.name}-${Date.now()}`
+      setUploading(prev => ({ ...prev, [key]: 0 }))
+      const url = await uploadPhoto(file)
+      setUploading(prev => { const next = { ...prev }; delete next[key]; return next })
+      if (url) {
+        onChange([...photos, url])
+      } else {
+        toast.error(`Failed to upload ${file.name}`)
+      }
+    }
+  }
+
+  const removePhoto = (url: string) => {
+    onChange(photos.filter(p => p !== url))
+  }
+
+  const uploadingCount = Object.keys(uploading).length
+
+  return (
+    <div className="space-y-3">
+      {/* Thumbnail grid */}
+      {photos.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          {photos.map((url, i) => (
+            <div key={i} className="relative group aspect-square rounded-lg overflow-hidden border border-brass/20">
+              <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+              <button
+                type="button"
+                onClick={() => removePhoto(url)}
+                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-900/80 text-red-300 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+          {uploadingCount > 0 && Array.from({ length: uploadingCount }).map((_, i) => (
+            <div key={`uploading-${i}`} className="aspect-square rounded-lg border border-brass/20 bg-forest-deep flex items-center justify-center">
+              <Loader2 className="w-4 h-4 text-brass-shimmer animate-spin" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add photos button */}
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={uploadingCount > 0}
+        className="flex items-center gap-2 px-4 py-2 rounded-xl border border-dashed border-brass/30 text-cream-muted hover:border-brass/50 hover:text-cream transition-all text-sm disabled:opacity-50"
+      >
+        {uploadingCount > 0 ? (
+          <><Loader2 className="w-4 h-4 animate-spin text-brass-shimmer" /> Uploading…</>
+        ) : (
+          <><Camera className="w-4 h-4 text-brass-shimmer" /> Add Photos</>
+        )}
+      </button>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        multiple
+        className="hidden"
+        onChange={e => handleFiles(e.target.files)}
+      />
+    </div>
+  )
+}
+
 function ActiveGarmentCard({
   garment,
   presets,
@@ -627,6 +880,43 @@ function ActiveGarmentCard({
             placeholder="Special instructions, fabric notes…"
             value={garment.notes}
             onChange={e => onUpdate({ ...garment, notes: e.target.value })}
+          />
+        </div>
+
+        {/* Fabric + Condition row */}
+        <div>
+          <label className="ui-label text-cream-muted mb-1 block">Fabric</label>
+          <FabricPicker value={garment.fabric} onChange={fabric => onUpdate({ ...garment, fabric })} />
+        </div>
+        <div>
+          <label className="ui-label text-cream-muted mb-1 block">Condition</label>
+          <ConditionPicker value={garment.condition} onChange={condition => onUpdate({ ...garment, condition })} />
+        </div>
+
+        {/* Fit Areas - full width */}
+        <div className="col-span-2">
+          <label className="ui-label text-cream-muted mb-1 block">
+            Fit Areas <span className="text-cream-dim">(select all that apply)</span>
+          </label>
+          <FitAreaPicker value={garment.fitAreas} onChange={fitAreas => onUpdate({ ...garment, fitAreas })} />
+        </div>
+
+        {/* Complexity - full width */}
+        <div className="col-span-2">
+          <label className="ui-label text-cream-muted mb-1 block">Complexity</label>
+          <ComplexityPicker value={garment.complexity} onChange={complexity => onUpdate({ ...garment, complexity })} />
+        </div>
+
+        {/* Photos - full width */}
+        <div className="col-span-2">
+          <label className="ui-label text-cream-muted mb-1 block">
+            Photos <span className="text-cream-dim">(damage, marks, reference)</span>
+          </label>
+          <GarmentPhotoCapture
+            garmentId={garment.id}
+            ticketRef={`temp-${garment.id}`}
+            photos={garment.photos}
+            onChange={photos => onUpdate({ ...garment, photos })}
           />
         </div>
       </div>
@@ -1094,6 +1384,11 @@ export default function IntakeAlterations() {
       color: '',
       notes: '',
       lines: [],
+      fabric: '',
+      condition: '',
+      fitAreas: [],
+      complexity: '',
+      photos: [],
     }
     setGarments(prev => [...prev, newItem])
     setActiveGarmentId(newItem.id)
@@ -1189,6 +1484,11 @@ export default function IntakeAlterations() {
         color: g.color,
         notes: g.notes,
         lines: g.lines,
+        fabric: g.fabric,
+        condition: g.condition,
+        fitAreas: g.fitAreas,
+        complexity: g.complexity,
+        photos: g.photos,
       })),
       lines: garments.flatMap(g => g.lines),
     } as CartPayload,
