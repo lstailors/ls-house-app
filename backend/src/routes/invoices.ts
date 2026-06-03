@@ -52,6 +52,8 @@ function serializeInvoice(row: any) {
     postingDate: row.posting_date ?? null,
     dueDate: row.due_date ?? null,
     remarks: row.remarks ?? null,
+    salesOrderId: row.sales_order ?? null,
+    alterationTicketRef: (() => { const m = (row.remarks ?? '').match(/\b(ALT-\d+)\b/i); return m ? m[1] : null; })(),
     type: detectType(row),
   };
 }
@@ -83,7 +85,7 @@ invoicesRouter.get("/", async (c) => {
 
     const rows = await mcpList<any>(
       'Sales Invoice',
-      ['name', 'customer', 'status', 'grand_total', 'outstanding_amount', 'paid_amount', 'posting_date', 'due_date', 'remarks'],
+      ['name', 'customer', 'status', 'grand_total', 'outstanding_amount', 'paid_amount', 'posting_date', 'due_date', 'remarks', 'sales_order'],
       filters, 300, 'posting_date desc'
     );
 

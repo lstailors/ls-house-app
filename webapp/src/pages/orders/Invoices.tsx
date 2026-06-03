@@ -1,5 +1,5 @@
 import { useMemo, useState, useRef, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { FileText, Scissors } from "lucide-react";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { DataTable, type Column } from "@/components/glass/DataTable";
@@ -10,25 +10,28 @@ import { useInvoices } from "@/lib/queries";
 import { formatUSD, formatDate } from "@/lib/format";
 import type { Invoice } from "@/lib/types";
 
-// Use actual ERPNext status values returned by the backend
+// Use lowercase status values to match backend normalization
 const FILTERS = [
   { value: "all",      label: "All"     },
-  { value: "Unpaid",   label: "Unpaid"  },
-  { value: "Overdue",  label: "Overdue" },
-  { value: "Paid",     label: "Paid"    },
-  { value: "Draft",    label: "Draft"   },
-  { value: "Void",     label: "Void"    },
+  { value: "unpaid",   label: "Unpaid"  },
+  { value: "overdue",  label: "Overdue" },
+  { value: "paid",     label: "Paid"    },
+  { value: "draft",    label: "Draft"   },
+  { value: "void",     label: "Void"    },
 ];
 
 // Extended Invoice type with extra fields the new backend returns
 interface ErpInvoice extends Invoice {
   alterationTicketRef?: string | null;
-  outstanding?: number;
+  outstandingAmount?: number;
   dueDate?: string | null;
+  postingDate?: string | null;
+  salesOrderId?: string | null;
 }
 
 export default function Invoices() {
   const { data: invoices = [], isLoading } = useInvoices();
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [searchParams] = useSearchParams();
@@ -63,10 +66,10 @@ export default function Invoices() {
   const totals = useMemo(() => {
     const all = invoices as ErpInvoice[];
     return {
-      paid: all.filter((i) => i.status === "Paid").reduce((s, i) => s + i.total, 0),
+      paid: all.filter((i) => i.status === "paid").reduce((s, i) => s + i.total, 0),
       outstanding: all
-        .filter((i) => i.status === "Unpaid" || i.status === "Overdue")
-        .reduce((s, i) => s + (i.outstanding ?? i.total), 0),
+        .filter((i) => i.status === "unpaid" || i.status === "overdue")
+        .reduce((s, i) => s + (i.outstandingAmount ?? i.total), 0),
     };
   }, [invoices]);
 
@@ -107,8 +110,8 @@ export default function Invoices() {
     {
       key: "date",
       header: "Date",
-      accessor: (i) => i.createdAt ?? "",
-      cell: (i) => <span className="text-cream-dim text-xs">{formatDate(i.createdAt)}</span>,
+      accessor: (i) => i.postingDate ?? "",
+      cell: (i) => <span className="text-cream-dim text-xs">{formatDate(i.postingDate)}</span>,
     },
     {
       key: "dueDate" as any,
@@ -130,10 +133,10 @@ export default function Invoices() {
       key: "total",
       header: "Outstanding",
       align: "right",
-      accessor: (i) => i.outstanding ?? 0,
+      accessor: (i) => i.outstandingAmount ?? 0,
       cell: (i) => (
         <span className="font-mono text-xs text-cream-dim tabular-nums">
-          {(i.outstanding ?? 0) > 0 ? formatUSD(i.outstanding ?? 0) : "—"}
+          {(i.outstandingAmount ?? 0) > 0 ? formatUSD(i.outstandingAmount ?? 0) : "—"}
         </span>
       ),
     },
@@ -191,6 +194,7 @@ export default function Invoices() {
           rows={rows}
           columns={columns}
           rowKey={(r) => r.id}
+          onRowClick={(row) => navigate(`/invoices/${encodeURIComponent(row.erpnextId ?? row.id)}`)}
           highlightRow={highlightId ? (r) => (r.erpnextId ?? r.id) === highlightId : undefined}
           highlightRef={highlightRef}
         />

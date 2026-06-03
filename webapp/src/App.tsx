@@ -15,6 +15,7 @@ import CustomOrderDetail from "./pages/orders/CustomOrderDetail";
 import SalesOrders from "./pages/orders/SalesOrders";
 import SalesOrderDetail from "./pages/orders/SalesOrderDetail";
 import Invoices from "./pages/orders/Invoices";
+import InvoiceDetail from "./pages/orders/InvoiceDetail";
 import Deliveries from "./pages/Deliveries";
 import DeliveryTracking from "./pages/DeliveryTracking";
 import DeliveryLabel from "./pages/DeliveryLabel";
@@ -177,6 +178,14 @@ const App = () => (
               element={
                 <RoleGuard allow={["super_admin", "store_manager"]}>
                   <Invoices />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/invoices/:id"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager"]}>
+                  <InvoiceDetail />
                 </RoleGuard>
               }
             />
