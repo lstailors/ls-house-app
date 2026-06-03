@@ -1493,15 +1493,16 @@ export default function IntakeAlterations() {
   }), [customer, garments])
 
   const handleResume = useCallback((cart: ParkedCart) => {
-    setCustomer(cart.customer ? {
-      id: cart.customer.id,
-      name: cart.customer.name || '',
-      phone: cart.customer.phone || '',
-      email: cart.customer.email || '',
+    const snap = cart.customer_snapshot as any
+    setCustomer(snap ? {
+      id: cart.customer_ref ?? snap.id ?? undefined,
+      name: snap.name ?? snap.fullName ?? snap.customer_name ?? '',
+      phone: snap.phone ?? snap.mobile_no ?? '',
+      email: snap.email ?? snap.email_id ?? '',
     } : null)
     setGarments(cart.cart?.garments ?? [])
     setActiveGarmentId(null)
-    setIsRush(false)
+    setIsRush(cart.cart?.isRush ?? false)
     setPaymentMethod('pay_now')
     setDeposit('')
   }, [])
