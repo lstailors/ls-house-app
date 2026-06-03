@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
-  Phone, PhoneCall,
+  Phone,
   PhoneIncoming,
   PhoneOutgoing,
   PhoneMissed,
