@@ -12,6 +12,8 @@ import {
   Truck,
   Bell,
   CheckCircle,
+  MessageSquare,
+  Send,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -117,6 +119,17 @@ export default function AlterationDetail() {
   const internalNotes   = t.internal_notes ?? ticket.notes ?? null;
   const customerNotes   = t.customer_notes ?? null;
   const total           = t.total ?? ticket.price ?? 0;
+  const customerPhone   = t.customer_phone ?? ticket.customer?.phone ?? "";
+
+  const [smsOpen, setSmsOpen] = useState(false);
+  const [smsText, setSmsText] = useState(
+    `Hi ${ticket.customer?.name?.split(" ")[0] ?? "there"}, your alteration ticket ${t.ticket_id ?? ticket.id} at L&S Custom Tailors — ${paymentStatus === "Paid" ? "is ready for pickup!" : `balance: $${Number(total).toFixed(2)}.`} Call us at 212-752-1638. — L&S Custom Tailors`
+  );
+  const smsMutation = useMutation({
+    mutationFn: () => api.post("/api/sofia/send", { to: customerPhone, message: smsText }),
+    onSuccess: () => { toast.success("SMS sent"); setSmsOpen(false); },
+    onError: (e: any) => toast.error(e?.message ?? "Failed to send SMS"),
+  });
 
   return (
     <div className="space-y-6 animate-fade-up">
@@ -155,27 +168,63 @@ export default function AlterationDetail() {
       </div>
 
       {/* Workflow actions */}
-      {transitions.length > 0 ? (
+      {(transitions.length > 0 || customerPhone) ? (
         <GlassCard variant="strong" className="p-5">
-          <div className="ui-label mb-3">Workflow Actions</div>
-          <div className="flex flex-wrap gap-2">
-            {transitions.map((tr) => (
-              <button
-                key={tr.action}
-                type="button"
-                onClick={() => advance.mutate(tr.action)}
-                disabled={advance.isPending}
-                className={cn(
-                  "rounded-full border px-4 py-1.5 text-sm font-medium transition-all disabled:opacity-50",
-                  actionColor(tr.action),
-                )}
-              >
-                {tr.label ?? actionLabel(tr.action)}
+          <div className="flex items-center justify-between mb-3">
+            <div className="ui-label">Actions</div>
+            {customerPhone ? (
+              <button onClick={() => setSmsOpen(true)} className="inline-flex items-center gap-1.5 text-xs border border-brass/30 rounded-lg px-3 py-1.5 text-brass-shimmer hover:bg-brass/10 transition-colors">
+                <MessageSquare className="h-3.5 w-3.5" /> SMS Customer
               </button>
-            ))}
+            ) : null}
           </div>
+          {transitions.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {transitions.map((tr) => (
+                <button
+                  key={tr.action}
+                  type="button"
+                  onClick={() => advance.mutate(tr.action)}
+                  disabled={advance.isPending}
+                  className={cn(
+                    "rounded-full border px-4 py-1.5 text-sm font-medium transition-all disabled:opacity-50",
+                    actionColor(tr.action),
+                  )}
+                >
+                  {tr.label ?? actionLabel(tr.action)}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </GlassCard>
       ) : null}
+
+      {/* SMS Modal */}
+      {smsOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="glass-panel-strong rounded-2xl p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4 text-brass" />
+                <span className="text-cream font-medium">Send SMS to {ticket.customer?.name ?? customerPhone}</span>
+              </div>
+              <span className="text-xs text-cream-dim font-mono">{customerPhone}</span>
+            </div>
+            <textarea rows={4} value={smsText} onChange={e => setSmsText(e.target.value)}
+              className="w-full bg-forest-raised border border-brass/20 rounded-xl px-3 py-2.5 text-cream text-sm focus:outline-none focus:border-brass/50 resize-none mb-3" />
+            <div className="flex gap-2">
+              <button onClick={() => smsMutation.mutate()} disabled={smsMutation.isPending || !smsText.trim()}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-brass/20 border border-brass/40 text-brass-shimmer font-medium text-sm hover:bg-brass/30 transition-all disabled:opacity-50">
+                <Send className="h-3.5 w-3.5" />
+                {smsMutation.isPending ? "Sending…" : "Send SMS"}
+              </button>
+              <button onClick={() => setSmsOpen(false)} className="px-4 py-2.5 rounded-xl border border-brass/20 text-cream-muted text-sm hover:border-brass/40 transition-all">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 items-start">
         {/* Left column */}

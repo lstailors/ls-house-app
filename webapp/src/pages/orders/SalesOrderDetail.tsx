@@ -14,6 +14,7 @@ import {
   Calendar,
   DollarSign,
   FileText,
+  MessageSquare,
   ArrowUpRight,
   Send,
 } from "lucide-react"
@@ -228,6 +229,16 @@ export default function SalesOrderDetail() {
   const erpOrderUrl = `https://erp.lstailors.com/sales-order/${order.name}`
   const balanceDue = order.grandTotal - order.advancePaid
   const emailAddress = order.contactEmail ?? order.customerEmail ?? ""
+  const phoneNumber = order.contactMobile ?? order.contactPhone ?? ""
+  const [smsOpen, setSmsOpen] = useState(false)
+  const [smsText, setSmsText] = useState(
+    `Hi ${order.customerName?.split(" ")[0] ?? "there"}, your L&S order ${order.name} has a balance of $${Math.max(0, balanceDue).toFixed(2)}. Please call us at 212-752-1638 or reply to arrange. — L&S Custom Tailors`
+  )
+  const smsMutation = useMutation({
+    mutationFn: () => api.post("/api/sofia/send", { to: phoneNumber, message: smsText }),
+    onSuccess: () => { toast.success("SMS sent"); setSmsOpen(false); },
+    onError: (e: any) => toast.error(e?.message ?? "Failed to send SMS"),
+  })
 
   const emailCustomer = () => {
     const subject = encodeURIComponent(`Your L&S Custom Tailors Order ${order.name}`)
@@ -264,20 +275,17 @@ export default function SalesOrderDetail() {
 
           <div className="flex items-center gap-2 flex-wrap">
             {emailAddress ? (
-              <button
-                onClick={emailCustomer}
-                className="inline-flex items-center gap-1.5 text-xs border border-emerald-500/30 rounded-lg px-3 py-1.5 text-emerald-400 hover:bg-emerald-500/10 transition-colors"
-              >
-                <Send className="h-3.5 w-3.5" /> Email Customer
+              <button onClick={emailCustomer} className="inline-flex items-center gap-1.5 text-xs border border-emerald-500/30 rounded-lg px-3 py-1.5 text-emerald-400 hover:bg-emerald-500/10 transition-colors">
+                <Send className="h-3.5 w-3.5" /> Email
               </button>
             ) : null}
-            <a
-              href={erpOrderUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs border border-brass/30 rounded-lg px-3 py-1.5 text-brass-light hover:bg-brass/10 transition-colors"
-            >
-              <ExternalLink className="h-3.5 w-3.5" /> Open in ERPNext
+            {phoneNumber ? (
+              <button onClick={() => setSmsOpen(true)} className="inline-flex items-center gap-1.5 text-xs border border-brass/30 rounded-lg px-3 py-1.5 text-brass-shimmer hover:bg-brass/10 transition-colors">
+                <MessageSquare className="h-3.5 w-3.5" /> SMS
+              </button>
+            ) : null}
+            <a href={erpOrderUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs border border-brass/20 rounded-lg px-3 py-1.5 text-cream-muted hover:bg-brass/10 transition-colors">
+              <ExternalLink className="h-3.5 w-3.5" /> ERPNext
             </a>
           </div>
         </div>
@@ -625,6 +633,40 @@ export default function SalesOrderDetail() {
           </GlassCard>
         </div>
       </div>
+
+      {/* SMS Modal */}
+      {smsOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="glass-panel-strong rounded-2xl p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4 text-brass" />
+                <span className="text-cream font-medium">Send SMS</span>
+              </div>
+              <span className="text-xs text-cream-dim font-mono">{phoneNumber}</span>
+            </div>
+            <textarea
+              rows={4}
+              value={smsText}
+              onChange={e => setSmsText(e.target.value)}
+              className="w-full bg-forest-raised border border-brass/20 rounded-xl px-3 py-2.5 text-cream text-sm focus:outline-none focus:border-brass/50 resize-none mb-3"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => smsMutation.mutate()}
+                disabled={smsMutation.isPending || !smsText.trim()}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-brass/20 border border-brass/40 text-brass-shimmer font-medium text-sm hover:bg-brass/30 transition-all disabled:opacity-50"
+              >
+                <Send className="h-3.5 w-3.5" />
+                {smsMutation.isPending ? "Sending…" : "Send SMS"}
+              </button>
+              <button onClick={() => setSmsOpen(false)} className="px-4 py-2.5 rounded-xl border border-brass/20 text-cream-muted text-sm hover:border-brass/40 transition-all">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
