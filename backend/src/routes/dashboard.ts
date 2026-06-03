@@ -172,15 +172,15 @@ dashboardRouter.get("/kpis", async (c) => {
     }
   }
 
-  // Fetch open alteration tickets from ERPNext (Received + In Progress)
+  // Fetch open alteration tickets from ERPNext (Received + In Progress) — includes workflow_state for breakdown
   const erpFilters: unknown[] = [["workflow_state", "in", ["Received", "In Progress"]]];
   if (locCode) erpFilters.push(["origin_location", "=", locCode]);
-  const openAltTickets = await erpList("Alteration Ticket", {
+  const altWithStatus = await erpList<{ name: string; workflow_state: string }>("Alteration Ticket", {
     filters: erpFilters,
-    fields: ["name"],
+    fields: ["name", "workflow_state"],
     limit: 500,
   }).catch(() => []);
-  const openAlterations = openAltTickets.length;
+  const openAlterations = altWithStatus.length;
 
   // Additional alteration stats from ERPNext
   const erpLocFilter: unknown[] = locCode ? [["origin_location", "=", locCode]] : [];
@@ -198,12 +198,6 @@ dashboardRouter.get("/kpis", async (c) => {
   const altOverdue = altOverdueTickets.length;
   const altRush = altRushTickets.length;
   const altRevenueMTD = altRevTickets.reduce((s, t: any) => s + Number(t.ticket_total ?? 0), 0);
-
-  const altWithStatus = await erpList<{ name: string; workflow_state: string }>("Alteration Ticket", {
-    filters: [...erpLocFilter, ["workflow_state", "in", ["Received", "In Progress"]]],
-    fields: ["name", "workflow_state"],
-    limit: 500,
-  }).catch(() => []);
   const altByStatus = {
     received: altWithStatus.filter((t) => t.workflow_state === "Received").length,
     inProgress: altWithStatus.filter((t) => t.workflow_state === "In Progress").length,

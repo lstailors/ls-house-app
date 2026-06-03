@@ -33,6 +33,7 @@ export function useLocations() {
   return useQuery({
     queryKey: ["locations"],
     queryFn: () => api.get<Location[]>("/api/locations"),
+    staleTime: 10 * 60_000,
   });
 }
 
@@ -42,6 +43,7 @@ export function useDashboardKpis() {
     queryKey: ["dashboard", "kpis", activeLocationId],
     queryFn: () =>
       api.get<DashboardKpis>(`/api/dashboard/kpis${locationQueryString(activeLocationId)}`),
+    staleTime: 60_000,
   });
 }
 
@@ -69,6 +71,7 @@ export function useFinancials() {
         pipeline: Array<{ stage: string; label: string; count: number; value: number }>;
         topGarments: Array<{ type: string; units: number; revenue: number; avgPrice: number }>;
       }>(`/api/dashboard/financials${locationQueryString(activeLocationId)}`),
+    staleTime: 60_000,
   });
 }
 
@@ -78,6 +81,7 @@ export function useAlterations() {
     queryKey: ["alterations", activeLocationId],
     queryFn: () =>
       api.get<Alteration[]>(`/api/alterations${locationQueryString(activeLocationId)}`),
+    staleTime: 60_000,
   });
 }
 
@@ -89,6 +93,7 @@ export function useCustomOrders() {
       api.get<CustomOrder[]>(
         `/api/custom-orders${locationQueryString(activeLocationId)}`,
       ),
+    staleTime: 60_000,
   });
 }
 
@@ -97,6 +102,7 @@ export function useCustomOrder(id: string | undefined) {
     queryKey: ["custom-orders", "detail", id],
     queryFn: () => api.get<CustomOrder>(`/api/custom-orders/${id}`),
     enabled: !!id,
+    staleTime: 30_000,
   });
 }
 
@@ -106,6 +112,7 @@ export function useCustomers() {
     queryKey: ["customers", activeLocationId],
     queryFn: () =>
       api.get<Customer[]>(`/api/customers${locationQueryString(activeLocationId)}`),
+    staleTime: 60_000,
   });
 }
 
@@ -129,6 +136,7 @@ export function useInvoices() {
     queryKey: ["invoices", activeLocationId],
     queryFn: () =>
       api.get<Invoice[]>(`/api/invoices${locationQueryString(activeLocationId)}`),
+    staleTime: 60_000,
   });
 }
 
@@ -138,6 +146,7 @@ export function useDeliveries() {
     queryKey: ["deliveries", activeLocationId],
     queryFn: () =>
       api.get<Delivery[]>(`/api/deliveries${locationQueryString(activeLocationId)}`),
+    staleTime: 60_000,
   });
 }
 
@@ -152,6 +161,7 @@ export function useCommunications(customerId?: string) {
       const q = params.toString();
       return api.get<Communication[]>(`/api/communications${q ? `?${q}` : ""}`);
     },
+    staleTime: 60_000,
   });
 }
 
@@ -159,6 +169,7 @@ export function useFabrics() {
   return useQuery({
     queryKey: ["fabrics"],
     queryFn: () => api.get<FabricPricing[]>("/api/reference/fabrics"),
+    staleTime: 10 * 60_000,
   });
 }
 
@@ -166,6 +177,7 @@ export function useStyleOptions() {
   return useQuery({
     queryKey: ["styles"],
     queryFn: () => api.get<StyleOption[]>("/api/reference/styles"),
+    staleTime: 10 * 60_000,
   });
 }
 
@@ -173,6 +185,7 @@ export function useTailors() {
   return useQuery({
     queryKey: ["tailors"],
     queryFn: () => api.get<Tailor[]>("/api/reference/tailors"),
+    staleTime: 10 * 60_000,
   });
 }
 
@@ -201,6 +214,7 @@ export function useAlterationDetail(id: string | undefined) {
     queryKey: ["alterations", "detail", id],
     queryFn: () => api.get<Alteration>(`/api/alterations/${id}`),
     enabled: !!id,
+    staleTime: 30_000,
   });
 }
 
@@ -209,6 +223,7 @@ export function useAlterationTransitions(id: string | undefined) {
     queryKey: ["alterations", "transitions", id],
     queryFn: () => api.get<Transition[]>(`/api/alterations/${id}/transitions`),
     enabled: !!id,
+    staleTime: 30_000,
   });
 }
 
@@ -332,6 +347,7 @@ export function useAdminUsers() {
   return useQuery({
     queryKey: ["admin", "users"],
     queryFn: () => api.get<Profile[]>("/api/admin/users"),
+    staleTime: 2 * 60_000,
   });
 }
 
@@ -347,6 +363,7 @@ export function useAdminOverview() {
         totalAlterations: number;
         totalDeliveries: number;
       }>("/api/admin/overview"),
+    staleTime: 2 * 60_000,
   });
 }
 
@@ -357,6 +374,7 @@ export function useMaestroBrief() {
     queryKey: ["maestro", "brief"],
     queryFn: () => api.get<any>("/api/maestro/brief"),
     refetchInterval: 5 * 60 * 1000, // 5 min
+    staleTime: 4 * 60_000,
   });
 }
 
@@ -374,6 +392,7 @@ export function useMaestroApprovals() {
     queryKey: ["maestro", "approvals"],
     queryFn: () => api.get<any[]>("/api/maestro/approvals"),
     refetchInterval: 60 * 1000, // 1 min
+    staleTime: 30_000,
   });
 }
 
@@ -393,6 +412,7 @@ export function useSofiaConversations() {
     queryKey: ["sofia", "conversations"],
     queryFn: () => api.get<any[]>("/api/sofia/conversations"),
     refetchInterval: 30 * 1000,
+    staleTime: 15_000,
   });
 }
 
@@ -401,6 +421,7 @@ export function useSofiaThread(phone: string | null) {
     queryKey: ["sofia", "thread", phone],
     queryFn: () => api.get<any[]>(`/api/sofia/conversations/${encodeURIComponent(phone!)}`),
     enabled: !!phone,
+    staleTime: 15_000,
   });
 }
 
@@ -418,6 +439,7 @@ export function useSofiaVoiceApprovals() {
     queryKey: ["sofia", "voice-approvals"],
     queryFn: () => api.get<any[]>("/api/sofia/voice-approvals"),
     refetchInterval: 60 * 1000,
+    staleTime: 30_000,
   });
 }
 
@@ -429,6 +451,7 @@ export function useMaestroApprovalCount() {
       return (items ?? []).filter((i: any) => i.status === "pending" || i.status === "awaiting_second").length;
     },
     refetchInterval: 60 * 1000,
+    staleTime: 30_000,
   });
 }
 
@@ -439,6 +462,7 @@ export function useAgents() {
     queryKey: ["agents"],
     queryFn: () => api.get<any[]>("/api/agents"),
     refetchInterval: 30_000,
+    staleTime: 15_000,
   });
 }
 
@@ -448,6 +472,7 @@ export function useAgent(slug: string | undefined) {
     queryFn: () => api.get<any>(`/api/agents/${slug}`),
     enabled: !!slug,
     refetchInterval: 15_000,
+    staleTime: 7_000,
   });
 }
 
@@ -457,6 +482,7 @@ export function useAgentEvents(slug: string | undefined, limit = 50) {
     queryFn: () => api.get<any[]>(`/api/agents/${slug}/events?limit=${limit}`),
     enabled: !!slug,
     refetchInterval: 15_000,
+    staleTime: 7_000,
   });
 }
 
@@ -467,6 +493,7 @@ export function useAgentTasks(slug: string | undefined, status?: string) {
       api.get<any[]>(`/api/agents/${slug}/tasks${status ? `?status=${status}` : ""}`),
     enabled: !!slug,
     refetchInterval: 30_000,
+    staleTime: 15_000,
   });
 }
 
@@ -475,6 +502,7 @@ export function usePendingApprovals() {
     queryKey: ["agents", "approvals", "pending"],
     queryFn: () => api.get<{ byAgent: Record<string, any[]>; total: number }>("/api/agents/approvals/pending"),
     refetchInterval: 30_000,
+    staleTime: 15_000,
   });
 }
 
@@ -483,6 +511,7 @@ export function useAgentBriefs(limit = 20) {
     queryKey: ["agents", "briefs", limit],
     queryFn: () => api.get<any[]>(`/api/agents/briefs?limit=${limit}`),
     refetchInterval: 60_000,
+    staleTime: 30_000,
   });
 }
 
@@ -515,7 +544,7 @@ export function useAgentMessages(slug: string | undefined) {
     queryKey: ["agents", slug, "messages"],
     queryFn: () => api.get<any[]>(`/api/agents/${slug}/messages?limit=50`),
     enabled: !!slug,
-    staleTime: 0,
+    staleTime: 10_000,
   });
 }
 
@@ -595,6 +624,7 @@ export function useAgentCosts(days = 30) {
     queryKey: ["agents", "costs", days],
     queryFn: () => api.get<any>(`/api/agents/costs?days=${days}`),
     refetchInterval: 5 * 60_000,
+    staleTime: 4 * 60_000,
   });
 }
 
@@ -603,6 +633,7 @@ export function useCronJobs() {
     queryKey: ["agents", "cron"],
     queryFn: () => api.get<any[]>("/api/agents/cron"),
     refetchInterval: 60_000,
+    staleTime: 30_000,
   });
 }
 
@@ -621,6 +652,7 @@ export function useAuditLog(agentSlug?: string, limit = 100) {
     queryFn: () =>
       api.get<any[]>(`/api/agents/audit?limit=${limit}${agentSlug ? `&agent=${agentSlug}` : ""}`),
     refetchInterval: 30_000,
+    staleTime: 15_000,
   });
 }
 
@@ -629,6 +661,7 @@ export function useLiveFeed() {
     queryKey: ["agents", "live"],
     queryFn: () => api.get<any[]>("/api/agents/live"),
     refetchInterval: 10_000,
+    staleTime: 5_000,
   });
 }
 
@@ -653,6 +686,7 @@ export function useComms() {
     queryKey: ["comms"],
     queryFn: () => api.get<CommsData>("/api/comms"),
     refetchInterval: 30_000,
+    staleTime: 15_000,
   });
 }
 
@@ -661,6 +695,7 @@ export function useSmsThread(phone: string | null) {
     queryKey: ["sms-thread", phone],
     queryFn: () => api.get<{ messages: any[]; customer: any }>(`/api/comms/thread/${encodeURIComponent(phone!)}`),
     enabled: !!phone,
+    staleTime: 15_000,
   });
 }
 
@@ -670,5 +705,6 @@ export function useAllTasks(status?: string) {
     queryFn: () =>
       api.get<any[]>(`/api/agents/approvals/pending`),
     refetchInterval: 20_000,
+    staleTime: 10_000,
   });
 }

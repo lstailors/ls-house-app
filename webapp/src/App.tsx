@@ -7,40 +7,41 @@ import { AppShell } from "@/components/shell/AppShell";
 import { RoleGuard } from "@/components/shell/RoleGuard";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import NotFound from "./pages/NotFound";
 import IntakeAlterations from "./pages/intake/IntakeAlterations";
 import IntakeCustom from "./pages/intake/IntakeCustom";
 import OrdersAlterations from "./pages/orders/OrdersAlterations";
 import OrdersCustom from "./pages/orders/OrdersCustom";
 import CustomOrderDetail from "./pages/orders/CustomOrderDetail";
-import SalesOrders from "./pages/orders/SalesOrders";
-import SalesOrderDetail from "./pages/orders/SalesOrderDetail";
-import Invoices from "./pages/orders/Invoices";
-import InvoiceDetail from "./pages/orders/InvoiceDetail";
-import Deliveries from "./pages/Deliveries";
-import DeliveryTracking from "./pages/DeliveryTracking";
-import DeliveryLabel from "./pages/DeliveryLabel";
-import DeliveryDetail from "./pages/DeliveryDetail";
-import Communications from "./pages/Communications";
-import Financials from "./pages/Financials";
-import Settings from "./pages/Settings";
-import AdminUsers from "./pages/admin/AdminUsers";
-import AdminLocations from "./pages/admin/AdminLocations";
-import LocationSettings from "./pages/admin/LocationSettings";
-import AdminTailors from "./pages/admin/AdminTailors";
-import AdminOverview from "./pages/admin/AdminOverview";
-import AdminBoard from "./pages/admin/AdminBoard";
-import FabricPricingPage from "./pages/reference/FabricPricingPage";
-import StyleLibraryPage from "./pages/reference/StyleLibraryPage";
-import Academy from "./pages/Academy";
-import MissionControl from "./pages/MissionControl";
-import AgentDetail from "./pages/mission-control/AgentDetail";
-import NotFound from "./pages/NotFound";
 import TicketDetail from "./pages/intake/TicketDetail";
-import AlterationTags from "./pages/intake/AlterationTags";
-import AlterationReceipt from "./pages/intake/AlterationReceipt";
-import QRScanner from "./pages/intake/QRScanner"
-import GarmentTag from "./pages/GarmentTag";
 
+// Lazy-loaded pages — loaded on first visit only
+const SalesOrders = lazy(() => import('./pages/orders/SalesOrders'));
+const SalesOrderDetail = lazy(() => import('./pages/orders/SalesOrderDetail'));
+const Invoices = lazy(() => import('./pages/orders/Invoices'));
+const InvoiceDetail = lazy(() => import('./pages/orders/InvoiceDetail'));
+const Deliveries = lazy(() => import('./pages/Deliveries'));
+const DeliveryTracking = lazy(() => import('./pages/DeliveryTracking'));
+const DeliveryLabel = lazy(() => import('./pages/DeliveryLabel'));
+const DeliveryDetail = lazy(() => import('./pages/DeliveryDetail'));
+const Communications = lazy(() => import('./pages/Communications'));
+const Financials = lazy(() => import('./pages/Financials'));
+const Settings = lazy(() => import('./pages/Settings'));
+const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'));
+const AdminLocations = lazy(() => import('./pages/admin/AdminLocations'));
+const LocationSettings = lazy(() => import('./pages/admin/LocationSettings'));
+const AdminTailors = lazy(() => import('./pages/admin/AdminTailors'));
+const AdminOverview = lazy(() => import('./pages/admin/AdminOverview'));
+const AdminBoard = lazy(() => import('./pages/admin/AdminBoard'));
+const FabricPricingPage = lazy(() => import('./pages/reference/FabricPricingPage'));
+const StyleLibraryPage = lazy(() => import('./pages/reference/StyleLibraryPage'));
+const Academy = lazy(() => import('./pages/Academy'));
+const MissionControl = lazy(() => import('./pages/MissionControl'));
+const AgentDetail = lazy(() => import('./pages/mission-control/AgentDetail'));
+const AlterationTags = lazy(() => import('./pages/intake/AlterationTags'));
+const AlterationReceipt = lazy(() => import('./pages/intake/AlterationReceipt'));
+const QRScanner = lazy(() => import('./pages/intake/QRScanner'));
+const GarmentTag = lazy(() => import('./pages/GarmentTag'));
 const Tasks = lazy(() => import('./pages/Tasks'));
 const Comms = lazy(() => import('./pages/Comms'));
 const SofiaChat = lazy(() => import('./pages/SofiaChat'));
@@ -67,7 +68,7 @@ const App = () => (
         }}
       />
       <BrowserRouter>
-        <Suspense fallback={null}>
+        <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="h-6 w-6 rounded-full border-2 border-brass/40 border-t-brass animate-spin" /></div>}>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/d/:token" element={<DeliveryTracking />} />
