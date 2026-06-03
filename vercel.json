@@ -10,7 +10,7 @@
   "crons": [
     {
       "path": "/api/unifi/sync",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 5 * * *"
     },
     {
       "path": "/api/maestro/brief/trigger",
