@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   Phone,
@@ -57,83 +57,92 @@ type SelectedItem =
 
 // ── Left sidebar item components ────────────────────────────────────────────
 
+// ── Avatar initials helper ──────────────────────────────────────────────────
+function Avatar({ name, size = "sm", color = "brass" }: { name: string; size?: "sm" | "md"; color?: string }) {
+  const initials = name.split(" ").map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
+  const sz = size === "sm" ? "w-9 h-9 text-xs" : "w-11 h-11 text-sm";
+  return (
+    <div className={cn("rounded-full flex items-center justify-center font-semibold flex-shrink-0 border", sz,
+      color === "brass" ? "bg-brass/20 border-brass/40 text-brass-shimmer" :
+      color === "emerald" ? "bg-emerald-900/40 border-emerald-500/40 text-emerald-400" :
+      "bg-forest-raised border-brass/20 text-cream-muted"
+    )}>
+      {initials}
+    </div>
+  );
+}
+
 function CallListItem({ item, active, onClick }: { item: any; active: boolean; onClick: () => void }) {
   const dir = item.direction;
-  const Icon =
-    item.status === "missed"
-      ? PhoneMissed
-      : dir === "inbound" || dir === "in"
-        ? PhoneIncoming
-        : PhoneOutgoing;
-  const iconColor =
-    item.status === "missed" ? "text-red-400" : dir === "inbound" || dir === "in" ? "text-signal-emerald" : "text-brass";
+  const missed = item.status === "missed";
+  const name = item.from_caller_name || fmtPhone(item.from || item.to || "Unknown");
+  const Icon = missed ? PhoneMissed : dir === "inbound" || dir === "in" ? PhoneIncoming : PhoneOutgoing;
+  const iconColor = missed ? "text-red-400" : dir === "inbound" || dir === "in" ? "text-signal-emerald" : "text-brass";
+  const date = item.time ? new Date(item.time).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
 
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "w-full text-left px-4 py-3 flex items-start gap-3 border-b border-brass/10 transition-colors",
-        active ? "bg-brass/20 border-l-2 border-l-brass-shimmer" : "hover:bg-forest-raised",
-      )}
-    >
-      <Icon className={cn("w-4 h-4 mt-0.5 flex-shrink-0", iconColor)} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-cream text-sm font-medium truncate">
-            {item.from_caller_name || fmtPhone(item.from || item.to || "Unknown")}
-          </span>
-          <span className="text-cream-dim text-xs flex-shrink-0">{timeAgo(item.time)}</span>
-        </div>
-        <div className="text-cream-muted text-xs mt-0.5">{fmtDuration(item.duration)}</div>
+    <button onClick={onClick} className={cn(
+      "w-full text-left px-3 py-2.5 flex items-center gap-3 border-b border-brass/8 transition-colors min-h-[56px]",
+      active ? "bg-brass/15 border-l-2 border-l-brass-shimmer" : "hover:bg-forest-raised/60",
+    )}>
+      {/* Avatar */}
+      <div className="relative flex-shrink-0">
+        <Avatar name={name} size="sm" color={missed ? "rose" : "brass"} />
+        <Icon className={cn("absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5", iconColor)} />
+      </div>
+      {/* Info — 2 column */}
+      <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto] gap-x-2 gap-y-0.5">
+        <span className="text-cream text-sm font-medium truncate">{name}</span>
+        <span className="text-cream-dim text-[10px] text-right">{timeAgo(item.time)}</span>
+        <span className="text-cream-muted text-xs truncate">{fmtDuration(item.duration)}</span>
+        <span className="text-cream-dim text-[10px] text-right">{date}</span>
       </div>
     </button>
   );
 }
 
 function SmsListItem({ item, active, onClick }: { item: any; active: boolean; onClick: () => void }) {
-  const preview = item.lastMessage?.content || item.lastMessage?.body || "";
+  const preview = item.lastMessage?.content || "";
+  const phone = item.phone || "";
+  const name = fmtPhone(phone);
+  const hasUnread = item.unread > 0;
+
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "w-full text-left px-4 py-3 flex items-start gap-3 border-b border-brass/10 transition-colors",
-        active ? "bg-brass/20 border-l-2 border-l-brass-shimmer" : "hover:bg-forest-raised",
-      )}
-    >
-      <MessageSquare className="w-4 h-4 mt-0.5 flex-shrink-0 text-brass" />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-cream text-sm font-medium truncate">{fmtPhone(item.phone)}</span>
-          <span className="text-cream-dim text-xs flex-shrink-0">{timeAgo(item.lastMessage?.timestamp)}</span>
-        </div>
-        <div className="text-cream-muted text-xs mt-0.5 truncate">{preview.slice(0, 40) || "No messages"}</div>
-        {item.unread > 0 && (
-          <span className="inline-block mt-1 px-1.5 py-0.5 bg-brass/30 text-brass text-xs rounded-full">
-            {item.unread} new
-          </span>
-        )}
+    <button onClick={onClick} className={cn(
+      "w-full text-left px-3 py-2.5 flex items-center gap-3 border-b border-brass/8 transition-colors min-h-[56px]",
+      active ? "bg-brass/15 border-l-2 border-l-brass-shimmer" : "hover:bg-forest-raised/60",
+    )}>
+      <div className="relative flex-shrink-0">
+        <Avatar name={name} size="sm" color="brass" />
+        {hasUnread && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-brass rounded-full text-[9px] font-bold text-forest-deep flex items-center justify-center">{item.unread}</span>}
+      </div>
+      <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto] gap-x-2 gap-y-0.5">
+        <span className={cn("text-sm font-medium truncate", hasUnread ? "text-cream" : "text-cream-muted")}>{name}</span>
+        <span className="text-cream-dim text-[10px] text-right">{timeAgo(item.lastMessage?.timestamp)}</span>
+        <span className="text-cream-dim text-xs truncate col-span-2">{preview.slice(0, 45) || "No messages"}</span>
       </div>
     </button>
   );
 }
 
 function RecordingListItem({ item, active, onClick }: { item: any; active: boolean; onClick: () => void }) {
-  const title = item.title || item.summary_raw?.slice(0, 40) || "Recording";
+  const title = item.summary_raw?.split("\n")[0]?.replace(/^#+\s*/, "").slice(0, 45) || "Recording";
+  const customers = Array.isArray(item.detected_customer_names) ? item.detected_customer_names[0] : item.detected_customer_names;
+  const date = item.recorded_at ? new Date(item.recorded_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "w-full text-left px-4 py-3 flex items-start gap-3 border-b border-brass/10 transition-colors",
-        active ? "bg-brass/20 border-l-2 border-l-brass-shimmer" : "hover:bg-forest-raised",
-      )}
-    >
-      <Mic className="w-4 h-4 mt-0.5 flex-shrink-0 text-signal-amber" />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-cream text-sm font-medium truncate">{title}</span>
-          <span className="text-cream-dim text-xs flex-shrink-0">{timeAgo(item.recorded_at)}</span>
-        </div>
-        <div className="text-cream-muted text-xs mt-0.5">{fmtDuration(item.duration_seconds)}</div>
+    <button onClick={onClick} className={cn(
+      "w-full text-left px-3 py-2.5 flex items-center gap-3 border-b border-brass/8 transition-colors min-h-[56px]",
+      active ? "bg-brass/15 border-l-2 border-l-brass-shimmer" : "hover:bg-forest-raised/60",
+    )}>
+      <div className="w-9 h-9 rounded-full bg-signal-amber/15 border border-signal-amber/30 flex items-center justify-center flex-shrink-0">
+        <Mic className="w-4 h-4 text-signal-amber" />
+      </div>
+      <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto] gap-x-2 gap-y-0.5">
+        <span className="text-cream text-sm font-medium truncate">{title}</span>
+        <span className="text-cream-dim text-[10px] text-right">{timeAgo(item.recorded_at)}</span>
+        <span className="text-cream-dim text-xs truncate">{customers || fmtDuration(item.duration_seconds)}</span>
+        <span className="text-cream-dim text-[10px] text-right">{date}</span>
       </div>
     </button>
   );
@@ -488,6 +497,22 @@ function EmptyState({ counts }: { counts: any }) {
 export default function Comms() {
   const { data: commsData, isLoading } = useComms();
   const [tab, setTab] = useState<Tab>("all");
+  const [sidebarWidth, setSidebarWidth] = useState(320);
+  const isDragging = useRef(false);
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    isDragging.current = true;
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+    const onMove = (ev: MouseEvent) => {
+      if (!isDragging.current) return;
+      const w = Math.min(520, Math.max(240, startW + ev.clientX - startX));
+      setSidebarWidth(w);
+    };
+    const onUp = () => { isDragging.current = false; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<SelectedItem>(null);
   const [brief, setBrief] = useState<{ brief: string; customer: any } | null>(null);
@@ -558,8 +583,8 @@ export default function Comms() {
 
   return (
     <div className="flex h-[calc(100vh-64px)] overflow-hidden">
-      {/* ── LEFT SIDEBAR ── */}
-      <div className="w-80 flex-shrink-0 border-r border-brass/15 flex flex-col bg-forest-deep">
+      {/* ── LEFT SIDEBAR (resizable) ── */}
+      <div style={{ width: sidebarWidth }} className="flex-shrink-0 border-r border-brass/15 flex flex-col bg-forest-deep relative">
         {/* Header + Search */}
         <div className="px-4 pt-4 pb-3 flex-shrink-0 border-b border-brass/10">
           <h1 className="text-cream font-semibold text-lg mb-3">Comms</h1>
@@ -637,6 +662,10 @@ export default function Comms() {
           })}
         </div>
       </div>
+
+      {/* Drag handle */}
+      <div onMouseDown={handleDragStart}
+        className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-brass/40 transition-colors z-10" />
 
       {/* ── RIGHT PANEL ── */}
       <div className="flex-1 flex flex-col bg-forest-deep overflow-hidden">
