@@ -95,7 +95,7 @@ function CallListItem({ item, active, onClick }: { item: any; active: boolean; o
         <span className="text-cream text-sm font-medium truncate">{name}</span>
         <span className="text-cream-dim text-[10px] text-right">{timeAgo(item.time)}</span>
         <span className="text-cream-muted text-xs truncate">{fmtDuration(item.duration)}</span>
-        <span className="text-cream-dim text-[10px] text-right">{date}</span>
+        <span className="text-cream-dim text-[10px] text-right">{item.time ? new Date(item.time).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",hour12:true}) : date}</span>
       </div>
     </button>
   );
@@ -119,7 +119,8 @@ function SmsListItem({ item, active, onClick }: { item: any; active: boolean; on
       <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto] gap-x-2 gap-y-0.5">
         <span className={cn("text-sm font-medium truncate", hasUnread ? "text-cream" : "text-cream-muted")}>{name}</span>
         <span className="text-cream-dim text-[10px] text-right">{timeAgo(item.lastMessage?.timestamp)}</span>
-        <span className="text-cream-dim text-xs truncate col-span-2">{preview.slice(0, 45) || "No messages"}</span>
+        <span className="text-cream-dim text-xs truncate">{preview.slice(0, 35) || "No messages"}</span>
+        <span className="text-cream-dim text-[10px] text-right">{item.lastMessage?.timestamp ? new Date(item.lastMessage.timestamp).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",hour12:true}) : ""}</span>
       </div>
     </button>
   );
@@ -142,7 +143,7 @@ function RecordingListItem({ item, active, onClick }: { item: any; active: boole
         <span className="text-cream text-sm font-medium truncate">{title}</span>
         <span className="text-cream-dim text-[10px] text-right">{timeAgo(item.recorded_at)}</span>
         <span className="text-cream-dim text-xs truncate">{customers || fmtDuration(item.duration_seconds)}</span>
-        <span className="text-cream-dim text-[10px] text-right">{date}</span>
+        <span className="text-cream-dim text-[10px] text-right">{item.recorded_at ? new Date(item.recorded_at).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",hour12:true}) : date}</span>
       </div>
     </button>
   );
