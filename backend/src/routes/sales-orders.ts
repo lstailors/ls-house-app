@@ -160,3 +160,42 @@ salesOrdersRouter.get("/:id", async (c) => {
     return c.json({ error: { message: e.message } }, 500);
   }
 });
+
+// PATCH /api/sales-orders/:id — update editable fields
+salesOrdersRouter.patch("/:id", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  const id = c.req.param("id");
+  const body = await c.req.json() as { deliveryDate?: string; notes?: string; poNo?: string };
+
+  const updates: Record<string, unknown> = {};
+  if (body.deliveryDate !== undefined) updates.delivery_date = body.deliveryDate;
+  if (body.notes !== undefined) updates.customer_notes = body.notes;
+
+  const base = process.env.ERPNEXT_BASE_URL ?? "";
+  const key = process.env.ERPNEXT_API_KEY ?? "";
+  const secret = process.env.ERPNEXT_API_SECRET ?? "";
+  const res = await fetch(`${base}/api/resource/Sales%20Order/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `token ${key}:${secret}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) return c.json({ error: { message: "Update failed" } }, 502);
+  return c.json({ data: { ok: true } });
+});
+
+// GET /api/sales-orders/:id/invoice/:invoiceId — full invoice detail
+salesOrdersRouter.get("/:id/invoice/:invoiceId", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  try {
+    const inv = await erpGet<any>("Sales Invoice", c.req.param("invoiceId"));
+    return c.json({ data: inv });
+  } catch (e: any) {
+    return c.json({ error: { message: e.message } }, 500);
+  }
+});

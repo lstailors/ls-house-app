@@ -109,14 +109,17 @@ export function useCustomers() {
   });
 }
 
-export function useSalesOrders() {
+export function useSalesOrders(status?: string) {
   const { activeLocationId } = useActiveLocation();
   return useQuery({
-    queryKey: ["sales-orders", activeLocationId],
+    queryKey: ["sales-orders", status ?? "active", activeLocationId],
     queryFn: () =>
-      api.get<SalesOrder[]>(
-        `/api/sales-orders${locationQueryString(activeLocationId)}`,
-      ),
+      api
+        .get<{ data: SalesOrder[]; total: number }>(
+          `/api/sales-orders?status=${status ?? "active"}&limit=100`,
+        )
+        .then((r) => (r as any).data ?? r),
+    staleTime: 60_000,
   });
 }
 
