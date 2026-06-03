@@ -120,8 +120,8 @@ unifiRouter.post("/sync", async (c) => {
         duration: call.duration ?? call.durationSeconds ?? 0,
         status: call.status === "answered" ? "accepted" : call.status ?? "unknown",
         transcript_raw: call.transcript ?? null,
-        transcript_summary: call.summary ?? null,
-        recording_url: call.recordingUrl ?? call.recording_url ?? null,
+        transcript_whisper: call.summary ?? null,
+        recording: call.recordingUrl ?? call.recording_url ?? null,
       };
 
       const { error } = await supabaseAdmin

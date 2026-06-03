@@ -61,8 +61,8 @@ webhooksRouter.post("/unifi", async (c) => {
   if (callId) {
     await supabaseAdmin.from("unifi_call_logs").update({
       transcript_raw: transcript,
-      transcript_summary: summary,
-      recording_url: recordingUrl,
+      transcript_whisper: summary,
+      recording: recordingUrl,
       status: type === "transcript" ? "accepted" : status,
     }).eq("id", callId).then(() => {});
   } else {
@@ -75,8 +75,8 @@ webhooksRouter.post("/unifi", async (c) => {
       duration: duration,
       status,
       transcript_raw: transcript,
-      transcript_summary: summary,
-      recording_url: recordingUrl,
+      transcript_whisper: summary,
+      recording: recordingUrl,
     }).then(() => {});
   }
 

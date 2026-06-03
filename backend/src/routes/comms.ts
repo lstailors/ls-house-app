@@ -54,7 +54,7 @@ commsRouter.get("/", async (c) => {
   const [callsRes, recordingsRes, smsRes] = await Promise.all([
     supabaseAdmin
       .from("unifi_call_logs")
-      .select("id, time, from, to, from_caller_name, direction, duration, status, transcript_raw, transcript_summary, recording_url, sensitivity_flag")
+      .select("id, time, from, to, from_caller_name, direction, duration, status, transcript_raw, transcript_whisper, recording, sensitivity_flag, matched_customer_id, vm_data")
       .order("time", { ascending: false })
       .limit(limit),
     supabaseAdmin
@@ -158,7 +158,7 @@ commsRouter.post("/brief/:phone", async (c) => {
 
   const [smsRes, callsRes] = await Promise.all([
     supabaseAdmin.from("sms_messages").select("direction, content, timestamp").eq("client_phone", phone).order("timestamp", { ascending: false }).limit(20),
-    supabaseAdmin.from("unifi_call_logs").select("time, direction, duration, transcript_raw, transcript_summary, from_caller_name").or(`from.eq.${phone},to.eq.${phone}`).order("time", { ascending: false }).limit(10),
+    supabaseAdmin.from("unifi_call_logs").select("time, direction, duration, transcript_raw, transcript_whisper, from_caller_name").or(`from.eq.${phone},to.eq.${phone}`).order("time", { ascending: false }).limit(10),
   ]);
 
   const customer = await matchCustomerByPhone(phone);
@@ -171,7 +171,7 @@ commsRouter.post("/brief/:phone", async (c) => {
   const context = [
     customer ? `Customer: ${customer.name} (${customer.id})` : `Phone: ${phone}`,
     `Recent SMS (${sms.length}): ${sms.slice(0, 5).map((m: any) => `[${m.direction}] ${m.content?.slice(0, 80)}`).join(" | ")}`,
-    `Calls (${calls.length}): ${calls.slice(0, 3).map((call: any) => `${call.direction} ${Math.round((call.duration || 0) / 60)}min ${call.transcript_summary || call.transcript_raw?.slice(0, 100) || ""}`).join(" | ")}`,
+    `Calls (${calls.length}): ${calls.slice(0, 3).map((call: any) => `${call.direction} ${Math.round((call.duration || 0) / 60)}min ${call.transcript_whisper?.slice(0, 100) || call.transcript_raw?.slice(0, 100) || ""}`).join(" | ")}`,
   ].join("\n");
 
   const res = await fetch("https://api.x.ai/v1/chat/completions", {
