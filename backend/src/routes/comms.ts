@@ -96,8 +96,44 @@ commsRouter.get("/", async (c) => {
     ...smsThreads.map(t => ({ type: "sms_thread", ts: t.lastMessage.timestamp, data: t })),
   ].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
 
-  const callsToday = calls.filter(call => call.time?.startsWith(todayStr)).length;
-  const missedCalls = calls.filter(call => call.status === "missed").length;
+  // ── Rich stats ───────────────────────────────────────────────────────────
+  const todayCalls = calls.filter(c => c.time?.startsWith(todayStr));
+  const missedCalls = calls.filter(c => c.status === "missed");
+  const answeredCalls = calls.filter(c => c.status === "accepted" || c.status === "answered");
+  const totalDuration = calls.reduce((s, c) => s + (c.duration || 0), 0);
+  const avgDuration = answeredCalls.length ? Math.round(totalDuration / answeredCalls.length) : 0;
+  const todayTalkTime = todayCalls.reduce((s, c) => s + (c.duration || 0), 0);
+
+  // Top callers (by frequency)
+  const callerCount = new Map<string, { name: string; count: number; phone: string }>();
+  for (const c of calls) {
+    const phone = c.from || "unknown";
+    const name = c.from_caller_name || phone;
+    const entry = callerCount.get(phone) ?? { name, count: 0, phone };
+    entry.count++;
+    callerCount.set(phone, entry);
+  }
+  const topCallers = [...callerCount.values()].sort((a, b) => b.count - a.count).slice(0, 5);
+
+  // Calls by hour today (for heatmap)
+  const callsByHour: Record<number, number> = {};
+  for (const c of todayCalls) {
+    if (!c.time) continue;
+    const h = new Date(c.time).getHours();
+    callsByHour[h] = (callsByHour[h] ?? 0) + 1;
+  }
+
+  // Latest daily brief from lsh.agent_briefs
+  let dailyBrief = null;
+  if (supabaseAdmin) {
+    const lsh = (supabaseAdmin as any).schema("lsh");
+    const { data: briefRow } = await lsh.from("agent_briefs")
+      .select("title, body, created_at")
+      .eq("source", "comms-daily")
+      .order("created_at", { ascending: false })
+      .limit(1).single().catch(() => ({ data: null }));
+    dailyBrief = briefRow;
+  }
 
   return c.json({
     data: {
@@ -106,12 +142,19 @@ commsRouter.get("/", async (c) => {
       smsThreads,
       timeline,
       counts: {
-        callsToday,
-        missedCalls,
+        callsToday: todayCalls.length,
+        missedCalls: missedCalls.length,
+        answeredCalls: answeredCalls.length,
         totalRecordings: recordings.length,
         smsThreads: smsThreads.length,
         unreadSms: smsThreads.reduce((s, t) => s + t.unread, 0),
+        avgDuration,
+        todayTalkTime,
+        missedRate: calls.length ? Math.round((missedCalls.length / calls.length) * 100) : 0,
+        topCallers,
+        callsByHour,
       },
+      dailyBrief,
       generatedAt: new Date().toISOString(),
     },
   });
@@ -309,4 +352,123 @@ Extract everything concrete. Use actual names, amounts, dates from the transcrip
   const grokData = await res.json() as any;
   const brief = grokData?.choices?.[0]?.message?.content?.trim() ?? "Unable to generate brief.";
   return c.json({ data: { brief } });
+});
+
+// ── GET /api/comms/daily-brief/trigger — Sofia scans all day's comms ───────
+// Called by Vercel cron at end of day. Generates full intelligence brief.
+commsRouter.get("/daily-brief/trigger", async (c) => {
+  if (!supabaseAdmin) return c.json({ error: { message: "Unavailable" } }, 503);
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const nycDate = new Date().toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "long", month: "long", day: "numeric" });
+
+  // Fetch all of today's comms
+  const [callsRes, smsRes, recordingsRes] = await Promise.all([
+    supabaseAdmin.from("unifi_call_logs")
+      .select("time, from, to, from_caller_name, direction, duration, status, transcript_raw, transcript_whisper")
+      .gte("time", `${todayStr}T00:00:00`)
+      .order("time", { ascending: true }).limit(200),
+    supabaseAdmin.from("sms_messages")
+      .select("client_phone, direction, content, timestamp")
+      .gte("timestamp", `${todayStr}T00:00:00`)
+      .order("timestamp", { ascending: true }).limit(200),
+    supabaseAdmin.from("plaud_captures")
+      .select("recorded_at, duration_seconds, summary_raw, transcript_raw, detected_customer_names, capture_type")
+      .gte("recorded_at", `${todayStr}T00:00:00`)
+      .order("recorded_at", { ascending: true }).limit(20),
+  ]);
+
+  const calls = (callsRes.data ?? []) as any[];
+  const sms = (smsRes.data ?? []) as any[];
+  const recordings = (recordingsRes.data ?? []) as any[];
+
+  const apiKey = process.env.XAI_API_KEY;
+  if (!apiKey) return c.json({ error: { message: "XAI_API_KEY not set" } }, 503);
+
+  // Build rich context
+  const callSummary = calls.length
+    ? calls.map(c => `  [${c.direction}] ${c.from_caller_name || c.from} • ${Math.round((c.duration||0)/60)}m • ${c.status}${c.transcript_raw ? `\n    "${c.transcript_raw.slice(0,200)}"` : ""}`).join("\n")
+    : "  No calls today";
+
+  const smsByPhone = new Map<string, string[]>();
+  for (const m of sms) {
+    const arr = smsByPhone.get(m.client_phone) ?? [];
+    arr.push(`[${m.direction}] ${m.content?.slice(0, 100)}`);
+    smsByPhone.set(m.client_phone, arr);
+  }
+  const smsSummary = smsByPhone.size
+    ? [...smsByPhone.entries()].map(([phone, msgs]) => `  ${phone} (${msgs.length} msgs):\n${msgs.slice(0,3).map(m=>`    ${m}`).join("\n")}`).join("\n")
+    : "  No SMS today";
+
+  const recSummary = recordings.length
+    ? recordings.map(r => `  ${r.capture_type || "Recording"} • ${Math.round((r.duration_seconds||0)/60)}m${r.detected_customer_names ? ` • ${r.detected_customer_names}` : ""}\n  ${r.summary_raw?.slice(0,200) || ""}`).join("\n")
+    : "  No recordings today";
+
+  const prompt = `You are Sofia, the intelligence system for L&S Custom Tailors.
+
+Today is ${nycDate}. Analyze ALL communications from today and produce the DAILY INTELLIGENCE BRIEF.
+
+FORMAT:
+
+**DAILY SUMMARY**
+How was today? Volume, key themes, notable interactions.
+
+**CALLS (${calls.length} total)**
+Key call highlights — who called, what was discussed, outcomes.
+
+**ACTION ITEMS FROM CALLS**
+- [ ] Specific task extracted from calls (owner)
+
+**SMS SUMMARY**
+Key SMS threads — commitments, questions, follow-ups needed.
+
+**ACTION ITEMS FROM SMS**
+- [ ] Specific task (owner)
+
+**RECORDINGS / MEETINGS**
+Any meetings or recordings — key decisions and actions.
+
+**APPOINTMENTS & CALENDAR**
+Any dates, fittings, pickups, deliveries mentioned today.
+
+**FOLLOW-UPS FOR TOMORROW**
+What Sofia should proactively follow up on tomorrow.
+
+**CUSTOMERS TO CALL BACK**
+Anyone who needs a callback, hasn't been reached, or needs attention.
+
+**END OF DAY SENTIMENT**
+Overall customer sentiment and relationship health today.
+
+---
+CALLS:
+${callSummary}
+
+SMS:
+${smsSummary}
+
+RECORDINGS:
+${recSummary}
+---
+
+Be specific — use names, amounts, dates. Extract every commitment and action item.`;
+
+  const res = await fetch("https://api.x.ai/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "grok-3", messages: [{ role: "user", content: prompt }], max_tokens: 2000, temperature: 0.3 }),
+  });
+  const grokData = await res.json() as any;
+  const brief = grokData?.choices?.[0]?.message?.content?.trim() ?? "Unable to generate brief.";
+
+  // Save to lsh.agent_briefs
+  if (supabaseAdmin) {
+    await (supabaseAdmin as any).schema("lsh").from("agent_briefs").insert({
+      type: "daily_brief", title: `Comms Daily Brief — ${todayStr}`, body: brief,
+      severity: "info", source: "comms-daily",
+      metadata: { date: todayStr, calls: calls.length, sms: sms.length, recordings: recordings.length },
+    }).catch((e: any) => console.error("[comms/daily-brief]", e.message));
+  }
+
+  return c.json({ data: { brief, date: todayStr, stats: { calls: calls.length, sms: sms.length, recordings: recordings.length } } });
 });

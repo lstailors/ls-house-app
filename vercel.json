@@ -13,6 +13,10 @@
       "schedule": "0 5 * * *"
     },
     {
+      "path": "/api/comms/daily-brief/trigger",
+      "schedule": "0 23 * * 1-6"
+    },
+    {
       "path": "/api/maestro/brief/trigger",
       "schedule": "0 12 * * 1-5"
     },

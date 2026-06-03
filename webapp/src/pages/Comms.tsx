@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
-  Phone,
+  Phone, PhoneCall,
   PhoneIncoming,
   PhoneOutgoing,
   PhoneMissed,
@@ -466,28 +466,114 @@ function GrokBriefCard({ brief, customer, onClose }: { brief: string; customer: 
 
 // ── Empty State ─────────────────────────────────────────────────────────────
 
-function EmptyState({ counts }: { counts: any }) {
-  if (!counts) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-cream-dim text-sm">
-        Select a conversation or call to view details.
-      </div>
-    );
-  }
+function EmptyState({ counts, dailyBrief, onFilter }: { counts: any; dailyBrief: any; onFilter: (tab: Tab) => void }) {
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [generatedBrief, setGeneratedBrief] = useState<string | null>(dailyBrief?.body ?? null);
+
+  const runBrief = async () => {
+    setBriefLoading(true);
+    try {
+      const r = await api.get<{ brief: string }>("/api/comms/daily-brief/trigger");
+      setGeneratedBrief(r?.brief ?? null);
+    } catch { /* silent */ }
+    finally { setBriefLoading(false); }
+  };
+
+  if (!counts) return (
+    <div className="flex-1 flex items-center justify-center text-cream-dim text-sm">
+      Select a conversation to view details.
+    </div>
+  );
+
+  const tiles = [
+    { label: "Calls Today", value: counts.callsToday, sub: `${Math.round((counts.todayTalkTime||0)/60)}m talk time`, tab: "calls" as Tab, accent: "emerald" },
+    { label: "Missed Calls", value: counts.missedCalls, sub: `${counts.missedRate || 0}% miss rate`, tab: "calls" as Tab, accent: counts.missedCalls > 0 ? "rose" : "default" },
+    { label: "Avg Duration", value: fmtDuration(counts.avgDuration || 0), sub: "per answered call", tab: "calls" as Tab, accent: "default" },
+    { label: "SMS Threads", value: counts.smsThreads, sub: `${counts.unreadSms || 0} unread`, tab: "sms" as Tab, accent: counts.unreadSms > 0 ? "amber" : "default" },
+    { label: "Recordings", value: counts.totalRecordings, sub: "Plaud captures", tab: "recordings" as Tab, accent: "amber" },
+  ];
+
+  const accentClass: Record<string, string> = {
+    emerald: "border-emerald-500/30 bg-emerald-900/20",
+    rose: "border-red-500/30 bg-red-900/20",
+    amber: "border-signal-amber/30 bg-signal-amber/10",
+    default: "border-brass/20 bg-forest-raised/40",
+  };
+  const numClass: Record<string, string> = {
+    emerald: "text-signal-emerald",
+    rose: "text-red-400",
+    amber: "text-signal-amber",
+    default: "text-brass-shimmer",
+  };
+
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-8 p-8">
-      <div>
-        <h2 className="text-cream text-2xl font-semibold text-center mb-1">Comms Intelligence</h2>
-        <p className="text-cream-muted text-sm text-center">Calls, recordings, messages — every signal in one place.</p>
+    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-cream text-xl font-semibold">Comms Intelligence</h2>
+          <p className="text-cream-dim text-xs mt-0.5">Click any tile to filter the list</p>
+        </div>
+        <button onClick={runBrief} disabled={briefLoading}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-brass/15 border border-brass/30 text-brass-shimmer text-sm hover:bg-brass/25 transition-all disabled:opacity-50">
+          <Sparkles className="w-4 h-4" />
+          {briefLoading ? "Analyzing…" : "⚡ Daily Brief"}
+        </button>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 w-full max-w-3xl">
-        <KpiTile label="Calls Today" value={counts.callsToday} />
-        <KpiTile label="Missed" value={counts.missedCalls} />
-        <KpiTile label="Recordings" value={counts.totalRecordings} />
-        <KpiTile label="SMS Threads" value={counts.smsThreads} />
-        <KpiTile label="Unread SMS" value={counts.unreadSms} />
+
+      {/* KPI tiles — clickable */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+        {tiles.map(t => (
+          <button key={t.label} onClick={() => onFilter(t.tab)}
+            className={cn("rounded-xl border p-4 text-left hover:border-brass/50 transition-all active:scale-95", accentClass[t.accent])}>
+            <div className={cn("font-display italic text-3xl leading-none mb-1", numClass[t.accent])}>{t.value}</div>
+            <div className="ui-label text-[9px] text-cream-muted">{t.label}</div>
+            {t.sub && <div className="text-[10px] text-cream-dim mt-0.5">{t.sub}</div>}
+          </button>
+        ))}
       </div>
-      <p className="text-cream-dim text-xs">Select an item on the left to view details.</p>
+
+      {/* Top callers */}
+      {counts.topCallers?.length > 0 && (
+        <GlassCard className="p-4">
+          <div className="ui-label text-cream-muted mb-3 flex items-center gap-1.5"><Phone className="w-3 h-3" /> Top Callers</div>
+          <div className="space-y-2">
+            {counts.topCallers.map((c: any, i: number) => (
+              <div key={i} className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-brass-shimmer font-mono text-xs w-4">{i + 1}</span>
+                  <span className="text-cream text-sm">{c.name}</span>
+                </div>
+                <span className="text-cream-dim text-xs">{c.count} call{c.count !== 1 ? "s" : ""}</span>
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* Daily Brief */}
+      {generatedBrief && (
+        <GlassCard className="p-5 border border-brass/25">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="w-4 h-4 text-brass" />
+            <span className="ui-label text-brass">Daily Intelligence Brief</span>
+            {dailyBrief?.created_at && (
+              <span className="text-xs text-cream-dim">· {timeAgo(dailyBrief.created_at)}</span>
+            )}
+          </div>
+          <div className="text-cream text-sm leading-relaxed whitespace-pre-wrap">{generatedBrief}</div>
+        </GlassCard>
+      )}
+
+      {!generatedBrief && (
+        <GlassCard className="p-5 border border-dashed border-brass/20 flex flex-col items-center gap-3 text-center">
+          <Sparkles className="w-6 h-6 text-brass/40" />
+          <div>
+            <p className="text-cream-muted text-sm font-medium">Daily Intelligence Brief</p>
+            <p className="text-cream-dim text-xs mt-1">Auto-generates every evening at 7pm ET.<br />Or tap ⚡ Daily Brief to generate now.</p>
+          </div>
+        </GlassCard>
+      )}
     </div>
   );
 }
@@ -686,7 +772,7 @@ export default function Comms() {
 
         {/* Main content */}
         {selected === null ? (
-          <EmptyState counts={commsData?.counts} />
+          <EmptyState counts={commsData?.counts} dailyBrief={(commsData as any)?.dailyBrief} onFilter={(t) => { setTab(t); }} />
         ) : selected.type === "call" ? (
           <CallPanel item={selected.data} onBrief={handleBrief} />
         ) : selected.type === "sms_thread" ? (
