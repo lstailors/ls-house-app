@@ -309,7 +309,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
     lines: garments.flatMap((g: any) =>
       (g.lines ?? []).map((l: any) => ({
         garment_ref: g.ref,          // e.g. "G1", "G2"
-        preset: l.preset || null,
+        preset: null,                // omit preset — referenced Items are disabled; use description+price only
         description: l.description,
         price: l.price,
         est_minutes: l.estMinutes || null,
