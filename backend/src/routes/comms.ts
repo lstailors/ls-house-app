@@ -125,15 +125,17 @@ commsRouter.get("/", async (c) => {
 
   // Latest daily brief from lsh.agent_briefs
   let dailyBrief = null;
-  if (supabaseAdmin) {
-    const lsh = (supabaseAdmin as any).schema("lsh");
-    const { data: briefRow } = await lsh.from("agent_briefs")
-      .select("title, body, created_at")
-      .eq("source", "comms-daily")
-      .order("created_at", { ascending: false })
-      .limit(1).single().catch(() => ({ data: null }));
-    dailyBrief = briefRow;
-  }
+  try {
+    if (supabaseAdmin) {
+      const { data: briefRows } = await (supabaseAdmin as any).schema("lsh")
+        .from("agent_briefs")
+        .select("title, body, created_at")
+        .eq("source", "comms-daily")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      dailyBrief = briefRows?.[0] ?? null;
+    }
+  } catch { /* non-fatal */ }
 
   return c.json({
     data: {
