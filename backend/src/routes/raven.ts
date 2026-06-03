@@ -13,8 +13,8 @@ const SOFIA_EMAIL = "concierge@lstailors.com";
 
 // Carl's API credentials for posting as Sofia
 function carlAuthHeader(): string {
-  const key = process.env.ERPNEXT_CARL_API_KEY ?? "";
-  const secret = process.env.ERPNEXT_CARL_API_SECRET ?? "";
+  const key = process.env.ERPNEXT_CARL_API_KEY ?? "0c3a223606ede7c";
+  const secret = process.env.ERPNEXT_CARL_API_SECRET ?? "cd4fd503416f673";
   return `token ${key}:${secret}`;
 }
 
