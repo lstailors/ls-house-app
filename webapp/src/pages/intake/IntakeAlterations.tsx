@@ -419,6 +419,128 @@ function GarmentTile({
 }
 
 // ─── Active Garment Card ──────────────────────────────────────────────────────
+// ── Color Swatch Picker ───────────────────────────────────────────────────────
+
+const SWATCHES = [
+  { label: "Black",      hex: "#1a1a1a" },
+  { label: "Charcoal",   hex: "#3d3d3d" },
+  { label: "Gray",       hex: "#808080" },
+  { label: "White",      hex: "#f5f5f0", border: true },
+  { label: "Ivory",      hex: "#fffff0", border: true },
+  { label: "Navy",       hex: "#1b2a4a" },
+  { label: "Blue",       hex: "#2563eb" },
+  { label: "Light Blue", hex: "#7eb8d4" },
+  { label: "Sky Blue",   hex: "#bfdbfe" },
+  { label: "Brown",      hex: "#6b3f1f" },
+  { label: "Tan",        hex: "#c8a97e" },
+  { label: "Beige",      hex: "#e8d9c0" },
+  { label: "Camel",      hex: "#c19a6b" },
+  { label: "Burgundy",   hex: "#6d1a2e" },
+  { label: "Wine",       hex: "#722f37" },
+  { label: "Forest",     hex: "#2d5a27" },
+  { label: "Olive",      hex: "#6b7c2d" },
+  { label: "Khaki",      hex: "#c3b091" },
+  { label: "Cream",      hex: "#fffdd0", border: true },
+  { label: "Sand",       hex: "#c2b280" },
+  { label: "Red",        hex: "#dc2626" },
+  { label: "Pink",       hex: "#f9a8d4" },
+  { label: "Purple",     hex: "#7c3aed" },
+  { label: "Multi",      hex: "multi" },
+]
+
+function ColorSwatchPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const isMulti = value === "Multi" || (value && !SWATCHES.find(s => s.label === value && s.hex !== "multi"))
+  const [customOpen, setCustomOpen] = useState(false)
+  const [customVal, setCustomVal] = useState("")
+
+  return (
+    <div className="space-y-2">
+      {/* Swatch grid */}
+      <div className="flex flex-wrap gap-2">
+        {SWATCHES.map(s => {
+          const selected = value === s.label
+          if (s.hex === "multi") {
+            return (
+              <button
+                key="multi"
+                type="button"
+                title="Multi-color"
+                onClick={() => onChange("Multi")}
+                className={cn(
+                  'w-8 h-8 rounded-full border-2 flex items-center justify-center text-[10px] font-bold transition-all',
+                  selected
+                    ? 'border-brass-shimmer scale-110 shadow-[0_0_0_2px_rgba(176,141,87,0.4)]'
+                    : 'border-brass/30 hover:border-brass/60'
+                )}
+                style={{ background: 'conic-gradient(#1a1a1a,#2563eb,#dc2626,#2d5a27,#6b3f1f,#1a1a1a)' }}
+              >
+                {selected && <span className="text-white drop-shadow">✓</span>}
+              </button>
+            )
+          }
+          return (
+            <button
+              key={s.label}
+              type="button"
+              title={s.label}
+              onClick={() => onChange(s.label)}
+              className={cn(
+                'w-8 h-8 rounded-full border-2 transition-all',
+                selected
+                  ? 'border-brass-shimmer scale-110 shadow-[0_0_0_2px_rgba(176,141,87,0.4)]'
+                  : s.border ? 'border-brass/30 hover:border-brass/60' : 'border-transparent hover:border-brass/40'
+              )}
+              style={{ backgroundColor: s.hex }}
+            >
+              {selected && (
+                <span className={cn('block text-center text-xs font-bold drop-shadow', s.hex === '#f5f5f0' || s.hex === '#fffff0' || s.hex === '#fffdd0' || s.hex === '#bfdbfe' ? 'text-gray-600' : 'text-white')}>✓</span>
+              )}
+            </button>
+          )
+        })}
+        {/* Custom */}
+        <button
+          type="button"
+          title="Custom color"
+          onClick={() => setCustomOpen(v => !v)}
+          className={cn(
+            'w-8 h-8 rounded-full border-2 border-dashed border-brass/40 hover:border-brass flex items-center justify-center text-brass-shimmer text-lg transition-all',
+            customOpen && 'border-brass'
+          )}
+        >+</button>
+      </div>
+
+      {/* Selected label */}
+      {value && (
+        <div className="flex items-center gap-2">
+          <span className="text-cream-muted text-xs">Selected:</span>
+          <span className="text-cream text-xs font-medium">{value}</span>
+          <button type="button" onClick={() => onChange('')} className="text-cream-dim hover:text-cream text-[10px]">✕</button>
+        </div>
+      )}
+
+      {/* Custom input */}
+      {customOpen && (
+        <div className="flex gap-2">
+          <input
+            autoFocus
+            className="flex-1 bg-forest-deep border border-brass/30 rounded-lg px-3 py-1.5 text-cream text-sm focus:border-brass/60 focus:outline-none"
+            placeholder="e.g. Cobalt Blue, Herringbone…"
+            value={customVal}
+            onChange={e => setCustomVal(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && customVal.trim()) { onChange(customVal.trim()); setCustomVal(''); setCustomOpen(false); } }}
+          />
+          <button
+            type="button"
+            onClick={() => { if (customVal.trim()) { onChange(customVal.trim()); setCustomVal(''); setCustomOpen(false); } }}
+            className="px-3 py-1.5 rounded-lg bg-brass/20 border border-brass/30 text-brass-shimmer text-xs hover:bg-brass/30 transition-all"
+          >Set</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ActiveGarmentCard({
   garment,
   presets,
@@ -503,11 +625,9 @@ function ActiveGarmentCard({
         </div>
         <div>
           <label className="ui-label text-cream-muted mb-1 block">Color</label>
-          <input
-            className="w-full bg-forest-deep border border-brass/20 rounded-lg px-3 py-2 text-cream text-sm focus:border-brass/50 focus:outline-none"
-            placeholder="e.g. Navy"
+          <ColorSwatchPicker
             value={garment.color}
-            onChange={e => onUpdate({ ...garment, color: e.target.value })}
+            onChange={color => onUpdate({ ...garment, color })}
           />
         </div>
         <div className="col-span-2">
