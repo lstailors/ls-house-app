@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Read(//Users/Maestro_1/Downloads/**)",
-      "Bash(npx create-next-app@latest ls-house --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-git)"
+      "Bash(npx create-next-app@latest ls-house --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-git)",
+      "mcp__94582c79-f8c1-45cb-b4b1-f8a2ab964e7f__get_runtime_logs"
     ]
   }
 }
