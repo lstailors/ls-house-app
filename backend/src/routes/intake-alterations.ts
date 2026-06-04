@@ -426,30 +426,64 @@ intakeAlterationsRouter.patch('/tickets/:name/tailor', async (c) => {
   }
 });
 
-// 8. PATCH /tickets/:name/status
+// 8. PATCH /tickets/:name/status — applies Frappe workflow transitions
 intakeAlterationsRouter.patch('/tickets/:name/status', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   const ticketName = c.req.param('name');
-  const body = (await c.req.json()) as any;
-  const { status } = body as {
-    status: 'Received' | 'In Progress' | 'Ready' | 'Picked Up';
+  const { status } = (await c.req.json()) as { status: string };
+
+  // Frappe Workflow: direct writes to workflow_state are reverted by the engine.
+  // Must apply named transition actions instead.
+  const FORWARD = ['Received', 'In Progress', 'Ready', 'Picked Up'] as const;
+  const DIRECT: Record<string, Record<string, string>> = {
+    'Received':    { 'In Progress': 'Start Work',    'Cancelled': 'Cancel' },
+    'In Progress': { 'Ready':       'Mark Ready',     'Cancelled': 'Cancel' },
+    'Ready':       { 'Picked Up':   'Mark Picked Up', 'Cancelled': 'Cancel' },
+    'Cancelled':   { 'Received':    'Reopen' },
   };
 
-  try {
-    const res = await fetch(`${MCP_BASE}/mcp`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, doc:{ workflow_state: status } } } }),
-    });
-    const json: any = await res.json();
-    const content = json?.result?.content?.[0];
-    const text = content?.text ?? '';
-    if (content?.isError || text.includes('Traceback') || text.includes('traceback')) {
-      console.error('[status patch] ERP error:', text.slice(0, 300));
-      return c.json({ error: { message: 'ERPNext update failed: ' + text.slice(0, 150) } }, 502);
+  function actionPath(from: string, to: string): string[] | null {
+    if (from === to) return [];
+    if (DIRECT[from]?.[to]) return [DIRECT[from][to]];
+    const fi = FORWARD.indexOf(from as any);
+    const ti = FORWARD.indexOf(to as any);
+    if (fi >= 0 && ti > fi) {
+      const path: string[] = [];
+      for (let i = fi; i < ti; i++) {
+        const a = DIRECT[FORWARD[i]]?.[FORWARD[i + 1]];
+        if (!a) return null;
+        path.push(a);
+      }
+      return path;
     }
+    return null;
+  }
+
+  try {
+    const doc = await mcpGet<any>('Alteration Ticket', ticketName);
+    const path = actionPath(doc.workflow_state, status);
+
+    if (path === null) {
+      return c.json({ error: { message: `No workflow path from "${doc.workflow_state}" to "${status}"` } }, 400);
+    }
+    if (path.length === 0) {
+      return c.json({ data: { ok: true } }); // already at target
+    }
+
+    // Apply each transition via Frappe REST API using __workflow_action
+    for (const action of path) {
+      const res = await fetch(
+        `${ERP_BASE}/api/resource/${encodeURIComponent('Alteration Ticket')}/${encodeURIComponent(ticketName)}`,
+        { method: 'PUT', headers: erpHeaders(), body: JSON.stringify({ __workflow_action: action }) }
+      );
+      if (!res.ok) {
+        const t = await res.text().catch(() => '');
+        return c.json({ error: { message: `Workflow action "${action}" failed: ${t.slice(0, 150)}` } }, 502);
+      }
+    }
+
     return c.json({ data: { ok: true } });
   } catch (e: any) {
     return c.json({ error: { message: e.message } }, 502);
