@@ -258,17 +258,15 @@ intakeAlterationsRouter.get('/tickets/:name', async (c) => {
   const ticketName = c.req.param('name');
   try {
     const doc = await mcpGet<any>('Alteration Ticket', ticketName);
-    // Enrich with customer contact info
-    let customerMobile = '';
+    // customer_phone is already on the Alteration Ticket doc; fetch Customer only for email
     let customerEmail = '';
     try {
       if (doc.customer) {
         const cust = await mcpGet<any>('Customer', doc.customer);
-        customerMobile = cust.mobile_no ?? cust.phone ?? '';
         customerEmail = cust.email_id ?? '';
       }
     } catch { /* non-fatal */ }
-    return c.json({ data: { ...doc, customer_mobile: customerMobile, customer_email: customerEmail } });
+    return c.json({ data: { ...doc, customer_mobile: doc.customer_phone ?? '', customer_email: customerEmail } });
   } catch (e: any) {
     return c.json({ error: { message: e.message } }, 404);
   }
@@ -373,11 +371,12 @@ intakeAlterationsRouter.patch('/tickets/:name/tailor', async (c) => {
     const res = await fetch(`${MCP_BASE}/mcp`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, updates:{ assigned_tailor: tailorId || null } } } }),
+      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, doc:{ assigned_tailor: tailorId || null } } } }),
     });
     const json: any = await res.json();
-    const text = json?.result?.content?.[0]?.text ?? '';
-    if (text.toLowerCase().includes('error') || text.toLowerCase().includes('traceback')) {
+    const content = json?.result?.content?.[0];
+    const text = content?.text ?? '';
+    if (content?.isError || text.includes('Traceback') || text.includes('traceback')) {
       console.error('[tailor patch] ERP error:', text.slice(0, 300));
       return c.json({ error: { message: 'ERPNext update failed: ' + text.slice(0, 150) } }, 502);
     }
@@ -402,11 +401,12 @@ intakeAlterationsRouter.patch('/tickets/:name/status', async (c) => {
     const res = await fetch(`${MCP_BASE}/mcp`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, updates:{ workflow_state: status } } } }),
+      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, doc:{ workflow_state: status } } } }),
     });
     const json: any = await res.json();
-    const text = json?.result?.content?.[0]?.text ?? '';
-    if (text.toLowerCase().includes('error') || text.toLowerCase().includes('traceback')) {
+    const content = json?.result?.content?.[0];
+    const text = content?.text ?? '';
+    if (content?.isError || text.includes('Traceback') || text.includes('traceback')) {
       console.error('[status patch] ERP error:', text.slice(0, 300));
       return c.json({ error: { message: 'ERPNext update failed: ' + text.slice(0, 150) } }, 502);
     }
@@ -429,10 +429,12 @@ intakeAlterationsRouter.patch('/tickets/:name/due-date', async (c) => {
     const res = await fetch(`${MCP_BASE}/mcp`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, updates:{ due_date } } } }),
+      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, doc:{ due_date } } } }),
     });
     const json: any = await res.json();
-    return c.json({ data: { ok: true, raw: json?.result?.content?.[0]?.text } });
+    const content = json?.result?.content?.[0];
+    if (content?.isError) return c.json({ error: { message: content.text?.slice(0, 150) } }, 502);
+    return c.json({ data: { ok: true } });
   } catch (e: any) {
     return c.json({ error: { message: e.message } }, 502);
   }
@@ -451,10 +453,12 @@ intakeAlterationsRouter.patch('/tickets/:name/transfer', async (c) => {
     const res = await fetch(`${MCP_BASE}/mcp`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, updates:{ origin_location: location } } } }),
+      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, doc:{ origin_location: location } } } }),
     });
     const json: any = await res.json();
-    return c.json({ data: { ok: true, raw: json?.result?.content?.[0]?.text } });
+    const content = json?.result?.content?.[0];
+    if (content?.isError) return c.json({ error: { message: content.text?.slice(0, 150) } }, 502);
+    return c.json({ data: { ok: true } });
   } catch (e: any) {
     return c.json({ error: { message: e.message } }, 502);
   }

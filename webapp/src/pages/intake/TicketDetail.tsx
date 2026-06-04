@@ -7,8 +7,6 @@ import {
   Printer,
   Tag,
   User,
-  CheckCircle2,
-  Circle,
   AlertTriangle,
   Copy,
   Check,
@@ -106,73 +104,113 @@ function WorkflowStepper({
   const currentIdx = stepIndex(current)
   const isCancelled = current === 'Cancelled'
 
-  return (
-    <div className="glass-panel rounded-lg p-4 mb-6">
-      {isCancelled ? (
-        <p className="text-center text-red-400 text-sm flex items-center justify-center gap-2">
+  if (isCancelled) {
+    return (
+      <div className="rounded-xl border border-red-500/20 bg-red-950/20 px-4 py-3 mb-6 text-center">
+        <p className="text-red-400 text-sm flex items-center justify-center gap-2">
           <AlertTriangle size={14} /> This ticket has been cancelled
         </p>
-      ) : (
-        <div className="flex items-center gap-1 sm:gap-2">
+      </div>
+    )
+  }
+
+  const progressPct =
+    WORKFLOW_STEPS.length <= 1 ? 0 : (currentIdx / (WORKFLOW_STEPS.length - 1)) * 100
+
+  return (
+    <div className="mb-6">
+      <div
+        className="rounded-2xl overflow-hidden border border-white/[0.06]"
+        style={{ background: 'rgba(10,20,12,0.65)', backdropFilter: 'blur(18px)' }}
+      >
+        <div className="flex">
           {WORKFLOW_STEPS.map((step, idx) => {
             const isPast = idx < currentIdx
             const isActive = idx === currentIdx
+
             return (
-              <div key={step} className="flex items-center gap-1 sm:gap-2 flex-1 min-w-0">
-                <button
-                  onClick={() => { if (!isActive && !isPending) onStep(step) }}
-                  disabled={isPending}
+              <button
+                key={step}
+                onClick={() => !isActive && !isPending && onStep(step)}
+                disabled={isPending}
+                className={cn(
+                  'flex-1 flex flex-col items-center gap-2 py-4 px-2 relative transition-all duration-200',
+                  'border-r border-white/[0.04] last:border-r-0',
+                  isActive ? 'cursor-default' : 'cursor-pointer hover:bg-white/[0.03] active:bg-white/[0.06]'
+                )}
+              >
+                {/* Active glow behind step */}
+                {isActive ? (
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{
+                      background:
+                        'radial-gradient(ellipse at 50% 10%, rgba(184,134,11,0.14) 0%, transparent 70%)',
+                    }}
+                  />
+                ) : null}
+
+                {/* Node */}
+                <div
                   className={cn(
-                    'flex flex-col items-center flex-1 min-w-0 group transition-all',
-                    isActive ? 'cursor-default' : 'cursor-pointer hover:opacity-80'
+                    'relative w-7 h-7 rounded-full flex items-center justify-center border transition-all duration-300',
+                    isActive
+                      ? 'border-brass-shimmer/80 bg-brass-shimmer/20 scale-110'
+                      : isPast
+                        ? 'border-brass-light/40 bg-brass-light/10'
+                        : 'border-white/10 bg-white/[0.03]'
+                  )}
+                  style={isActive ? { boxShadow: '0 0 12px rgba(184,134,11,0.45)' } : undefined}
+                >
+                  {isPast ? (
+                    <Check size={12} className="text-brass-light" />
+                  ) : (
+                    <span
+                      className={cn(
+                        'text-[10px] font-bold',
+                        isActive ? 'text-brass-shimmer' : 'text-cream-dim/25'
+                      )}
+                    >
+                      {idx + 1}
+                    </span>
+                  )}
+                </div>
+
+                {/* Label */}
+                <span
+                  className={cn(
+                    'text-[11px] font-medium leading-tight text-center transition-colors',
+                    isActive
+                      ? 'text-brass-shimmer'
+                      : isPast
+                        ? 'text-cream-dim/55'
+                        : 'text-cream-dim/25'
                   )}
                 >
-                  <div
-                    className={cn(
-                      'flex items-center justify-center rounded-full border-2 transition-all mb-1 shrink-0',
-                      isActive
-                        ? 'w-9 h-9 border-brass-shimmer bg-brass-shimmer/25 text-brass-shimmer scale-110'
-                        : isPast
-                          ? 'w-7 h-7 border-brass-light bg-brass-light/20 text-brass-light'
-                          : 'w-7 h-7 border-cream-dim/20 text-cream-dim/30 group-hover:border-cream-dim/50'
-                    )}
-                  >
-                    {isPast ? (
-                      <CheckCircle2 size={14} />
-                    ) : (
-                      <Circle size={isActive ? 16 : 14} />
-                    )}
-                  </div>
-                  <span
-                    className={cn(
-                      'text-xs text-center leading-tight truncate max-w-full',
-                      isActive
-                        ? 'text-brass-shimmer font-semibold'
-                        : isPast
-                          ? 'text-brass-light/70'
-                          : 'text-cream-dim/40'
-                    )}
-                  >
-                    {step}
-                  </span>
-                </button>
-
-                {idx < WORKFLOW_STEPS.length - 1 && (
-                  <div
-                    className={cn(
-                      'h-0.5 flex-1 min-w-[8px] mb-4 transition-all',
-                      idx < currentIdx ? 'bg-brass-light/50' : 'bg-cream-dim/10'
-                    )}
-                  />
-                )}
-              </div>
+                  {step}
+                </span>
+              </button>
             )
           })}
         </div>
-      )}
-      {isPending && (
-        <p className="text-center text-cream-dim text-xs mt-2 animate-pulse">Updating status…</p>
-      )}
+
+        {/* Progress bar */}
+        <div className="h-px bg-white/[0.05] relative overflow-hidden">
+          <div
+            className="absolute inset-y-0 left-0 transition-all duration-700 ease-out"
+            style={{
+              width: `${progressPct}%`,
+              background: 'linear-gradient(90deg, rgba(120,90,0,0.8), #DAA520)',
+            }}
+          />
+        </div>
+      </div>
+
+      {isPending ? (
+        <p className="text-center text-cream-dim/60 text-xs mt-2 animate-pulse">
+          Updating status…
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -507,7 +545,6 @@ function TailorSection({
 const TRANSFER_OPTIONS = [
   { id: 'NYC', label: 'NYC Store', sub: 'New York City location' },
   { id: 'HOU', label: 'HOU Store', sub: 'Houston location' },
-  { id: 'Home', label: 'Work at Home', sub: "Tailor's home workshop" },
 ] as const
 
 function TransferSection({
