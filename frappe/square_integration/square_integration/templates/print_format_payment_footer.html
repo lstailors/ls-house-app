@@ -1,0 +1,21 @@
+{#
+  Paste this snippet at the bottom of your Sales Invoice Print Format in ERPNext.
+  Go to: ERPNext > Print Format > (your invoice format) > Edit HTML > paste at bottom.
+#}
+{% set pay_url = "https://app.lstailors.com/pay/" + doc.name %}
+{% if doc.outstanding_amount > 0 %}
+<div style="margin-top: 32px; padding: 20px; border: 1px solid #b08d57; border-radius: 8px; text-align: center; background: #f9f6f0;">
+  <p style="font-size: 13px; color: #555; margin: 0 0 12px; font-family: Georgia, serif; font-style: italic;">
+    Pay securely online — Apple Pay, Google Pay, or card
+  </p>
+  <a href="{{ pay_url }}"
+     style="display: inline-block; background: #b08d57; color: #fff; font-family: 'Helvetica Neue', sans-serif;
+            font-size: 14px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+            text-decoration: none; border-radius: 6px; padding: 12px 28px;">
+    Pay Now — ${{ "%.2f"|format(doc.outstanding_amount) }}
+  </a>
+  <p style="font-size: 10px; color: #999; margin: 10px 0 0; font-family: 'Helvetica Neue', sans-serif;">
+    {{ pay_url }}
+  </p>
+</div>
+{% endif %}

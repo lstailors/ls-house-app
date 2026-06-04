@@ -42,6 +42,7 @@ const AlterationTags = lazy(() => import('./pages/intake/AlterationTags'));
 const AlterationReceipt = lazy(() => import('./pages/intake/AlterationReceipt'));
 const QRScanner = lazy(() => import('./pages/intake/QRScanner'));
 const GarmentTag = lazy(() => import('./pages/GarmentTag'));
+const PayInvoice = lazy(() => import('./pages/PayInvoice'));
 const Tasks = lazy(() => import('./pages/Tasks'));
 const Comms = lazy(() => import('./pages/Comms'));
 const SofiaChat = lazy(() => import('./pages/SofiaChat'));
@@ -72,6 +73,8 @@ const App = () => (
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/d/:token" element={<DeliveryTracking />} />
+          {/* Customer-facing payment page — no AppShell, works for unauthenticated users */}
+          <Route path="/pay/:invoiceId" element={<PayInvoice />} />
           {/* Standalone print pages — outside AppShell so only content renders */}
           <Route path="/orders/alterations/:ticketName/tags" element={<AlterationTags />} />
           <Route path="/orders/alterations/:ticketName/receipt" element={<AlterationReceipt />} />

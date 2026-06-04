@@ -1318,14 +1318,14 @@ function SuccessState({
 
         <div className="space-y-3">
           <button
-            onClick={() => window.open(`/intake/alterations/tickets/${ticketName}/print`)}
+            onClick={() => window.open(`/orders/alterations/${ticketName}/receipt`)}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-brass/30 text-cream hover:bg-brass/10 transition-colors"
           >
             <Printer className="w-4 h-4 text-brass-shimmer" />
             Print Receipt
           </button>
           <button
-            onClick={() => window.open(`/intake/alterations/tickets/${ticketName}/tags`)}
+            onClick={() => window.open(`/orders/alterations/${ticketName}/tags`)}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-brass/30 text-cream hover:bg-brass/10 transition-colors"
           >
             <Tag className="w-4 h-4 text-brass-shimmer" />
@@ -1454,17 +1454,6 @@ export default function IntakeAlterations() {
     setDueDate(defaultDueDate())
   }
 
-  if (submitted) {
-    return (
-      <SuccessState
-        ticketName={submitted.ticketName}
-        customer={customer}
-        garmentCount={garments.filter(g => g.lines.length > 0).length}
-        onReset={handleReset}
-      />
-    )
-  }
-
   const garmentCounts = garments.reduce<Record<string, number>>((acc, g) => {
     acc[g.garmentType] = (acc[g.garmentType] || 0) + 1
     return acc
@@ -1510,6 +1499,17 @@ export default function IntakeAlterations() {
   const handleCommitted = useCallback((ticket: string) => {
     setSubmitted({ ticketName: ticket })
   }, [])
+
+  if (submitted) {
+    return (
+      <SuccessState
+        ticketName={submitted.ticketName}
+        customer={customer}
+        garmentCount={garments.filter(g => g.lines.length > 0).length}
+        onReset={handleReset}
+      />
+    )
+  }
 
   return (
     <div className="min-h-screen bg-forest-deep text-cream">

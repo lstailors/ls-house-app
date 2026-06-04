@@ -331,8 +331,17 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
     const result = await erpPost<any>('ls_alterations.api.create_ticket', {
       payload: JSON.stringify(payload),
     });
-    // ERP returns { name, ticket_total, ... } — normalize to { ticketName }
-    return c.json({ data: { ticketName: result?.name ?? result?.ticket_name, ...result } });
+    // ERPNext may return a plain string (ticket name) or an object
+    const ticketName: string | undefined =
+      typeof result === 'string'
+        ? result
+        : (result?.name ?? result?.ticket_name ?? result?.docname ?? result?.ticket ?? undefined);
+
+    if (!ticketName) {
+      console.error('[intake-alterations] create_ticket returned unexpected shape:', JSON.stringify(result));
+    }
+
+    return c.json({ data: { ticketName, raw: typeof result === 'object' ? result : {} } });
   } catch (e: any) {
     console.error('[intake-alterations] ticket create error:', e?.message);
     return c.json({ error: { message: e?.message || 'Failed to create ticket' } }, 502);

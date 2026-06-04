@@ -11,10 +11,13 @@ import {
   Circle,
   AlertTriangle,
   ChevronRight,
+  Copy,
+  Check,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { ChargeTerminalButton } from '@/components/payments/ChargeTerminalButton'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -238,6 +241,7 @@ export default function TicketDetail() {
 
   const [selectedTailor, setSelectedTailor] = useState<string>('')
   const [selectedTailorName, setSelectedTailorName] = useState<string>('')
+  const [copiedPayLink, setCopiedPayLink] = useState(false)
 
   // ── Queries ──────────────────────────────────────────────────────────────
 
@@ -408,6 +412,40 @@ export default function TicketDetail() {
               </span>
             </div>
           </div>
+
+          {ticket.payment_status !== 'Paid' && (ticket.ticket_total ?? 0) > 0 ? (
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <ChargeTerminalButton
+                invoiceId={ticket.name}
+                amountCents={Math.round((ticket.ticket_total ?? 0) * 100)}
+                amountDisplay={formatCurrency(ticket.ticket_total ?? 0)}
+                onSuccess={() => {
+                  toast.success('Payment captured — refreshing…')
+                  queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
+                }}
+                onError={(msg) => toast.error(msg)}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const url = `https://app.lstailors.com/pay/${ticket.name}`
+                  navigator.clipboard.writeText(url).then(() => {
+                    setCopiedPayLink(true)
+                    toast.success('Payment link copied')
+                    setTimeout(() => setCopiedPayLink(false), 2500)
+                  })
+                }}
+                className="flex items-center gap-1.5 text-xs text-cream-dim hover:text-cream transition-colors"
+              >
+                {copiedPayLink ? (
+                  <Check className="w-3.5 h-3.5 text-signal-emerald" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+                {copiedPayLink ? 'Copied!' : 'Copy payment link'}
+              </button>
+            </div>
+          ) : null}
         </section>
 
         {/* ── Tailor Assignment ── */}

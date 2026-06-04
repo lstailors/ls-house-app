@@ -17,12 +17,15 @@ import {
   MessageSquare,
   ArrowUpRight,
   Send,
+  Copy,
+  Check,
 } from "lucide-react"
 import { GlassCard } from "@/components/glass/GlassCard"
 import { StatusPill } from "@/components/glass/StatusPill"
 import { api } from "@/lib/api"
 import { formatUSD, formatDate } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { ChargeTerminalButton } from "@/components/payments/ChargeTerminalButton"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -193,6 +196,7 @@ export default function SalesOrderDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [expandedInvoice, setExpandedInvoice] = useState<string | null>(null)
+  const [copiedInvoice, setCopiedInvoice] = useState<string | null>(null)
 
   const {
     data: order,
@@ -513,6 +517,40 @@ export default function SalesOrderDetail() {
                         >
                           Open invoice in ERPNext <ArrowUpRight className="w-3 h-3" />
                         </a>
+
+                        {inv.outstanding_amount > 0 && inv.status !== "Paid" ? (
+                          <div className="mt-3 pt-3 border-t border-brass/10 space-y-2">
+                            <ChargeTerminalButton
+                              invoiceId={inv.name}
+                              amountCents={Math.round(inv.outstanding_amount * 100)}
+                              amountDisplay={formatUSD(inv.outstanding_amount)}
+                              onSuccess={() => {
+                                toast.success("Payment captured — refreshing…")
+                                qc.invalidateQueries({ queryKey: ["sales-order-detail", id] })
+                              }}
+                              onError={(msg) => toast.error(msg)}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const url = `https://app.lstailors.com/pay/${inv.name}`
+                                navigator.clipboard.writeText(url).then(() => {
+                                  setCopiedInvoice(inv.name)
+                                  toast.success("Payment link copied")
+                                  setTimeout(() => setCopiedInvoice(null), 2500)
+                                })
+                              }}
+                              className="flex items-center gap-1.5 text-xs text-cream-dim hover:text-cream transition-colors"
+                            >
+                              {copiedInvoice === inv.name ? (
+                                <Check className="w-3 h-3 text-signal-emerald" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                              {copiedInvoice === inv.name ? "Copied!" : "Copy payment link"}
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>
