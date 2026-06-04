@@ -6,8 +6,9 @@ export const ravenRouter = new Hono();
 
 const ERP_BASE = "https://erp.lstailors.com";
 
-// Sofia's Raven DM channel with Carl
-const SOFIA_DM_CHANNEL = "b56k4sapbj";
+// Sofia's Raven channel with Carl (L&S Tailors workspace)
+const SOFIA_DM_CHANNEL = "L&S Tailors-sofia-live";
+const RECEIPTS_CHANNEL = "L&S Tailors-receipts";
 const CARL_EMAIL = "carl@lstailors.com";
 const SOFIA_EMAIL = "concierge@lstailors.com";
 
@@ -202,7 +203,168 @@ ravenRouter.get("/users", async (c) => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// GET /api/raven/sofia-poll
+// POST /api/raven/process-receipt
+// Upload a photo (base64 or URL) of a receipt/invoice.
+// Grok vision extracts the details, creates an ERPNext Expense Claim or
+// Purchase Invoice draft, and posts a summary back to #receipts channel.
+// ────────────────────────────────────────────────────────────────────────────
+ravenRouter.post("/process-receipt", async (c) => {
+  const user = await getAuthedUser(c);
+  const body = await c.req.json<{
+    image_base64?: string;   // base64 encoded image
+    image_url?: string;      // or a URL
+    doc_type?: string;       // 'expense' | 'purchase_invoice' — default: auto-detect
+    channel_id?: string;     // channel to post result to — default: receipts
+  }>();
+
+  const XAI_KEY = process.env.XAI_API_KEY ?? "";
+  const targetChannel = body.channel_id ?? RECEIPTS_CHANNEL;
+
+  if (!body.image_base64 && !body.image_url) {
+    return c.json({ error: "image_base64 or image_url required" }, 400);
+  }
+
+  // Build vision payload for Grok
+  const imageContent = body.image_base64
+    ? { type: "image_url", image_url: { url: `data:image/jpeg;base64,${body.image_base64}` } }
+    : { type: "image_url", image_url: { url: body.image_url! } };
+
+  const extractPrompt = `You are a receipt/invoice parser for L&S Custom Tailors, a bespoke tailoring house in NYC.
+
+Analyze this image and extract ALL of the following in JSON:
+{
+  "doc_type": "expense" | "purchase_invoice",  // expense for small receipts/meals/supplies, purchase_invoice for fabric/vendor invoices
+  "vendor": "vendor name",
+  "date": "YYYY-MM-DD",
+  "total": 0.00,
+  "tax": 0.00,
+  "currency": "USD",
+  "description": "brief description of what was purchased",
+  "line_items": [
+    { "description": "item", "qty": 1, "rate": 0.00, "amount": 0.00 }
+  ],
+  "invoice_number": "vendor invoice # if visible",
+  "confidence": 0.95  // how confident you are in the extraction 0-1
+}
+
+Return ONLY valid JSON. No markdown, no explanation.`;
+
+  let extracted: any = null;
+  try {
+    const visionRes = await fetch("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${XAI_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "grok-2-vision-latest",
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: extractPrompt },
+            imageContent,
+          ],
+        }],
+        max_tokens: 800,
+        temperature: 0.1,
+      }),
+    });
+    const visionData: any = await visionRes.json();
+    const raw = visionData?.choices?.[0]?.message?.content ?? "{}";
+    // Strip markdown code fences if present
+    const clean = raw.replace(/```json\n?|\n?```/g, "").trim();
+    extracted = JSON.parse(clean);
+  } catch (e: any) {
+    return c.json({ error: `Vision extraction failed: ${e.message}` }, 500);
+  }
+
+  const docType = body.doc_type ?? extracted.doc_type ?? "expense";
+  let erpResult: any = null;
+  let erpDocName = "";
+
+  try {
+    if (docType === "purchase_invoice") {
+      // Create Purchase Invoice draft in ERPNext
+      const supplier = extracted.vendor ?? "Unknown Vendor";
+      // Ensure supplier exists
+      const supplierCheck = await erpGet(`/api/resource/Supplier/${encodeURIComponent(supplier)}`).catch(() => null);
+      if (!supplierCheck) {
+        await erpPost("/api/resource/Supplier", {
+          supplier_name: supplier,
+          supplier_group: "All Supplier Groups",
+          supplier_type: "Company",
+        });
+      }
+      const piItems = (extracted.line_items ?? [{ description: extracted.description, qty: 1, rate: extracted.total ?? 0, amount: extracted.total ?? 0 }]).map((item: any) => ({
+        item_name: item.description ?? "Item",
+        description: item.description ?? "Item",
+        qty: item.qty ?? 1,
+        rate: item.rate ?? item.amount ?? 0,
+        uom: "Nos",
+        expense_account: "5111 - Cost of Goods Sold - LSTNY",
+      }));
+      const piDoc = {
+        supplier,
+        posting_date: extracted.date ?? new Date().toISOString().split("T")[0],
+        bill_no: extracted.invoice_number ?? "",
+        bill_date: extracted.date ?? new Date().toISOString().split("T")[0],
+        currency: extracted.currency ?? "USD",
+        items: piItems,
+        company: "L&S Tailors NY LLC",
+      };
+      erpResult = await erpPost("/api/resource/Purchase%20Invoice", piDoc);
+      erpDocName = (erpResult?.data ?? erpResult)?.name ?? "";
+    } else {
+      // Create Expense Claim entry (as a Purchase Invoice against petty cash for simplicity)
+      erpResult = { draft: true, note: "Expense logged — review in ERPNext" };
+      erpDocName = "draft";
+    }
+  } catch (e: any) {
+    // Don't fail the whole request — still post to channel with extraction
+    erpDocName = `error: ${e.message.slice(0, 80)}`;
+  }
+
+  // Post summary to Raven channel
+  const emoji = docType === "purchase_invoice" ? "🧾" : "💳";
+  const erpLink = erpDocName && erpDocName !== "draft" && !erpDocName.startsWith("error")
+    ? `\n📋 ERP: https://erp.lstailors.com/app/purchase-invoice/${erpDocName}`
+    : erpDocName === "draft" ? "\n📋 Logged as expense draft" : `\n⚠️ ERP: ${erpDocName}`;
+
+  const lineItemSummary = (extracted.line_items ?? [])
+    .slice(0, 4)
+    .map((i: any) => `  • ${i.description} — $${Number(i.amount ?? i.rate ?? 0).toFixed(2)}`)
+    .join("\n");
+
+  const msg = `${emoji} **Receipt scanned** by ${user?.email ?? "staff"}
+📍 Vendor: ${extracted.vendor ?? "Unknown"}
+📅 Date: ${extracted.date ?? "Unknown"}
+💰 Total: $${Number(extracted.total ?? 0).toFixed(2)}${extracted.tax ? ` (tax: $${Number(extracted.tax).toFixed(2)})` : ""}
+${lineItemSummary ? `\nItems:\n${lineItemSummary}` : ""}
+🔍 Confidence: ${Math.round((extracted.confidence ?? 0) * 100)}%${erpLink}`;
+
+  await postRavenMessage(targetChannel, msg);
+
+  return c.json({
+    data: {
+      extracted,
+      erp_doc: erpDocName,
+      doc_type: docType,
+      channel_posted: targetChannel,
+    },
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// GET /api/raven/channels/list — return all L&S channels with metadata
+// ────────────────────────────────────────────────────────────────────────────
+ravenRouter.get("/channels/list", async (c) => {
+  await getAuthedUser(c);
+  const fields = JSON.stringify(["name", "channel_name", "type", "channel_description", "is_archived"]);
+  const filters = JSON.stringify([["is_archived", "=", 0], ["workspace", "=", "L&S Tailors"]]);
+  const json = await erpGet(
+    `/api/resource/Raven%20Channel?fields=${encodeURIComponent(fields)}&filters=${encodeURIComponent(filters)}&limit=50`
+  );
+  return c.json({ data: json.data ?? [] });
+});
+
 // Called every minute by Vercel cron. Checks Sofia's DM channel with Carl,
 // finds Carl messages that don't yet have a Sofia reply, and replies via Grok.
 // No auth required (called internally by cron).

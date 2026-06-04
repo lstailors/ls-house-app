@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  MessageSquare, X, ArrowLeft, Send, Hash, Bot, ChevronRight,
+  MessageSquare, X, ArrowLeft, Send, Hash, Bot, ChevronRight, Camera,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/session";
+import { toast } from "sonner";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -138,12 +139,14 @@ export default function RavenChat({ open: openProp, onClose }: { open?: boolean;
   const [messages, setMessages] = useState<RavenMessage[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [scanningReceipt, setScanningReceipt] = useState(false);
   const [unreadCount] = useState(0); // future: track unread
   const [loadingChannels, setLoadingChannels] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load channels when panel opens
   useEffect(() => {
@@ -202,6 +205,37 @@ export default function RavenChat({ open: openProp, onClose }: { open?: boolean;
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const handleReceiptUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeChannel) return;
+    setScanningReceipt(true);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      await api.post("/raven/process-receipt", {
+        image_base64: base64,
+        channel_id: activeChannel.name,
+      });
+      // reload messages to show the receipt summary
+      if (activeChannel) {
+        const res = await api.get<{ messages: RavenMessage[] }>(
+          `/raven/channels/${encodeURIComponent(activeChannel.name)}/messages`
+        );
+        setMessages(res.messages ?? []);
+      }
+    } catch (err: unknown) {
+      console.error("[receipt]", err);
+    } finally {
+      setScanningReceipt(false);
+      // reset file input
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, [activeChannel]);
 
   const sendMessage = async () => {
     if (!text.trim() || !activeChannel || sending) return;
@@ -360,6 +394,27 @@ export default function RavenChat({ open: openProp, onClose }: { open?: boolean;
                   className="flex-1 bg-transparent text-sm text-cream placeholder:text-cream-dim/50 resize-none outline-none max-h-32 leading-relaxed"
                   style={{ minHeight: "22px" }}
                 />
+                {/* Hidden file input for receipt photos */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleReceiptUpload}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={scanningReceipt}
+                  title="Scan receipt / invoice"
+                  className={cn(
+                    "p-1.5 rounded-lg transition-all shrink-0",
+                    scanningReceipt
+                      ? "text-brass/50 animate-pulse"
+                      : "text-brass/60 hover:text-brass hover:bg-brass/10"
+                  )}
+                >
+                  <Camera size={15} />
+                </button>
                 <button
                   onClick={sendMessage}
                   disabled={!text.trim() || sending}
