@@ -297,6 +297,7 @@ function CustomerCard({
 }) {
   const [smsOpen, setSmsOpen] = useState(false)
   const [emailOpen, setEmailOpen] = useState(false)
+  const [smsIncludeQr, setSmsIncludeQr] = useState(true)
 
   const firstName = ticket.customer_name?.split(' ')[0] ?? ticket.customer_name
   const dueFormatted = formatDate(ticket.due_date)
@@ -316,6 +317,7 @@ function CustomerCard({
       api.post(`/api/intake-alterations/tickets/${ticketName}/sms`, {
         phone: ticket.customer_mobile,
         message: smsMsg,
+        includeQr: smsIncludeQr,
       }),
     onSuccess: () => {
       toast.success('SMS sent!')
@@ -402,6 +404,23 @@ function CustomerCard({
             rows={5}
             className="bg-forest-deep border-brass/20 text-cream text-sm resize-none"
           />
+          <button
+            onClick={() => setSmsIncludeQr(!smsIncludeQr)}
+            className={cn(
+              'flex items-center gap-2 text-xs px-3 py-2 rounded-lg border w-full transition-all',
+              smsIncludeQr
+                ? 'bg-brass-shimmer/10 border-brass/30 text-brass-light'
+                : 'bg-white/5 border-white/10 text-cream-dim/50'
+            )}
+          >
+            <span className={cn(
+              'w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all',
+              smsIncludeQr ? 'bg-brass-shimmer/30 border-brass-shimmer/60' : 'border-white/20'
+            )}>
+              {smsIncludeQr ? <Check size={10} className="text-brass-shimmer" /> : null}
+            </span>
+            Attach e-ticket QR code image (MMS)
+          </button>
           <DialogFooter>
             <Button
               variant="outline"
@@ -415,7 +434,7 @@ function CustomerCard({
               disabled={smsMutation.isPending || !smsMsg.trim()}
               className="bg-brass-shimmer/20 border border-brass/30 text-brass-shimmer hover:bg-brass-shimmer/30"
             >
-              {smsMutation.isPending ? 'Sending…' : 'Send SMS'}
+              {smsMutation.isPending ? 'Sending…' : smsIncludeQr ? 'Send MMS + QR' : 'Send SMS'}
             </Button>
           </DialogFooter>
         </DialogContent>

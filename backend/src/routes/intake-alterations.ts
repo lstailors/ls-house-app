@@ -11,6 +11,12 @@ const ERP_BASE = process.env.ERPNEXT_BASE_URL ?? 'https://erp.lstailors.com';
 const ERP_TOKEN = process.env.ERPNEXT_API_TOKEN ?? process.env.ERPNEXT_MCP_TOKEN ?? '';
 const MCP_BASE = process.env.ERPNEXT_MCP_URL ?? 'https://erp-mcp.lstailors.com';
 const MCP_TOKEN = process.env.ERPNEXT_MCP_TOKEN ?? '';
+const APP_URL = process.env.APP_URL ?? 'https://app.lstailors.com';
+
+function eTicketQrUrl(ticketName: string): string {
+  const link = `${APP_URL}/e-ticket/${encodeURIComponent(ticketName)}`;
+  return `https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=20&format=png&data=${encodeURIComponent(link)}`;
+}
 
 // Query via MCP server (works without direct ERP API key)
 async function mcpList<T>(doctype: string, fields: string[], filters: any[] = [], limit = 200, orderBy = ''): Promise<T[]> {
@@ -505,18 +511,19 @@ intakeAlterationsRouter.post('/tickets/:name/sms', async (c) => {
 
   const ticketName = c.req.param('name');
   const body = (await c.req.json()) as any;
-  const { phone, message } = body;
+  const { phone, message, includeQr } = body;
 
   if (!phone) return c.json({ error: { message: 'phone required' } }, 400);
   if (!message) return c.json({ error: { message: 'message required' } }, 400);
 
-  const sid = await sendSms(phone, message);
+  const mediaUrl = includeQr ? eTicketQrUrl(ticketName) : undefined;
+  const sid = await sendSms(phone, message, mediaUrl);
   if (!sid) return c.json({ error: { message: 'SMS send failed — check Twilio credentials' } }, 502);
 
   return c.json({ data: { ok: true, sid } });
 });
 
-// 12. POST /tickets/:name/notify-ready — send SMS + stamp notified_ready_at
+// 12. POST /tickets/:name/notify-ready — send MMS (with QR) + stamp notified_ready_at
 intakeAlterationsRouter.post('/tickets/:name/notify-ready', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
@@ -528,7 +535,8 @@ intakeAlterationsRouter.post('/tickets/:name/notify-ready', async (c) => {
   if (!phone) return c.json({ error: { message: 'phone required' } }, 400);
   if (!message) return c.json({ error: { message: 'message required' } }, 400);
 
-  const sid = await sendSms(phone, message);
+  // Always attach QR code image — iOS auto-scans it from the Messages app
+  const sid = await sendSms(phone, message, eTicketQrUrl(ticketName));
   if (!sid) return c.json({ error: { message: 'SMS send failed — check Twilio credentials' } }, 502);
 
   // Stamp notified_ready_at in ERPNext (non-fatal)
