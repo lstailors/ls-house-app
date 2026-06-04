@@ -14,6 +14,8 @@ import {
   Mail,
   MapPin,
   Pencil,
+  Bell,
+  Mic,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
@@ -48,6 +50,7 @@ interface AlterationTicketDoc {
   notes?: string
   customer_mobile?: string
   customer_email?: string
+  notified_ready_at?: string
   garments?: Array<{
     name: string
     garment_id: string
@@ -629,6 +632,98 @@ function TransferSection({
   )
 }
 
+// ── NotifySection ─────────────────────────────────────────────────────────
+
+function NotifySection({
+  ticket,
+  ticketName,
+  autoNotify,
+  onToggle,
+}: {
+  ticket: AlterationTicketDoc
+  ticketName: string
+  autoNotify: boolean
+  onToggle: (v: boolean) => void
+}) {
+  const hasPhone = !!ticket.customer_mobile
+
+  return (
+    <section className="glass-panel rounded-lg p-5 space-y-4">
+      <h2 className="ui-label text-cream-dim flex items-center gap-2">
+        <Bell size={14} /> Notifications
+      </h2>
+
+      {/* Auto-notify SMS row */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <p className={cn('text-sm font-medium', hasPhone ? 'text-cream' : 'text-cream-dim/50')}>
+            Auto-notify when Ready
+          </p>
+          <p className="text-cream-dim/50 text-xs mt-0.5 leading-tight">
+            {hasPhone
+              ? 'Send SMS automatically when status changes to "Ready"'
+              : 'No phone on file — add a phone number to enable'}
+          </p>
+        </div>
+        <button
+          onClick={() => hasPhone && onToggle(!autoNotify)}
+          disabled={!hasPhone}
+          aria-checked={autoNotify}
+          role="switch"
+          className={cn(
+            'relative w-10 h-5 rounded-full border transition-all duration-200 shrink-0',
+            autoNotify
+              ? 'bg-brass-shimmer/25 border-brass-shimmer/50'
+              : 'bg-white/5 border-white/10',
+            !hasPhone && 'opacity-30 cursor-not-allowed'
+          )}
+        >
+          <span
+            className={cn(
+              'absolute top-0.5 bottom-0.5 aspect-square rounded-full transition-all duration-200',
+              autoNotify
+                ? 'right-0.5 left-auto bg-brass-shimmer shadow-[0_0_6px_rgba(184,134,11,0.5)]'
+                : 'left-0.5 right-auto bg-cream-dim/40'
+            )}
+          />
+        </button>
+      </div>
+
+      {/* Notified badge */}
+      {ticket.notified_ready_at ? (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-emerald-900/20 border border-emerald-500/20">
+          <Check size={13} className="text-emerald-400 shrink-0" />
+          <p className="text-emerald-300 text-xs">
+            {'Notified via SMS · '}
+            {new Date(ticket.notified_ready_at).toLocaleString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+            })}
+          </p>
+        </div>
+      ) : null}
+
+      {/* Sofia voice — coming soon */}
+      <div className="flex items-center justify-between gap-4 opacity-35 pointer-events-none select-none">
+        <div>
+          <p className="text-cream text-sm font-medium flex items-center gap-1.5">
+            <Mic size={13} />
+            Sofia AI Voice Call
+          </p>
+          <p className="text-cream-dim/50 text-xs mt-0.5">
+            Automated voice call when garment is ready
+          </p>
+        </div>
+        <span className="text-[10px] border border-cream-dim/20 text-cream-dim/50 rounded-full px-2 py-0.5 shrink-0">
+          Coming soon
+        </span>
+      </div>
+    </section>
+  )
+}
+
 // ── InlineDueDate ─────────────────────────────────────────────────────────
 
 function InlineDueDate({
@@ -715,6 +810,15 @@ export default function TicketDetail() {
 
   const [copiedPayLink, setCopiedPayLink] = useState(false)
 
+  const [autoNotify, setAutoNotify] = useState<boolean>(() => {
+    try { return localStorage.getItem(`notify-ready-${ticketName}`) === 'true' } catch { return false }
+  })
+
+  function handleToggleNotify(val: boolean) {
+    setAutoNotify(val)
+    try { localStorage.setItem(`notify-ready-${ticketName}`, String(val)) } catch { /* ignore */ }
+  }
+
   // ── Queries ──────────────────────────────────────────────────────────────
 
   const {
@@ -737,8 +841,21 @@ export default function TicketDetail() {
   const updateStatusMutation = useMutation({
     mutationFn: (status: string) =>
       api.patch(`/api/intake-alterations/tickets/${ticketName}/status`, { status }),
-    onSuccess: (_data, status) => {
+    onSuccess: async (_data, status) => {
       toast.success(`Status updated to "${status}"`)
+      if (status === 'Ready' && autoNotify && ticket?.customer_mobile) {
+        const firstName = ticket.customer_name?.split(' ')[0] ?? 'there'
+        const msg = `Hi ${firstName}, your alteration at L&S Tailors is ready for pickup! Total: ${formatCurrency(ticket.ticket_total ?? 0)}. Give us a call or stop by anytime. Thank you!`
+        try {
+          await api.post(`/api/intake-alterations/tickets/${ticketName}/notify-ready`, {
+            phone: ticket.customer_mobile,
+            message: msg,
+          })
+          toast.success('Customer notified via SMS!')
+        } catch {
+          toast.error('Status updated but SMS notification failed')
+        }
+      }
       queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
     },
     onError: () => {
@@ -813,6 +930,14 @@ export default function TicketDetail() {
 
         {/* ── Customer Card ── */}
         <CustomerCard ticket={ticket} ticketName={ticketName!} />
+
+        {/* ── Notifications ── */}
+        <NotifySection
+          ticket={ticket}
+          ticketName={ticketName!}
+          autoNotify={autoNotify}
+          onToggle={handleToggleNotify}
+        />
 
         {/* ── Garments ── */}
         <section>

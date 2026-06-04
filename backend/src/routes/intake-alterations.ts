@@ -482,7 +482,35 @@ intakeAlterationsRouter.post('/tickets/:name/sms', async (c) => {
   return c.json({ data: { ok: true, sid } });
 });
 
-// 12. POST /tickets/:name/email (via ERPNext sendmail)
+// 12. POST /tickets/:name/notify-ready — send SMS + stamp notified_ready_at
+intakeAlterationsRouter.post('/tickets/:name/notify-ready', async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+  const ticketName = c.req.param('name');
+  const body = (await c.req.json()) as any;
+  const { phone, message } = body;
+
+  if (!phone) return c.json({ error: { message: 'phone required' } }, 400);
+  if (!message) return c.json({ error: { message: 'message required' } }, 400);
+
+  const sid = await sendSms(phone, message);
+  if (!sid) return c.json({ error: { message: 'SMS send failed — check Twilio credentials' } }, 502);
+
+  // Stamp notified_ready_at in ERPNext (non-fatal)
+  const now = new Date().toISOString().replace('T', ' ').split('.')[0];
+  try {
+    await fetch(`${MCP_BASE}/mcp`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, doc:{ notified_ready_at: now } } } }),
+    });
+  } catch { /* non-fatal */ }
+
+  return c.json({ data: { ok: true, sid } });
+});
+
+// 13. POST /tickets/:name/email (via ERPNext sendmail)
 intakeAlterationsRouter.post('/tickets/:name/email', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
