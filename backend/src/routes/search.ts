@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { supabaseAdmin } from "../lib/supabase";
-import { getAuthedUser, canSeeFinancials } from "../lib/scope";
-import { erpList } from "../lib/erp";
+import { supabaseAdmin } from "../lib/supabase.js";
+import { getAuthedUser, canSeeFinancials } from "../lib/scope.js";
+import { erpList } from "../lib/erp.js";
 
 export const searchRouter = new Hono();
 

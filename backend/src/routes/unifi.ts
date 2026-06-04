@@ -1,7 +1,7 @@
 // UniFi Cloud API routes — calls, recordings, cameras
 import { Hono } from "hono";
-import { getAuthedUser } from "../lib/scope";
-import { supabaseAdmin } from "../lib/supabase";
+import { getAuthedUser } from "../lib/scope.js";
+import { supabaseAdmin } from "../lib/supabase.js";
 import {
   checkUnifiConnection,
   getTalkCallLogs,
@@ -11,7 +11,7 @@ import {
   getProtectCameras,
   getCameraSnapshot,
   getProtectEvents,
-} from "../lib/unifi";
+} from "../lib/unifi.js";
 
 export const unifiRouter = new Hono();
 

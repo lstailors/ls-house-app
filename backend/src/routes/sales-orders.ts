@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { getAuthedUser, canSeeFinancials } from "../lib/scope";
-import { erpList, erpGet } from "../lib/erp";
+import { getAuthedUser, canSeeFinancials } from "../lib/scope.js";
+import { erpList, erpGet } from "../lib/erp.js";
 
 export const salesOrdersRouter = new Hono();
 

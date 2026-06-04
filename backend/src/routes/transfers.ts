@@ -1,6 +1,6 @@
 import { Hono } from "hono"
-import { getAuthedUser } from "../lib/scope"
-import { erpCreate, erpUpdate, erpSubmit, erpList, erpGet } from "../lib/erp"
+import { getAuthedUser } from "../lib/scope.js"
+import { erpCreate, erpUpdate, erpSubmit, erpList, erpGet } from "../lib/erp.js"
 
 export const transfersRouter = new Hono()
 

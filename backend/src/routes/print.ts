@@ -5,7 +5,7 @@
 // The printer must be on the same network as this server OR reachable via IP.
 
 import { Hono } from "hono";
-import { getAuthedUser } from "../lib/scope";
+import { getAuthedUser } from "../lib/scope.js";
 
 export const printRouter = new Hono();
 

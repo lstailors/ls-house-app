@@ -1,6 +1,6 @@
 // Save Cart (Supabase) -> Resume -> Commit (ERPNext ticket).
-import { supabaseAdmin } from "../supabase";
-import { upsertCustomerWithAddress, type CustomerInput } from "../erpnext/customer";
+import { supabaseAdmin } from "../supabase.js";
+import { upsertCustomerWithAddress, type CustomerInput } from "../erpnext/customer.js";
 
 export interface CartGarment { garmentId: string; garmentType: string; color?: string; total: number; }
 export interface CartLine { garmentRef: string; preset: string; description: string; price: number; }

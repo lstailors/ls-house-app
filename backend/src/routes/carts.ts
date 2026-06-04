@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { saveCart, listParkedCarts, getParkedCart, deleteParkedCart, commitParkedCart, type CartPayload, type ParkedCart } from "../lib/cart/parked";
+import { saveCart, listParkedCarts, getParkedCart, deleteParkedCart, commitParkedCart, type CartPayload, type ParkedCart } from "../lib/cart/parked.js";
 import type { CustomerInput } from "../lib/erpnext/customer";
-import { getAuthedUser } from "../lib/scope";
+import { getAuthedUser } from "../lib/scope.js";
 
 export const cartsRouter = new Hono();
 

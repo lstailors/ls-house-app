@@ -12,8 +12,8 @@
 // Run with: bun run src/scripts/verify-scope.ts
 // Requires backend running and seed already applied.
 
-import "../env";
-import { prisma } from "../lib/db";
+import "../env.js";
+import { prisma } from "../lib/db.js";
 
 const BASE = process.env.BACKEND_URL || "http://localhost:3000";
 const PASSWORD = "LStailors2026!";

@@ -5,7 +5,7 @@
 // public.customers filtering uses locationCode (division column, text).
 
 import type { Context } from "hono";
-import { supabaseAdmin } from "./supabase";
+import { supabaseAdmin } from "./supabase.js";
 import type { UserRole } from "../types";
 
 export interface AuthedUser {

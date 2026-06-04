@@ -2,9 +2,9 @@
 // Run with: bun run src/scripts/seed.ts
 // Idempotent: clears domain data first, then reseeds.
 
-import "../env";
-import { auth } from "../lib/auth";
-import { prisma } from "../lib/db";
+import "../env.js";
+import { auth } from "../lib/auth.js";
+import { prisma } from "../lib/db.js";
 
 const DEV_PASSWORD = "LStailors2026!";
 

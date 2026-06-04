@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { getAuthedUser } from "../lib/scope";
-import { erpList, erpGet } from "../lib/erp";
-import { sendSms } from "../lib/twilio";
+import { getAuthedUser } from "../lib/scope.js";
+import { erpList, erpGet } from "../lib/erp.js";
+import { sendSms } from "../lib/twilio.js";
 
 async function callGrok(prompt: string): Promise<string> {
   const apiKey = process.env.XAI_API_KEY

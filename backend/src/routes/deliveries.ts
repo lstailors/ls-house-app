@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { supabaseAdmin } from "../lib/supabase";
-import { getAuthedUser, resolveLocationCode } from "../lib/scope";
+import { supabaseAdmin } from "../lib/supabase.js";
+import { getAuthedUser, resolveLocationCode } from "../lib/scope.js";
 
 export const deliveriesRouter = new Hono();
 

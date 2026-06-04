@@ -2,9 +2,9 @@
 // All tools Claude needs to operate the L&S stack from chat.
 
 import { Hono } from "hono";
-import { erpList, erpGet } from "../lib/erp";
-import { sendSms } from "../lib/twilio";
-import { supabaseAdmin } from "../lib/supabase";
+import { erpList, erpGet } from "../lib/erp.js";
+import { sendSms } from "../lib/twilio.js";
+import { supabaseAdmin } from "../lib/supabase.js";
 
 export const mcpRouter = new Hono();
 

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { upsertCustomerWithAddress, type CustomerInput } from "../lib/erpnext/customer";
-import { getAuthedUser } from "../lib/scope";
+import { upsertCustomerWithAddress, type CustomerInput } from "../lib/erpnext/customer.js";
+import { getAuthedUser } from "../lib/scope.js";
 
 export const erpnextCustomersRouter = new Hono();
 

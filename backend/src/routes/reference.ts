@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { supabaseAdmin, lshAdmin } from "../lib/supabase";
-import { getAuthedUser, canAccessSuperAdminPortal } from "../lib/scope";
+import { supabaseAdmin, lshAdmin } from "../lib/supabase.js";
+import { getAuthedUser, canAccessSuperAdminPortal } from "../lib/scope.js";
 
 export const referenceRouter = new Hono();
 

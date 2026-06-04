@@ -2,8 +2,8 @@
 // Auth: super_admin + store_manager only (unless noted)
 
 import { Hono } from "hono";
-import { supabaseAdmin } from "../lib/supabase";
-import { getAuthedUser } from "../lib/scope";
+import { supabaseAdmin } from "../lib/supabase.js";
+import { getAuthedUser } from "../lib/scope.js";
 
 // Call Anthropic via raw fetch — compatible with Edge runtime
 async function callAnthropic(system: string, messages: { role: string; content: string }[]): Promise<string> {

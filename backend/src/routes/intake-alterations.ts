@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
-import { supabaseAdmin } from '../lib/supabase';
-import { getAuthedUser } from '../lib/scope';
-import { erpList } from '../lib/erp';
-import { sendSms } from '../lib/twilio';
+import { supabaseAdmin } from '../lib/supabase.js';
+import { getAuthedUser } from '../lib/scope.js';
+import { erpList } from '../lib/erp.js';
+import { sendSms } from '../lib/twilio.js';
 
 // ---------------------------------------------------------------------------
 // ERPNext config

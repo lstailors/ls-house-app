@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { supabaseAdmin } from "../lib/supabase";
-import { getAuthedUser, canAccessSuperAdminPortal } from "../lib/scope";
-import { erpGet, erpUpdate } from "../lib/erp";
+import { supabaseAdmin } from "../lib/supabase.js";
+import { getAuthedUser, canAccessSuperAdminPortal } from "../lib/scope.js";
+import { erpGet, erpUpdate } from "../lib/erp.js";
 
 export const locationsRouter = new Hono();
 

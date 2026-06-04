@@ -2,9 +2,9 @@
 // All queries against public.orders, public.garments, public.deliveries.
 
 import { Hono } from "hono";
-import { canSeeFinancials, getAuthedUser, resolveLocationCode } from "../lib/scope";
-import { supabaseAdmin } from "../lib/supabase";
-import { erpList } from "../lib/erp";
+import { canSeeFinancials, getAuthedUser, resolveLocationCode } from "../lib/scope.js";
+import { supabaseAdmin } from "../lib/supabase.js";
+import { erpList } from "../lib/erp.js";
 
 export const dashboardRouter = new Hono();
 

@@ -1,26 +1,26 @@
 import "@vibecodeapp/proxy"; // DO NOT REMOVE OTHERWISE VIBECODE PROXY WILL NOT WORK
-import "./load-env"; // load .env before any module reads process.env
+import "./load-env.js"; // load .env before any module reads process.env
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import "./env";
-import { meRouter} from "./routes/me";
-import { locationsRouter } from "./routes/locations";
-import { customersRouter } from "./routes/customers";
-import { alterationsRouter } from "./routes/alterations";
-import { customOrdersRouter } from "./routes/custom-orders";
-import { salesOrdersRouter } from "./routes/sales-orders";
-import { invoicesRouter } from "./routes/invoices";
-import { deliveriesRouter } from "./routes/deliveries";
-import { scanRouter } from "./routes/scan";
-import { communicationsRouter } from "./routes/communications";
-import { referenceRouter } from "./routes/reference";
-import { adminRouter } from "./routes/admin";
-import { dashboardRouter } from "./routes/dashboard";
-import { maestroRouter } from "./routes/maestro";
-import { intakeAlterationsRouter } from "./routes/intake-alterations";
-import { sofiaRouter } from "./routes/sofia";
-import { ravenRouter } from "./routes/raven";
+import "./env.js";
+import { meRouter} from "./routes/me.js";
+import { locationsRouter } from "./routes/locations.js";
+import { customersRouter } from "./routes/customers.js";
+import { alterationsRouter } from "./routes/alterations.js";
+import { customOrdersRouter } from "./routes/custom-orders.js";
+import { salesOrdersRouter } from "./routes/sales-orders.js";
+import { invoicesRouter } from "./routes/invoices.js";
+import { deliveriesRouter } from "./routes/deliveries.js";
+import { scanRouter } from "./routes/scan.js";
+import { communicationsRouter } from "./routes/communications.js";
+import { referenceRouter } from "./routes/reference.js";
+import { adminRouter } from "./routes/admin.js";
+import { dashboardRouter } from "./routes/dashboard.js";
+import { maestroRouter } from "./routes/maestro.js";
+import { intakeAlterationsRouter } from "./routes/intake-alterations.js";
+import { sofiaRouter } from "./routes/sofia.js";
+import { ravenRouter } from "./routes/raven.js";
 
 const app = new Hono();
 
@@ -65,12 +65,12 @@ app.route("/api/maestro", maestroRouter);
 app.route("/api/sofia", sofiaRouter);
 app.route("/api/intake-alterations", intakeAlterationsRouter);
 app.route("/api/raven", ravenRouter);
-import { searchRouter } from "./routes/search";
-import { notificationsRouter } from "./routes/notifications";
-import { erpnextCustomersRouter } from "./routes/erpnext-customers";
-import { cartsRouter } from "./routes/carts";
-import { alternationsBoardRouter } from "./routes/alterations-board";
-import { payInfoRouter } from "./routes/pay-info";
+import { searchRouter } from "./routes/search.js";
+import { notificationsRouter } from "./routes/notifications.js";
+import { erpnextCustomersRouter } from "./routes/erpnext-customers.js";
+import { cartsRouter } from "./routes/carts.js";
+import { alternationsBoardRouter } from "./routes/alterations-board.js";
+import { payInfoRouter } from "./routes/pay-info.js";
 app.route("/api/search", searchRouter);
 app.route("/api/notifications", notificationsRouter);
 app.route("/api/pay-info", payInfoRouter);

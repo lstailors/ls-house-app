@@ -1,9 +1,9 @@
 // Super Admin Portal endpoints — users management.
 
 import { Hono } from "hono";
-import { canAccessSuperAdminPortal, getAuthedUser } from "../lib/scope";
-import { supabaseAdmin, lshAdmin } from "../lib/supabase";
-import { CreateUserInput, UpdateUserInput } from "../types";
+import { canAccessSuperAdminPortal, getAuthedUser } from "../lib/scope.js";
+import { supabaseAdmin, lshAdmin } from "../lib/supabase.js";
+import { CreateUserInput, UpdateUserInput } from "../types.js";
 
 export const adminRouter = new Hono();
 

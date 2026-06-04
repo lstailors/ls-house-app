@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { supabaseAdmin } from "../lib/supabase";
-import { getAuthedUser, resolveLocationCode, canSeeFinancials } from "../lib/scope";
-import { CreateCustomOrderInput, TakeDepositInput, UpdateOrderStatusInput } from "../types";
+import { supabaseAdmin } from "../lib/supabase.js";
+import { getAuthedUser, resolveLocationCode, canSeeFinancials } from "../lib/scope.js";
+import { CreateCustomOrderInput, TakeDepositInput, UpdateOrderStatusInput } from "../types.js";
 
 export const customOrdersRouter = new Hono();
 

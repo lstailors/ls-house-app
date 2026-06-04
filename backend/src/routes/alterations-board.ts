@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { loadAlterationRows, type BoardFilter } from "../lib/erpnext/alterations-data";
-import { getAuthedUser } from "../lib/scope";
+import { loadAlterationRows, type BoardFilter } from "../lib/erpnext/alterations-data.js";
+import { getAuthedUser } from "../lib/scope.js";
 
 export const alternationsBoardRouter = new Hono();
 

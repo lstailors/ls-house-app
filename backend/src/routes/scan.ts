@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { supabaseAdmin } from "../lib/supabase";
+import { supabaseAdmin } from "../lib/supabase.js";
 
 export const scanRouter = new Hono();
 

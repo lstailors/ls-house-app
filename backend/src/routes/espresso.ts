@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { getAuthedUser } from "../lib/scope";
-import { supabaseAdmin } from "../lib/supabase";
+import { getAuthedUser } from "../lib/scope.js";
+import { supabaseAdmin } from "../lib/supabase.js";
 
 export const espressoRouter = new Hono();
 

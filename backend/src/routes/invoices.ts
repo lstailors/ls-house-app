@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { getAuthedUser, canSeeFinancials } from "../lib/scope";
+import { getAuthedUser, canSeeFinancials } from "../lib/scope.js";
 
 export const invoicesRouter = new Hono();
 

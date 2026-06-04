@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { supabaseAdmin, lshAdmin } from "../lib/supabase";
-import { getAuthedUser } from "../lib/scope";
-import { erpList, erpCreate } from "../lib/erp";
+import { supabaseAdmin, lshAdmin } from "../lib/supabase.js";
+import { getAuthedUser } from "../lib/scope.js";
+import { erpList, erpCreate } from "../lib/erp.js";
 
 // ── Log communication to ERPNext Customer timeline ────────────────────────
 export async function logErpCommunication(opts: {
