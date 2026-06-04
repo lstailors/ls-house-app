@@ -302,7 +302,8 @@ function CustomerCard({
   const dueFormatted = formatDate(ticket.due_date)
   const totalFormatted = formatCurrency(ticket.ticket_total ?? 0)
 
-  const defaultSmsMsg = `Hi ${firstName}, your alteration at L&S is ${ticket.workflow_state}. Total: ${totalFormatted}. Ready for pickup ${dueFormatted}. Reply with any questions!`
+  const eTicketUrl = `${window.location.origin}/e-ticket/${ticket.name}`
+  const defaultSmsMsg = `Hi ${firstName}, your alteration at L&S is ${ticket.workflow_state}. Total: ${totalFormatted}. Due: ${dueFormatted}. View your e-ticket: ${eTicketUrl}`
   const defaultEmailSubject = `Your alteration ticket ${ticket.name} update`
   const defaultEmailBody = `Hi ${firstName},\n\nYour alteration ticket ${ticket.name} is currently: ${ticket.workflow_state}.\n\nTotal: ${totalFormatted}\nDue: ${dueFormatted}\n\nPlease contact us if you have any questions.\n\nThank you,\nL&S Tailors`
 
@@ -845,7 +846,8 @@ export default function TicketDetail() {
       toast.success(`Status updated to "${status}"`)
       if (status === 'Ready' && autoNotify && ticket?.customer_mobile) {
         const firstName = ticket.customer_name?.split(' ')[0] ?? 'there'
-        const msg = `Hi ${firstName}, your alteration at L&S Tailors is ready for pickup! Total: ${formatCurrency(ticket.ticket_total ?? 0)}. Give us a call or stop by anytime. Thank you!`
+        const eTicketUrl = `${window.location.origin}/e-ticket/${ticketName}`
+        const msg = `Hi ${firstName}, your alteration at L&S Tailors is ready for pickup! Total: ${formatCurrency(ticket.ticket_total ?? 0)}. View your e-ticket & bring it in: ${eTicketUrl}`
         try {
           await api.post(`/api/intake-alterations/tickets/${ticketName}/notify-ready`, {
             phone: ticket.customer_mobile,

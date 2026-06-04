@@ -82,6 +82,40 @@ async function erpPost<T>(method: string, body: Record<string, unknown>): Promis
 // ---------------------------------------------------------------------------
 export const intakeAlterationsRouter = new Hono();
 
+// 0. GET /public/tickets/:name — no auth, customer-safe data for e-ticket page
+intakeAlterationsRouter.get('/public/tickets/:name', async (c) => {
+  const ticketName = c.req.param('name');
+  try {
+    const doc = await mcpGet<any>('Alteration Ticket', ticketName);
+    return c.json({
+      data: {
+        name: doc.name,
+        customer_name: doc.customer_name,
+        workflow_state: doc.workflow_state,
+        ticket_date: doc.ticket_date,
+        due_date: doc.due_date,
+        ticket_total: doc.ticket_total ?? 0,
+        payment_status: doc.payment_status,
+        origin_location: doc.origin_location,
+        garments: (doc.garments ?? []).map((g: any) => ({
+          name: g.name,
+          garment_id: g.garment_id,
+          garment_type: g.garment_type,
+          garment_description: g.garment_description,
+          color: g.color ?? '',
+        })),
+        lines: (doc.lines ?? []).map((l: any) => ({
+          garment_ref: l.garment_ref,
+          description: l.description,
+          price: l.price ?? 0,
+        })),
+      },
+    });
+  } catch {
+    return c.json({ error: { message: 'Ticket not found' } }, 404);
+  }
+});
+
 // 1. GET /presets?origin=NYC|HOU
 intakeAlterationsRouter.get('/presets', async (c) => {
   const user = await getAuthedUser(c);
