@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
@@ -10,14 +10,27 @@ import {
   CheckCircle2,
   Circle,
   AlertTriangle,
-  ChevronRight,
   Copy,
   Check,
+  MessageSquare,
+  Mail,
+  MapPin,
+  Pencil,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ChargeTerminalButton } from '@/components/payments/ChargeTerminalButton'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -34,6 +47,9 @@ interface AlterationTicketDoc {
   payment_status: string
   assigned_tailor?: string
   assigned_tailor_name?: string
+  notes?: string
+  customer_mobile?: string
+  customer_email?: string
   garments?: Array<{
     name: string
     garment_id: string
@@ -60,14 +76,6 @@ interface TailorDoc {
 const WORKFLOW_STEPS = ['Received', 'In Progress', 'Ready', 'Picked Up'] as const
 type WorkflowStep = typeof WORKFLOW_STEPS[number]
 
-const STATUS_COLORS: Record<string, string> = {
-  Received: 'bg-blue-900/40 text-blue-300 border-blue-500/30',
-  'In Progress': 'bg-amber-900/40 text-amber-300 border-amber-500/30',
-  Ready: 'bg-emerald-900/40 text-emerald-300 border-emerald-500/30',
-  'Picked Up': 'bg-zinc-800/60 text-zinc-400 border-zinc-500/30',
-  Cancelled: 'bg-red-900/40 text-red-400 border-red-500/30',
-}
-
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function formatDate(dateStr: string) {
@@ -84,115 +92,123 @@ function stepIndex(state: string) {
   return WORKFLOW_STEPS.indexOf(state as WorkflowStep)
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────
+// ── WorkflowStepper ────────────────────────────────────────────────────────
 
-function WorkflowBar({ current }: { current: string }) {
+function WorkflowStepper({
+  current,
+  isPending,
+  onStep,
+}: {
+  current: string
+  isPending: boolean
+  onStep: (step: string) => void
+}) {
   const currentIdx = stepIndex(current)
   const isCancelled = current === 'Cancelled'
 
   return (
     <div className="glass-panel rounded-lg p-4 mb-6">
-      <div className="flex items-center gap-1 sm:gap-2">
-        {WORKFLOW_STEPS.map((step, idx) => {
-          const isPast = idx < currentIdx
-          const isActive = idx === currentIdx
-          const isFuture = idx > currentIdx
-
-          return (
-            <div key={step} className="flex items-center gap-1 sm:gap-2 flex-1 min-w-0">
-              <div className="flex flex-col items-center flex-1 min-w-0">
-                <div
+      {isCancelled ? (
+        <p className="text-center text-red-400 text-sm flex items-center justify-center gap-2">
+          <AlertTriangle size={14} /> This ticket has been cancelled
+        </p>
+      ) : (
+        <div className="flex items-center gap-1 sm:gap-2">
+          {WORKFLOW_STEPS.map((step, idx) => {
+            const isPast = idx < currentIdx
+            const isActive = idx === currentIdx
+            return (
+              <div key={step} className="flex items-center gap-1 sm:gap-2 flex-1 min-w-0">
+                <button
+                  onClick={() => { if (!isActive && !isPending) onStep(step) }}
+                  disabled={isPending}
                   className={cn(
-                    'flex items-center justify-center w-7 h-7 rounded-full border-2 transition-all mb-1 shrink-0',
-                    isCancelled
-                      ? 'border-red-500/40 text-red-500/40'
-                      : isPast
-                        ? 'border-brass-light bg-brass-light/20 text-brass-light'
-                        : isActive
-                          ? 'border-brass-shimmer bg-brass-shimmer/20 text-brass-shimmer scale-110'
-                          : 'border-cream-dim/20 text-cream-dim/30'
+                    'flex flex-col items-center flex-1 min-w-0 group transition-all',
+                    isActive ? 'cursor-default' : 'cursor-pointer hover:opacity-80'
                   )}
                 >
-                  {isPast && !isCancelled ? (
-                    <CheckCircle2 size={14} />
-                  ) : (
-                    <Circle size={14} />
-                  )}
-                </div>
-                <span
-                  className={cn(
-                    'text-xs text-center leading-tight truncate max-w-full',
-                    isCancelled
-                      ? 'text-red-500/50'
-                      : isActive
+                  <div
+                    className={cn(
+                      'flex items-center justify-center rounded-full border-2 transition-all mb-1 shrink-0',
+                      isActive
+                        ? 'w-9 h-9 border-brass-shimmer bg-brass-shimmer/25 text-brass-shimmer scale-110'
+                        : isPast
+                          ? 'w-7 h-7 border-brass-light bg-brass-light/20 text-brass-light'
+                          : 'w-7 h-7 border-cream-dim/20 text-cream-dim/30 group-hover:border-cream-dim/50'
+                    )}
+                  >
+                    {isPast ? (
+                      <CheckCircle2 size={14} />
+                    ) : (
+                      <Circle size={isActive ? 16 : 14} />
+                    )}
+                  </div>
+                  <span
+                    className={cn(
+                      'text-xs text-center leading-tight truncate max-w-full',
+                      isActive
                         ? 'text-brass-shimmer font-semibold'
                         : isPast
                           ? 'text-brass-light/70'
                           : 'text-cream-dim/40'
-                  )}
-                >
-                  {step}
-                </span>
+                    )}
+                  >
+                    {step}
+                  </span>
+                </button>
+
+                {idx < WORKFLOW_STEPS.length - 1 && (
+                  <div
+                    className={cn(
+                      'h-0.5 flex-1 min-w-[8px] mb-4 transition-all',
+                      idx < currentIdx ? 'bg-brass-light/50' : 'bg-cream-dim/10'
+                    )}
+                  />
+                )}
               </div>
-
-              {idx < WORKFLOW_STEPS.length - 1 && (
-                <div
-                  className={cn(
-                    'h-0.5 flex-1 min-w-[8px] mb-4 transition-all',
-                    isCancelled
-                      ? 'bg-red-500/20'
-                      : idx < currentIdx
-                        ? 'bg-brass-light/50'
-                        : 'bg-cream-dim/10'
-                  )}
-                />
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-      {isCancelled && (
-        <p className="text-center text-red-400 text-xs mt-2 flex items-center justify-center gap-1">
-          <AlertTriangle size={12} /> This ticket has been cancelled
-        </p>
+            )
+          })}
+        </div>
+      )}
+      {isPending && (
+        <p className="text-center text-cream-dim text-xs mt-2 animate-pulse">Updating status…</p>
       )}
     </div>
   )
 }
 
+// ── GarmentCard ────────────────────────────────────────────────────────────
+
 function GarmentCard({
   garment,
   lines,
+  ticketName,
 }: {
-  garment: AlterationTicketDoc['garments'][0]
+  garment: NonNullable<AlterationTicketDoc['garments']>[0]
   lines: AlterationTicketDoc['lines']
+  ticketName: string
 }) {
   const garmentLines = lines?.filter((l) => l.garment_ref === garment.name) ?? []
   const garmentTotal = garmentLines.reduce((sum, l) => sum + (l.price ?? 0), 0)
-  const ticketName = useParams<{ ticketName: string }>().ticketName
   const qrValue = window.location.origin + '/garments/' + ticketName + '/' + garment.garment_id
 
   return (
     <div className="glass-panel rounded-lg p-4 space-y-3">
-      {/* Garment header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-brass-shimmer font-semibold text-sm">
               {garment.garment_type}
             </span>
-            {garment.color && (
+            {garment.color ? (
               <span className="text-xs text-cream-dim border border-brass/20 rounded px-1.5 py-0.5">
                 {garment.color}
               </span>
-            )}
+            ) : null}
           </div>
           <p className="text-cream-muted text-sm mt-0.5">{garment.garment_description}</p>
           <p className="text-cream-dim text-xs mt-1 font-mono">ID: {garment.garment_id}</p>
         </div>
-
-        {/* QR Code */}
         <div className="shrink-0 p-1.5 bg-white rounded-md">
           <QRCodeSVG
             value={qrValue}
@@ -204,8 +220,7 @@ function GarmentCard({
         </div>
       </div>
 
-      {/* Alteration lines */}
-      {garmentLines.length > 0 && (
+      {garmentLines.length > 0 ? (
         <div className="border-t border-brass/10 pt-3 space-y-1.5">
           {garmentLines.map((line) => (
             <div key={line.name} className="flex items-start justify-between gap-2">
@@ -215,18 +230,440 @@ function GarmentCard({
               </span>
             </div>
           ))}
-          {garmentLines.length > 1 && (
+          {garmentLines.length > 1 ? (
             <div className="flex justify-end pt-1 border-t border-brass/10">
               <span className="text-cream-dim text-xs">
                 Subtotal: {formatCurrency(garmentTotal)}
               </span>
             </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-cream-dim/50 text-xs italic">No alteration lines</p>
+      )}
+    </div>
+  )
+}
+
+// ── CustomerCard ───────────────────────────────────────────────────────────
+
+function CustomerCard({
+  ticket,
+  ticketName,
+}: {
+  ticket: AlterationTicketDoc
+  ticketName: string
+}) {
+  const [smsOpen, setSmsOpen] = useState(false)
+  const [emailOpen, setEmailOpen] = useState(false)
+
+  const firstName = ticket.customer_name?.split(' ')[0] ?? ticket.customer_name
+  const dueFormatted = formatDate(ticket.due_date)
+  const totalFormatted = formatCurrency(ticket.ticket_total ?? 0)
+
+  const defaultSmsMsg = `Hi ${firstName}, your alteration at L&S is ${ticket.workflow_state}. Total: ${totalFormatted}. Ready for pickup ${dueFormatted}. Reply with any questions!`
+  const defaultEmailSubject = `Your alteration ticket ${ticket.name} update`
+  const defaultEmailBody = `Hi ${firstName},\n\nYour alteration ticket ${ticket.name} is currently: ${ticket.workflow_state}.\n\nTotal: ${totalFormatted}\nDue: ${dueFormatted}\n\nPlease contact us if you have any questions.\n\nThank you,\nL&S Tailors`
+
+  const [smsMsg, setSmsMsg] = useState(defaultSmsMsg)
+  const [emailSubject, setEmailSubject] = useState(defaultEmailSubject)
+  const [emailBody, setEmailBody] = useState(defaultEmailBody)
+
+  const smsMutation = useMutation({
+    mutationFn: () =>
+      api.post(`/api/intake-alterations/tickets/${ticketName}/sms`, {
+        phone: ticket.customer_mobile,
+        message: smsMsg,
+      }),
+    onSuccess: () => {
+      toast.success('SMS sent!')
+      setSmsOpen(false)
+    },
+    onError: () => toast.error('Failed to send SMS'),
+  })
+
+  const emailMutation = useMutation({
+    mutationFn: () =>
+      api.post(`/api/intake-alterations/tickets/${ticketName}/email`, {
+        to_email: ticket.customer_email,
+        subject: emailSubject,
+        message: emailBody,
+      }),
+    onSuccess: () => {
+      toast.success('Email sent!')
+      setEmailOpen(false)
+    },
+    onError: () => toast.error('Failed to send email'),
+  })
+
+  return (
+    <section className="glass-panel rounded-lg p-5 space-y-3">
+      <h2 className="ui-label text-cream-dim flex items-center gap-2">
+        <User size={14} /> Customer
+      </h2>
+
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="space-y-1">
+          <p className="text-cream text-lg font-semibold">{ticket.customer_name}</p>
+          {ticket.customer_mobile ? (
+            <p className="text-cream-muted text-sm">{ticket.customer_mobile}</p>
+          ) : (
+            <p className="text-cream-dim/40 text-sm italic">No phone on file</p>
+          )}
+          {ticket.customer_email ? (
+            <p className="text-cream-muted text-sm">{ticket.customer_email}</p>
+          ) : (
+            <p className="text-cream-dim/40 text-sm italic">No email on file</p>
           )}
         </div>
-      )}
 
-      {garmentLines.length === 0 && (
-        <p className="text-cream-dim/50 text-xs italic">No alteration lines</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setSmsOpen(true)}
+            disabled={!ticket.customer_mobile}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all',
+              'bg-forest-raised border-brass/20 text-cream-muted',
+              'hover:border-brass/40 hover:text-cream',
+              'disabled:opacity-40 disabled:cursor-not-allowed'
+            )}
+          >
+            <MessageSquare size={13} />
+            SMS
+          </button>
+          <button
+            onClick={() => setEmailOpen(true)}
+            disabled={!ticket.customer_email}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all',
+              'bg-forest-raised border-brass/20 text-cream-muted',
+              'hover:border-brass/40 hover:text-cream',
+              'disabled:opacity-40 disabled:cursor-not-allowed'
+            )}
+          >
+            <Mail size={13} />
+            Email
+          </button>
+        </div>
+      </div>
+
+      {/* SMS Dialog */}
+      <Dialog open={smsOpen} onOpenChange={setSmsOpen}>
+        <DialogContent className="bg-forest-raised border-brass/20 text-cream">
+          <DialogHeader>
+            <DialogTitle className="text-brass-shimmer">Send SMS to {firstName}</DialogTitle>
+          </DialogHeader>
+          <p className="text-cream-dim text-xs">To: {ticket.customer_mobile}</p>
+          <Textarea
+            value={smsMsg}
+            onChange={(e) => setSmsMsg(e.target.value)}
+            rows={5}
+            className="bg-forest-deep border-brass/20 text-cream text-sm resize-none"
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setSmsOpen(false)}
+              className="border-brass/20 text-cream-muted"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => smsMutation.mutate()}
+              disabled={smsMutation.isPending || !smsMsg.trim()}
+              className="bg-brass-shimmer/20 border border-brass/30 text-brass-shimmer hover:bg-brass-shimmer/30"
+            >
+              {smsMutation.isPending ? 'Sending…' : 'Send SMS'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Email Dialog */}
+      <Dialog open={emailOpen} onOpenChange={setEmailOpen}>
+        <DialogContent className="bg-forest-raised border-brass/20 text-cream">
+          <DialogHeader>
+            <DialogTitle className="text-brass-shimmer">Send Email to {firstName}</DialogTitle>
+          </DialogHeader>
+          <p className="text-cream-dim text-xs">To: {ticket.customer_email}</p>
+          <div className="space-y-2">
+            <Input
+              value={emailSubject}
+              onChange={(e) => setEmailSubject(e.target.value)}
+              placeholder="Subject"
+              className="bg-forest-deep border-brass/20 text-cream text-sm"
+            />
+            <Textarea
+              value={emailBody}
+              onChange={(e) => setEmailBody(e.target.value)}
+              rows={7}
+              className="bg-forest-deep border-brass/20 text-cream text-sm resize-none"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEmailOpen(false)}
+              className="border-brass/20 text-cream-muted"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => emailMutation.mutate()}
+              disabled={emailMutation.isPending || !emailBody.trim()}
+              className="bg-brass-shimmer/20 border border-brass/30 text-brass-shimmer hover:bg-brass-shimmer/30"
+            >
+              {emailMutation.isPending ? 'Sending…' : 'Send Email'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </section>
+  )
+}
+
+// ── TailorSection ─────────────────────────────────────────────────────────
+
+function TailorSection({
+  ticket,
+  tailors,
+  ticketName,
+}: {
+  ticket: AlterationTicketDoc
+  tailors: TailorDoc[] | undefined
+  ticketName: string
+}) {
+  const queryClient = useQueryClient()
+  const [selectedTailor, setSelectedTailor] = useState(ticket.assigned_tailor ?? '')
+
+  useEffect(() => {
+    setSelectedTailor(ticket.assigned_tailor ?? '')
+  }, [ticket.assigned_tailor])
+
+  const assignTailorMutation = useMutation({
+    mutationFn: (tailorId: string) =>
+      api.patch(`/api/intake-alterations/tickets/${ticketName}/tailor`, { tailorId }),
+    onSuccess: () => {
+      toast.success('Tailor assigned')
+      queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
+    },
+    onError: () => toast.error('Failed to assign tailor'),
+  })
+
+  function handleTailorChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const val = e.target.value
+    setSelectedTailor(val)
+    assignTailorMutation.mutate(val)
+  }
+
+  const currentTailor = tailors?.find((t) => t.name === selectedTailor)
+
+  return (
+    <section className="glass-panel rounded-lg p-5 space-y-3">
+      <h2 className="ui-label text-cream-dim flex items-center gap-2">
+        <User size={14} /> Tailor Assignment
+      </h2>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex-1 min-w-[180px]">
+          <select
+            value={selectedTailor}
+            onChange={handleTailorChange}
+            disabled={assignTailorMutation.isPending}
+            className={cn(
+              'w-full bg-forest-raised border border-brass/20 rounded-md px-3 py-2',
+              'text-cream text-sm focus:outline-none focus:ring-1 focus:ring-brass-shimmer/50',
+              'disabled:opacity-60'
+            )}
+          >
+            <option value="">— Unassigned —</option>
+            {tailors?.map((t) => (
+              <option key={t.name} value={t.name}>
+                {t.full_name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {assignTailorMutation.isPending ? (
+          <span className="text-cream-dim text-xs animate-pulse">Saving…</span>
+        ) : null}
+      </div>
+
+      {currentTailor ? (
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-brass-shimmer/10 border border-brass/20 text-brass-light text-xs">
+          <User size={11} />
+          {currentTailor.full_name}
+        </div>
+      ) : (
+        <p className="text-cream-dim/40 text-xs italic">No tailor assigned</p>
+      )}
+    </section>
+  )
+}
+
+// ── TransferSection ───────────────────────────────────────────────────────
+
+const TRANSFER_OPTIONS = [
+  { id: 'NYC', label: 'NYC Store', sub: 'New York City location' },
+  { id: 'HOU', label: 'HOU Store', sub: 'Houston location' },
+  { id: 'Home', label: 'Work at Home', sub: "Tailor's home workshop" },
+] as const
+
+function TransferSection({
+  ticket,
+  ticketName,
+}: {
+  ticket: AlterationTicketDoc
+  ticketName: string
+}) {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+
+  const transferMutation = useMutation({
+    mutationFn: (location: string) =>
+      api.patch(`/api/intake-alterations/tickets/${ticketName}/transfer`, { location }),
+    onSuccess: (_, location) => {
+      toast.success(`Ticket transferred to ${location}`)
+      queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
+      setOpen(false)
+    },
+    onError: () => toast.error('Transfer failed'),
+  })
+
+  return (
+    <section className="glass-panel rounded-lg p-5">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="ui-label text-cream-dim flex items-center gap-2 mb-1">
+            <MapPin size={14} /> Location
+          </h2>
+          <p className="text-cream-muted text-sm">{ticket.origin_location ?? '—'}</p>
+        </div>
+        <button
+          onClick={() => setOpen(true)}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all',
+            'bg-forest-raised border-brass/20 text-cream-muted',
+            'hover:border-brass/40 hover:text-cream'
+          )}
+        >
+          <MapPin size={13} />
+          Transfer
+        </button>
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="bg-forest-raised border-brass/20 text-cream">
+          <DialogHeader>
+            <DialogTitle className="text-brass-shimmer">Transfer Location</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            {TRANSFER_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => transferMutation.mutate(opt.id)}
+                disabled={transferMutation.isPending || ticket.origin_location === opt.id}
+                className={cn(
+                  'flex flex-col items-start p-4 rounded-lg border text-left transition-all',
+                  ticket.origin_location === opt.id
+                    ? 'border-brass-shimmer/60 bg-brass-shimmer/10 cursor-default'
+                    : 'border-brass/20 bg-forest-deep hover:border-brass/40 hover:bg-forest-raised',
+                  'disabled:opacity-60'
+                )}
+              >
+                <span className={cn(
+                  'font-semibold text-sm',
+                  ticket.origin_location === opt.id ? 'text-brass-shimmer' : 'text-cream'
+                )}>
+                  {opt.label}
+                  {ticket.origin_location === opt.id ? ' (current)' : ''}
+                </span>
+                <span className="text-cream-dim text-xs mt-0.5">{opt.sub}</span>
+              </button>
+            ))}
+          </div>
+          {transferMutation.isPending ? (
+            <p className="text-cream-dim text-xs animate-pulse text-center">Transferring…</p>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </section>
+  )
+}
+
+// ── InlineDueDate ─────────────────────────────────────────────────────────
+
+function InlineDueDate({
+  ticket,
+  ticketName,
+}: {
+  ticket: AlterationTicketDoc
+  ticketName: string
+}) {
+  const queryClient = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(ticket.due_date ?? '')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setValue(ticket.due_date ?? '')
+  }, [ticket.due_date])
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [editing])
+
+  const dueDateMutation = useMutation({
+    mutationFn: (due_date: string) =>
+      api.patch(`/api/intake-alterations/tickets/${ticketName}/due-date`, { due_date }),
+    onSuccess: () => {
+      toast.success('Due date updated')
+      queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
+      setEditing(false)
+    },
+    onError: () => {
+      toast.error('Failed to update due date')
+      setEditing(false)
+    },
+  })
+
+  function handleSave() {
+    if (value && value !== ticket.due_date) {
+      dueDateMutation.mutate(value)
+    } else {
+      setEditing(false)
+    }
+  }
+
+  return (
+    <div className="text-right shrink-0">
+      <p className="text-cream-dim text-xs ui-label">Ticket Date</p>
+      <p className="text-cream-muted text-sm">{formatDate(ticket.ticket_date)}</p>
+      <p className="text-cream-dim text-xs ui-label mt-2">Due</p>
+      {editing ? (
+        <input
+          ref={inputRef}
+          type="date"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={handleSave}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSave()
+            if (e.key === 'Escape') setEditing(false)
+          }}
+          className="text-cream text-sm bg-forest-raised border border-brass/30 rounded px-1.5 py-0.5 w-36 focus:outline-none focus:ring-1 focus:ring-brass-shimmer/50"
+        />
+      ) : (
+        <button
+          onClick={() => setEditing(true)}
+          className="flex items-center gap-1 text-cream-muted text-sm hover:text-cream transition-colors group ml-auto"
+        >
+          {formatDate(ticket.due_date)}
+          <Pencil size={11} className="text-cream-dim/40 group-hover:text-brass-light transition-colors" />
+        </button>
       )}
     </div>
   )
@@ -239,8 +676,6 @@ export default function TicketDetail() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const [selectedTailor, setSelectedTailor] = useState<string>('')
-  const [selectedTailorName, setSelectedTailorName] = useState<string>('')
   const [copiedPayLink, setCopiedPayLink] = useState(false)
 
   // ── Queries ──────────────────────────────────────────────────────────────
@@ -253,10 +688,6 @@ export default function TicketDetail() {
     queryKey: ['ticket', ticketName],
     queryFn: () => api.get<AlterationTicketDoc>('/api/intake-alterations/tickets/' + ticketName),
     enabled: !!ticketName,
-    onSuccess: (data) => {
-      setSelectedTailor(data.assigned_tailor ?? '')
-      setSelectedTailorName(data.assigned_tailor_name ?? '')
-    },
   })
 
   const { data: tailors } = useQuery<TailorDoc[]>({
@@ -266,22 +697,10 @@ export default function TicketDetail() {
 
   // ── Mutations ────────────────────────────────────────────────────────────
 
-  const assignTailorMutation = useMutation({
-    mutationFn: ({ tailorId, tailorName }: { tailorId: string; tailorName: string }) =>
-      api.patch(`/api/intake-alterations/tickets/${ticketName}/tailor`, { tailorId, tailorName }),
-    onSuccess: () => {
-      toast.success('Tailor assigned successfully')
-      queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
-    },
-    onError: () => {
-      toast.error('Failed to assign tailor')
-    },
-  })
-
   const updateStatusMutation = useMutation({
     mutationFn: (status: string) =>
       api.patch(`/api/intake-alterations/tickets/${ticketName}/status`, { status }),
-    onSuccess: (_, status) => {
+    onSuccess: (_data, status) => {
       toast.success(`Status updated to "${status}"`)
       queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
     },
@@ -289,24 +708,6 @@ export default function TicketDetail() {
       toast.error('Failed to update status')
     },
   })
-
-  // ── Handlers ─────────────────────────────────────────────────────────────
-
-  function handleTailorChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const val = e.target.value
-    setSelectedTailor(val)
-    const tailor = tailors?.find((t) => t.name === val)
-    setSelectedTailorName(tailor?.full_name ?? '')
-  }
-
-  function handleSaveTailor() {
-    assignTailorMutation.mutate({ tailorId: selectedTailor, tailorName: selectedTailorName })
-  }
-
-  function handleStatusUpdate(status: string) {
-    if (status === ticket?.workflow_state) return
-    updateStatusMutation.mutate(status)
-  }
 
   // ── Render guards ─────────────────────────────────────────────────────────
 
@@ -333,8 +734,6 @@ export default function TicketDetail() {
     )
   }
 
-  const statusPillClass = STATUS_COLORS[ticket.workflow_state] ?? 'bg-zinc-800 text-zinc-400'
-
   // ── Main render ────────────────────────────────────────────────────────────
 
   return (
@@ -348,35 +747,35 @@ export default function TicketDetail() {
               <h1 className="text-brass-shimmer italic text-2xl font-bold tracking-wide">
                 {ticket.name}
               </h1>
-              {ticket.is_rush === 1 && (
+              {ticket.is_rush === 1 ? (
                 <span className="bg-red-900/50 text-red-300 border border-red-500/30 text-xs font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider">
                   Rush
                 </span>
-              )}
+              ) : null}
             </div>
             <p className="text-cream-muted text-lg">{ticket.customer_name}</p>
             <div className="flex items-center gap-3 mt-2 flex-wrap">
-              <span className={cn('text-xs font-medium px-2.5 py-1 rounded-full border', statusPillClass)}>
+              <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-zinc-800/60 text-zinc-300 border-zinc-500/30">
                 {ticket.workflow_state}
               </span>
               <span className="text-cream-dim text-sm">{ticket.origin_location}</span>
             </div>
           </div>
 
-          <div className="text-right shrink-0">
-            <p className="text-cream-dim text-xs ui-label">Ticket Date</p>
-            <p className="text-cream-muted text-sm">{formatDate(ticket.ticket_date)}</p>
-            {ticket.due_date && (
-              <>
-                <p className="text-cream-dim text-xs ui-label mt-2">Due</p>
-                <p className="text-cream-muted text-sm">{formatDate(ticket.due_date)}</p>
-              </>
-            )}
-          </div>
+          <InlineDueDate ticket={ticket} ticketName={ticketName!} />
         </div>
 
-        {/* ── Workflow Bar ── */}
-        <WorkflowBar current={ticket.workflow_state} />
+        {/* ── Workflow Stepper ── */}
+        <WorkflowStepper
+          current={ticket.workflow_state}
+          isPending={updateStatusMutation.isPending}
+          onStep={(step) => {
+            if (step !== ticket.workflow_state) updateStatusMutation.mutate(step)
+          }}
+        />
+
+        {/* ── Customer Card ── */}
+        <CustomerCard ticket={ticket} ticketName={ticketName!} />
 
         {/* ── Garments ── */}
         <section>
@@ -386,7 +785,12 @@ export default function TicketDetail() {
           {ticket.garments && ticket.garments.length > 0 ? (
             <div className="space-y-3">
               {ticket.garments.map((g) => (
-                <GarmentCard key={g.name} garment={g} lines={ticket.lines} />
+                <GarmentCard
+                  key={g.name}
+                  garment={g}
+                  lines={ticket.lines}
+                  ticketName={ticketName!}
+                />
               ))}
             </div>
           ) : (
@@ -449,82 +853,10 @@ export default function TicketDetail() {
         </section>
 
         {/* ── Tailor Assignment ── */}
-        <section className="glass-panel rounded-lg p-5 space-y-4">
-          <h2 className="ui-label text-cream-dim flex items-center gap-2">
-            <User size={14} /> Tailor Assignment
-          </h2>
+        <TailorSection ticket={ticket} tailors={tailors} ticketName={ticketName!} />
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex-1 min-w-[180px]">
-              <select
-                value={selectedTailor}
-                onChange={handleTailorChange}
-                className={cn(
-                  'w-full bg-forest-raised border border-brass/20 rounded-md px-3 py-2',
-                  'text-cream text-sm focus:outline-none focus:ring-1 focus:ring-brass-shimmer/50'
-                )}
-              >
-                <option value="">— Unassigned —</option>
-                {tailors?.map((t) => (
-                  <option key={t.name} value={t.name}>
-                    {t.full_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              onClick={handleSaveTailor}
-              disabled={assignTailorMutation.isPending}
-              className={cn(
-                'px-4 py-2 rounded-md text-sm font-medium transition-all',
-                'bg-brass-shimmer/20 border border-brass/30 text-brass-shimmer',
-                'hover:bg-brass-shimmer/30 disabled:opacity-50 disabled:cursor-not-allowed'
-              )}
-            >
-              {assignTailorMutation.isPending ? 'Saving…' : 'Save'}
-            </button>
-          </div>
-
-          {ticket.assigned_tailor_name && (
-            <p className="text-cream-dim text-xs">
-              Currently:{' '}
-              <span className="text-brass-light">{ticket.assigned_tailor_name}</span>
-            </p>
-          )}
-          {!ticket.assigned_tailor && (
-            <p className="text-cream-dim/50 text-xs italic">No tailor assigned</p>
-          )}
-        </section>
-
-        {/* ── Status Update ── */}
-        <section className="glass-panel rounded-lg p-5 space-y-4">
-          <h2 className="ui-label text-cream-dim">Update Status</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {WORKFLOW_STEPS.map((step) => {
-              const isActive = ticket.workflow_state === step
-              return (
-                <button
-                  key={step}
-                  onClick={() => handleStatusUpdate(step)}
-                  disabled={isActive || updateStatusMutation.isPending}
-                  className={cn(
-                    'px-3 py-2 rounded-md text-sm font-medium border transition-all',
-                    isActive
-                      ? 'bg-brass-shimmer/25 border-brass-shimmer/60 text-brass-shimmer cursor-default'
-                      : 'bg-forest-raised border-brass/20 text-cream-muted hover:border-brass/40 hover:text-cream',
-                    'disabled:opacity-70'
-                  )}
-                >
-                  {step}
-                </button>
-              )
-            })}
-          </div>
-          {updateStatusMutation.isPending && (
-            <p className="text-cream-dim text-xs animate-pulse">Updating status…</p>
-          )}
-        </section>
+        {/* ── Transfer Location ── */}
+        <TransferSection ticket={ticket} ticketName={ticketName!} />
 
         {/* ── Actions ── */}
         <div className="flex items-center gap-3 flex-wrap">

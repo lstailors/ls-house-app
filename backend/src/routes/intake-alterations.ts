@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { supabaseAdmin } from '../lib/supabase';
 import { getAuthedUser } from '../lib/scope';
 import { erpList } from '../lib/erp';
+import { sendSms } from '../lib/twilio';
 
 // ---------------------------------------------------------------------------
 // ERPNext config
@@ -249,7 +250,7 @@ intakeAlterationsRouter.get('/tickets', async (c) => {
   }
 });
 
-// 5. GET /tickets/:name
+// 5. GET /tickets/:name — enriched with customer contact info
 intakeAlterationsRouter.get('/tickets/:name', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
@@ -257,7 +258,17 @@ intakeAlterationsRouter.get('/tickets/:name', async (c) => {
   const ticketName = c.req.param('name');
   try {
     const doc = await mcpGet<any>('Alteration Ticket', ticketName);
-    return c.json({ data: doc });
+    // Enrich with customer contact info
+    let customerMobile = '';
+    let customerEmail = '';
+    try {
+      if (doc.customer) {
+        const cust = await mcpGet<any>('Customer', doc.customer);
+        customerMobile = cust.mobile_no ?? cust.phone ?? '';
+        customerEmail = cust.email_id ?? '';
+      }
+    } catch { /* non-fatal */ }
+    return c.json({ data: { ...doc, customer_mobile: customerMobile, customer_email: customerEmail } });
   } catch (e: any) {
     return c.json({ error: { message: e.message } }, 404);
   }
@@ -362,12 +373,17 @@ intakeAlterationsRouter.patch('/tickets/:name/tailor', async (c) => {
     const res = await fetch(`${MCP_BASE}/mcp`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, updates:{ assigned_tailor: tailorId } } } }),
+      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, updates:{ assigned_tailor: tailorId || null } } } }),
     });
-    if (!res.ok) throw new Error(`MCP ${res.status}`);
+    const json: any = await res.json();
+    const text = json?.result?.content?.[0]?.text ?? '';
+    if (text.toLowerCase().includes('error') || text.toLowerCase().includes('traceback')) {
+      console.error('[tailor patch] ERP error:', text.slice(0, 300));
+      return c.json({ error: { message: 'ERPNext update failed: ' + text.slice(0, 150) } }, 502);
+    }
     return c.json({ data: { ok: true } });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    return c.json({ error: { message: e.message } }, 502);
   }
 });
 
@@ -382,13 +398,122 @@ intakeAlterationsRouter.patch('/tickets/:name/status', async (c) => {
     status: 'Received' | 'In Progress' | 'Ready' | 'Picked Up';
   };
 
-  const sres = await fetch(`${MCP_BASE}/mcp`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, updates:{ workflow_state: status } } } }),
-  });
-  if (!sres.ok) return c.json({ error: { message: `MCP ${sres.status}` } }, 500);
-  return c.json({ data: { ok: true } });
+  try {
+    const res = await fetch(`${MCP_BASE}/mcp`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, updates:{ workflow_state: status } } } }),
+    });
+    const json: any = await res.json();
+    const text = json?.result?.content?.[0]?.text ?? '';
+    if (text.toLowerCase().includes('error') || text.toLowerCase().includes('traceback')) {
+      console.error('[status patch] ERP error:', text.slice(0, 300));
+      return c.json({ error: { message: 'ERPNext update failed: ' + text.slice(0, 150) } }, 502);
+    }
+    return c.json({ data: { ok: true } });
+  } catch (e: any) {
+    return c.json({ error: { message: e.message } }, 502);
+  }
+});
+
+// 9. PATCH /tickets/:name/due-date
+intakeAlterationsRouter.patch('/tickets/:name/due-date', async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+  const ticketName = c.req.param('name');
+  const body = (await c.req.json()) as any;
+  const { due_date } = body;
+
+  try {
+    const res = await fetch(`${MCP_BASE}/mcp`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, updates:{ due_date } } } }),
+    });
+    const json: any = await res.json();
+    return c.json({ data: { ok: true, raw: json?.result?.content?.[0]?.text } });
+  } catch (e: any) {
+    return c.json({ error: { message: e.message } }, 502);
+  }
+});
+
+// 10. PATCH /tickets/:name/transfer (change origin_location)
+intakeAlterationsRouter.patch('/tickets/:name/transfer', async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+  const ticketName = c.req.param('name');
+  const body = (await c.req.json()) as any;
+  const { location } = body; // 'NYC', 'HOU', 'Home'
+
+  try {
+    const res = await fetch(`${MCP_BASE}/mcp`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, updates:{ origin_location: location } } } }),
+    });
+    const json: any = await res.json();
+    return c.json({ data: { ok: true, raw: json?.result?.content?.[0]?.text } });
+  } catch (e: any) {
+    return c.json({ error: { message: e.message } }, 502);
+  }
+});
+
+// 11. POST /tickets/:name/sms
+intakeAlterationsRouter.post('/tickets/:name/sms', async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+  const ticketName = c.req.param('name');
+  const body = (await c.req.json()) as any;
+  const { phone, message } = body;
+
+  if (!phone) return c.json({ error: { message: 'phone required' } }, 400);
+  if (!message) return c.json({ error: { message: 'message required' } }, 400);
+
+  const sid = await sendSms(phone, message);
+  if (!sid) return c.json({ error: { message: 'SMS send failed — check Twilio credentials' } }, 502);
+
+  return c.json({ data: { ok: true, sid } });
+});
+
+// 12. POST /tickets/:name/email (via ERPNext sendmail)
+intakeAlterationsRouter.post('/tickets/:name/email', async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+  const ticketName = c.req.param('name');
+  const body = (await c.req.json()) as any;
+  const { to_email, subject, message } = body;
+
+  if (!to_email) return c.json({ error: { message: 'to_email required' } }, 400);
+
+  const key = process.env.ERPNEXT_API_KEY ?? '';
+  const sec = process.env.ERPNEXT_API_SECRET ?? '';
+  const ERP_BASE_URL = process.env.ERPNEXT_BASE_URL ?? 'https://erp.lstailors.com';
+
+  try {
+    const res = await fetch(`${ERP_BASE_URL}/api/method/frappe.core.doctype.communication.email.make`, {
+      method: 'POST',
+      headers: { Authorization: `token ${key}:${sec}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipients: to_email,
+        subject: subject ?? `Update on your alteration ticket ${ticketName}`,
+        content: message,
+        doctype: 'Alteration Ticket',
+        name: ticketName,
+        send_email: 1,
+      }),
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      return c.json({ error: { message: `ERPNext email failed: ${t.slice(0, 200)}` } }, 502);
+    }
+    return c.json({ data: { ok: true } });
+  } catch (e: any) {
+    return c.json({ error: { message: e.message } }, 502);
+  }
 });
 
 // ---------------------------------------------------------------------------
