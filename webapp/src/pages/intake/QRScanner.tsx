@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Scissors, Package, Truck, Tag, X, Flashlight,
+  Scissors, Package, Truck, Tag, X,
   ChevronRight, Keyboard, CheckCircle2,
+  CameraOff, Loader2, FlipHorizontal, RotateCcw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -18,6 +19,8 @@ type ScanAction = {
   icon: React.ReactNode
 }
 
+type CameraState = 'starting' | 'active' | 'denied' | 'error'
+
 // ── Resolve scanned value to an action ────────────────────────────────────
 
 const LS_DOMAINS = ['lstailors.com', 'ls-house-app', 'vercel.app']
@@ -25,7 +28,6 @@ const LS_DOMAINS = ['lstailors.com', 'ls-house-app', 'vercel.app']
 function resolve(raw: string): ScanAction | null {
   let path = raw.trim()
 
-  // Extract internal path from a full URL
   try {
     const url = new URL(raw)
     const isInternal = LS_DOMAINS.some((d) => url.hostname.includes(d)) ||
@@ -105,7 +107,7 @@ function resolve(raw: string): ScanAction | null {
     }
   }
 
-  // Unknown — show as generic with the raw value
+  // Unknown — show as generic
   if (path.length < 120) {
     return {
       type: 'unknown',
@@ -134,42 +136,17 @@ export default function QRScanner() {
   const navigate = useNavigate()
   const videoId = 'lst-qr-video'
   const scannerRef = useRef<Html5Qrcode | null>(null)
-  const [action, setAction] = useState<ScanAction | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [scanning, setScanning] = useState(true)
-  const [showManual, setShowManual] = useState(false)
-  const [manualVal, setManualVal] = useState('')
+  const facingModeRef = useRef<'environment' | 'user'>('environment')
   const didStart = useRef(false)
 
-  // ── Start camera ──────────────────────────────────────────────────────
+  const [action, setAction] = useState<ScanAction | null>(null)
+  const [cameraState, setCameraState] = useState<CameraState>('starting')
+  const [cameraError, setCameraError] = useState<string | null>(null)
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
+  const [showManual, setShowManual] = useState(false)
+  const [manualVal, setManualVal] = useState('')
 
-  const startScanner = useCallback(async () => {
-    if (didStart.current) return
-    didStart.current = true
-    setError(null)
-
-    try {
-      const qr = new Html5Qrcode(videoId, { verbose: false })
-      scannerRef.current = qr
-
-      await qr.start(
-        { facingMode: 'environment' },
-        { fps: 15, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 },
-        (decoded) => {
-          const found = resolve(decoded)
-          if (found) {
-            setAction(found)
-            setScanning(false)
-          }
-        },
-        () => { /* ignore per-frame failures */ },
-      )
-    } catch (e: any) {
-      setError(e?.message?.includes('Permission')
-        ? 'Camera access denied. Please allow camera in your browser settings.'
-        : 'Could not start camera.')
-    }
-  }, [])
+  // ── Camera control ────────────────────────────────────────────────────
 
   const stopScanner = useCallback(async () => {
     if (scannerRef.current) {
@@ -179,13 +156,63 @@ export default function QRScanner() {
     }
   }, [])
 
+  const startScanner = useCallback(async (mode?: 'environment' | 'user') => {
+    if (didStart.current) return
+    didStart.current = true
+    setCameraState('starting')
+    setCameraError(null)
+
+    const facing = mode ?? facingModeRef.current
+
+    try {
+      const qr = new Html5Qrcode(videoId, { verbose: false })
+      scannerRef.current = qr
+      await qr.start(
+        { facingMode: facing },
+        { fps: 15, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 },
+        (decoded) => {
+          const found = resolve(decoded)
+          if (found) {
+            setAction(found)
+            setCameraState('active') // keep active but action card takes over
+          }
+        },
+        () => {},
+      )
+      setCameraState('active')
+    } catch (e: any) {
+      scannerRef.current = null
+      didStart.current = false
+      const msg = (e?.message ?? '').toLowerCase()
+      if (msg.includes('permission') || msg.includes('denied') || msg.includes('notallowed')) {
+        setCameraState('denied')
+        setCameraError('Camera access denied. Allow camera in your browser settings.')
+      } else if (msg.includes('notfound') || msg.includes('no camera') || msg.includes('devicenotfound')) {
+        setCameraState('error')
+        setCameraError('No camera found on this device.')
+      } else {
+        setCameraState('error')
+        setCameraError('Camera failed to start. Please try again.')
+      }
+    }
+  }, [])
+
   const resetScan = useCallback(async () => {
     setAction(null)
-    setError(null)
-    setScanning(true)
+    setCameraState('starting')
+    setCameraError(null)
     didStart.current = false
     await stopScanner()
-    setTimeout(startScanner, 100)
+    setTimeout(() => startScanner(), 100)
+  }, [startScanner, stopScanner])
+
+  const toggleCamera = useCallback(async () => {
+    const newMode = facingModeRef.current === 'environment' ? 'user' : 'environment'
+    setFacingMode(newMode)
+    facingModeRef.current = newMode
+    didStart.current = false
+    await stopScanner()
+    await startScanner(newMode)
   }, [startScanner, stopScanner])
 
   useEffect(() => {
@@ -205,11 +232,10 @@ export default function QRScanner() {
   const handleManual = (e: React.FormEvent) => {
     e.preventDefault()
     const found = resolve(manualVal.trim())
-    if (found && found.path) {
-      stopScanner()
+    stopScanner()
+    if (found?.path) {
       navigate(found.path)
     } else if (manualVal.trim()) {
-      stopScanner()
       navigate(`/orders/alterations/${manualVal.trim()}`)
     }
   }
@@ -225,26 +251,18 @@ export default function QRScanner() {
         className="absolute inset-0 w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover [&>canvas]:hidden"
       />
 
-      {/* Dark overlay with cutout */}
+      {/* Dark overlay with viewfinder cutout */}
       <div className="absolute inset-0 pointer-events-none">
-        {/* Top */}
         <div className="absolute inset-x-0 top-0 h-[calc(50vh-120px)] bg-black/70" />
-        {/* Bottom */}
         <div className="absolute inset-x-0 bottom-0 top-[calc(50vh+120px)] bg-black/70" />
-        {/* Left */}
         <div className="absolute left-0 top-[calc(50vh-120px)] bottom-[calc(50vh-120px)] w-[calc(50vw-120px)] bg-black/70" />
-        {/* Right */}
         <div className="absolute right-0 top-[calc(50vh-120px)] bottom-[calc(50vh-120px)] w-[calc(50vw-120px)] bg-black/70" />
       </div>
 
       {/* Viewfinder frame */}
       <div
         className="absolute"
-        style={{
-          left: '50%', top: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: 240, height: 240,
-        }}
+        style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 240, height: 240 }}
       >
         {/* Corner brackets */}
         {[
@@ -257,7 +275,7 @@ export default function QRScanner() {
         ))}
 
         {/* Animated scan line */}
-        {scanning && !action && (
+        {cameraState === 'active' && !action && (
           <motion.div
             className="absolute inset-x-2 h-px bg-gradient-to-r from-transparent via-brass-shimmer to-transparent"
             animate={{ top: ['10%', '90%', '10%'] }}
@@ -284,31 +302,64 @@ export default function QRScanner() {
       <div className="absolute top-0 inset-x-0 flex items-center justify-between px-5 pt-12 pb-4">
         <button
           onClick={() => { stopScanner(); navigate(-1) }}
+          aria-label="Close scanner"
           className="w-10 h-10 rounded-full bg-black/50 border border-white/10 flex items-center justify-center backdrop-blur-sm"
         >
           <X className="h-5 w-5 text-white" />
         </button>
         <p className="text-white/80 text-sm font-medium">
-          {action ? 'Code detected' : 'Align code in frame'}
+          {action ? 'Code detected' : cameraState === 'active' ? 'Align code in frame' : ''}
         </p>
         <button
           onClick={() => setShowManual((v) => !v)}
+          aria-label="Enter code manually"
           className="w-10 h-10 rounded-full bg-black/50 border border-white/10 flex items-center justify-center backdrop-blur-sm"
         >
           <Keyboard className="h-5 w-5 text-white" />
         </button>
       </div>
 
-      {/* Error state */}
+      {/* Camera loading state */}
+      {cameraState === 'starting' && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="flex flex-col items-center gap-3" style={{ marginTop: '-60px' }}>
+            <Loader2 className="h-8 w-8 text-brass-shimmer animate-spin" />
+            <p className="text-white/60 text-sm">Starting camera…</p>
+          </div>
+        </div>
+      )}
+
+      {/* Camera flip button */}
+      {cameraState === 'active' && !action && (
+        <button
+          onClick={toggleCamera}
+          aria-label="Switch camera"
+          className="absolute top-[calc(50vh+140px)] right-6 w-11 h-11 rounded-full bg-black/60 border border-white/20 flex items-center justify-center backdrop-blur-sm"
+        >
+          <FlipHorizontal className="h-5 w-5 text-white/80" />
+        </button>
+      )}
+
+      {/* Error / permission denied states */}
       <AnimatePresence>
-        {error && (
+        {(cameraState === 'denied' || cameraState === 'error') && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="absolute bottom-40 inset-x-6 bg-red-900/80 border border-red-500/40 rounded-2xl p-4 backdrop-blur-sm text-center"
+            className="absolute bottom-44 inset-x-6 bg-forest-deep/90 border border-brass/20 rounded-2xl p-5 backdrop-blur-sm text-center"
           >
-            <p className="text-red-200 text-sm">{error}</p>
-            <button onClick={resetScan} className="mt-2 text-xs text-red-300 underline">Try again</button>
+            <CameraOff className={cn('h-8 w-8 mx-auto mb-3', cameraState === 'denied' ? 'text-red-400' : 'text-amber-400')} />
+            <p className={cn('text-sm mb-3', cameraState === 'denied' ? 'text-red-200' : 'text-amber-200')}>
+              {cameraError}
+            </p>
+            {cameraState === 'error' && (
+              <button
+                onClick={resetScan}
+                className="flex items-center gap-1.5 mx-auto px-4 py-2 rounded-xl bg-brass/20 border border-brass/40 text-brass-shimmer text-xs font-medium"
+              >
+                <RotateCcw className="h-3 w-3" /> Try again
+              </button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -398,7 +449,7 @@ export default function QRScanner() {
       </AnimatePresence>
 
       {/* Hint text */}
-      {!action && !error && !showManual && (
+      {!action && cameraState === 'active' && !showManual && (
         <div className="absolute bottom-12 inset-x-0 text-center">
           <p className="text-white/40 text-xs">Garment tags · Tickets · Deliveries</p>
         </div>
