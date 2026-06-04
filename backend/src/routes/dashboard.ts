@@ -373,6 +373,47 @@ dashboardRouter.get("/financials", async (c) => {
   const arOutstanding = arInvoices.reduce((s: any, i: any) => s + Number(i.outstanding_amount ?? 0), 0);
   const invoiceCount = arInvoices.length;
 
+  // ── Top customers from ERPNext SOs ───────────────────────────────────────
+  const customerMap = new Map<string, { orders: number; revenue: number }>();
+  for (const o of allSalesOrders) {
+    const name = (o.customer_name as string | null) ?? "Unknown";
+    const e = customerMap.get(name) ?? { orders: 0, revenue: 0 };
+    e.orders += 1;
+    e.revenue += Number(o.grand_total ?? 0);
+    customerMap.set(name, e);
+  }
+  const topCustomers = [...customerMap.entries()]
+    .map(([name, d]) => ({ name, orders: d.orders, revenue: d.revenue }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 10);
+
+  // ── Sales by rep from Supabase orders ────────────────────────────────────
+  let salesByRep: Array<{ name: string; orders: number; revenue: number }> = [];
+  if (supabaseAdmin) {
+    let repQ = supabaseAdmin.from("orders").select("sales_rep_id, order_total, created_at");
+    if (locCode) repQ = repQ.eq("origin_location", locCode);
+    const { data: repOrders } = await repQ.limit(2000);
+    if (repOrders?.length) {
+      const repMap = new Map<string, { orders: number; revenue: number }>();
+      for (const o of repOrders) {
+        const id = o.sales_rep_id ?? "unknown";
+        const e = repMap.get(id) ?? { orders: 0, revenue: 0 };
+        e.orders += 1;
+        e.revenue += Number(o.order_total ?? 0);
+        repMap.set(id, e);
+      }
+      const repIds = [...repMap.keys()].filter(id => id !== "unknown");
+      const { data: profiles } = repIds.length
+        ? await supabaseAdmin.from("profiles").select("id, full_name").in("id", repIds)
+        : { data: [] };
+      const nameById = new Map((profiles ?? []).map((p: any) => [p.id, p.full_name ?? "Unknown"]));
+      salesByRep = [...repMap.entries()]
+        .map(([id, d]) => ({ name: nameById.get(id) ?? (id === "unknown" ? "Unassigned" : id.slice(0, 8)), orders: d.orders, revenue: d.revenue }))
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 8);
+    }
+  }
+
   const cogs = revenue * 0.42;
   const grossProfit = revenue * 0.58;
 
@@ -382,7 +423,7 @@ dashboardRouter.get("/financials", async (c) => {
       salesOrderCount, avgOrderValue,
       depositsPendingTotal, depositsPendingCount,
       cogs, grossProfit, marginPct: Math.round((grossProfit / revenue) * 100) || 58,
-      trend, pipeline, topGarments,
+      trend, pipeline, topGarments, topCustomers, salesByRep,
       arOutstanding, invoiceCount,
     },
   });

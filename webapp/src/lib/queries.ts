@@ -70,6 +70,8 @@ export function useFinancials() {
         trend: Array<{ month: string; revenue: number; orders: number }>;
         pipeline: Array<{ stage: string; label: string; count: number; value: number }>;
         topGarments: Array<{ type: string; units: number; revenue: number; avgPrice: number }>;
+        topCustomers: Array<{ name: string; orders: number; revenue: number }>;
+        salesByRep: Array<{ name: string; orders: number; revenue: number }>;
       }>(`/api/dashboard/financials${locationQueryString(activeLocationId)}`),
     staleTime: 60_000,
   });
