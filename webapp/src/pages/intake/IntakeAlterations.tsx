@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Component, type ErrorInfo, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -1284,6 +1284,36 @@ function CheckoutCart({
   )
 }
 
+// ─── Error Boundary ────────────────────────────────────────────────────────────
+class IntakeErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props)
+    this.state = { error: null }
+  }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  componentDidCatch(error: Error, info: ErrorInfo) { console.error('[IntakeAlterations] crash:', error, info) }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen bg-forest-deep flex items-center justify-center p-6">
+          <div className="glass-panel rounded-2xl p-8 max-w-md w-full text-center border border-signal-rose/30">
+            <AlertCircle className="w-10 h-10 text-signal-rose mx-auto mb-4" />
+            <h2 className="text-cream text-xl font-bold mb-2">Something went wrong</h2>
+            <p className="text-cream-muted text-sm mb-6">{this.state.error.message}</p>
+            <button
+              onClick={() => { this.setState({ error: null }); window.location.reload() }}
+              className="px-6 py-2 rounded-xl bg-brass/80 hover:bg-brass text-forest-deep font-semibold transition-colors"
+            >
+              Reload page
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 // ─── Success State ─────────────────────────────────────────────────────────────
 function SuccessState({
   ticketName,
@@ -1345,7 +1375,7 @@ function SuccessState({
 }
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
-export default function IntakeAlterations() {
+function IntakeAlterationsInner() {
   const { data: me } = useMe()
   const [customer, setCustomer] = useState<Customer>(null)
   const [garments, setGarments] = useState<GarmentItem[]>([])
@@ -1680,5 +1710,13 @@ export default function IntakeAlterations() {
         </button>
       </div>
     </div>
+  )
+}
+
+export default function IntakeAlterations() {
+  return (
+    <IntakeErrorBoundary>
+      <IntakeAlterationsInner />
+    </IntakeErrorBoundary>
   )
 }

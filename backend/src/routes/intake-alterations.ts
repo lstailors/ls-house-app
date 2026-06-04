@@ -339,9 +339,10 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
 
     if (!ticketName) {
       console.error('[intake-alterations] create_ticket returned unexpected shape:', JSON.stringify(result));
+      return c.json({ error: { message: 'Ticket may have been created in ERPNext but no ticket number was returned. Please check ERPNext.' } }, 502);
     }
 
-    return c.json({ data: { ticketName, raw: typeof result === 'object' ? result : {} } });
+    return c.json({ data: { ticketName } });
   } catch (e: any) {
     console.error('[intake-alterations] ticket create error:', e?.message);
     return c.json({ error: { message: e?.message || 'Failed to create ticket' } }, 502);
