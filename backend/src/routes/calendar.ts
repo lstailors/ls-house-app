@@ -88,7 +88,51 @@ calendarRouter.get("/events", async (c) => {
 
   }
 
-  // ── 3. Pickups & Deliveries ──────────────────────────────────────────────────
+  // ── 3. App Deliveries (from app.lstailors.com dispatch board) ───────────────
+  if (feeds.includes("app_deliveries")) {
+    const { data: deliveries } = await supabaseAdmin
+      .from("deliveries")
+      .select("id,delivery_no,status,scheduled_at,scheduled_date,delivered_at,address_line,pod_photo_1_path,pod_method,customer_id,driver_id")
+      .or(`scheduled_at.gte.${start}T00:00:00Z,scheduled_date.gte.${start}`)
+      .or(`scheduled_at.lte.${end}T23:59:59Z,scheduled_date.lte.${end}`)
+      .not("status", "in", '("Cancelled","Stale","stale")')
+      .order("scheduled_at");
+
+    // Batch fetch customer names
+    const customerIds = [...new Set((deliveries ?? []).filter(d => d.customer_id).map(d => d.customer_id))];
+    const customerMap: Record<string, string> = {};
+    if (customerIds.length) {
+      const { data: custs } = await supabaseAdmin
+        .from("customers").select("id,full_name").in("id", customerIds);
+      (custs ?? []).forEach((c: any) => { customerMap[c.id] = c.full_name; });
+    }
+
+    for (const d of deliveries ?? []) {
+      const customerName = customerMap[d.customer_id] ?? "";
+      const dateStr = d.scheduled_at
+        ? d.scheduled_at.slice(0, 10)
+        : d.scheduled_date;
+      if (!dateStr) continue;
+      const isDelivered = ["delivered", "Delivered", "Picked Up"].includes(d.status ?? "");
+      const eventDate = isDelivered && d.delivered_at ? d.delivered_at.slice(0, 10) : dateStr;
+      events.push({
+        id: `dlv-${d.id}`,
+        feed: "app_deliveries",
+        title: customerName || d.delivery_no || "Delivery",
+        customer: customerName || null,
+        start: d.scheduled_at ?? `${dateStr}T09:00:00Z`,
+        end: d.scheduled_at ?? `${dateStr}T09:00:00Z`,
+        status: d.status,
+        location: d.address_line ?? null,
+        deliveryNo: d.delivery_no ?? null,
+        hasPod: !!d.pod_photo_1_path,
+        podMethod: d.pod_method ?? null,
+        allDay: !d.scheduled_at,
+      } as any);
+    }
+  }
+
+  // ── 4. Pickups & Deliveries ──────────────────────────────────────────────────
   if (feeds.includes("pickups")) {
     const { data: tasks } = await supabaseAdmin
       .from("ls_tasks")

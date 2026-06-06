@@ -11,6 +11,7 @@ const FEEDS = [
   { id: "houston_appointments",  label: "HOU Appointments",    color: "bg-blue-500/70 border-blue-400",      dot: "bg-blue-400" },
   { id: "production_alterations",label: "Alterations Due",     color: "bg-purple-500/70 border-purple-400",  dot: "bg-purple-400" },
   { id: "yz_ship",               label: "YZ Ship Plan",        color: "bg-orange-500/70 border-orange-400",  dot: "bg-orange-400" },
+  { id: "app_deliveries",        label: "Deliveries",          color: "bg-cyan-600/70 border-cyan-500",      dot: "bg-cyan-400" },
   { id: "pickups_deliveries",    label: "Pickups & Deliveries",color: "bg-amber-500/70 border-amber-400",    dot: "bg-amber-400" },
 ];
 
@@ -33,6 +34,7 @@ interface CalEvent {
   id: string; feed: string; title: string; customer?: string;
   start: string; end?: string; status?: string;
   location?: string; tailor?: string; allDay?: boolean; erpName?: string;
+  deliveryNo?: string; hasPod?: boolean; podMethod?: string; driver?: string;
 }
 
 // ── Event pill ────────────────────────────────────────────────────────────────
@@ -53,6 +55,11 @@ function EventPill({ ev, onClick }: { ev: CalEvent; onClick: () => void }) {
       <div className="flex items-center gap-1 min-w-0">
         {!ev.allDay && <span className="opacity-70 shrink-0">{fmtTime(ev.start)}</span>}
         <span className="truncate">{label}</span>
+        {ev.feed === "app_deliveries" && (
+          ev.hasPod
+            ? <span className="shrink-0 opacity-90">✓</span>
+            : <span className="shrink-0 opacity-60">·</span>
+        )}
       </div>
     </button>
   );
@@ -98,6 +105,29 @@ function EventModal({ ev, onClose }: { ev: CalEvent; onClose: () => void }) {
               <span className="capitalize">Status: {ev.status}</span>
             </div>
           )}
+          {ev.deliveryNo && (
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="font-mono text-xs">{ev.deliveryNo}</span>
+            </div>
+          )}
+          {ev.driver && (
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>Driver: {ev.driver}</span>
+            </div>
+          )}
+          {ev.hasPod ? (
+            <div className="flex items-center gap-2 text-signal-emerald">
+              <span className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>✓ POD confirmed{ev.podMethod ? ` · ${ev.podMethod}` : ""}</span>
+            </div>
+          ) : ev.feed === "app_deliveries" ? (
+            <div className="flex items-center gap-2 text-signal-amber">
+              <span className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>POD pending</span>
+            </div>
+          ) : null}
           {ev.erpName && (
             <div className="flex items-center gap-2">
               <span className="w-3.5 h-3.5 flex-shrink-0" />
