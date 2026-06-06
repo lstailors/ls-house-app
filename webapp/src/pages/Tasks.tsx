@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { CheckCircle2, Plus, Clock, AlertTriangle, ListTodo, Flame, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle2, Plus, Clock, AlertTriangle, ListTodo, Flame, X, Wand2, Sparkles, Lightbulb } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { SectionHeader } from "@/components/glass/SectionHeader";
@@ -25,6 +25,13 @@ interface Todo {
   assigned_by_full_name: string | null;
   reference_type: string | null;
   reference_name: string | null;
+}
+
+interface NewTaskDefaults {
+  description: string;
+  priority: "High" | "Medium" | "Low";
+  date: string | null;
+  allocated_to: string | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -178,14 +185,36 @@ function TaskCard({ todo, onComplete, completing }: TaskCardProps) {
 interface NewTaskPanelProps {
   onClose: () => void;
   currentUserEmail: string;
+  defaults?: Partial<NewTaskDefaults> | null;
 }
 
-function NewTaskPanel({ onClose, currentUserEmail }: NewTaskPanelProps) {
+function NewTaskPanel({ onClose, currentUserEmail, defaults }: NewTaskPanelProps) {
   const qc = useQueryClient();
-  const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState<"High" | "Medium" | "Low">("Medium");
-  const [date, setDate] = useState("");
-  const [assignedTo, setAssignedTo] = useState(currentUserEmail);
+  const [description, setDescription] = useState(defaults?.description ?? "");
+  const [priority, setPriority] = useState<"High" | "Medium" | "Low">(
+    (defaults?.priority as "High" | "Medium" | "Low") ?? "Medium"
+  );
+  const [date, setDate] = useState(defaults?.date ?? "");
+  const [assignedTo, setAssignedTo] = useState(defaults?.allocated_to ?? currentUserEmail);
+
+  // Auto-priority suggestion
+  const [aiPriority, setAiPriority] = useState<{ priority: string; reason: string } | null>(null);
+  const [aiPriorityLoading, setAiPriorityLoading] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (description.length < 20) { setAiPriority(null); return; }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setAiPriorityLoading(true);
+      try {
+        const result = await api.post<{ priority: string; reason: string }>("/api/tasks/ai-priority", { description });
+        setAiPriority(result);
+      } catch { /* ignore */ }
+      finally { setAiPriorityLoading(false); }
+    }, 800);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [description]);
 
   const create = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post<Todo>("/api/tasks", body),
@@ -245,6 +274,22 @@ function NewTaskPanel({ onClose, currentUserEmail }: NewTaskPanelProps) {
               <option value="Medium">Medium</option>
               <option value="Low">Low</option>
             </select>
+            {/* AI Priority Suggestion */}
+            {aiPriorityLoading ? (
+              <p className="text-[10px] text-brass-light/50 mt-1 italic">Analyzing…</p>
+            ) : aiPriority && aiPriority.priority !== priority ? (
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <Sparkles className="h-3 w-3 text-brass-light/60 shrink-0" />
+                <span className="text-[10px] text-cream-dim italic">{aiPriority.reason}</span>
+                <button
+                  type="button"
+                  onClick={() => setPriority(aiPriority.priority as "High" | "Medium" | "Low")}
+                  className="ml-auto text-[10px] text-brass-light underline underline-offset-2 hover:text-brass transition-colors shrink-0"
+                >
+                  Use {aiPriority.priority}
+                </button>
+              </div>
+            ) : null}
           </div>
 
           <div>
@@ -311,11 +356,30 @@ export default function Tasks() {
   const [statusFilter, setStatusFilter] = useState("open");
   const [search, setSearch] = useState("");
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [newTaskDefaults, setNewTaskDefaults] = useState<Partial<NewTaskDefaults> | null>(null);
+  const [nlText, setNlText] = useState("");
+  const [nlParsing, setNlParsing] = useState(false);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(true);
+  const [dismissedSuggestions, setDismissedSuggestions] = useState<number[]>([]);
 
   const { data: todos = [], isLoading } = useQuery<Todo[]>({
     queryKey: ["tasks", statusFilter],
     queryFn: () => api.get<Todo[]>(`/api/tasks?status=${statusFilter}`),
     enabled: !!me,
+  });
+
+  const { data: briefingData } = useQuery({
+    queryKey: ["tasks-briefing"],
+    queryFn: () => api.get<{ briefing: string }>("/api/tasks/briefing"),
+    staleTime: 10 * 60_000,
+    enabled: !!me,
+  });
+
+  const { data: suggestions = [] } = useQuery<{ description: string; priority: string; date: string | null }[]>({
+    queryKey: ["tasks-suggestions"],
+    queryFn: () => api.get<{ description: string; priority: string; date: string | null }[]>("/api/tasks/suggestions"),
+    staleTime: 5 * 60_000,
+    enabled: !!me && me.role === "super_admin",
   });
 
   const complete = useMutation({
@@ -326,6 +390,33 @@ export default function Tasks() {
     },
     onError: (e: Error) => toast.error(e.message || "Could not update task"),
   });
+
+  const createTask = useMutation({
+    mutationFn: (body: Record<string, unknown>) => api.post<Todo>("/api/tasks", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      toast.success("Task created");
+    },
+    onError: (e: Error) => toast.error(e.message || "Could not create task"),
+  });
+
+  const handleNlParse = async () => {
+    if (!nlText.trim() || nlParsing) return;
+    setNlParsing(true);
+    try {
+      const result = await api.post<{ description: string; priority: string; date: string | null; allocated_to: string | null }>(
+        "/api/tasks/ai-parse",
+        { text: nlText }
+      );
+      setNewTaskDefaults(result as Partial<NewTaskDefaults>);
+      setNewTaskOpen(true);
+      setNlText("");
+    } catch {
+      toast.error("Could not parse task");
+    } finally {
+      setNlParsing(false);
+    }
+  };
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -349,6 +440,8 @@ export default function Tasks() {
     );
   }, [todos, search]);
 
+  const visibleSuggestions = suggestions.filter((_, i) => !dismissedSuggestions.includes(i));
+
   return (
     <div className="space-y-5 md:space-y-6 animate-fade-up">
       <SectionHeader
@@ -357,7 +450,7 @@ export default function Tasks() {
         description="Errands, pickups, internal jobs. Every open task in the house."
         actions={
           <Button
-            onClick={() => setNewTaskOpen((v) => !v)}
+            onClick={() => { setNewTaskDefaults(null); setNewTaskOpen((v) => !v); }}
             className="bg-[#c9a84c] hover:bg-[#b8963c] text-[#0a120e] font-medium h-9 text-sm"
           >
             <Plus className="h-3.5 w-3.5 mr-1.5" /> New Task
@@ -365,12 +458,106 @@ export default function Tasks() {
         }
       />
 
+      {/* Natural Language Input */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={nlText}
+            onChange={(e) => setNlText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleNlParse(); }}
+            placeholder="Type a task in plain English… 'Call Emanuel Cohen about deposit by Friday'"
+            className="w-full bg-forest-deep/60 border border-brass/20 rounded-xl px-4 py-2.5 pr-10 text-sm text-cream placeholder:text-cream-dim/40 focus:outline-none focus:border-brass/50 transition-colors"
+          />
+          {nlParsing ? (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 border-brass/40 border-t-brass animate-spin" />
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={handleNlParse}
+          disabled={!nlText.trim() || nlParsing}
+          title="Parse with AI"
+          className={cn(
+            "h-10 w-10 rounded-xl border border-brass/30 flex items-center justify-center shrink-0 transition-colors",
+            "hover:bg-brass/15 hover:border-brass/60 text-brass-light/70 hover:text-brass-light",
+            (!nlText.trim() || nlParsing) && "opacity-40 cursor-not-allowed",
+          )}
+        >
+          <Wand2 className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* AI Briefing */}
+      {briefingData?.briefing ? (
+        <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-brass/5 border border-brass/15 text-sm text-cream-muted italic">
+          <Sparkles className="h-4 w-4 text-brass-light/60 shrink-0 mt-0.5" />
+          <span>{briefingData.briefing}</span>
+        </div>
+      ) : null}
+
       {/* New task panel */}
       {newTaskOpen ? (
         <NewTaskPanel
           onClose={() => setNewTaskOpen(false)}
           currentUserEmail={me?.email ?? ""}
+          defaults={newTaskDefaults}
         />
+      ) : null}
+
+      {/* AI Suggestions (super_admin only) */}
+      {me?.role === "super_admin" && visibleSuggestions.length > 0 ? (
+        <GlassCard className="border border-brass/15 rounded-xl overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setSuggestionsOpen((v) => !v)}
+            className="w-full flex items-center gap-2 px-4 py-3 hover:bg-brass/5 transition-colors"
+          >
+            <Lightbulb className="h-4 w-4 text-brass-light/70" />
+            <span className="text-sm font-medium text-cream-muted">AI Suggestions</span>
+            <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-brass/15 text-brass-light font-semibold">
+              {visibleSuggestions.length}
+            </span>
+            <span className="ml-auto text-cream-dim text-xs">{suggestionsOpen ? "▲" : "▼"}</span>
+          </button>
+          {suggestionsOpen ? (
+            <div className="px-4 pb-3 space-y-2 border-t border-brass/10">
+              {visibleSuggestions.map((s, idx) => {
+                const realIdx = suggestions.indexOf(s);
+                return (
+                  <div key={idx} className="flex items-center gap-3 py-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-cream leading-snug">{s.description}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className={cn(
+                          "text-[10px] font-semibold uppercase tracking-widest",
+                          s.priority === "High" ? "text-signal-rose" : s.priority === "Medium" ? "text-signal-amber" : "text-cream-dim"
+                        )}>{s.priority}</span>
+                        {s.date ? <span className="text-[10px] text-cream-dim">{formatDate(s.date)}</span> : null}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        createTask.mutate({
+                          description: s.description,
+                          priority: s.priority,
+                          date: s.date,
+                          allocated_to: me?.email,
+                        });
+                        setDismissedSuggestions((prev) => [...prev, realIdx]);
+                      }}
+                      className="shrink-0 h-7 w-7 rounded-full border border-brass/30 flex items-center justify-center hover:bg-brass/15 hover:border-brass/60 text-brass-light/70 hover:text-brass-light transition-colors"
+                      title="Add task"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </GlassCard>
       ) : null}
 
       {/* KPI strip */}
