@@ -34,14 +34,14 @@ calendarRouter.get("/events", async (c) => {
       .not("status", "in", '("Picked Up","Cancelled")')
       .order("promise_date"),
 
-    // 3. App deliveries
+    // 3. App deliveries — match on scheduled_at OR scheduled_date
     supabaseAdmin
       .from("deliveries")
       .select("id,delivery_no,status,scheduled_at,scheduled_date,delivered_at,address_line,pod_photo_1_path,pod_method,customer_id,driver_id")
-      .gte("scheduled_at", `${start}T00:00:00Z`)
-      .lte("scheduled_at", `${end}T23:59:59Z`)
+      .or(`scheduled_at.gte.${start}T00:00:00Z,scheduled_date.gte.${start}`)
+      .or(`scheduled_at.lte.${end}T23:59:59Z,scheduled_date.lte.${end}`)
       .not("status", "in", '("Cancelled","Stale","stale")')
-      .order("scheduled_at"),
+      .order("scheduled_at", { nullsFirst: false }),
 
     // 4. Pickup/delivery tasks
     supabaseAdmin
