@@ -142,6 +142,36 @@ calendarRouter.get("/events", async (c) => {
     }
   }
 
+  // ── 4. YZ Ship Plan — Sales Orders by yz_ship_plan date ─────────────────────
+  if (feeds.includes("yz_ship") || feeds.includes("production")) {
+    const yzOrders = await erpList<any>("Sales Order", {
+      filters: [
+        ["yz_ship_plan", ">=", start],
+        ["yz_ship_plan", "<=", end],
+        ["yz_ship_plan", "!=", ""],
+        ["status", "not in", ["Cancelled", "Closed"]],
+      ],
+      fields: ["name", "customer_name", "yz_ship_plan", "delivery_date", "status"],
+      limit: 200,
+      order_by: "yz_ship_plan asc",
+    });
+
+    for (const o of yzOrders) {
+      if (!o.yz_ship_plan) continue;
+      events.push({
+        id: `yz-${o.name}`,
+        feed: "yz_ship",
+        title: o.customer_name || o.name,
+        customer: o.customer_name || null,
+        start: `${o.yz_ship_plan}T00:00:00Z`,
+        end: `${o.yz_ship_plan}T23:59:59Z`,
+        status: o.status,
+        erpName: o.name,
+        allDay: true,
+      });
+    }
+  }
+
   // Sort all by start
   events.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
