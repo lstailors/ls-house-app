@@ -31,9 +31,9 @@ interface NavSection {
   roles?: UserRole[];
 }
 
-const ALL: UserRole[] = ["super_admin", "store_manager", "salesperson", "driver"];
-const MGMT: UserRole[] = ["super_admin", "store_manager"];
-const STAFF: UserRole[] = ["super_admin", "store_manager", "salesperson"];
+const ALL:   UserRole[] = ["super_admin", "store_manager", "salesperson", "driver", "tailor"];
+const MGMT:  UserRole[] = ["super_admin", "store_manager"];
+const STAFF: UserRole[] = ["super_admin", "store_manager", "salesperson", "tailor"];
 
 const SECTIONS: NavSection[] = [
   {
@@ -56,7 +56,7 @@ const SECTIONS: NavSection[] = [
   },
   {
     title: "Ops",
-    roles: MGMT,
+    roles: [...MGMT, "tailor"] as UserRole[],
     items: [
       { to: "/calendar", label: "Calendar", icon: Calendar, roles: STAFF },
       { to: "/deliveries", label: "Deliveries", icon: Truck, roles: ALL },
