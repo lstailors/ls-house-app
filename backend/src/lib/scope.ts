@@ -24,6 +24,7 @@ function mapErpRole(roles: string[]): UserRole {
   if (roles.includes("LST Super Admin")) return "super_admin";
   if (roles.includes("LST Store Manager")) return "store_manager";
   if (roles.includes("LST Driver")) return "driver";
+  if (roles.includes("LST Tailor")) return "tailor";
   if (roles.includes("LST Salesperson")) return "salesperson";
   // System Manager fallback for admins without explicit LST role
   if (roles.includes("System Manager")) return "super_admin";

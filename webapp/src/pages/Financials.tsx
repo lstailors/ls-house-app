@@ -22,7 +22,9 @@ import {
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { KpiCard } from "@/components/glass/KpiCard";
+import { useState } from "react";
 import { useFinancials } from "@/lib/queries";
+import { useMe } from "@/lib/session";
 import { formatUSD } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -163,9 +165,76 @@ function GarmentRow({
   );
 }
 
+// ─── PIN gate ─────────────────────────────────────────────────────────────────
+
+function FinancialsGate({ onUnlock }: { onUnlock: () => void }) {
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/financials/unlock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("lst_token")}` },
+        body: JSON.stringify({ pin }),
+      });
+      const json = await res.json();
+      if (!res.ok) { setError(json?.error?.message || "Incorrect code"); return; }
+      sessionStorage.setItem("fin_unlocked", "1");
+      onUnlock();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full min-h-[60vh] items-center justify-center">
+      <div className="glass-panel-strong rounded-2xl p-10 w-full max-w-xs text-center space-y-6">
+        <div className="w-14 h-14 rounded-full bg-brass/10 border border-brass/30 flex items-center justify-center mx-auto">
+          <span className="text-2xl">🔒</span>
+        </div>
+        <div>
+          <div className="font-display italic text-xl text-cream mb-1">Financials</div>
+          <div className="text-xs text-cream-muted">Enter the access code to continue</div>
+        </div>
+        <form onSubmit={submit} className="space-y-4">
+          <input
+            type="password"
+            inputMode="numeric"
+            maxLength={10}
+            placeholder="• • • • • •"
+            value={pin}
+            onChange={e => { setPin(e.target.value); setError(""); }}
+            className="w-full text-center text-lg tracking-widest h-12 rounded-lg bg-forest-raised/40 border border-brass/25 text-cream focus:outline-none focus:border-brass/60 placeholder:text-cream-dim"
+            autoFocus
+          />
+          {error && <div className="text-xs text-signal-rose">{error}</div>}
+          <button
+            type="submit"
+            disabled={loading || !pin}
+            className="w-full h-11 btn-brass rounded-lg text-sm font-medium disabled:opacity-40"
+          >
+            {loading ? "Checking…" : "Unlock"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function Financials() {
+  const { data: me } = useMe();
+  const canSee = me?.role === "super_admin" || me?.role === "store_manager";
+  const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem("fin_unlocked") === "1");
+
+  if (!canSee && !unlocked) return <FinancialsGate onUnlock={() => setUnlocked(true)} />;
+
   const { data: rawFin, isLoading } = useFinancials();
   const fin = rawFin as unknown as FinData | undefined;
 

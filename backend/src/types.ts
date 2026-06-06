@@ -5,7 +5,7 @@ import { z } from "zod";
 
 // ─── Enums ──────────────────────────────────────────────────────────────
 
-export const UserRole = z.enum(["super_admin", "store_manager", "salesperson", "driver"]);
+export const UserRole = z.enum(["super_admin", "store_manager", "salesperson", "driver", "tailor"]);
 export type UserRole = z.infer<typeof UserRole>;
 
 export const OrderStatus = z.enum([
