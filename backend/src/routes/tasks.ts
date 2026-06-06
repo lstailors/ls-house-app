@@ -2,6 +2,19 @@ import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
 import { erpList, erpCreate, erpUpdate } from "../lib/erp";
 
+const RAVEN_ALERTS = "L&S Tailors-alerts";
+
+async function postToRaven(text: string, senderEmail = "house@lstailors.com"): Promise<void> {
+  try {
+    await erpCreate("Raven Message", {
+      channel_id: RAVEN_ALERTS,
+      text,
+      message_type: "Text",
+      owner: senderEmail,
+    });
+  } catch { /* non-blocking */ }
+}
+
 export const tasksRouter = new Hono();
 
 async function callAnthropic(system: string, userMsg: string, maxTokens = 512): Promise<string> {
@@ -80,6 +93,11 @@ tasksRouter.post("/", async (c) => {
     allocated_to: body.allocated_to ?? user.email,
     assigned_by: user.email,
   });
+
+  const desc = String(body.description).replace(/<[^>]*>/g, "").slice(0, 80);
+  const assignee = String(body.allocated_to ?? user.email).split("@")[0];
+  const due = body.date ? ` · due ${body.date}` : "";
+  postToRaven(`📋 New task [${body.priority ?? "Medium"}]: ${desc}${due} → ${assignee}`, user.email);
 
   return c.json({ data: todo });
 });
@@ -232,5 +250,11 @@ tasksRouter.patch("/:id", async (c) => {
   if (body.allocated_to !== undefined) update.allocated_to = body.allocated_to;
 
   const todo = await erpUpdate("ToDo", id, update);
+
+  if (body.status === "Closed") {
+    const desc = String(todo?.description ?? id).replace(/<[^>]*>/g, "").slice(0, 80);
+    postToRaven(`✅ Task completed: ${desc}`, user.email);
+  }
+
   return c.json({ data: todo });
 });

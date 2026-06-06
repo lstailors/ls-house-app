@@ -93,9 +93,10 @@ interface TaskCardProps {
   todo: Todo;
   onComplete: (id: string) => void;
   completing: boolean;
+  onSelect: (todo: Todo) => void;
 }
 
-function TaskCard({ todo, onComplete, completing }: TaskCardProps) {
+function TaskCard({ todo, onComplete, completing, onSelect }: TaskCardProps) {
   const text = stripHtml(todo.description);
   const truncated = text.length > 120 ? text.slice(0, 120) + "…" : text;
   const overdue = isOverdue(todo.date);
@@ -105,11 +106,12 @@ function TaskCard({ todo, onComplete, completing }: TaskCardProps) {
   return (
     <GlassCard
       className={cn(
-        "p-4 border border-brass/15 rounded-xl transition-all",
+        "p-4 border border-brass/15 rounded-xl transition-all cursor-pointer hover:border-brass/30 hover:bg-brass/5",
         overdue && !isClosed && "border-signal-rose/30",
         todo.priority === "High" && !isClosed && "border-signal-rose/20",
         isClosed && "opacity-60",
       )}
+      onClick={() => onSelect(todo)}
     >
       <div className="flex items-start gap-3">
         {/* Left: content */}
@@ -162,7 +164,7 @@ function TaskCard({ todo, onComplete, completing }: TaskCardProps) {
         {!isClosed ? (
           <button
             type="button"
-            onClick={() => onComplete(todo.name)}
+            onClick={(e) => { e.stopPropagation(); onComplete(todo.name); }}
             disabled={completing}
             title="Mark complete"
             className={cn(
@@ -177,6 +179,154 @@ function TaskCard({ todo, onComplete, completing }: TaskCardProps) {
         ) : null}
       </div>
     </GlassCard>
+  );
+}
+
+// ── Task Detail Panel ─────────────────────────────────────────────────────────
+
+interface TaskDetailPanelProps {
+  todo: Todo;
+  onClose: () => void;
+}
+
+function TaskDetailPanel({ todo, onClose }: TaskDetailPanelProps) {
+  const qc = useQueryClient();
+  const isClosed = todo.status === "Closed" || todo.status === "Cancelled";
+
+  const [priority, setPriority] = useState<"High" | "Medium" | "Low">(todo.priority);
+  const [date, setDate] = useState(todo.date ?? "");
+  const [assignedTo, setAssignedTo] = useState(todo.allocated_to ?? "");
+  const [description, setDescription] = useState(stripHtml(todo.description));
+
+  const save = useMutation({
+    mutationFn: (body: Record<string, unknown>) => api.patch<Todo>(`/api/tasks/${todo.name}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      toast.success("Task updated");
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message || "Could not update task"),
+  });
+
+  const markComplete = useMutation({
+    mutationFn: () => api.patch<Todo>(`/api/tasks/${todo.name}`, { status: "Closed" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      toast.success("Task marked complete");
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message || "Could not update task"),
+  });
+
+  function handleSave(ev: React.FormEvent) {
+    ev.preventDefault();
+    save.mutate({
+      priority,
+      date: date || null,
+      allocated_to: assignedTo.trim() || null,
+      description: description.trim(),
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="relative w-full sm:max-w-lg bg-[#0a120e] border border-brass/20 rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-brass/10 sticky top-0 bg-[#0a120e] z-10">
+          <span className="ui-label">Task Details</span>
+          <button type="button" onClick={onClose} className="text-cream-dim hover:text-cream transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSave} className="p-5 space-y-4">
+          {/* Description */}
+          <div>
+            <label className="text-[11px] uppercase tracking-widest text-cream-dim mb-1.5 block">Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={4}
+              className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream placeholder:text-cream-dim/50 focus:outline-none focus:border-brass/50 resize-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {/* Priority */}
+            <div>
+              <label className="text-[11px] uppercase tracking-widest text-cream-dim mb-1.5 block">Priority</label>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as "High" | "Medium" | "Low")}
+                className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream focus:outline-none focus:border-brass/50"
+              >
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+              </select>
+            </div>
+
+            {/* Due date */}
+            <div>
+              <label className="text-[11px] uppercase tracking-widest text-cream-dim mb-1.5 block">Due Date</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream focus:outline-none focus:border-brass/50"
+              />
+            </div>
+          </div>
+
+          {/* Assigned to */}
+          <div>
+            <label className="text-[11px] uppercase tracking-widest text-cream-dim mb-1.5 block">Assigned To (email)</label>
+            <input
+              type="text"
+              value={assignedTo}
+              onChange={(e) => setAssignedTo(e.target.value)}
+              placeholder="email@example.com"
+              className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream placeholder:text-cream-dim/50 focus:outline-none focus:border-brass/50"
+            />
+          </div>
+
+          {/* Reference link */}
+          {todo.reference_type && todo.reference_name ? (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-brass/5 border border-brass/10">
+              <span className="text-[11px] text-cream-dim uppercase tracking-widest">Ref</span>
+              <span className="text-[11px] font-mono text-brass-light/70">{todo.reference_type} · {todo.reference_name}</span>
+            </div>
+          ) : null}
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 pt-1">
+            {!isClosed ? (
+              <Button
+                type="button"
+                onClick={() => markComplete.mutate()}
+                disabled={markComplete.isPending}
+                variant="outline"
+                className="border-brass/30 text-brass-light hover:bg-brass/10 h-9 text-sm flex-1"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+                {markComplete.isPending ? "Saving…" : "Mark Complete"}
+              </Button>
+            ) : null}
+            <Button
+              type="submit"
+              disabled={save.isPending}
+              className="bg-[#c9a84c] hover:bg-[#b8963c] text-[#0a120e] font-medium h-9 text-sm flex-1"
+            >
+              {save.isPending ? "Saving…" : "Save Changes"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -357,6 +507,7 @@ export default function Tasks() {
   const [search, setSearch] = useState("");
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [newTaskDefaults, setNewTaskDefaults] = useState<Partial<NewTaskDefaults> | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Todo | null>(null);
   const [nlText, setNlText] = useState("");
   const [nlParsing, setNlParsing] = useState(false);
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
@@ -614,10 +765,19 @@ export default function Tasks() {
               todo={todo}
               onComplete={(id) => complete.mutate(id)}
               completing={complete.isPending}
+              onSelect={setSelectedTask}
             />
           ))}
         </div>
       )}
+
+      {/* Task detail panel */}
+      {selectedTask !== null ? (
+        <TaskDetailPanel
+          todo={selectedTask}
+          onClose={() => setSelectedTask(null)}
+        />
+      ) : null}
     </div>
   );
 }
