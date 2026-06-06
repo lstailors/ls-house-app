@@ -106,7 +106,7 @@ const App = () => (
             <Route
               path="/intake/alterations"
               element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
                   <IntakeAlterations />
                 </RoleGuard>
               }
