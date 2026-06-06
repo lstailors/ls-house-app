@@ -482,12 +482,7 @@ function ApprovalsPanel() {
           {active.map((item: any) => <ApprovalCard key={item.id} item={item} />)}
         </div>
       )}
-      {resolved.length > 0 && (
-        <div className="space-y-2">
-          <span className="ui-label text-[10px] text-cream-dim/60">RECENTLY RESOLVED</span>
-          {resolved.slice(0, 5).map((item: any) => <ApprovalCard key={item.id} item={item} />)}
-        </div>
-      )}
+
     </div>
   );
 }

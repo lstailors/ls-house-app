@@ -403,7 +403,10 @@ export function useApproveAction() {
   return useMutation({
     mutationFn: ({ id, action, notes }: { id: string; action: "approve" | "deny"; notes?: string }) =>
       api.post(`/api/maestro/approvals/${id}/${action}`, notes ? { notes } : undefined),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["maestro", "approvals"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["maestro", "approvals"] });
+      qc.invalidateQueries({ queryKey: ["agents", "approvals", "pending"] });
+    },
   });
 }
 
