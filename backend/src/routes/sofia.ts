@@ -223,9 +223,13 @@ const TOOLS = [
   { type: "function", function: { name: "create_task", description: "Create a task in the L&S task system. Use for any staff operational request: items to buy/order (shopping), errands, pickups, dropoffs, internal tasks. For shopping, list each product as a separate item in the items array.", parameters: { type: "object", properties: { task_type: { type: "string", enum: ["shopping", "errand", "pickup", "dropoff", "internal"] }, title: { type: "string" }, description: { type: "string" }, priority: { type: "string", enum: ["normal", "high", "urgent"] }, location_name: { type: "string" }, location_address: { type: "string" }, due_at: { type: "string", description: "ISO 8601 if mentioned" }, notes: { type: "string" }, items: { type: "array", description: "For shopping tasks — individual items to purchase", items: { type: "object", properties: { description: { type: "string" }, quantity: { type: "number" }, unit: { type: "string" }, preferred_vendor: { type: "string" } }, required: ["description"] } } }, required: ["task_type", "title"] } } },
   { type: "function", function: { name: "get_customer_tickets", description: "Get list of recent alteration tickets for a customer by phone number. Returns ticket name, status, due date, total, and payment status. Use when the customer asks about their orders/tickets/garments by phone.", parameters: { type: "object", properties: { phone: { type: "string", description: "Customer phone in E.164 format, e.g. +15551234567" } }, required: ["phone"] } } },
   { type: "function", function: { name: "get_ticket_status", description: "Get current status of a specific alteration ticket by its name. Use when the customer mentions a ticket number like ALT-NYC-2026-00042.", parameters: { type: "object", properties: { ticket_name: { type: "string", description: "Full ticket name, e.g. ALT-NYC-2026-00042" } }, required: ["ticket_name"] } } },
+  { type: "function", function: { name: "create_todo", description: "Create a business follow-up ToDo in ERPNext. Use proactively during client conversations when a follow-up action is needed (callback, invoice question, special request). Also use when staff ask to set a reminder or todo.", parameters: { type: "object", properties: { description: { type: "string", description: "Clear, actionable task description including customer name and context" }, priority: { type: "string", enum: ["High", "Medium", "Low"] }, date: { type: "string", description: "Due date YYYY-MM-DD or null" }, allocated_to: { type: "string", description: "Email of responsible person (e.g. carl@lstailors.com). Null = assign to Carl." } }, required: ["description"] } } },
+  { type: "function", function: { name: "list_my_tasks", description: "List the caller's open ToDos from ERPNext. Use when staff asks 'what are my tasks', 'my todo list', 'what do I need to do', etc.", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "complete_task", description: "Mark an ERPNext ToDo as complete. Use when staff says they finished a task, 'done with X', 'mark X complete', 'checked off X'. Match by todo_id.", parameters: { type: "object", properties: { todo_id: { type: "string", description: "ERPNext ToDo name/id from list_my_tasks" } }, required: ["todo_id"] } } },
 ];
 
-const STAFF_TOOLS = TOOLS.filter((t) => (t as any).function.name === "create_task");
+const STAFF_TASK_TOOL_NAMES = new Set(["create_task", "create_todo", "list_my_tasks", "complete_task"]);
+const STAFF_TOOLS = TOOLS.filter((t) => STAFF_TASK_TOOL_NAMES.has((t as any).function.name));
 
 // ── Tool executor ──
 async function executeTool(
@@ -861,6 +865,70 @@ async function executeTool(
         }
         return JSON.stringify({ ok: true, task_no: (tsk as any).task_no, task_id: (tsk as any).id, title: (tsk as any).title, items_added: items.length });
       }
+      case "create_todo": {
+        const erpBase = process.env.ERPNEXT_BASE_URL ?? "";
+        const erpKey  = process.env.ERPNEXT_API_KEY ?? "";
+        const erpSec  = process.env.ERPNEXT_API_SECRET ?? "";
+        if (!erpBase || !erpKey || !erpSec) return JSON.stringify({ error: "ERPNext not configured" });
+        const callerEmail = Object.entries(STAFF_PHONES_MAP).find(([k]) => from.replace(/\D/g,"") === k)?.[1]
+          ? `${Object.entries(STAFF_PHONES_MAP).find(([k]) => from.replace(/\D/g,"") === k)![1].toLowerCase()}@lstailors.com`
+          : "carl@lstailors.com";
+        const todoBody = {
+          description: String(args.description ?? ""),
+          status: "Open",
+          priority: String(args.priority ?? "Medium"),
+          date: args.date ? String(args.date) : null,
+          allocated_to: args.allocated_to ? String(args.allocated_to) : "carl@lstailors.com",
+          assigned_by: callerEmail,
+        };
+        const r = await fetch(`${erpBase}/api/resource/ToDo`, {
+          method: "POST",
+          headers: { Authorization: `token ${erpKey}:${erpSec}`, "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(todoBody),
+        });
+        const rd: any = await r.json().catch(() => ({}));
+        if (!r.ok) return JSON.stringify({ error: rd?.exc_type ?? "Failed to create todo" });
+        return JSON.stringify({ ok: true, id: rd.data?.name, description: rd.data?.description });
+      }
+
+      case "list_my_tasks": {
+        const erpBase = process.env.ERPNEXT_BASE_URL ?? "";
+        const erpKey  = process.env.ERPNEXT_API_KEY ?? "";
+        const erpSec  = process.env.ERPNEXT_API_SECRET ?? "";
+        // Map caller phone to email
+        const staffEntry = Object.entries(STAFF_PHONES_MAP).find(([k]) => from.replace(/\D/g,"") === k);
+        const callerEmail = staffEntry ? `${staffEntry[1].toLowerCase()}@lstailors.com` : null;
+        if (!erpBase || !erpKey || !erpSec) return JSON.stringify({ todos: [] });
+        const filters = JSON.stringify([["status","=","Open"],["allocated_to","=", callerEmail ?? "carl@lstailors.com"]]);
+        const fields = JSON.stringify(["name","description","priority","date"]);
+        const res = await fetch(`${erpBase}/api/resource/ToDo?filters=${encodeURIComponent(filters)}&fields=${encodeURIComponent(fields)}&limit=20&order_by=date asc`, {
+          headers: { Authorization: `token ${erpKey}:${erpSec}`, Accept: "application/json" },
+        });
+        const rj: any = await res.json().catch(() => ({}));
+        const todos = (rj.data ?? []).map((t: any) => ({
+          id: t.name,
+          task: t.description?.replace(/<[^>]*>/g,"").trim().slice(0,100),
+          priority: t.priority,
+          due: t.date ?? "no due date",
+        }));
+        return JSON.stringify({ count: todos.length, todos });
+      }
+
+      case "complete_task": {
+        const erpBase = process.env.ERPNEXT_BASE_URL ?? "";
+        const erpKey  = process.env.ERPNEXT_API_KEY ?? "";
+        const erpSec  = process.env.ERPNEXT_API_SECRET ?? "";
+        const todoId = String(args.todo_id ?? "");
+        if (!todoId) return JSON.stringify({ error: "todo_id required" });
+        const r = await fetch(`${erpBase}/api/resource/ToDo/${encodeURIComponent(todoId)}`, {
+          method: "PUT",
+          headers: { Authorization: `token ${erpKey}:${erpSec}`, "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ status: "Closed" }),
+        });
+        if (!r.ok) return JSON.stringify({ error: "Could not mark complete" });
+        return JSON.stringify({ ok: true, closed: todoId });
+      }
+
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
@@ -1104,18 +1172,31 @@ When Carl tells you to text/message/SMS/notify a client, you are an ACTION layer
 === END ASSISTANT SEND RULES ===`;
 
     const staffPreamble = `\n\n[STAFF MODE - ${STAFF_PHONES_MAP[fromDigits] ?? "Staff"}]
-You are Sofia, L&S internal assistant. ${STAFF_PHONES_MAP[fromDigits] ?? "A staff member"} is sending you an operational request.
+You are Sofia, L&S internal assistant. ${STAFF_PHONES_MAP[fromDigits] ?? "A staff member"} is texting you.
 
-IMMEDIATELY call create_task for every request. Do not ask questions unless the message is completely unclear.
+You handle two types of requests — pick the right tool immediately without asking:
 
-Task type rules:
-- Items to buy/order → task_type: "shopping" (put each product in items array with specs like size, color, quantity)
-- Go somewhere/do something → task_type: "errand"
+OPERATIONAL TASKS → create_task (physical errands, shopping, pickups, dropoffs)
+- Items to buy/order → task_type: "shopping" (each product in items array)
+- Go somewhere → task_type: "errand"
 - Collect something → task_type: "pickup"
-- Bring/deliver something → task_type: "dropoff"
+- Bring/deliver → task_type: "dropoff"
 - Internal ops → task_type: "internal"
 
-After create_task, reply with ONE short confirmation: "✓ Added: [task title]" or "✓ Shopping task added: [item list]". Nothing else.`;
+BUSINESS TODOS → create_todo (call a client, follow up on invoice, review an order)
+- "remind me to call X", "add todo: follow up with Y", "I need to check on Z order"
+
+TASK QUERIES → list_my_tasks
+- "what are my tasks", "my todo list", "what do I have today"
+
+MARK DONE → complete_task (use todo id from list_my_tasks)
+- "done with X", "mark X complete", "finished Y"
+
+Reply with ONE short confirmation only. Examples:
+- create_task → "✓ Added: [title]"
+- create_todo → "✓ Todo: [description]"
+- list_my_tasks → list them cleanly, one per line with due date if set
+- complete_task → "✓ Done: [task]"`;
 
     const modePreamble = isStaff
       ? staffPreamble
@@ -1124,7 +1205,7 @@ After create_task, reply with ONE short confirmation: "✓ Added: [task title]" 
         assistantSendRules
       : `
 
-[CONCIERGE MODE - client interaction. Restricted tools. Never invent pricing, fitting times, appointment dates, or order status. If you do not have data from a tool, say you will check with Carl. Use add_dossier_observation silently.]
+[CONCIERGE MODE - client interaction. Restricted tools. Never invent pricing, fitting times, appointment dates, or order status. If you do not have data from a tool, say you will check with Carl. Use add_dossier_observation silently. Also use create_todo silently whenever a client interaction reveals a follow-up action needed (e.g. client mentions a complaint, requests a callback, has an open invoice question, needs a rush order, or any situation requiring staff follow-up). Always include the client name and context in the todo description.]
 
 BOOKING POLICY: When a client wants to book/reschedule/cancel an appointment, ALWAYS offer two options: (1) "I can book it for you right now - just need your name and email" or (2) "I can text you our booking link: lstailors.com/book". Honor whichever they pick. If they choose option 1: call get_available_slots first, present 2-3 nearby options in plain English, then call book_fitting once they confirm and you have name + email. Never book without an explicit yes AND name + email. Default event_type is fitting unless they say consultation, alterations, pickup, or exchange.
 
