@@ -8,7 +8,25 @@ export const maestroRouter = new Hono();
 
 // ── Action executor — fires real downstream effects ───────────────────────────
 
+// Workflow ID → webhook path map. WF-13 uses a webhook trigger, not the execute API.
+const N8N_WEBHOOK_PATHS: Record<string, string> = {
+  "WF-13": "maestro-command",
+  "WF-PO-03": "po-approved",
+};
+
 async function fireN8nWebhook(workflowId: string, payload: unknown): Promise<void> {
+  const webhookPath = N8N_WEBHOOK_PATHS[workflowId];
+  if (webhookPath) {
+    // Workflow uses a webhook trigger — POST to the webhook URL directly
+    const webhookBase = "https://lstailors.app.n8n.cloud/webhook";
+    await fetch(`${webhookBase}/${webhookPath}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(e => console.error("[maestro/n8n webhook]", e?.message));
+    return;
+  }
+  // Fallback: use execute API for workflows without a webhook trigger
   const key = process.env.N8N_API_KEY;
   const base = "https://lstailors.app.n8n.cloud/api/v1";
   if (!key) { console.warn("[maestro] N8N_API_KEY not set"); return; }
