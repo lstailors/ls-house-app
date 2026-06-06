@@ -1,74 +1,90 @@
 import { Hono } from "hono";
-import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser } from "../lib/scope";
+import { erpList, erpCreate, erpUpdate } from "../lib/erp";
 
 export const tasksRouter = new Hono();
 
-function isMgmt(role: string) {
-  return role === "super_admin" || role === "store_manager";
-}
-
+// GET /api/tasks/open-count
 tasksRouter.get("/open-count", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ data: { count: 0 } });
-  const { count } = await supabaseAdmin
-    .from("ls_tasks")
-    .select("id", { count: "exact", head: true })
-    .in("status", ["open", "scheduled", "in_progress"]);
-  return c.json({ data: { count: count ?? 0 } });
+  const filters: unknown[] = [["status", "=", "Open"]];
+  if (user.role !== "super_admin") filters.push(["allocated_to", "=", user.email]);
+  const todos = await erpList("ToDo", { filters, fields: ["name"], limit: 200 });
+  return c.json({ data: { count: todos.length } });
 });
 
+// GET /api/tasks
 tasksRouter.get("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ data: [] });
-  const statusParam = c.req.query("status") ?? "open,scheduled,in_progress";
-  const statuses = statusParam.split(",").map((s) => s.trim());
-  const { data, error } = await supabaseAdmin
-    .from("ls_tasks")
-    .select("id, title, status, task_type, priority, assigned_to_name, scheduled_at, notes, related_customer_id, created_at")
-    .in("status", statuses)
-    .order("scheduled_at", { ascending: true });
-  if (error) return c.json({ error: { message: error.message } }, 500);
-  return c.json({ data: data ?? [] });
+
+  const statusParam = c.req.query("status") ?? "open";
+  const filters: unknown[] = [];
+
+  if (statusParam === "open") filters.push(["status", "=", "Open"]);
+  else if (statusParam === "closed") filters.push(["status", "=", "Closed"]);
+  // else "all" = no status filter
+
+  if (user.role !== "super_admin") {
+    filters.push(["allocated_to", "=", user.email]);
+  }
+
+  const todos = await erpList("ToDo", {
+    filters,
+    fields: [
+      "name",
+      "description",
+      "status",
+      "priority",
+      "date",
+      "allocated_to",
+      "assigned_by",
+      "assigned_by_full_name",
+      "reference_type",
+      "reference_name",
+      "color",
+    ],
+    limit: 100,
+    order_by: "date asc",
+  });
+
+  return c.json({ data: todos });
 });
 
+// POST /api/tasks
 tasksRouter.post("/", async (c) => {
   const user = await getAuthedUser(c);
-  if (!user || !isMgmt(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
-  const body = await c.req.json().catch(() => ({}));
-  if (!body.title) return c.json({ error: { message: "title required" } }, 400);
-  const { data, error } = await supabaseAdmin
-    .from("ls_tasks")
-    .insert({
-      title: body.title,
-      task_type: body.task_type ?? "internal",
-      priority: body.priority ?? "medium",
-      status: "open",
-      assigned_to_name: body.assigned_to_name ?? null,
-      scheduled_at: body.scheduled_at ?? null,
-      notes: body.notes ?? null,
-    })
-    .select()
-    .single();
-  if (error) return c.json({ error: { message: error.message } }, 500);
-  return c.json({ data });
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  if (!body.description) return c.json({ error: { message: "description required" } }, 400);
+
+  const todo = await erpCreate("ToDo", {
+    description: body.description,
+    status: "Open",
+    priority: body.priority ?? "Medium",
+    date: body.date ?? null,
+    allocated_to: body.allocated_to ?? user.email,
+    assigned_by: user.email,
+  });
+
+  return c.json({ data: todo });
 });
 
+// PATCH /api/tasks/:id
 tasksRouter.patch("/:id", async (c) => {
   const user = await getAuthedUser(c);
-  if (!user || !isMgmt(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   const id = c.req.param("id");
-  const body = await c.req.json().catch(() => ({}));
-  const update: any = {};
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+
+  const update: Record<string, unknown> = {};
   if (body.status !== undefined) update.status = body.status;
-  if (body.title !== undefined) update.title = body.title;
   if (body.priority !== undefined) update.priority = body.priority;
-  if (body.notes !== undefined) update.notes = body.notes;
-  const { data, error } = await supabaseAdmin.from("ls_tasks").update(update).eq("id", id).select().single();
-  if (error) return c.json({ error: { message: error.message } }, 500);
-  return c.json({ data });
+  if (body.date !== undefined) update.date = body.date;
+  if (body.description !== undefined) update.description = body.description;
+  if (body.allocated_to !== undefined) update.allocated_to = body.allocated_to;
+
+  const todo = await erpUpdate("ToDo", id, update);
+  return c.json({ data: todo });
 });
