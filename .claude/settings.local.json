@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Read(//Users/Maestro_1/Downloads/**)",
-      "Bash(npx create-next-app@latest ls-house --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-git)"
+      "Bash(npx create-next-app@latest ls-house --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-git)",
+      "mcp__20ada737-1e27-42f2-8f93-59220dda029a__get_workflow_details"
     ]
   }
 }
