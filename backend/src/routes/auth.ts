@@ -47,7 +47,13 @@ authRouter.post(
       }
     }
 
-    const token = await signToken({ sub: email, name: fullName });
+    let token: string;
+    try {
+      token = await signToken({ sub: email, name: fullName });
+    } catch (err: any) {
+      console.error("JWT sign error:", err?.message);
+      return c.json({ error: { message: "Auth configuration error — JWT_SECRET missing" } }, 500);
+    }
     return c.json({ data: { token, user: { email, name: fullName } } });
   },
 );
