@@ -1,4 +1,4 @@
-import { supabase } from "./supabaseClient";
+import { getStoredToken } from "./authClient";
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || "";
 
@@ -16,17 +16,15 @@ interface ApiResponse<T> {
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-
-  const { data: { session } } = await supabase.auth.getSession();
+  const token = getStoredToken();
 
   const config: RequestInit = {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
-    // No credentials: "include" — JWT in Authorization header instead
   };
 
   const response = await fetch(url, config);
@@ -59,13 +57,12 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 // Raw request for non-JSON endpoints (uploads, downloads, streams)
 async function rawRequest(endpoint: string, options: RequestInit = {}): Promise<Response> {
   const url = `${API_BASE_URL}${endpoint}`;
-
-  const { data: { session } } = await supabase.auth.getSession();
+  const token = getStoredToken();
 
   const config: RequestInit = {
     ...options,
     headers: {
-      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
   };

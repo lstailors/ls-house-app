@@ -5,6 +5,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import "./env";
 import { meRouter} from "./routes/me";
+import { authRouter } from "./routes/auth";
 import { locationsRouter } from "./routes/locations";
 import { customersRouter } from "./routes/customers";
 import { alterationsRouter } from "./routes/alterations";
@@ -48,6 +49,7 @@ app.use("*", logger());
 app.get("/health", (c) => c.json({ status: "ok" }));
 
 // App routes
+app.route("/api/auth", authRouter);
 app.route("/api/me", meRouter);
 app.route("/api/locations", locationsRouter);
 app.route("/api/customers", customersRouter);

@@ -1,116 +1,98 @@
 // Role + location scoping helpers.
-// Auth identity: Supabase Auth JWT (Bearer token from Authorization header).
-// Profile + location enrichment: public.profiles + public.locations (service role).
-// lsh table filtering uses supabaseLocationId (UUID from public.locations).
-// public.customers filtering uses locationCode (division column, text).
+// Auth identity: our own JWT (issued after ERPNext credential validation).
+// Role + location enrichment: ERPNext User doctype (lst_location custom field + LST* roles).
 
 import type { Context } from "hono";
-import { supabaseAdmin } from "./supabase";
+import { verifyToken } from "./jwt";
 import type { UserRole } from "../types";
 
 export interface AuthedUser {
-  id: string;                         // Supabase auth.users.id (UUID)
+  id: string;           // email (ERPNext user name)
   email: string;
   name: string;
   role: UserRole;
-  locationId: string | null;          // alias for supabaseLocationId (kept for callers)
-  supabaseProfileId: string | null;   // public.profiles.id (UUID) — same as id
-  supabaseLocationId: string | null;  // public.locations.id (UUID) for lsh.* filter
-  locationCode: string | null;        // 'NYC'|'HOU' for public.customers.division filter
+  locationId: string | null;          // alias for locationCode (kept for callers)
+  supabaseProfileId: string | null;   // kept for compatibility — set to email
+  supabaseLocationId: string | null;  // kept for compatibility — set to locationCode
+  locationCode: string | null;        // 'NYC' | 'HOU' | etc.
   canViewAllLocations: boolean;
 }
 
-// ─── Role mapping ─────────────────────────────────────────────────────────────
+// ─── ERPNext role → app role ───────────────────────────────────────────────────
 
-const VALID_ROLES: readonly UserRole[] = ["super_admin", "store_manager", "salesperson", "driver"];
-
-function mapRole(profile: any): UserRole {
-  const raw: string = profile?.lsh_role ?? profile?.role ?? "";
-  // Normalise profiles.role='manager' → 'store_manager' (belt-and-suspenders for future rows)
-  const normalized = raw === "manager" ? "store_manager" : raw;
-  return (VALID_ROLES as string[]).includes(normalized) ? (normalized as UserRole) : "salesperson";
+function mapErpRole(roles: string[]): UserRole {
+  if (roles.includes("LST Super Admin")) return "super_admin";
+  if (roles.includes("LST Store Manager")) return "store_manager";
+  if (roles.includes("LST Driver")) return "driver";
+  if (roles.includes("LST Salesperson")) return "salesperson";
+  // System Manager fallback for admins without explicit LST role
+  if (roles.includes("System Manager")) return "super_admin";
+  return "salesperson";
 }
 
-// ─── Supabase profile enrichment ──────────────────────────────────────────────
+// ─── ERPNext user enrichment ──────────────────────────────────────────────────
 
-interface SupabaseEnrichment {
-  supabaseProfileId: string | null;
-  supabaseLocationId: string | null;
-  locationCode: string | null;
-  canViewAllLocations: boolean;
+interface ErpEnrichment {
   fullName: string | null;
   role: UserRole;
+  locationCode: string | null;
+  canViewAllLocations: boolean;
 }
 
-async function enrichFromSupabase(userId: string, email: string): Promise<SupabaseEnrichment> {
-  const empty: SupabaseEnrichment = {
-    supabaseProfileId: userId,
-    supabaseLocationId: null,
-    locationCode: null,
-    canViewAllLocations: false,
-    fullName: null,
-    role: "salesperson",
+export async function enrichFromErp(email: string): Promise<ErpEnrichment> {
+  const base = process.env.ERPNEXT_BASE_URL ?? "";
+  const key  = process.env.ERPNEXT_API_KEY ?? "";
+  const sec  = process.env.ERPNEXT_API_SECRET ?? "";
+
+  const empty: ErpEnrichment = { fullName: null, role: "salesperson", locationCode: null, canViewAllLocations: false };
+  if (!base || !key || !sec) return empty;
+
+  const res = await fetch(
+    `${base}/api/resource/User/${encodeURIComponent(email)}?fields=["full_name","lst_location","roles"]`,
+    { headers: { Authorization: `token ${key}:${sec}`, Accept: "application/json" } },
+  ).catch(() => null);
+
+  if (!res?.ok) return empty;
+  const json = await res.json().catch(() => ({})) as any;
+  const data = json?.data;
+  if (!data) return empty;
+
+  const roleNames: string[] = (data.roles ?? []).map((r: any) => r.role as string);
+  const role = mapErpRole(roleNames);
+
+  return {
+    fullName: data.full_name ?? null,
+    role,
+    locationCode: data.lst_location || null,
+    canViewAllLocations: role === "super_admin",
   };
-  if (!supabaseAdmin) return empty;
-
-  // profiles.id = auth.users.id, so look up by id first; fall back to email
-  const { data: profile } = await supabaseAdmin
-    .from("profiles")
-    .select("id, full_name, home_location, can_view_all_locations, role, lsh_role")
-    .or(`id.eq.${userId},email.eq.${email}`)
-    .single();
-
-  if (!profile) return empty;
-
-  const enrichment: SupabaseEnrichment = {
-    supabaseProfileId: profile.id ?? userId,
-    supabaseLocationId: null,
-    locationCode: profile.home_location ?? null,
-    canViewAllLocations: profile.can_view_all_locations ?? false,
-    fullName: profile.full_name ?? null,
-    role: mapRole(profile),
-  };
-
-  if (profile.home_location) {
-    const { data: loc } = await supabaseAdmin
-      .from("locations")
-      .select("id")
-      .eq("code", profile.home_location)
-      .single();
-    enrichment.supabaseLocationId = loc?.id ?? null;
-  }
-
-  return enrichment;
 }
 
 // ─── Main auth helper ─────────────────────────────────────────────────────────
-// Validates Supabase JWT from Authorization: Bearer <token> header.
+// Validates our JWT then enriches from ERPNext User.
 
 export async function getAuthedUser(c: Context): Promise<AuthedUser | null> {
-  if (!supabaseAdmin) return null;
-
   const authHeader = c.req.header("Authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
   if (!token) return null;
 
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-  if (error || !user || !user.email) return null;
+  const payload = await verifyToken(token);
+  if (!payload) return null;
 
-  const enrichment = await enrichFromSupabase(user.id, user.email);
+  const email = payload.sub;
+  const enrichment = await enrichFromErp(email);
 
-  const resolved: AuthedUser = {
-    id: user.id,
-    email: user.email,
-    name: enrichment.fullName ?? user.email,
+  return {
+    id: email,
+    email,
+    name: enrichment.fullName ?? payload.name ?? email,
     role: enrichment.role,
-    locationId: enrichment.supabaseLocationId,
-    supabaseProfileId: enrichment.supabaseProfileId,
-    supabaseLocationId: enrichment.supabaseLocationId,
+    locationId: enrichment.locationCode,
+    supabaseProfileId: email,
+    supabaseLocationId: enrichment.locationCode,
     locationCode: enrichment.locationCode,
     canViewAllLocations: enrichment.canViewAllLocations,
   };
-
-  return resolved;
 }
 
 // ─── Location filter resolvers ────────────────────────────────────────────────

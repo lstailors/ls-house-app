@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
 import { signIn } from "@/lib/authClient";
-import { supabase } from "@/lib/supabaseClient";
 import { useMe, ME_KEY } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -135,18 +134,14 @@ export default function Login() {
                 />
               </div>
               <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!email) { toast.info("Enter your email first."); return; }
-                    const { error } = await supabase.auth.resetPasswordForEmail(email);
-                    if (error) toast.error(error.message);
-                    else toast.success("Password reset email sent.");
-                  }}
+                <a
+                  href="https://erp.lstailors.com/update-password"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="text-xs text-cream-dim hover:text-brass-light transition-colors"
                 >
                   Forgot password?
-                </button>
+                </a>
               </div>
             </div>
 

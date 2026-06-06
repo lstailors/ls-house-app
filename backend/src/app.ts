@@ -36,6 +36,7 @@ import { ravenRouter } from "./routes/raven";
 import { mcpRouter } from "./routes/mcp";
 import { webhooksRouter } from "./routes/webhooks";
 import { unifiRouter } from "./routes/unifi";
+import { authRouter } from "./routes/auth";
 
 const app = new Hono();
 
@@ -75,6 +76,7 @@ app.use(
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 
+app.route("/api/auth", authRouter);
 app.route("/api/me", meRouter);
 app.route("/api/locations", locationsRouter);
 app.route("/api/customers", customersRouter);
