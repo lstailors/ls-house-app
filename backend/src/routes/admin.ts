@@ -3,24 +3,11 @@
 import { Hono } from "hono";
 import { canAccessSuperAdminPortal, getAuthedUser } from "../lib/scope";
 import { supabaseAdmin, lshAdmin } from "../lib/supabase";
-import { CreateUserInput, UpdateUserInput } from "../types";
+import { erpList, erpGet, erpUpdate } from "../lib/erp";
 
 export const adminRouter = new Hono();
 
 // ─── Serializers ──────────────────────────────────────────────────────────────
-
-function serializeProfile(row: any) {
-  return {
-    id: row.id,
-    name: row.full_name,
-    email: row.email,
-    role: row.lsh_role || row.role,
-    locationId: null,
-    location: null,
-    image: row.avatar_url,
-    isActive: row.status === "active",
-  };
-}
 
 function serializeLocation(row: any) {
   return {
@@ -47,116 +34,99 @@ adminRouter.use("*", async (c, next) => {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
+const LST_ROLES = ["LST Super Admin", "LST Store Manager", "LST Salesperson", "LST Driver"];
+
+function mapRole(roles: string[]): string {
+  if (roles.includes("LST Super Admin")) return "super_admin";
+  if (roles.includes("LST Store Manager")) return "store_manager";
+  if (roles.includes("LST Driver")) return "driver";
+  if (roles.includes("LST Salesperson")) return "salesperson";
+  return "";
+}
+
 adminRouter.get("/users", async (c) => {
-  if (!supabaseAdmin) return c.json({ data: [] });
-  const { data, error } = await supabaseAdmin
-    .from("profiles")
-    .select("id,full_name,email,role,lsh_role,home_location,status,avatar_url,created_at")
-    .order("created_at", { ascending: false });
-  if (error) return c.json({ error: { message: error.message } }, 500);
-  return c.json({ data: (data ?? []).map(serializeProfile) });
+  const base = process.env.ERPNEXT_BASE_URL ?? "";
+  const key = process.env.ERPNEXT_API_KEY ?? "";
+  const sec = process.env.ERPNEXT_API_SECRET ?? "";
+  if (!base || !key || !sec) return c.json({ data: [] });
+
+  // Fetch all enabled system users
+  const users = await erpList<any>("User", {
+    filters: [["enabled", "=", 1], ["user_type", "=", "System User"]],
+    fields: ["name", "full_name", "lst_location", "enabled"],
+    limit: 100,
+  });
+
+  // For each user, fetch their roles (erpList doesn't return child tables)
+  const detailed = await Promise.all(
+    users.map(u => erpGet<any>("User", u.name))
+  );
+
+  const result = detailed
+    .filter(Boolean)
+    .map(u => {
+      const roleNames: string[] = (u.roles ?? []).map((r: any) => r.role as string);
+      const lstRoles = roleNames.filter(r => LST_ROLES.includes(r));
+      if (!lstRoles.length) return null; // skip non-LST users
+      return {
+        id: u.name,
+        name: u.full_name || u.name,
+        email: u.name,
+        role: mapRole(roleNames),
+        locationId: u.lst_location || null,
+        location: u.lst_location ? { id: u.lst_location, name: u.lst_location } : null,
+        image: null,
+        isActive: u.enabled === 1,
+      };
+    })
+    .filter(Boolean);
+
+  return c.json({ data: result });
 });
 
 adminRouter.post("/users", async (c) => {
-  const body = await c.req.json();
-  const parsed = CreateUserInput.safeParse(body);
-  if (!parsed.success) return c.json({ error: { message: parsed.error.message } }, 400);
-  const input = parsed.data;
+  return c.json({ error: { message: "User creation is managed in ERPNext." } }, 400);
+});
 
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
+adminRouter.patch("/users/:id", async (c) => {
+  const id = decodeURIComponent(c.req.param("id"));
+  const body = await c.req.json().catch(() => ({}));
 
-  const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.createUser({
-    email: input.email,
-    password: input.password,
-    email_confirm: true,
-    user_metadata: { full_name: input.name },
-  });
-
-  if (authErr || !authData.user) {
-    return c.json({ error: { message: authErr?.message ?? "Failed to create user" } }, 400);
+  const update: Record<string, any> = {};
+  if (body.locationId !== undefined) update.lst_location = body.locationId;
+  if (body.role !== undefined) {
+    const roleMap: Record<string, string> = {
+      super_admin: "LST Super Admin",
+      store_manager: "LST Store Manager",
+      salesperson: "LST Salesperson",
+      driver: "LST Driver",
+    };
+    const lstRole = roleMap[body.role];
+    if (lstRole) update.roles = [{ role: lstRole }];
   }
+  if (body.isActive !== undefined) update.enabled = body.isActive ? 1 : 0;
 
-  const { data: profile, error: profileErr } = await supabaseAdmin
-    .from("profiles")
-    .upsert(
-      {
-        id: authData.user.id,
-        email: input.email,
-        full_name: input.name,
-        lsh_role: input.role,
-        home_location: input.locationId ?? null,
-        status: "active",
-      },
-      { onConflict: "email" },
-    )
-    .select("id, full_name, email, role, lsh_role, home_location, status, avatar_url, created_at")
-    .single();
+  const updated = await erpUpdate<any>("User", id, update);
+  if (!updated) return c.json({ error: { message: "Update failed" } }, 500);
 
-  if (profileErr || !profile) {
-    return c.json({ error: { message: "User created but profile upsert failed" } }, 500);
-  }
+  const roleNames: string[] = (updated.roles ?? []).map((r: any) => r.role as string);
 
   return c.json({
     data: {
-      id: profile.id,
-      name: profile.full_name,
-      email: profile.email,
-      role: profile.lsh_role ?? profile.role,
-      locationId: null,
-      location: null,
-      image: profile.avatar_url ?? null,
-      isActive: profile.status === "active",
+      id: updated.name,
+      name: updated.full_name || updated.name,
+      email: updated.name,
+      role: mapRole(roleNames),
+      locationId: updated.lst_location || null,
+      location: updated.lst_location ? { id: updated.lst_location, name: updated.lst_location } : null,
+      image: null,
+      isActive: updated.enabled === 1,
     },
   });
 });
 
-adminRouter.patch("/users/:id", async (c) => {
-  const id = c.req.param("id");
-  const body = await c.req.json();
-  const parsed = UpdateUserInput.safeParse(body);
-  if (!parsed.success) return c.json({ error: { message: parsed.error.message } }, 400);
-  const input = parsed.data;
-
-  if (!supabaseAdmin) return c.json({ error: { message: "DB unavailable" } }, 500);
-
-  const update: any = {};
-  if (input.name !== undefined) update.full_name = input.name;
-  if (input.role !== undefined) update.lsh_role = input.role;
-  if (input.locationId !== undefined) update.home_location = input.locationId;
-  if (input.isActive !== undefined) update.status = input.isActive ? "active" : "inactive";
-
-  const { data: profile } = await supabaseAdmin!
-    .from("profiles")
-    .update(update)
-    .eq("id", id)
-    .select("id, full_name, email, role, lsh_role, home_location, status, avatar_url, created_at")
-    .single();
-
-  return c.json({
-    data: profile
-      ? {
-          id: profile.id,
-          name: profile.full_name,
-          email: profile.email,
-          role: profile.lsh_role ?? profile.role,
-          locationId: null,
-          location: null,
-          image: profile.avatar_url ?? null,
-          isActive: profile.status === "active",
-        }
-      : null,
-  });
-});
-
-adminRouter.post("/users/:id/password", async (c) => {
-  const id = c.req.param("id");
-  const body = await c.req.json().catch(() => ({}));
-  const password = body.password;
-  if (!password || password.length < 8) return c.json({ error: { message: "Password must be at least 8 characters" } }, 400);
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
-  const { error } = await supabaseAdmin.auth.admin.updateUserById(id, { password });
-  if (error) return c.json({ error: { message: error.message } }, 400);
-  return c.json({ data: { ok: true } });
+adminRouter.post("/users/:id/password", (c) => {
+  return c.json({ error: { message: "Password changes are managed in ERPNext." } }, 400);
 });
 
 adminRouter.post("/locations", async (c) => {

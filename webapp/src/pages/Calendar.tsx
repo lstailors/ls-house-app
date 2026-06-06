@@ -123,7 +123,16 @@ export default function CalendarPage() {
   });
 
   const allEvents: CalEvent[] = Array.isArray(data) ? data : (data as any)?.data ?? [];
-  const events = useMemo(() => allEvents.filter(e => activeFeeds.has(e.feed)), [allEvents, activeFeeds]);
+  const events = useMemo(() => {
+    const filtered = allEvents.filter(e => activeFeeds.has(e.feed));
+    const seen = new Set<string>();
+    return filtered.filter(e => {
+      const key = `${e.title}|${e.start}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [allEvents, activeFeeds]);
 
   // Build calendar grid
   const monthStart = startOfMonth(current);

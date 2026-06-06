@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { Camera, Save, KeyRound, LogOut, Loader2, User, Mail, Phone, Shield, Printer, Wifi } from "lucide-react";
+import { Camera, Save, LogOut, Loader2, User, Mail, Phone, Shield, Printer, Wifi } from "lucide-react";
 import { getPrinterIp, setPrinterIp } from "@/lib/thermal";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { GlassCard } from "@/components/glass/GlassCard";
@@ -113,20 +113,10 @@ export default function Settings() {
   const [email, setEmail] = useState(me?.email ?? "");
   const [avatar, setAvatar] = useState(me?.image ?? "");
 
-  const [newPw, setNewPw] = useState("");
-  const [confirmPw, setConfirmPw] = useState("");
-  const [showPw, setShowPw] = useState(false);
-
   const updateMe = useMutation({
     mutationFn: (input: any) => api.patch<any>("/api/me", input),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["me"] }); toast.success("Profile saved."); },
     onError: (e: any) => toast.error(e?.message ?? "Failed to save"),
-  });
-
-  const changePw = useMutation({
-    mutationFn: (pw: string) => api.post<any>("/api/me/password", { password: pw }),
-    onSuccess: () => { toast.success("Password updated."); setNewPw(""); setConfirmPw(""); setShowPw(false); },
-    onError: (e: any) => toast.error(e?.message ?? "Failed to update password"),
   });
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -145,12 +135,6 @@ export default function Settings() {
   const handleSaveProfile = () => {
     const updates: any = { name, phone };
     updateMe.mutate(updates);
-  };
-
-  const handleChangePw = () => {
-    if (newPw.length < 8) { toast.error("Password must be at least 8 characters"); return; }
-    if (newPw !== confirmPw) { toast.error("Passwords don't match"); return; }
-    changePw.mutate(newPw);
   };
 
   const handleSignOut = async () => {
@@ -213,43 +197,20 @@ export default function Settings() {
       </GlassCard>
 
       {/* ── Change Password ── */}
-      <GlassCard variant="strong" className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="ui-label">Change Password</div>
-          <button onClick={() => setShowPw(!showPw)} className="text-xs text-brass-light hover:text-brass transition-colors">
-            {showPw ? "Cancel" : "Change"}
-          </button>
-        </div>
-
-        {showPw && (
-          <div className="space-y-4">
-            <div>
-              <label className="ui-label block mb-1.5">New Password</label>
-              <input
-                type="password"
-                value={newPw}
-                onChange={(e) => setNewPw(e.target.value)}
-                placeholder="Min. 8 characters"
-                className="w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50"
-              />
-            </div>
-            <div>
-              <label className="ui-label block mb-1.5">Confirm Password</label>
-              <input
-                type="password"
-                value={confirmPw}
-                onChange={(e) => setConfirmPw(e.target.value)}
-                placeholder="Repeat new password"
-                className="w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50"
-              />
-            </div>
-            <Button className="btn-brass" onClick={handleChangePw} disabled={changePw.isPending}>
-              {changePw.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <KeyRound className="h-4 w-4 mr-2" />}
-              Update Password
-            </Button>
-          </div>
-        )}
-        {!showPw && <p className="text-xs text-cream-dim">Click "Change" to set a new password.</p>}
+      <GlassCard className="p-6">
+        <div className="ui-label mb-3">Change Password</div>
+        <p className="text-sm text-cream-muted mb-4">
+          Passwords are managed through ERPNext. Click below to update yours.
+        </p>
+        <a
+          href="https://erp.lstailors.com/update-password"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Button variant="outline" className="btn-ghost-brass">
+            Change password in ERPNext →
+          </Button>
+        </a>
       </GlassCard>
 
       {/* ── Printer ── */}
