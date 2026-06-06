@@ -86,31 +86,6 @@ calendarRouter.get("/events", async (c) => {
       });
     }
 
-    // Custom orders with delivery dates — pull from ERPNext directly for customer names
-    const orders = await erpList<any>("Sales Order", {
-      filters: [
-        ["delivery_date", ">=", start],
-        ["delivery_date", "<=", end],
-        ["status", "not in", ["Cancelled", "Closed"]],
-      ],
-      fields: ["name", "customer_name", "delivery_date", "status"],
-      limit: 200,
-      order_by: "delivery_date asc",
-    });
-
-    for (const o of orders) {
-      events.push({
-        id: `so-erp-${o.name}`,
-        feed: "production_custom",
-        title: o.customer_name || o.name,
-        customer: o.customer_name || null,
-        start: `${o.delivery_date}T00:00:00Z`,
-        end: `${o.delivery_date}T23:59:59Z`,
-        status: o.status,
-        erpName: o.name,
-        allDay: true,
-      });
-    }
   }
 
   // ── 3. Pickups & Deliveries ──────────────────────────────────────────────────

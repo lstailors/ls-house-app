@@ -10,7 +10,6 @@ const FEEDS = [
   { id: "nyc_appointments",      label: "NYC Appointments",    color: "bg-brass/80 border-brass",            dot: "bg-brass" },
   { id: "houston_appointments",  label: "HOU Appointments",    color: "bg-blue-500/70 border-blue-400",      dot: "bg-blue-400" },
   { id: "production_alterations",label: "Alterations Due",     color: "bg-purple-500/70 border-purple-400",  dot: "bg-purple-400" },
-  { id: "production_custom",     label: "Client Delivery",     color: "bg-emerald-600/70 border-emerald-500",dot: "bg-emerald-400" },
   { id: "yz_ship",               label: "YZ Ship Plan",        color: "bg-orange-500/70 border-orange-400",  dot: "bg-orange-400" },
   { id: "pickups_deliveries",    label: "Pickups & Deliveries",color: "bg-amber-500/70 border-amber-400",    dot: "bg-amber-400" },
 ];
