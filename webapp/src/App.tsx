@@ -123,7 +123,7 @@ const App = () => (
             <Route
               path="/orders/alterations"
               element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
                   <OrdersAlterations />
                 </RoleGuard>
               }
@@ -131,7 +131,7 @@ const App = () => (
             <Route
               path="/orders/alterations/:ticketName"
               element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
                   <TicketDetail />
                 </RoleGuard>
               }
@@ -207,14 +207,7 @@ const App = () => (
                 </RoleGuard>
               }
             />
-            <Route
-              path="/financials"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager"]}>
-                  <Financials />
-                </RoleGuard>
-              }
-            />
+            <Route path="/financials" element={<Financials />} />
 
             <Route path="/settings" element={<Settings />} />
 
