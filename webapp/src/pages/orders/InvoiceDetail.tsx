@@ -12,7 +12,11 @@ import {
   FileText,
   Scissors,
   Save,
+  Terminal,
+  Link2,
+  Check,
 } from "lucide-react";
+import { ChargeTerminalButton } from "@/components/payments/ChargeTerminalButton";
 import { api } from "@/lib/api";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { StatusPill } from "@/components/glass/StatusPill";
@@ -78,6 +82,7 @@ export default function InvoiceDetail() {
   const qc = useQueryClient();
 
   const [editRemarks, setEditRemarks] = useState<string>("");
+  const [linkCopied, setLinkCopied] = useState(false);
   const [editDueDate, setEditDueDate] = useState<string>("");
 
   const {
@@ -366,6 +371,30 @@ export default function InvoiceDetail() {
                   {formatUSD(invoice.outstandingAmount ?? 0)}
                 </span>
               </div>
+
+              {/* Square payment actions */}
+              {(invoice.outstandingAmount ?? 0) > 0 ? (
+                <div className="pt-3 flex gap-2 flex-wrap">
+                  <ChargeTerminalButton
+                    invoiceId={invoice.erpnextId}
+                    amountCents={Math.round((invoice.outstandingAmount ?? 0) * 100)}
+                    amountDisplay={formatUSD(invoice.outstandingAmount ?? 0)}
+                    onSuccess={() => qc.invalidateQueries({ queryKey: ["invoice", id] })}
+                    onError={(msg) => toast.error(msg)}
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/pay/${invoice.erpnextId}`);
+                      setLinkCopied(true);
+                      setTimeout(() => setLinkCopied(false), 2000);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-brass/30 bg-brass/5 hover:bg-brass/10 text-xs text-brass-light transition-colors"
+                  >
+                    {linkCopied ? <Check className="h-3.5 w-3.5 text-signal-emerald" /> : <Link2 className="h-3.5 w-3.5" />}
+                    {linkCopied ? "Copied!" : "Copy Pay Link"}
+                  </button>
+                </div>
+              ) : null}
             </div>
           </GlassCard>
 
