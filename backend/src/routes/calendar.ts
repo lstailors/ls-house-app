@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser } from "../lib/scope";
+import { erpList } from "../lib/erp";
 
 export const calendarRouter = new Hono();
 
@@ -85,26 +86,28 @@ calendarRouter.get("/events", async (c) => {
       });
     }
 
-    // Custom orders with delivery dates from ERP sales orders
-    // (pull from erp_sales_orders mirror)
-    const { data: orders } = await supabaseAdmin
-      .from("erp_sales_orders")
-      .select("id,erp_name,end_customer,delivery_date,status")
-      .gte("delivery_date", start)
-      .lte("delivery_date", end)
-      .not("status", "in", '("Cancelled","Closed")')
-      .order("delivery_date");
+    // Custom orders with delivery dates — pull from ERPNext directly for customer names
+    const orders = await erpList<any>("Sales Order", {
+      filters: [
+        ["delivery_date", ">=", start],
+        ["delivery_date", "<=", end],
+        ["status", "not in", ["Cancelled", "Closed"]],
+      ],
+      fields: ["name", "customer_name", "delivery_date", "status"],
+      limit: 200,
+      order_by: "delivery_date asc",
+    });
 
-    for (const o of orders ?? []) {
+    for (const o of orders) {
       events.push({
-        id: `so-${o.id}`,
+        id: `so-erp-${o.name}`,
         feed: "production_custom",
-        title: `Delivery: ${o.end_customer ?? o.erp_name}`,
-        customer: o.end_customer ?? null,
+        title: o.customer_name || o.name,
+        customer: o.customer_name || null,
         start: `${o.delivery_date}T00:00:00Z`,
         end: `${o.delivery_date}T23:59:59Z`,
         status: o.status,
-        erpName: o.erp_name,
+        erpName: o.name,
         allDay: true,
       });
     }

@@ -38,16 +38,22 @@ interface CalEvent {
 // ── Event pill ────────────────────────────────────────────────────────────────
 function EventPill({ ev, onClick }: { ev: CalEvent; onClick: () => void }) {
   const feed = FEED_MAP[ev.feed] ?? FEEDS[0];
+  // Show customer name if available and not already embedded in title
+  const label = ev.customer && !ev.title.includes(ev.customer)
+    ? ev.customer
+    : ev.title;
   return (
     <button
       onClick={onClick}
       className={cn(
-        "w-full text-left text-[10px] px-1.5 py-0.5 rounded border truncate font-medium transition-opacity hover:opacity-80",
+        "w-full text-left text-[10px] px-1.5 py-0.5 rounded border font-medium transition-opacity hover:opacity-80",
         feed.color, "text-white border-opacity-60"
       )}
     >
-      {!ev.allDay && <span className="opacity-70 mr-1">{fmtTime(ev.start)}</span>}
-      {ev.title}
+      <div className="flex items-center gap-1 min-w-0">
+        {!ev.allDay && <span className="opacity-70 shrink-0">{fmtTime(ev.start)}</span>}
+        <span className="truncate">{label}</span>
+      </div>
     </button>
   );
 }
