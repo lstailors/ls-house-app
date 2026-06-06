@@ -7,12 +7,13 @@ import { sendSms, alertCarl } from "../lib/twilio";
 const CARL_PHONE = "+16319260917";
 const C_MOBILE = process.env.OWNER_MOBILE ?? "+16319260917";
 // Keep for legacy /conversations route guard
-const STAFF_PHONES = new Set(["+16319260917", "+16462087809", "+16463637906"]);
+const STAFF_PHONES = new Set(["+16319260917", "+16462087809", "+16463637906", "+13475539027"]);
 
 const STAFF_PHONES_MAP: Record<string, string> = {
   "16319260917": "Carl",
   "16462087809": "Gianna",
   "16463637906": "Antonio",
+  "13475539027": "Kelvin",
 };
 
 const CAL_BASE = "https://api.cal.com/v2";
