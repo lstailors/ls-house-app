@@ -199,21 +199,29 @@ export default function Deliveries() {
                 d.status === "failed" && "border-signal-rose/40",
               )}
             >
-              <div className="flex items-start justify-between mb-3">
-                <div className="min-w-0">
-                  <div className="text-cream font-medium truncate">{d.customer?.name ?? "—"}</div>
-                  <div className="text-[11px] text-cream-dim font-mono">
-                    {d.deliveryNo ? d.deliveryNo : `#${d.id.slice(-6).toUpperCase()}`}
-                  </div>
-                  {d.qrToken ? (
-                    <div className="flex items-center gap-1 mt-0.5">
-                      <QrCode className="h-2.5 w-2.5 text-brass-light/60" />
-                      <span className="text-[9px] text-brass-light/60 font-mono">{d.qrToken.slice(0, 8)}</span>
+              {(() => {
+                const isOverdue = d.status === "scheduled" && d.scheduledAt && new Date(d.scheduledAt) < new Date();
+                return (
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="min-w-0">
+                      <div className="text-cream font-medium truncate">{d.customer?.name ?? "—"}</div>
+                      <div className="text-[11px] text-cream-dim font-mono">
+                        {d.deliveryNo ? d.deliveryNo : `#${d.id.slice(-6).toUpperCase()}`}
+                      </div>
+                      {d.qrToken ? (
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <QrCode className="h-2.5 w-2.5 text-brass-light/60" />
+                          <span className="text-[9px] text-brass-light/60 font-mono">{d.qrToken.slice(0, 8)}</span>
+                        </div>
+                      ) : null}
                     </div>
-                  ) : null}
-                </div>
-                <StatusPill status={d.status} />
-              </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <StatusPill status={d.status} />
+                      {isOverdue ? <span className="text-xs font-bold text-red-400 uppercase">Overdue</span> : null}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {d.addressLine ? (
                 <div className="flex items-start gap-1.5 text-xs text-cream-muted mb-2">

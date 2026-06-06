@@ -80,6 +80,25 @@ export async function getAuthedUser(c: Context): Promise<AuthedUser | null> {
   if (!payload) return null;
 
   const email = payload.sub;
+
+  // Fast path: role + location embedded in JWT — no ERPNext call needed
+  if (payload.role && payload.locationCode !== undefined) {
+    const role = payload.role as UserRole;
+    const locationCode = payload.locationCode || null;
+    return {
+      id: email,
+      email,
+      name: payload.name ?? email,
+      role,
+      locationId: locationCode,
+      supabaseProfileId: email,
+      supabaseLocationId: locationCode,
+      locationCode,
+      canViewAllLocations: role === "super_admin",
+    };
+  }
+
+  // Fallback: old tokens without embedded role — call ERPNext
   const enrichment = await enrichFromErp(email);
 
   return {

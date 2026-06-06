@@ -19,7 +19,8 @@ interface Conversation {
   lastMessage: {
     body: string;
     direction: "inbound" | "outbound";
-    created_at: string;
+    created_at?: string;
+    timestamp?: string;
   };
   messageCount: number;
   sofiaActive: boolean;
@@ -46,8 +47,10 @@ interface SofiaTask {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-function formatTime(iso: string) {
+function formatTime(iso: string | undefined) {
+  if (!iso) return "—";
   const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffDays = Math.floor(diffMs / 86400000);
@@ -105,7 +108,7 @@ function ThreadItem({
               {displayName}
             </span>
             <span className="text-[10px] text-cream-dim flex-shrink-0 ml-2">
-              {formatTime(conv.lastMessage.created_at)}
+              {formatTime(conv.lastMessage.timestamp || conv.lastMessage.created_at)}
             </span>
           </div>
           <div className="flex items-center gap-1.5">

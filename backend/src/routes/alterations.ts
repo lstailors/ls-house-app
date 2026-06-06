@@ -145,7 +145,7 @@ const LIST_FIELDS = [
   "is_rush", "internal_notes", "customer_notes",
   "sales_invoice", "linked_sales_order", "included_in_custom",
   "delivery_method", "notified_ready_at", "picked_up_at",
-  "modified", "creation",
+  "modified", "creation", "lines",
 ];
 
 // GET /api/alterations/kpis — must be before /:id

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { signToken } from "../lib/jwt";
+import { enrichFromErp } from "../lib/scope";
 
 export const authRouter = new Hono();
 
@@ -47,9 +48,17 @@ authRouter.post(
       }
     }
 
+    // Fetch role + location to embed in JWT (avoids ERPNext round-trip on every request)
+    const enrichment = await enrichFromErp(email);
+
     let token: string;
     try {
-      token = await signToken({ sub: email, name: fullName });
+      token = await signToken({
+        sub: email,
+        name: fullName,
+        role: enrichment.role,
+        locationCode: enrichment.locationCode ?? undefined,
+      });
     } catch (err: any) {
       console.error("JWT sign error:", err?.message);
       return c.json({ error: { message: "Auth configuration error — JWT_SECRET missing" } }, 500);

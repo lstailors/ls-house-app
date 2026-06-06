@@ -41,7 +41,7 @@ function decodePayload(s: string): unknown {
 
 const HEADER = encodePayload({ alg: ALG, typ: "JWT" });
 
-export async function signToken(payload: { sub: string; name: string }, expiresInSec = 60 * 60 * 24 * 30): Promise<string> {
+export async function signToken(payload: { sub: string; name: string; role?: string; locationCode?: string }, expiresInSec = 60 * 60 * 24 * 30): Promise<string> {
   const secret = getSecret();
   const now = Math.floor(Date.now() / 1000);
   const body = encodePayload({ ...payload, iat: now, exp: now + expiresInSec });
@@ -51,7 +51,7 @@ export async function signToken(payload: { sub: string; name: string }, expiresI
   return `${signing}.${b64url(sig)}`;
 }
 
-export async function verifyToken(token: string): Promise<{ sub: string; name: string; iat: number; exp: number } | null> {
+export async function verifyToken(token: string): Promise<{ sub: string; name: string; role?: string; locationCode?: string; iat: number; exp: number } | null> {
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
@@ -60,7 +60,7 @@ export async function verifyToken(token: string): Promise<{ sub: string; name: s
     const sigBytes = Uint8Array.from(atob(sig.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
     const valid = await crypto.subtle.verify("HMAC", key, sigBytes, new TextEncoder().encode(`${header}.${body}`));
     if (!valid) return null;
-    const payload = decodePayload(body) as { sub: string; name: string; iat: number; exp: number };
+    const payload = decodePayload(body) as { sub: string; name: string; role?: string; locationCode?: string; iat: number; exp: number };
     if (payload.exp < Math.floor(Date.now() / 1000)) return null;
     return payload;
   } catch {

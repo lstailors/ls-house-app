@@ -12,8 +12,15 @@ export function useMe() {
     queryKey: ME_KEY,
     queryFn: async () => {
       try {
-        const result = await api.get<Profile>("/api/me");
-        return result ?? null;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        try {
+          const result = await api.get<Profile>("/api/me");
+          clearTimeout(timer);
+          return result ?? null;
+        } finally {
+          clearTimeout(timer);
+        }
       } catch {
         return null;
       }
