@@ -10,7 +10,7 @@ async function callAnthropic(system: string, userMsg: string, maxTokens = 512): 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: maxTokens, system, messages: [{ role: "user", content: userMsg }] }),
+    body: JSON.stringify({ model: "claude-haiku-4-5", max_tokens: maxTokens, system, messages: [{ role: "user", content: userMsg }] }),
   });
   if (!res.ok) { const err = await res.text(); throw new Error(`AI ${res.status}: ${err}`); }
   const data: any = await res.json();
