@@ -68,13 +68,21 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
   const onSubmit = async (values: FormValues) => {
     try {
       await createDelivery.mutateAsync({
-        customer_id: values.customerId,
+        // ERPNext expects customer name, not Supabase UUID
+        customerId: selectedCustomer?.name ?? values.customerId,
+        customer: selectedCustomer?.name ?? values.customerId,
+        notifyPhone: selectedCustomer?.phone ?? null,
         method: values.method,
+        locationId: values.originLocation,
         origin_location: values.originLocation,
         scheduled_at: values.scheduledAt || null,
+        scheduledAt: values.scheduledAt || null,
         delivery_address: values.addressLine || null,
+        addressLine: values.addressLine || null,
         delivery_apt: values.addressApt || null,
+        apt: values.addressApt || null,
         delivery_city: values.city || null,
+        city: values.city || null,
         delivery_state: values.state || null,
         delivery_zip: values.zip || null,
         driver_name: values.driverName || null,
