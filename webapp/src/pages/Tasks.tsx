@@ -287,14 +287,8 @@ function TaskDetailPanel({ todo, onClose }: TaskDetailPanelProps) {
 
           {/* Assigned to */}
           <div>
-            <label className="text-[11px] uppercase tracking-widest text-cream-dim mb-1.5 block">Assigned To (email)</label>
-            <input
-              type="text"
-              value={assignedTo}
-              onChange={(e) => setAssignedTo(e.target.value)}
-              placeholder="email@example.com"
-              className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream placeholder:text-cream-dim/50 focus:outline-none focus:border-brass/50"
-            />
+            <label className="text-[11px] uppercase tracking-widest text-cream-dim mb-1.5 block">Assign To</label>
+            <StaffPicker value={assignedTo} onChange={setAssignedTo} />
           </div>
 
           {/* Reference link */}
@@ -503,15 +497,9 @@ function NewTaskPanel({ onClose, currentUserEmail, defaults }: NewTaskPanelProps
 
         <div>
           <label className="text-[11px] uppercase tracking-widest text-cream-dim mb-1.5 block">
-            Assign To (email)
+            Assign To
           </label>
-          <input
-            type="text"
-            value={assignedTo}
-            onChange={(e) => setAssignedTo(e.target.value)}
-            placeholder={currentUserEmail}
-            className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream placeholder:text-cream-dim/50 focus:outline-none focus:border-brass/50"
-          />
+          <StaffPicker value={assignedTo} onChange={setAssignedTo} />
         </div>
 
         {/* Advanced: reference fields */}
@@ -573,6 +561,45 @@ function NewTaskPanel({ onClose, currentUserEmail, defaults }: NewTaskPanelProps
 }
 
 // ── Filter config ─────────────────────────────────────────────────────────────
+
+
+const STAFF_MEMBERS = [
+  { label: "Carl", value: "carl@lstailors.com", initials: "CC" },
+  { label: "Kelvin", value: "kelvin@lstailors.com", initials: "KE" },
+  { label: "Gianna", value: "gianna@lstailors.com", initials: "GI" },
+  { label: "Antonio", value: "antonio@lstailors.com", initials: "AN" },
+];
+
+function StaffPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {STAFF_MEMBERS.map((s) => {
+        const selected = value === s.value;
+        return (
+          <button
+            key={s.value}
+            type="button"
+            onClick={() => onChange(selected ? "" : s.value)}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-xl border text-sm font-medium transition-all",
+              selected
+                ? "bg-brass/20 border-brass/50 text-brass-light"
+                : "border-brass/15 text-cream-muted hover:border-brass/30 hover:text-cream",
+            )}
+          >
+            <span className={cn(
+              "w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0",
+              selected ? "bg-brass/40 text-brass-light" : "bg-forest-raised/60 text-cream-dim",
+            )}>
+              {s.initials}
+            </span>
+            {s.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 const FILTER_OPTIONS = [
   { value: "open", label: "Open" },
