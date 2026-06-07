@@ -1,6 +1,12 @@
 import { Hono } from "hono";
-import { randomBytes } from "node:crypto";
 import { erpList, erpGet, erpCreate, erpUpdate } from "../lib/erp";
+
+// Web Crypto API — works in both Edge and Node runtimes
+function generateToken(): string {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+}
 import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser, resolveLocationCode } from "../lib/scope";
 import { sendSms } from "../lib/twilio";
@@ -171,7 +177,7 @@ deliveriesRouter.post("/", async (c) => {
     return c.json({ error: { message: "customerId is required" } }, 400);
   }
 
-  const token = randomBytes(12).toString("hex");
+  const token = generateToken();
   const locationId = body.locationId ?? "NYC";
 
   try {
@@ -211,7 +217,7 @@ deliveriesRouter.post("/from-order", async (c) => {
   const body = await c.req.json().catch(() => ({})) as any;
   // body: { sales_order?, alteration_ticket?, customer_name, customer_phone?, address?, city?, apt?, notify_phone?, garment_summary?, garment_count?, location? }
 
-  const token = randomBytes(12).toString("hex");
+  const token = generateToken();
   const location = body.location ?? user.locationCode ?? "NYC";
   const isHandDeliver = body.hand_deliver === true;
   const now = new Date().toISOString();
