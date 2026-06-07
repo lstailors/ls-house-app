@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Phone, MapPin, Clock, CheckCircle2, Truck, Printer,
   Camera, Search, Loader2, User, Pencil, PenLine, Navigation, QrCode,
+  Package, ExternalLink,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { toast } from "sonner";
@@ -27,6 +28,8 @@ interface DeliveryDetail extends Delivery {
   gpsLatitude?: number | null;
   gpsLongitude?: number | null;
   gpsAccuracy?: number | null;
+  garmentSummary?: string | null;
+  garmentCount?: number | null;
 }
 
 export default function DeliveryDetail() {
@@ -52,6 +55,17 @@ export default function DeliveryDetail() {
   );
 
   const { data: contactResults = [], isFetching: searchingContact } = useCustomerSearch(contactSearch);
+
+  const { data: orderItems } = useQuery({
+    queryKey: ["delivery-order-items", delivery?.orderRef],
+    queryFn: async () => {
+      if (!delivery?.orderRef) return null;
+      const so = await api.get<any>(`/api/sales-orders/${encodeURIComponent(delivery.orderRef)}`);
+      return (so as any)?.items ?? null;
+    },
+    enabled: !!delivery?.orderRef,
+    staleTime: 5 * 60_000,
+  });
 
   // Generate QR on load
   useEffect(() => {
@@ -121,6 +135,14 @@ export default function DeliveryDetail() {
           <div className="text-xs text-cream-dim font-mono mt-1">
             {delivery.deliveryNo ?? `#${delivery.id.slice(-6).toUpperCase()}`}
           </div>
+          {delivery.orderRef ? (
+            <Link
+              to={`/sales-orders/${delivery.orderRef}`}
+              className="text-xs text-brass-light/70 hover:text-brass-light font-mono flex items-center gap-1 mt-1"
+            >
+              <ExternalLink className="h-3 w-3" /> {delivery.orderRef}
+            </Link>
+          ) : null}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <StatusPill status={delivery.status} />
@@ -267,6 +289,34 @@ export default function DeliveryDetail() {
           ) : null}
         </div>
       </GlassCard>
+
+      {/* Order Items */}
+      {(orderItems?.length || delivery.garmentSummary) ? (
+        <GlassCard className="p-4">
+          <div className="text-[11px] uppercase tracking-widest text-cream-dim mb-3 flex items-center gap-1.5">
+            <Package className="h-3.5 w-3.5" /> Items in this Delivery
+          </div>
+          {orderItems?.length ? (
+            <div className="space-y-2">
+              {orderItems.map((item: any, i: number) => (
+                <div key={i} className="flex items-center justify-between py-2 border-b border-brass/10 last:border-0">
+                  <div>
+                    <div className="text-sm text-cream font-medium">{item.item_name}</div>
+                    {item.description ? (
+                      <div className="text-[11px] text-cream-dim mt-0.5 leading-snug">
+                        {item.description.replace(/<[^>]*>/g, "").slice(0, 80)}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="text-sm font-bold text-brass-light ml-4">×{item.qty}</div>
+                </div>
+              ))}
+            </div>
+          ) : delivery.garmentSummary ? (
+            <div className="text-sm text-cream">{delivery.garmentSummary}</div>
+          ) : null}
+        </GlassCard>
+      ) : null}
 
       {/* Map — GPS drop point if available, else geocode address */}
       {(delivery.gpsLatitude || delivery.addressLine) ? (

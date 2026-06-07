@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { Truck, MapPin, Clock, CheckCircle2, Phone, Camera, QrCode, Plus, Printer, ChevronDown, ChevronUp } from "lucide-react";
+import { Truck, MapPin, Clock, CheckCircle2, Phone, Camera, QrCode, Plus, Printer, ChevronDown, ChevronUp, Package } from "lucide-react";
 import { toast } from "sonner";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { KpiCard } from "@/components/glass/KpiCard";
@@ -18,6 +19,7 @@ import { useNavigate } from "react-router-dom";
 import { useMe } from "@/lib/session";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import type { Delivery } from "@/lib/types";
 
 const FILTERS = [
@@ -38,9 +40,36 @@ export default function Deliveries() {
   const [mapOpen, setMapOpen] = useState(false);
   const [deliverTarget, setDeliverTarget] = useState<Delivery | null>(null);
   const [proofTarget, setProofTarget] = useState<Delivery | null>(null);
+  const [activeTab, setActiveTab] = useState<"board" | "candidates">("board");
 
+  const qc = useQueryClient();
   const navigate = useNavigate();
   const isDriver = me?.role === "driver";
+
+  const { data: candidates = [] } = useQuery({
+    queryKey: ["delivery-candidates"],
+    queryFn: () => api.get<any[]>("/api/deliveries/candidates"),
+    staleTime: 5 * 60_000,
+    enabled: activeTab === "candidates",
+  });
+
+  const scheduleDelivery = useMutation({
+    mutationFn: (candidate: any) =>
+      api.post<Delivery>("/api/deliveries/from-order", {
+        sales_order: candidate.name,
+        customer_name: candidate.customer_name,
+        customer_phone: candidate.contact_mobile ?? candidate.contact_phone ?? null,
+        notify_phone: candidate.contact_mobile ?? candidate.contact_phone ?? null,
+        location: (me as any)?.locationId ?? "NYC",
+      }),
+    onSuccess: () => {
+      toast.success("Delivery scheduled");
+      setActiveTab("board");
+      qc.invalidateQueries({ queryKey: ["deliveries"] });
+      qc.invalidateQueries({ queryKey: ["delivery-candidates"] });
+    },
+    onError: () => toast.error("Could not schedule delivery"),
+  });
 
   const filtered = useMemo(() => {
     const s = search.toLowerCase();
@@ -117,7 +146,7 @@ export default function Deliveries() {
         }
       />
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
         <KpiCard
           label="Scheduled"
           value={counts.scheduled}
@@ -140,6 +169,14 @@ export default function Deliveries() {
           accent="emerald"
           onClick={() => setFilter((f) => f === "delivered" ? "all" : "delivered")}
           active={filter === "delivered"}
+        />
+        <KpiCard
+          label="Ready to Ship"
+          value={candidates.length}
+          icon={<Package className="h-4 w-4" />}
+          accent="amber"
+          onClick={() => setActiveTab((t) => t === "candidates" ? "board" : "candidates")}
+          active={activeTab === "candidates"}
         />
       </div>
 
@@ -168,6 +205,87 @@ export default function Deliveries() {
         )}
       </GlassCard>
 
+      {/* Tab switcher */}
+      <div className="flex gap-1 p-1 bg-forest-dark/40 border border-brass/10 rounded-lg w-fit">
+        <button
+          type="button"
+          onClick={() => setActiveTab("board")}
+          className={cn(
+            "px-4 py-1.5 rounded-md text-xs font-medium transition-colors",
+            activeTab === "board"
+              ? "bg-brass/20 text-brass-light border border-brass/30"
+              : "text-cream-dim hover:text-cream"
+          )}
+        >
+          Dispatch Board
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("candidates")}
+          className={cn(
+            "px-4 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5",
+            activeTab === "candidates"
+              ? "bg-brass/20 text-brass-light border border-brass/30"
+              : "text-cream-dim hover:text-cream"
+          )}
+        >
+          Ready to Deliver
+          {candidates.length > 0 ? (
+            <span className="bg-signal-amber/20 text-signal-amber text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+              {candidates.length}
+            </span>
+          ) : null}
+        </button>
+      </div>
+
+      {activeTab === "candidates" ? (
+        candidates.length === 0 ? (
+          <EmptyState
+            icon={Package}
+            title="No orders ready to dispatch"
+            description="Sales orders marked 'To Deliver and Bill' will appear here."
+          />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {candidates.map((c: any) => (
+              <GlassCard key={c.name} className="p-4">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="min-w-0">
+                    <div className="text-cream font-medium truncate text-base">{c.customer_name}</div>
+                    <div className="text-[11px] text-brass-light/60 font-mono mt-0.5">{c.name}</div>
+                  </div>
+                  <span className="text-[10px] text-cream-dim bg-forest-dark/60 border border-brass/10 rounded px-2 py-0.5 shrink-0 ml-2">
+                    Ready
+                  </span>
+                </div>
+                {c.delivery_date ? (
+                  <div className="flex items-center gap-1.5 text-xs text-cream-dim mb-2">
+                    <Clock className="h-3 w-3" />
+                    <span>{c.delivery_date}</span>
+                  </div>
+                ) : null}
+                {(c.contact_mobile ?? c.contact_phone) ? (
+                  <div className="flex items-center gap-1.5 text-xs text-cream-muted mb-3">
+                    <Phone className="h-3 w-3 text-brass-light/60" />
+                    <span className="font-mono">{c.contact_mobile ?? c.contact_phone}</span>
+                  </div>
+                ) : null}
+                <div className="pt-3 border-t border-brass/10">
+                  <Button
+                    size="sm"
+                    onClick={() => scheduleDelivery.mutate(c)}
+                    disabled={scheduleDelivery.isPending}
+                    className="btn-brass w-full text-xs h-8"
+                  >
+                    <Truck className="h-3.5 w-3.5 mr-1.5" /> Schedule Delivery
+                  </Button>
+                </div>
+              </GlassCard>
+            ))}
+          </div>
+        )
+      ) : (
+        <>
       <FilterBar
         search={search}
         onSearchChange={setSearch}
@@ -224,10 +342,13 @@ export default function Deliveries() {
               })()}
 
               {d.addressLine ? (
-                <div className="flex items-start gap-1.5 text-xs text-cream-muted mb-2">
+                <div className="flex items-start gap-1.5 text-xs text-cream-muted mb-1">
                   <MapPin className="h-3 w-3 text-brass-light/60 mt-0.5 shrink-0" />
                   <span className="leading-snug">{d.addressLine}</span>
                 </div>
+              ) : null}
+              {(d as any).orderRef ? (
+                <div className="text-[10px] text-brass-light/50 font-mono mt-0.5 mb-2">{(d as any).orderRef}</div>
               ) : null}
 
               <div className="flex items-center gap-1.5 text-xs text-cream-dim mb-3">
@@ -297,6 +418,8 @@ export default function Deliveries() {
             </GlassCard>
           ))}
         </div>
+      )}
+        </>
       )}
 
       <NewDeliveryDialog
