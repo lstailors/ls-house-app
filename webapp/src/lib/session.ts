@@ -25,7 +25,7 @@ export function useMe() {
         return null;
       }
     },
-    staleTime: 60_000,
+    staleTime: 10_000,
     retry: false,
   });
 }

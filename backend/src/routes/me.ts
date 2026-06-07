@@ -8,11 +8,15 @@ meRouter.get("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
-  // Fetch user_image from ERPNext User record
+  // Fetch user_image from ERPNext User record — prefix relative paths with ERP base URL
   let image: string | null = null;
   try {
     const erpUser = await erpGet<any>("User", user.email);
-    image = erpUser?.user_image ?? null;
+    const raw = erpUser?.user_image ?? null;
+    if (raw) {
+      const erpBase = process.env.ERPNEXT_BASE_URL ?? "https://erp.lstailors.com";
+      image = raw.startsWith("http") ? raw : `${erpBase}${raw}`;
+    }
   } catch { /* non-blocking */ }
 
   return c.json({
