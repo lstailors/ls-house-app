@@ -17,6 +17,7 @@ import {
   Pencil,
   Bell,
   Mic,
+  CheckCircle2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
@@ -859,30 +860,50 @@ export default function TicketDetail() {
 
   // ── Mutations ────────────────────────────────────────────────────────────
 
-  const createDeliveryMutation = useMutation({
-    mutationFn: async () => {
-      const garmentSummary = ticket?.lines && ticket.lines.length > 0
-        ? ticket.lines.map((l) => l.description).filter(Boolean).join(', ')
-        : ticket?.garments && ticket.garments.length > 0
-          ? ticket.garments.map((g) => g.garment_type).join(', ')
-          : 'Alteration';
+  const buildDeliveryPayload = () => {
+    const garmentSummary = ticket?.lines && ticket.lines.length > 0
+      ? ticket.lines.map((l: any) => l.description).filter(Boolean).join(', ')
+      : ticket?.garments && ticket.garments.length > 0
+        ? ticket.garments.map((g: any) => g.garment_type).join(', ')
+        : 'Alteration';
+    return {
+      alteration_ticket: ticketName,
+      customer_name: ticket?.customer_name ?? 'Walk-in',
+      customer_phone: ticket?.customer_mobile ?? null,
+      customer_erp_name: ticket?.customer ?? null,
+      notify_phone: ticket?.customer_mobile ?? null,
+      garment_summary: garmentSummary,
+      garment_count: ticket?.lines?.length ?? ticket?.garments?.length ?? 1,
+      location: ticket?.origin_location ?? 'NYC',
+    };
+  };
 
-      return api.post<{ id: string; qrToken: string }>('/api/deliveries/from-order', {
-        alteration_ticket: ticketName,
-        customer_name: ticket?.customer_name ?? 'Walk-in',
-        customer_phone: ticket?.customer_mobile ?? null,
-        customer_erp_name: ticket?.customer ?? null,
-        notify_phone: ticket?.customer_mobile ?? null,
-        garment_summary: garmentSummary,
-        garment_count: ticket?.lines?.length ?? ticket?.garments?.length ?? 1,
-        location: ticket?.origin_location ?? 'NYC',
-      });
-    },
+  const createDeliveryMutation = useMutation({
+    mutationFn: async () => api.post<{ id: string; qrToken: string }>('/api/deliveries/from-order', buildDeliveryPayload()),
     onSuccess: (result) => {
       toast.success('Delivery created — opening label');
       navigate(`/deliveries/${result.id}/label`);
     },
     onError: () => toast.error('Could not create delivery'),
+  });
+
+  const handDeliverMutation = useMutation({
+    mutationFn: async () => {
+      // Create delivery as already Delivered (in-store hand-off)
+      const delivery = await api.post<{ id: string }>('/api/deliveries/from-order', {
+        ...buildDeliveryPayload(),
+        hand_deliver: true,
+        method: 'Hand Delivery',
+      });
+      // Also mark ticket as Picked Up
+      await api.patch(`/api/intake-alterations/tickets/${ticketName}/status`, { status: 'Picked Up' });
+      return delivery;
+    },
+    onSuccess: (result) => {
+      toast.success('Marked hand delivered — opening label');
+      navigate(`/deliveries/${result.id}/label`);
+    },
+    onError: () => toast.error('Could not mark hand delivered'),
   });
 
   const updateStatusMutation = useMutation({
@@ -1084,6 +1105,24 @@ export default function TicketDetail() {
             <Truck size={15} />
             {createDeliveryMutation.isPending ? 'Creating…' : 'Create Delivery'}
           </button>
+
+          {/* Hand Delivered — shown when ticket is Ready */}
+          {(ticket?.workflow_state === 'Ready' || ticket?.workflow_state === 'Complete') && (
+            <button
+              type="button"
+              onClick={() => handDeliverMutation.mutate()}
+              disabled={handDeliverMutation.isPending}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium',
+                'bg-signal-emerald/10 border border-signal-emerald/40 text-signal-emerald',
+                'hover:bg-signal-emerald/20 hover:border-signal-emerald/60 transition-all',
+                'disabled:opacity-60 disabled:cursor-not-allowed'
+              )}
+            >
+              <CheckCircle2 size={15} />
+              {handDeliverMutation.isPending ? 'Processing…' : 'Mark Hand Delivered'}
+            </button>
+          )}
 
           <Link
             to={`/orders/alterations/${ticketName}/receipt`}

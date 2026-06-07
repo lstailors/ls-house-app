@@ -212,15 +212,23 @@ deliveriesRouter.post("/from-order", async (c) => {
   // body: { sales_order?, alteration_ticket?, customer_name, customer_phone?, address?, city?, apt?, notify_phone?, garment_summary?, garment_count?, location? }
 
   const token = randomBytes(12).toString("hex");
-
   const location = body.location ?? user.locationCode ?? "NYC";
+  const isHandDeliver = body.hand_deliver === true;
+  const now = new Date().toISOString();
 
-  const doc = await erpCreate<any>("LSH Delivery", {
+  // Auto-fetch phone from ERPNext Customer if not provided
+  let notifyPhone = body.notify_phone ?? body.customer_phone ?? null;
+  if (!notifyPhone && body.customer_erp_name) {
+    const cust = await erpGet<any>("Customer", body.customer_erp_name).catch(() => null);
+    notifyPhone = cust?.mobile_no ?? cust?.phone ?? null;
+  }
+
+  const erpDoc: Record<string, unknown> = {
     naming_series: location === "HOU" ? "DN-HOU-.YYYY.-" : "DN-NYC-.YYYY.-",
     customer: body.customer_erp_name ?? body.customer_name ?? "Walk-in",
     customer_name: body.customer_name ?? "Walk-in",
-    customer_phone: body.customer_phone ?? null,
-    lsh_status: "Queued",
+    customer_phone: body.customer_phone ?? notifyPhone ?? null,
+    lsh_status: isHandDeliver ? "Delivered" : "Queued",
     lsh_delivery_method: body.method ?? "Hand Delivery",
     lsh_origin_location: location,
     lsh_sales_order: body.sales_order ?? null,
@@ -231,10 +239,21 @@ deliveriesRouter.post("/from-order", async (c) => {
     lsh_delivery_state: body.state ?? "NY",
     lsh_garment_summary: body.garment_summary ?? null,
     lsh_garment_count: body.garment_count ?? null,
-    lsh_notify_phone: body.notify_phone ?? body.customer_phone ?? null,
+    lsh_notify_phone: notifyPhone,
     lsh_qr_token: token,
-    lsh_queued_at: new Date().toISOString(),
-  });
+    lsh_queued_at: now,
+  };
+
+  if (isHandDeliver) {
+    erpDoc.lsh_delivered_at = now;
+    erpDoc.lsh_dispatched_at = now;
+    erpDoc.lsh_pod_method = "In Person";
+  }
+
+  const doc = await erpCreate<any>("LSH Delivery", erpDoc);
+
+  // If hand delivery, send confirmation SMS
+  if (isHandDeliver && doc) void notifyCustomer(doc, "delivered");
 
   return c.json({ data: serializeDelivery(doc) });
 });
