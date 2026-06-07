@@ -227,9 +227,10 @@ const TOOLS = [
   { type: "function", function: { name: "create_todo", description: "Create a business follow-up ToDo in ERPNext. Use proactively during client conversations when a follow-up action is needed (callback, invoice question, special request). Also use when staff ask to set a reminder or todo.", parameters: { type: "object", properties: { description: { type: "string", description: "Clear, actionable task description including customer name and context" }, priority: { type: "string", enum: ["High", "Medium", "Low"] }, date: { type: "string", description: "Due date YYYY-MM-DD or null" }, allocated_to: { type: "string", description: "Email of responsible person (e.g. carl@lstailors.com). Null = assign to Carl." } }, required: ["description"] } } },
   { type: "function", function: { name: "list_my_tasks", description: "List the caller's open ToDos from ERPNext. Use when staff asks 'what are my tasks', 'my todo list', 'what do I need to do', etc.", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "complete_task", description: "Mark an ERPNext ToDo as complete. Use when staff says they finished a task, 'done with X', 'mark X complete', 'checked off X'. Match by todo_id.", parameters: { type: "object", properties: { todo_id: { type: "string", description: "ERPNext ToDo name/id from list_my_tasks" } }, required: ["todo_id"] } } },
+  { type: "function", function: { name: "get_client_tasks", description: "Get open tasks and todos related to a specific customer. Use proactively when a known client contacts you to surface any pending follow-ups Carl or the team needs to handle.", parameters: { type: "object", properties: { customer_name: { type: "string", description: "Customer full name to search todos for" } }, required: ["customer_name"] } } },
 ];
 
-const STAFF_TASK_TOOL_NAMES = new Set(["create_task", "create_todo", "list_my_tasks", "complete_task"]);
+const STAFF_TASK_TOOL_NAMES = new Set(["create_task", "create_todo", "list_my_tasks", "complete_task", "get_client_tasks"]);
 const STAFF_TOOLS = TOOLS.filter((t) => STAFF_TASK_TOOL_NAMES.has((t as any).function.name));
 
 // ── Tool executor ──
@@ -930,6 +931,29 @@ async function executeTool(
         return JSON.stringify({ ok: true, closed: todoId });
       }
 
+      case "get_client_tasks": {
+        const erpBase = process.env.ERPNEXT_BASE_URL ?? "";
+        const erpKey  = process.env.ERPNEXT_API_KEY ?? "";
+        const erpSec  = process.env.ERPNEXT_API_SECRET ?? "";
+        const customerName = String(args.customer_name ?? "");
+        if (!erpBase || !erpKey || !erpSec || !customerName) return JSON.stringify({ todos: [] });
+        // Search todos where description contains customer name
+        const filters = JSON.stringify([["status","=","Open"],["description","like",`%${customerName}%`]]);
+        const fields = JSON.stringify(["name","description","priority","date","allocated_to"]);
+        const res = await fetch(`${erpBase}/api/resource/ToDo?filters=${encodeURIComponent(filters)}&fields=${encodeURIComponent(fields)}&limit=10`, {
+          headers: { Authorization: `token ${erpKey}:${erpSec}`, Accept: "application/json" },
+        });
+        const rj: any = await res.json().catch(() => ({}));
+        const todos = (rj.data ?? []).map((t: any) => ({
+          id: t.name,
+          task: t.description?.replace(/<[^>]*>/g,"").trim().slice(0,100),
+          priority: t.priority,
+          due: t.date ?? "no due date",
+          assigned_to: t.allocated_to,
+        }));
+        return JSON.stringify({ count: todos.length, todos });
+      }
+
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
@@ -1208,7 +1232,7 @@ Reply with ONE short confirmation only. Examples:
         assistantSendRules
       : `
 
-[CONCIERGE MODE - client interaction. Restricted tools. Never invent pricing, fitting times, appointment dates, or order status. If you do not have data from a tool, say you will check with Carl. Use add_dossier_observation silently. Also use create_todo silently whenever a client interaction reveals a follow-up action needed (e.g. client mentions a complaint, requests a callback, has an open invoice question, needs a rush order, or any situation requiring staff follow-up). Always include the client name and context in the todo description.]
+[CONCIERGE MODE - client interaction. Restricted tools. Never invent pricing, fitting times, appointment dates, or order status. If you do not have data from a tool, say you will check with Carl. Use add_dossier_observation silently. Also use create_todo silently whenever a client interaction reveals a follow-up action needed (e.g. client mentions a complaint, requests a callback, has an open invoice question, needs a rush order, or any situation requiring staff follow-up). Always include the client name and context in the todo description. When a known client contacts you, silently call get_client_tasks with their name to check for any pending follow-ups — mention relevant ones naturally if appropriate.]
 
 BOOKING POLICY: When a client wants to book/reschedule/cancel an appointment, ALWAYS offer two options: (1) "I can book it for you right now - just need your name and email" or (2) "I can text you our booking link: lstailors.com/book". Honor whichever they pick. If they choose option 1: call get_available_slots first, present 2-3 nearby options in plain English, then call book_fitting once they confirm and you have name + email. Never book without an explicit yes AND name + email. Default event_type is fitting unless they say consultation, alterations, pickup, or exchange.
 

@@ -188,6 +188,47 @@ salesOrdersRouter.patch("/:id", async (c) => {
   return c.json({ data: { ok: true } });
 });
 
+// GET /api/sales-orders/:id/factory — MTMPro Orders linked to this sales order
+salesOrdersRouter.get("/:id/factory", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!canSeeFinancials(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+
+  const id = c.req.param("id");
+
+  try {
+    // Fetch the sales order to get customer + date context
+    const doc = await erpGet<any>("Sales Order", id).catch(() => null);
+    const customer = doc?.customer ?? "";
+
+    // Attempt to fetch MTMPro Orders linked by sales_order field first,
+    // then fall back to customer match
+    let orders = await erpList<any>("MTMPro Order", {
+      filters: customer ? [["customer", "=", customer]] : [["customer", "!=", ""]],
+      fields: [
+        "name", "customer", "order_type", "order_status", "order_date",
+        "need_by_date", "factory", "priority", "delivered_at", "submitted_to_factory_at",
+      ],
+      limit: 10,
+      order_by: "order_date desc",
+    }).catch(() => [] as any[]);
+
+    // If sales order has a transaction date, narrow to within ±90 days
+    if (doc?.transaction_date && orders.length > 0) {
+      const anchor = new Date(doc.transaction_date).getTime();
+      orders = orders.filter((o: any) => {
+        if (!o.order_date) return true;
+        const diff = Math.abs(new Date(o.order_date).getTime() - anchor);
+        return diff <= 90 * 24 * 60 * 60 * 1000;
+      });
+    }
+
+    return c.json({ data: orders });
+  } catch (e: any) {
+    return c.json({ data: [] });
+  }
+});
+
 // GET /api/sales-orders/:id/invoice/:invoiceId — full invoice detail
 salesOrdersRouter.get("/:id/invoice/:invoiceId", async (c) => {
   const user = await getAuthedUser(c);

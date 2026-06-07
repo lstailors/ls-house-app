@@ -89,9 +89,13 @@ customOrdersRouter.get("/", async (c) => {
   if (!supabaseAdmin) return c.json({ data: [] });
 
   const locCode = resolveLocationCode(user, c.req.query("locationId"));
+  const filterCustomerId = c.req.query("customerId");
+  const limitParam = parseInt(c.req.query("limit") ?? "200");
+  const limit = Math.min(isNaN(limitParam) ? 200 : limitParam, 500);
 
-  let q = supabaseAdmin.from("orders").select("*").order("created_at", { ascending: false }).limit(200);
+  let q = supabaseAdmin.from("orders").select("*").order("created_at", { ascending: false }).limit(limit);
   if (locCode) q = q.eq("origin_location", locCode);
+  if (filterCustomerId) q = q.eq("customer_id", filterCustomerId);
   if (user.role === "salesperson") {
     const createdBy = user.supabaseProfileId || user.id;
     q = q.eq("sales_rep_id", createdBy);

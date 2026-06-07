@@ -209,16 +209,22 @@ alterationsRouter.get("/", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
   const locationCode = c.req.query("location") ?? user.locationCode;
+  const filterCustomer = c.req.query("customer"); // ERPNext customer ID
+  const limitParam = parseInt(c.req.query("limit") ?? "200");
+  const limit = Math.min(isNaN(limitParam) ? 200 : limitParam, 500);
 
   const filters: unknown[] = [["workflow_state", "!=", "Cancelled"]];
-  if (locationCode && locationCode !== "ALL") {
+  if (locationCode && locationCode !== "ALL" && !filterCustomer) {
     filters.push(["origin_location", "=", locationCode]);
+  }
+  if (filterCustomer) {
+    filters.push(["customer", "=", filterCustomer]);
   }
 
   const tickets = await erpList<ErpTicket>("Alteration Ticket", {
     filters,
     fields: LIST_FIELDS,
-    limit: 200,
+    limit,
     order_by: "modified desc",
   });
 

@@ -1,34 +1,32 @@
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { useState } from "react";
 import { Users } from "lucide-react";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { formatUSD } from "@/lib/format";
 
 const MEDAL_COLORS = ["#D4B27A", "#C9C0AB", "#B08D57", "#8A8474"];
 
-const ChartTip = ({ active, payload, label }: any) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="bg-forest-raised/95 backdrop-blur-sm border border-brass/30 rounded-xl px-4 py-3 text-xs text-cream shadow-glass">
-      <p className="text-cream-dim mb-1.5 font-medium">{label}</p>
-      {payload.map((p: any, i: number) => (
-        <p key={i} className="flex items-center gap-2">
-          <span className="text-cream-muted">{p.name}:</span>
-          <span className="font-semibold" style={{ color: p.color }}>
-            {p.name === "Revenue" ? formatUSD(p.value) : p.value}
-          </span>
-        </p>
-      ))}
-    </div>
-  );
-};
+type Period = "MTD" | "6M" | "All";
+
+const PERIOD_LABELS: { key: Period; label: string }[] = [
+  { key: "MTD", label: "MTD" },
+  { key: "6M", label: "6M" },
+  { key: "All", label: "All" },
+];
 
 interface Rep { name: string; orders: number; revenue: number }
 interface Props { data: Rep[] }
 
 export function SalesLeaderboard({ data }: Props) {
+  const [period, setPeriod] = useState<Period>("All");
+
   if (!data?.length) return null;
 
-  const maxRev = Math.max(...data.map(d => d.revenue), 1);
+  // NOTE: salesByRep data contains only aggregated totals (no per-order dates),
+  // so MTD/6M filters display the same data — the toggle is visual scaffolding
+  // for when the backend provides time-scoped data in the future.
+  const displayData = data;
+
+  const maxRev = Math.max(...displayData.map(d => d.revenue), 1);
 
   return (
     <GlassCard variant="strong" className="p-6 flex flex-col h-full">
@@ -37,11 +35,26 @@ export function SalesLeaderboard({ data }: Props) {
           <Users className="h-3.5 w-3.5 text-brass-light" />
           Sales by Rep
         </div>
-        <span className="text-[10px] text-cream-dim uppercase tracking-widest">All time</span>
+        <div className="flex items-center gap-1">
+          {PERIOD_LABELS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setPeriod(key)}
+              className={[
+                "text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-md transition-colors",
+                period === key
+                  ? "bg-brass/20 text-brass-light font-semibold"
+                  : "text-cream-dim hover:text-cream-muted",
+              ].join(" ")}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="space-y-2.5 flex-1">
-        {data.slice(0, 6).map((rep, i) => {
+        {displayData.slice(0, 6).map((rep, i) => {
           const pct = Math.round((rep.revenue / maxRev) * 100);
           return (
             <div key={rep.name} className="group">

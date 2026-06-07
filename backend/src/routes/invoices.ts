@@ -42,8 +42,10 @@ invoicesRouter.get("/", async (c) => {
   if (!canSeeFinancials(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
 
   const statusFilter = c.req.query("status") ?? "";
+  const customerFilter = c.req.query("customer") ?? ""; // ERPNext customer name/id
 
   const filters: any[] = [];
+  if (customerFilter) filters.push(['customer', '=', customerFilter]);
   if (statusFilter && statusFilter !== 'all') {
     const statusMap: Record<string, string> = {
       paid: 'Paid', partly_paid: 'Partly Paid', unpaid: 'Unpaid',

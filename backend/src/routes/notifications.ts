@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser, canSeeFinancials } from "../lib/scope";
+import { erpList } from "../lib/erp";
 
 export const notificationsRouter = new Hono();
 
@@ -116,6 +117,31 @@ notificationsRouter.get("/", async (c) => {
       });
     }
   } catch {}
+
+  // ── Ready-to-deliver orders ───────────────────────────────
+  if (canSeeFinancials(user.role)) {
+    try {
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19);
+      const readyOrders = await erpList<any>("Sales Order", {
+        filters: [["status", "=", "To Deliver and Bill"], ["modified", ">=", weekAgo]],
+        fields: ["name", "customer_name", "delivery_date", "modified"],
+        limit: 5,
+      }).catch(() => [] as any[]);
+
+      for (const o of readyOrders) {
+        notifications.push({
+          id: `ready-${o.name}`,
+          kind: "order_ready",
+          priority: "high",
+          title: `${o.customer_name}'s order is ready`,
+          body: `${o.name} — ready to deliver`,
+          ts: o.modified,
+          href: `/sales-orders/${o.name}`,
+          read: false,
+        });
+      }
+    } catch {}
+  }
 
   // ── Overdue invoices ──────────────────────────────────────
   if (canSeeFinancials(user.role)) {
