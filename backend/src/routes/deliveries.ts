@@ -174,6 +174,42 @@ deliveriesRouter.post("/", async (c) => {
   }
 });
 
+// ── POST /api/deliveries/from-order ──────────────────────────────────────────
+deliveriesRouter.post("/from-order", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const body = await c.req.json().catch(() => ({})) as any;
+  // body: { sales_order?, alteration_ticket?, customer_name, customer_phone?, address?, city?, apt?, notify_phone?, garment_summary?, garment_count?, location? }
+
+  const token = randomBytes(12).toString("hex");
+
+  const location = body.location ?? user.locationCode ?? "NYC";
+
+  const doc = await erpCreate<any>("LSH Delivery", {
+    naming_series: location === "HOU" ? "DN-HOU-.YYYY.-" : "DN-NYC-.YYYY.-",
+    customer: body.customer_erp_name ?? body.customer_name ?? "Walk-in",
+    customer_name: body.customer_name ?? "Walk-in",
+    customer_phone: body.customer_phone ?? null,
+    lsh_status: "Queued",
+    lsh_delivery_method: body.method ?? "Hand Delivery",
+    lsh_origin_location: location,
+    lsh_sales_order: body.sales_order ?? null,
+    lsh_alteration_ticket: body.alteration_ticket ?? null,
+    lsh_delivery_address: body.address ?? null,
+    lsh_delivery_apt: body.apt ?? null,
+    lsh_delivery_city: body.city ?? "New York",
+    lsh_delivery_state: body.state ?? "NY",
+    lsh_garment_summary: body.garment_summary ?? null,
+    lsh_garment_count: body.garment_count ?? null,
+    lsh_notify_phone: body.notify_phone ?? body.customer_phone ?? null,
+    lsh_qr_token: token,
+    lsh_queued_at: new Date().toISOString(),
+  });
+
+  return c.json({ data: serializeDelivery(doc) });
+});
+
 // ── GET /api/deliveries/:id ───────────────────────────────────────────────────
 deliveriesRouter.get("/:id", async (c) => {
   const user = await getAuthedUser(c);
@@ -395,6 +431,31 @@ deliveriesRouter.get("/:id/label", async (c) => {
   const doc = await erpGet<any>("LSH Delivery", c.req.param("id"));
   if (!doc) return c.json({ error: { message: "Not found" } }, 404);
 
+  let items: { name: string; qty: number; desc?: string | null }[] = [];
+  let order_ref: string | null = null;
+
+  if (doc.lsh_sales_order) {
+    order_ref = doc.lsh_sales_order;
+    const so = await erpGet<any>("Sales Order", doc.lsh_sales_order).catch(() => null);
+    if (so?.items) {
+      items = so.items.map((i: any) => ({
+        name: i.item_name || i.item_code,
+        qty: i.qty || 1,
+        desc: i.description?.replace(/<[^>]*>/g, "").slice(0, 60) || null,
+      }));
+    }
+  } else if (doc.lsh_alteration_ticket) {
+    order_ref = doc.lsh_alteration_ticket;
+    const ticket = await erpGet<any>("Alteration Ticket", doc.lsh_alteration_ticket).catch(() => null);
+    if (ticket?.lines) {
+      items = ticket.lines.map((l: any) => ({
+        name: l.preset_name || l.description || "Alteration",
+        qty: 1,
+        desc: l.description || null,
+      }));
+    }
+  }
+
   return c.json({
     data: {
       id: doc.name,
@@ -412,6 +473,8 @@ deliveriesRouter.get("/:id/label", async (c) => {
       garment_summary: doc.lsh_garment_summary,
       garment_count: doc.lsh_garment_count,
       method: doc.lsh_delivery_method,
+      order_ref,
+      items,
     },
   });
 });

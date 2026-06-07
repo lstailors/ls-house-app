@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Printer,
   Tag,
+  Truck,
   User,
   AlertTriangle,
   Copy,
@@ -858,6 +859,32 @@ export default function TicketDetail() {
 
   // ── Mutations ────────────────────────────────────────────────────────────
 
+  const createDeliveryMutation = useMutation({
+    mutationFn: async () => {
+      const garmentSummary = ticket?.lines && ticket.lines.length > 0
+        ? ticket.lines.map((l) => l.description).filter(Boolean).join(', ')
+        : ticket?.garments && ticket.garments.length > 0
+          ? ticket.garments.map((g) => g.garment_type).join(', ')
+          : 'Alteration';
+
+      return api.post<{ id: string; qrToken: string }>('/api/deliveries/from-order', {
+        alteration_ticket: ticketName,
+        customer_name: ticket?.customer_name ?? 'Walk-in',
+        customer_phone: ticket?.customer_mobile ?? null,
+        customer_erp_name: ticket?.customer ?? null,
+        notify_phone: ticket?.customer_mobile ?? null,
+        garment_summary: garmentSummary,
+        garment_count: ticket?.lines?.length ?? ticket?.garments?.length ?? 1,
+        location: ticket?.origin_location ?? 'NYC',
+      });
+    },
+    onSuccess: (result) => {
+      toast.success('Delivery created — opening label');
+      navigate(`/deliveries/${result.id}/label`);
+    },
+    onError: () => toast.error('Could not create delivery'),
+  });
+
   const updateStatusMutation = useMutation({
     mutationFn: (status: string) =>
       api.patch(`/api/intake-alterations/tickets/${ticketName}/status`, { status }),
@@ -1043,6 +1070,21 @@ export default function TicketDetail() {
 
         {/* ── Actions ── */}
         <div className="flex items-center gap-3 flex-wrap">
+          <button
+            type="button"
+            onClick={() => createDeliveryMutation.mutate()}
+            disabled={createDeliveryMutation.isPending}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium',
+              'bg-forest-raised border border-brass/20 text-cream-muted',
+              'hover:border-brass/40 hover:text-cream transition-all',
+              'disabled:opacity-60 disabled:cursor-not-allowed'
+            )}
+          >
+            <Truck size={15} />
+            {createDeliveryMutation.isPending ? 'Creating…' : 'Create Delivery'}
+          </button>
+
           <Link
             to={`/orders/alterations/${ticketName}/receipt`}
             className={cn(
