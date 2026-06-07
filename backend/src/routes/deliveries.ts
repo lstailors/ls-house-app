@@ -7,6 +7,12 @@ function generateToken(): string {
   crypto.getRandomValues(bytes);
   return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
 }
+
+// ERPNext MySQL requires "YYYY-MM-DD HH:MM:SS" — no milliseconds, no Z
+function erpDatetime(d?: Date | string | null): string {
+  const dt = d ? new Date(d) : new Date();
+  return dt.toISOString().replace("T", " ").slice(0, 19);
+}
 import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser, resolveLocationCode } from "../lib/scope";
 import { sendSms } from "../lib/twilio";
@@ -30,10 +36,10 @@ async function notifyCustomer(doc: any, event: "out_for_delivery" | "delivered")
         template_id: event,
         twilio_sid: sid,
         status: "sent",
-        sent_at: new Date().toISOString(),
+        sent_at: erpDatetime(),
       }).catch(() => {});
       await erpUpdate("LSH Delivery", doc.name, {
-        lsh_customer_notified_at: new Date().toISOString(),
+        lsh_customer_notified_at: erpDatetime(),
       }).catch(() => {});
     }
   } catch { /* non-blocking */ }
@@ -194,7 +200,7 @@ deliveriesRouter.post("/", async (c) => {
       lsh_scheduled_at: body.scheduledAt ?? null,
       lsh_notify_phone: body.notifyPhone ?? null,
       lsh_qr_token: token,
-      lsh_queued_at: new Date().toISOString(),
+      lsh_queued_at: erpDatetime(),
       lsh_garment_summary: body.garmentSummary ?? null,
       lsh_garment_count: body.garmentCount ?? null,
       lsh_courier_name: body.courierName ?? body.driverName ?? null,
@@ -220,7 +226,7 @@ deliveriesRouter.post("/from-order", async (c) => {
   const token = generateToken();
   const location = body.location ?? user.locationCode ?? "NYC";
   const isHandDeliver = body.hand_deliver === true;
-  const now = new Date().toISOString();
+  const now = erpDatetime();
 
   // Auto-fetch phone from ERPNext Customer if not provided
   let notifyPhone = body.notify_phone ?? body.customer_phone ?? null;
@@ -331,9 +337,9 @@ deliveriesRouter.patch("/:id", async (c) => {
   if (body.status) {
     updates.lsh_status = body.status;
     if (["delivered", "Delivered"].includes(body.status))
-      updates.lsh_delivered_at = new Date().toISOString();
+      updates.lsh_delivered_at = erpDatetime();
     if (["out_for_delivery", "Out for Delivery", "In Flight"].includes(body.status))
-      updates.lsh_dispatched_at = new Date().toISOString();
+      updates.lsh_dispatched_at = erpDatetime();
   }
 
   if (user.role === "super_admin" || user.role === "store_manager") {
@@ -343,7 +349,7 @@ deliveriesRouter.patch("/:id", async (c) => {
     if (body.customerId !== undefined) updates.customer = body.customerId;
     if (body.scheduledAt !== undefined)
       updates.lsh_scheduled_at = body.scheduledAt
-        ? new Date(body.scheduledAt).toISOString()
+        ? erpDatetime(body.scheduledAt)
         : null;
     if (body.addressLine !== undefined) updates.lsh_delivery_address = body.addressLine;
     if (body.city !== undefined) updates.lsh_delivery_city = body.city;
@@ -389,7 +395,7 @@ deliveriesRouter.patch("/:id/pod", async (c) => {
   const body = (await c.req.json()) as any;
   const updates: Record<string, unknown> = {
     lsh_status: "Delivered",
-    lsh_delivered_at: new Date().toISOString(),
+    lsh_delivered_at: erpDatetime(),
   };
 
   if (body.podMethod !== undefined) updates.lsh_pod_method = body.podMethod;
@@ -428,7 +434,7 @@ deliveriesRouter.patch("/:id/pod", async (c) => {
       {
         photo_url: photoUrl,
         photo_type: body.photoType ?? "delivery",
-        captured_at: new Date().toISOString(),
+        captured_at: erpDatetime(),
       },
     ];
   }
@@ -471,8 +477,8 @@ deliveriesRouter.patch("/:id/status", async (c) => {
 
   const updates: Record<string, unknown> = { lsh_status: erpStatus };
 
-  if (erpStatus === "Delivered") updates.lsh_delivered_at = new Date().toISOString();
-  if (erpStatus === "Out for Delivery") updates.lsh_dispatched_at = new Date().toISOString();
+  if (erpStatus === "Delivered") updates.lsh_delivered_at = erpDatetime();
+  if (erpStatus === "Out for Delivery") updates.lsh_dispatched_at = erpDatetime();
 
   try {
     const updated = await erpUpdate<any>("LSH Delivery", id, updates);
@@ -550,7 +556,7 @@ deliveriesRouter.post("/:id/log-label-print", async (c) => {
   // Best-effort: record the print timestamp in ERP
   try {
     await erpUpdate("LSH Delivery", c.req.param("id"), {
-      lsh_label_printed_at: new Date().toISOString(),
+      lsh_label_printed_at: erpDatetime(),
       lsh_label_printed_by: user.name ?? user.email ?? user.id,
     });
   } catch {
