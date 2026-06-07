@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import {
   Bell, LogOut, Menu, Search, Settings, UserRound, X,
-  Users, FileText, Receipt, Scissors, Cpu, MessageSquare,
+  Users, FileText, Receipt, Scissors, Cpu, MessageSquare, Truck,
   AlertTriangle, CheckSquare, Zap, Clock, ChevronRight, QrCode, Activity,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -73,9 +73,11 @@ const TYPE_LABEL: Record<string, string> = {
 const KIND_ICON: Record<string, React.ElementType> = {
   approval: Zap,
   task: CheckSquare,
+  todo: CheckSquare,
   intelligence: Cpu,
   brief: FileText,
   invoice: AlertTriangle,
+  order_ready: Truck,
 };
 
 const PRIORITY_COLOR: Record<string, string> = {

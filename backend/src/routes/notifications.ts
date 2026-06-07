@@ -118,6 +118,36 @@ notificationsRouter.get("/", async (c) => {
     }
   } catch {}
 
+  // ── ERPNext ToDos — overdue + high priority ───────────────
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const todoFilters: unknown[] = [["status", "=", "Open"]];
+    if (user.role !== "super_admin") todoFilters.push(["allocated_to", "=", user.email]);
+    const todos = await erpList<any>("ToDo", {
+      filters: todoFilters,
+      fields: ["name", "description", "priority", "date", "allocated_to"],
+      limit: 20,
+    }).catch(() => [] as any[]);
+
+    for (const t of todos) {
+      const overdue = t.date && t.date < today;
+      const isHigh = t.priority === "High" || overdue;
+      if (!isHigh) continue;
+      const desc = String(t.description ?? "").replace(/<[^>]*>/g, "").trim().slice(0, 80);
+      notifications.push({
+        id: `todo-${t.name}`,
+        kind: "todo",
+        priority: overdue ? "critical" : "high",
+        title: overdue ? `⚠ Overdue: ${desc}` : desc,
+        body: t.allocated_to ? `→ ${t.allocated_to.split("@")[0]}` : null,
+        meta: t.date ? `Due ${t.date}` : null,
+        ts: t.date ?? null,
+        href: `/tasks`,
+        read: false,
+      });
+    }
+  } catch {}
+
   // ── Ready-to-deliver orders ───────────────────────────────
   if (canSeeFinancials(user.role)) {
     try {
