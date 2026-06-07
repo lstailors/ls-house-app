@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, Plus, Clock, AlertTriangle, ListTodo, Flame, X, Wand2, Sparkles, Lightbulb } from "lucide-react";
+import { CheckCircle2, Plus, Clock, AlertTriangle, ListTodo, Flame, X, Wand2, Sparkles, Lightbulb, ChevronRight, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { SectionHeader } from "@/components/glass/SectionHeader";
@@ -107,8 +107,8 @@ function TaskCard({ todo, onComplete, completing, onSelect }: TaskCardProps) {
     <GlassCard
       className={cn(
         "p-4 border border-brass/15 rounded-xl transition-all cursor-pointer hover:border-brass/30 hover:bg-brass/5",
-        overdue && !isClosed && "border-signal-rose/30",
-        todo.priority === "High" && !isClosed && "border-signal-rose/20",
+        overdue && !isClosed && "border-signal-rose/30 border-l-2 border-l-signal-rose",
+        !overdue && todo.priority === "High" && !isClosed && "border-signal-rose/20 border-l-2 border-l-signal-amber",
         isClosed && "opacity-60",
       )}
       onClick={() => onSelect(todo)}
@@ -160,23 +160,26 @@ function TaskCard({ todo, onComplete, completing, onSelect }: TaskCardProps) {
           </div>
         </div>
 
-        {/* Right: complete button */}
-        {!isClosed ? (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onComplete(todo.name); }}
-            disabled={completing}
-            title="Mark complete"
-            className={cn(
-              "shrink-0 h-8 w-8 rounded-full border border-brass/30 flex items-center justify-center",
-              "hover:bg-brass/15 hover:border-brass/60 transition-colors",
-              "text-brass-light/60 hover:text-brass-light",
-              completing && "opacity-40 cursor-not-allowed",
-            )}
-          >
-            <CheckCircle2 className="h-4 w-4" />
-          </button>
-        ) : null}
+        {/* Right: complete button + chevron */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {!isClosed ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onComplete(todo.name); }}
+              disabled={completing}
+              title="Mark complete"
+              className={cn(
+                "shrink-0 h-8 w-8 rounded-full border border-brass/30 flex items-center justify-center",
+                "hover:bg-brass/15 hover:border-brass/60 transition-colors",
+                "text-brass-light/60 hover:text-brass-light",
+                completing && "opacity-40 cursor-not-allowed",
+              )}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+            </button>
+          ) : null}
+          <ChevronRight className="h-4 w-4 text-cream-dim/40" />
+        </div>
       </div>
     </GlassCard>
   );
@@ -302,6 +305,23 @@ function TaskDetailPanel({ todo, onClose }: TaskDetailPanelProps) {
             </div>
           ) : null}
 
+          {/* History / meta */}
+          <div className="border-t border-brass/10 pt-3 space-y-1.5">
+            <p className="text-[10px] uppercase tracking-widest text-cream-dim mb-2">History</p>
+            {todo.assigned_by_full_name ? (
+              <p className="text-[11px] text-cream-muted">Created by <span className="text-cream">{todo.assigned_by_full_name}</span></p>
+            ) : null}
+            {todo.reference_type && todo.reference_name ? (
+              <p className="text-[11px] text-cream-muted">
+                Linked to{" "}
+                <span className="font-mono text-brass-light/70">{todo.reference_type} · {todo.reference_name}</span>
+              </p>
+            ) : null}
+            {isClosed ? (
+              <p className="text-[11px] text-cream-muted">Status: <span className="text-cream">{todo.status}</span></p>
+            ) : null}
+          </div>
+
           {/* Actions */}
           <div className="flex items-center gap-2 pt-1">
             {!isClosed ? (
@@ -346,6 +366,10 @@ function NewTaskPanel({ onClose, currentUserEmail, defaults }: NewTaskPanelProps
   );
   const [date, setDate] = useState(defaults?.date ?? "");
   const [assignedTo, setAssignedTo] = useState(defaults?.allocated_to ?? currentUserEmail);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [refType, setRefType] = useState("");
+  const [refName, setRefName] = useState("");
+  const [repeat, setRepeat] = useState<"None" | "Daily" | "Weekly" | "Monthly">("None");
 
   // Auto-priority suggestion
   const [aiPriority, setAiPriority] = useState<{ priority: string; reason: string } | null>(null);
@@ -379,12 +403,16 @@ function NewTaskPanel({ onClose, currentUserEmail, defaults }: NewTaskPanelProps
   function handleSubmit(ev: React.FormEvent) {
     ev.preventDefault();
     if (!description.trim()) return;
-    create.mutate({
-      description: description.trim(),
+    const repeatPrefix = repeat !== "None" ? `[${repeat}] ` : "";
+    const body: Record<string, unknown> = {
+      description: repeatPrefix + description.trim(),
       priority,
       date: date || null,
       allocated_to: assignedTo.trim() || currentUserEmail,
-    });
+    };
+    if (refType.trim()) body.reference_type = refType.trim();
+    if (refName.trim()) body.reference_name = refName.trim();
+    create.mutate(body);
   }
 
   return (
@@ -455,6 +483,24 @@ function NewTaskPanel({ onClose, currentUserEmail, defaults }: NewTaskPanelProps
           </div>
         </div>
 
+        {/* Repeat */}
+        <div>
+          <label className="text-[11px] uppercase tracking-widest text-cream-dim mb-1.5 block">Repeat</label>
+          <select
+            value={repeat}
+            onChange={(e) => setRepeat(e.target.value as "None" | "Daily" | "Weekly" | "Monthly")}
+            className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream focus:outline-none focus:border-brass/50"
+          >
+            <option value="None">None</option>
+            <option value="Daily">Daily</option>
+            <option value="Weekly">Weekly</option>
+            <option value="Monthly">Monthly</option>
+          </select>
+          {repeat !== "None" ? (
+            <p className="text-[10px] text-cream-dim/60 mt-1 italic">Recurrence is noted in the task description.</p>
+          ) : null}
+        </div>
+
         <div>
           <label className="text-[11px] uppercase tracking-widest text-cream-dim mb-1.5 block">
             Assign To (email)
@@ -466,6 +512,42 @@ function NewTaskPanel({ onClose, currentUserEmail, defaults }: NewTaskPanelProps
             placeholder={currentUserEmail}
             className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream placeholder:text-cream-dim/50 focus:outline-none focus:border-brass/50"
           />
+        </div>
+
+        {/* Advanced: reference fields */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((v) => !v)}
+            className="flex items-center gap-1.5 text-[11px] text-cream-dim hover:text-cream transition-colors"
+          >
+            <ChevronDown className={cn("h-3 w-3 transition-transform", advancedOpen && "rotate-180")} />
+            Advanced
+          </button>
+          {advancedOpen ? (
+            <div className="mt-2 grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] uppercase tracking-widest text-cream-dim mb-1.5 block">Link Type</label>
+                <input
+                  type="text"
+                  value={refType}
+                  onChange={(e) => setRefType(e.target.value)}
+                  placeholder="Sales Order"
+                  className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream placeholder:text-cream-dim/40 focus:outline-none focus:border-brass/50"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] uppercase tracking-widest text-cream-dim mb-1.5 block">Link ID</label>
+                <input
+                  type="text"
+                  value={refName}
+                  onChange={(e) => setRefName(e.target.value)}
+                  placeholder="LSTNY-SO-2026-00001"
+                  className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream placeholder:text-cream-dim/40 focus:outline-none focus:border-brass/50"
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex justify-end gap-2 pt-1">
@@ -498,12 +580,21 @@ const FILTER_OPTIONS = [
   { value: "closed", label: "Closed" },
 ];
 
+const STAFF = [
+  { label: "All", value: "all" },
+  { label: "Carl", value: "carl@lstailors.com" },
+  { label: "Kelvin", value: "kelvin@lstailors.com" },
+  { label: "Gianna", value: "gianna@lstailors.com" },
+  { label: "Antonio", value: "antonio@lstailors.com" },
+];
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Tasks() {
   const { data: me } = useMe();
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState("open");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [newTaskDefaults, setNewTaskDefaults] = useState<Partial<NewTaskDefaults> | null>(null);
@@ -514,8 +605,12 @@ export default function Tasks() {
   const [dismissedSuggestions, setDismissedSuggestions] = useState<number[]>([]);
 
   const { data: todos = [], isLoading } = useQuery<Todo[]>({
-    queryKey: ["tasks", statusFilter],
-    queryFn: () => api.get<Todo[]>(`/api/tasks?status=${statusFilter}`),
+    queryKey: ["tasks", statusFilter, assigneeFilter],
+    queryFn: () => {
+      const params = new URLSearchParams({ status: statusFilter });
+      if (assigneeFilter !== "all") params.set("assignee", assigneeFilter);
+      return api.get<Todo[]>(`/api/tasks?${params.toString()}`);
+    },
     enabled: !!me,
   });
 
@@ -747,6 +842,26 @@ export default function Tasks() {
         onFilterChange={setStatusFilter}
         filterOptions={FILTER_OPTIONS}
       />
+
+      {/* Assignee pills */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[10px] uppercase tracking-widest text-cream-dim mr-1">Assignee</span>
+        {STAFF.map((s) => (
+          <button
+            key={s.value}
+            type="button"
+            onClick={() => setAssigneeFilter(s.value)}
+            className={cn(
+              "px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors border",
+              assigneeFilter === s.value
+                ? "bg-brass/20 border-brass/50 text-brass-light"
+                : "border-brass/15 text-cream-dim hover:border-brass/30 hover:text-cream-muted",
+            )}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
 
       {/* Task list */}
       {isLoading ? (

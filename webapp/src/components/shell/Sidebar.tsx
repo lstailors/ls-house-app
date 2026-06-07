@@ -6,7 +6,7 @@ import {
   ChevronLeft, ChevronRight, FileText, Calendar, type LucideIcon,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useMaestroApprovalCount } from "@/lib/queries";
+import { useMaestroApprovalCount, useTaskCount } from "@/lib/queries";
 import { useMe } from "@/lib/session";
 import type { UserRole } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -105,6 +105,7 @@ interface Props {
 
 export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: Props) {
   const { data: approvalCount = 0 } = useMaestroApprovalCount();
+  const { data: taskCountData } = useTaskCount();
   const { data: me } = useMe();
   const collapsed = mode === "icons";
 
@@ -185,6 +186,9 @@ export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: P
                 <ul className="space-y-0.5">
                   {items.map((item) => {
                     const Icon = item.icon;
+                    const isTasksItem = item.to === "/tasks";
+                    const taskCount = taskCountData?.count ?? 0;
+                    const taskOverdue = taskCountData?.overdue ?? 0;
                     const link = (
                       <NavLink
                         to={item.to}
@@ -202,7 +206,17 @@ export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: P
                         }
                       >
                         <Icon className="h-4 w-4 shrink-0 opacity-70 group-hover:opacity-100" />
-                        {!collapsed && <span className="truncate">{item.label}</span>}
+                        {!collapsed && <span className="truncate flex-1">{item.label}</span>}
+                        {!collapsed && isTasksItem && taskCount > 0 ? (
+                          <span className={cn(
+                            "ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center",
+                            taskOverdue > 0
+                              ? "bg-signal-rose/20 text-signal-rose"
+                              : "bg-brass/15 text-brass-light",
+                          )}>
+                            {taskCount}
+                          </span>
+                        ) : null}
                       </NavLink>
                     );
 

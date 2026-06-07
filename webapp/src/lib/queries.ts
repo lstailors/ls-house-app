@@ -701,6 +701,15 @@ export function useSmsThread(phone: string | null) {
   });
 }
 
+export function useTaskCount() {
+  return useQuery({
+    queryKey: ["tasks", "open-count"],
+    queryFn: () => api.get<{ count: number; overdue: number }>("/api/tasks/open-count"),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+}
+
 export function useAllTasks(status?: string) {
   return useQuery({
     queryKey: ["agents", "tasks", "all", status],

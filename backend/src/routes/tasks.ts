@@ -1,8 +1,16 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
 import { erpList, erpCreate, erpUpdate } from "../lib/erp";
+import { sendSms } from "../lib/twilio";
 
 const RAVEN_ALERTS = "L&S Tailors-alerts";
+
+const STAFF_PHONES: Record<string, string> = {
+  "carl@lstailors.com": "+16319260917",
+  "gianna@lstailors.com": "+16462087809",
+  "kelvin@lstailors.com": "+13475539027",
+  "antonio@lstailors.com": "+16463637906",
+};
 
 async function postToRaven(text: string, senderEmail = "house@lstailors.com"): Promise<void> {
   try {
@@ -13,6 +21,19 @@ async function postToRaven(text: string, senderEmail = "house@lstailors.com"): P
       owner: senderEmail,
     });
   } catch { /* non-blocking */ }
+}
+
+async function notifyAssignee(assigneeEmail: string, description: string, date: unknown, senderEmail: string): Promise<void> {
+  const name = assigneeEmail.split("@")[0];
+  const due = date ? ` (due ${date})` : "";
+  const desc = description.replace(/<[^>]*>/g, "").slice(0, 100);
+  postToRaven(`📌 Task assigned to ${name}: ${desc}${due}`, senderEmail);
+  const phone = STAFF_PHONES[assigneeEmail];
+  if (phone) {
+    try {
+      await sendSms(phone, `📌 Task assigned to you: ${desc}${due}`);
+    } catch { /* non-blocking */ }
+  }
 }
 
 export const tasksRouter = new Hono();
@@ -36,8 +57,13 @@ tasksRouter.get("/open-count", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   const filters: unknown[] = [["status", "=", "Open"]];
   if (user.role !== "super_admin") filters.push(["allocated_to", "=", user.email]);
-  const todos = await erpList("ToDo", { filters, fields: ["name"], limit: 200 });
-  return c.json({ data: { count: todos.length } });
+  const today = new Date().toISOString().slice(0, 10);
+  const overdueFilters = [...filters, ["date", "<", today], ["date", "!=", ""]];
+  const [openTodos, overdueTodos] = await Promise.all([
+    erpList("ToDo", { filters, fields: ["name"], limit: 200 }),
+    erpList("ToDo", { filters: overdueFilters, fields: ["name"], limit: 200 }),
+  ]);
+  return c.json({ data: { count: openTodos.length, overdue: overdueTodos.length } });
 });
 
 // GET /api/tasks
@@ -52,7 +78,13 @@ tasksRouter.get("/", async (c) => {
   else if (statusParam === "closed") filters.push(["status", "=", "Closed"]);
   // else "all" = no status filter
 
-  if (user.role !== "super_admin") {
+  const assigneeParam = c.req.query("assignee");
+  if (assigneeParam && assigneeParam !== "all") {
+    filters.push(["allocated_to", "=", assigneeParam]);
+  } else if (!assigneeParam && user.role !== "super_admin") {
+    filters.push(["allocated_to", "=", user.email]);
+  } else if (assigneeParam === "all" && user.role !== "super_admin") {
+    // non-admins cannot use assignee=all; fall back to their own tasks
     filters.push(["allocated_to", "=", user.email]);
   }
 
@@ -85,19 +117,35 @@ tasksRouter.post("/", async (c) => {
   const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
   if (!body.description) return c.json({ error: { message: "description required" } }, 400);
 
-  const todo = await erpCreate("ToDo", {
-    description: body.description,
+  // Prepend recurrence prefix to description if repeat_on is set
+  let description = String(body.description);
+  if (body.repeat_on === "Daily") description = `[Daily] ${description}`;
+  else if (body.repeat_on === "Weekly") description = `[Weekly] ${description}`;
+  else if (body.repeat_on === "Monthly") description = `[Monthly] ${description}`;
+
+  const createPayload: Record<string, unknown> = {
+    description,
     status: "Open",
     priority: body.priority ?? "Medium",
     date: body.date ?? null,
     allocated_to: body.allocated_to ?? user.email,
     assigned_by: user.email,
-  });
+  };
+  if (body.reference_type) createPayload.reference_type = body.reference_type;
+  if (body.reference_name) createPayload.reference_name = body.reference_name;
 
-  const desc = String(body.description).replace(/<[^>]*>/g, "").slice(0, 80);
-  const assignee = String(body.allocated_to ?? user.email).split("@")[0];
+  const todo = await erpCreate("ToDo", createPayload);
+
+  const desc = description.replace(/<[^>]*>/g, "").slice(0, 80);
+  const assigneeEmail = String(body.allocated_to ?? user.email);
+  const assigneeName = assigneeEmail.split("@")[0];
   const due = body.date ? ` · due ${body.date}` : "";
-  postToRaven(`📋 New task [${body.priority ?? "Medium"}]: ${desc}${due} → ${assignee}`, user.email);
+  postToRaven(`📋 New task [${body.priority ?? "Medium"}]: ${desc}${due} → ${assigneeName}`, user.email);
+
+  // Notify assignee if different from creator
+  if (body.allocated_to && body.allocated_to !== user.email) {
+    notifyAssignee(assigneeEmail, description, body.date, user.email);
+  }
 
   return c.json({ data: todo });
 });
@@ -140,22 +188,23 @@ tasksRouter.get("/suggestions", async (c) => {
 
   const today = new Date().toISOString().slice(0, 10);
 
+  const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
   const [overdueInvoices, readyOrders, upcomingYZ] = await Promise.all([
     erpList("Sales Invoice", {
-      filters: [["due_date", "<", today], ["status", "=", "Unpaid"]],
+      filters: [["due_date", "<", today], ["outstanding_amount", ">", 0], ["docstatus", "=", 1]],
       fields: ["name", "customer_name", "outstanding_amount", "due_date"],
       limit: 10
-    }).catch(() => [] as any[]),
+    }).catch((err: unknown) => { console.error("[tasks/suggestions] ERPNext error (invoices):", err); return [] as any[]; }),
     erpList("Sales Order", {
-      filters: [["status", "=", "To Deliver and Bill"]],
+      filters: [["status", "in", ["To Deliver and Bill", "To Deliver"]], ["delivery_date", "<=", nextWeek]],
       fields: ["name", "customer_name", "delivery_date"],
       limit: 10
-    }).catch(() => [] as any[]),
+    }).catch((err: unknown) => { console.error("[tasks/suggestions] ERPNext error (orders):", err); return [] as any[]; }),
     erpList("Sales Order", {
-      filters: [["yz_ship_plan", ">=", today], ["yz_ship_plan", "<=", new Date(Date.now()+7*86400000).toISOString().slice(0,10)], ["yz_ship_plan", "!=", ""]],
+      filters: [["yz_ship_plan", ">=", today], ["yz_ship_plan", "<=", nextWeek], ["yz_ship_plan", "!=", ""]],
       fields: ["name", "customer_name", "yz_ship_plan"],
       limit: 5
-    }).catch(() => [] as any[]),
+    }).catch((err: unknown) => { console.error("[tasks/suggestions] ERPNext error (yz):", err); return [] as any[]; }),
   ]);
 
   const context = [
@@ -249,12 +298,28 @@ tasksRouter.patch("/:id", async (c) => {
   if (body.description !== undefined) update.description = body.description;
   if (body.allocated_to !== undefined) update.allocated_to = body.allocated_to;
 
-  const todo = await erpUpdate("ToDo", id, update);
+  const todo = await erpUpdate("ToDo", id, update) as Record<string, unknown>;
+
+  let completedBy: string | undefined;
+  let completedAt: string | undefined;
 
   if (body.status === "Closed") {
     const desc = String(todo?.description ?? id).replace(/<[^>]*>/g, "").slice(0, 80);
     postToRaven(`✅ Task completed: ${desc}`, user.email);
+    completedBy = user.email;
+    completedAt = new Date().toISOString();
   }
 
-  return c.json({ data: todo });
+  // Notify new assignee if allocated_to changed to someone else
+  if (body.allocated_to && body.allocated_to !== user.email) {
+    const desc = String(body.description ?? todo?.description ?? "").replace(/<[^>]*>/g, "");
+    notifyAssignee(String(body.allocated_to), desc, body.date ?? todo?.date, user.email);
+  }
+
+  return c.json({
+    data: {
+      ...(todo ?? {}),
+      ...(completedBy ? { completedBy, completedAt } : {}),
+    },
+  });
 });
