@@ -3,6 +3,35 @@ import { randomBytes } from "node:crypto";
 import { erpList, erpGet, erpCreate, erpUpdate } from "../lib/erp";
 import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser, resolveLocationCode } from "../lib/scope";
+import { sendSms } from "../lib/twilio";
+
+// ── Delivery SMS notifications (fire-and-forget) ──────────────────────────────
+async function notifyCustomer(doc: any, event: "out_for_delivery" | "delivered"): Promise<void> {
+  const phone = doc.lsh_notify_phone ?? doc.customer_phone ?? null;
+  if (!phone) return;
+  const first = (doc.customer_name ?? "").split(" ")[0] || "there";
+  const msg = event === "out_for_delivery"
+    ? `Hi ${first}, your order from L&S Custom Tailors is on its way. Your driver is en route — we'll see you shortly!`
+    : `Hi ${first}, your garments from L&S Custom Tailors have been delivered. Thank you — enjoy!`;
+  try {
+    const sid = await sendSms(phone, msg);
+    if (sid && doc.name) {
+      // Log to ERPNext notification log (best-effort)
+      await erpCreate("LSH Notification Log", {
+        lsh_delivery: doc.name,
+        channel: "SMS",
+        recipient_phone: phone,
+        template_id: event,
+        twilio_sid: sid,
+        status: "sent",
+        sent_at: new Date().toISOString(),
+      }).catch(() => {});
+      await erpUpdate("LSH Delivery", doc.name, {
+        lsh_customer_notified_at: new Date().toISOString(),
+      }).catch(() => {});
+    }
+  } catch { /* non-blocking */ }
+}
 
 export const deliveriesRouter = new Hono();
 
@@ -304,6 +333,10 @@ deliveriesRouter.patch("/:id", async (c) => {
   try {
     const updated = await erpUpdate<any>("LSH Delivery", docName, updates);
     if (!updated) return c.json({ error: { message: "Update failed" } }, 500);
+    // Fire SMS notification (non-blocking)
+    if (["out_for_delivery", "Out for Delivery"].includes(body.status ?? "")) {
+      void notifyCustomer(updated, "out_for_delivery");
+    }
     return c.json({ data: serializeDelivery(updated) });
   } catch (err: any) {
     return c.json({ error: { message: err.message ?? "Update failed" } }, 500);
@@ -378,6 +411,8 @@ deliveriesRouter.patch("/:id/pod", async (c) => {
   try {
     const updated = await erpUpdate<any>("LSH Delivery", id, updates);
     if (!updated) return c.json({ error: { message: "Update failed" } }, 500);
+    // SMS delivery confirmation (non-blocking)
+    void notifyCustomer(updated, "delivered");
     return c.json({ data: serializeDelivery(updated) });
   } catch (err: any) {
     return c.json({ error: { message: err.message ?? "Update failed" } }, 500);
@@ -417,6 +452,9 @@ deliveriesRouter.patch("/:id/status", async (c) => {
   try {
     const updated = await erpUpdate<any>("LSH Delivery", id, updates);
     if (!updated) return c.json({ error: { message: "Update failed" } }, 500);
+    // Fire SMS notification (non-blocking)
+    if (erpStatus === "Out for Delivery") void notifyCustomer(updated, "out_for_delivery");
+    if (erpStatus === "Delivered") void notifyCustomer(updated, "delivered");
     return c.json({ data: serializeDelivery(updated) });
   } catch (err: any) {
     return c.json({ error: { message: err.message ?? "Update failed" } }, 500);
