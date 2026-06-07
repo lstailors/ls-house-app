@@ -18,8 +18,7 @@ export function QuickCreateFAB({ userEmail }: QuickCreateFABProps) {
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<"High" | "Medium" | "Low">("Medium");
 
-  // Hide on the tasks page itself
-  if (location.pathname === "/tasks") return null;
+  const hidden = location.pathname === "/tasks";
 
   const create = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post("/api/tasks", body),
@@ -42,6 +41,8 @@ export function QuickCreateFAB({ userEmail }: QuickCreateFABProps) {
       allocated_to: userEmail,
     });
   }
+
+  if (hidden) return null;
 
   return (
     <>
