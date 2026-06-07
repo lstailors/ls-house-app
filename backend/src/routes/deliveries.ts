@@ -1,291 +1,234 @@
 import { Hono } from "hono";
+import { randomBytes } from "node:crypto";
+import { erpList, erpGet, erpCreate, erpUpdate } from "../lib/erp";
 import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser, resolveLocationCode } from "../lib/scope";
 
 export const deliveriesRouter = new Hono();
 
-// ── Status mappers ──────────────────────────────────────────────────────────
-function normalizeDeliveryStatus(s: string): string {
-  if (["Scheduled", "Queued", "scheduled"].includes(s)) return "scheduled";
-  if (["Out for Delivery", "out_for_delivery", "In Flight"].includes(s)) return "out_for_delivery";
-  if (["Delivered", "delivered", "Picked Up"].includes(s)) return "delivered";
-  return "failed";
-}
-
-function toDbDeliveryStatus(s: string): string {
-  const map: Record<string, string> = {
-    scheduled: "Scheduled",
-    Scheduled: "Scheduled",
-    queued: "Queued",
-    Queued: "Queued",
-    out_for_delivery: "Out for Delivery",
-    "Out for Delivery": "Out for Delivery",
-    "In Flight": "In Flight",
-    delivered: "Delivered",
-    Delivered: "Delivered",
-    failed: "Failed",
-    Failed: "Failed",
-    attempted: "Attempted",
-    Attempted: "Attempted",
-  };
-  return map[s] ?? "Queued";
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-function serializeCustomer(row: any) {
-  if (!row) return undefined;
+// ── Serializer ───────────────────────────────────────────────────────────────
+function serializeDelivery(doc: any): object {
   return {
-    id: row.id,
-    name: row.full_name,
-    phone: row.phone,
-    email: row.email,
-    locationId: row.division,
-    createdById: null,
-    dossier: { vip: row.vip_tier !== "Standard", preferences: row.style_preferences || null },
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    id: doc.name,
+    deliveryNo: doc.lsh_supabase_delivery_no ?? doc.name,
+    status: doc.lsh_status?.toLowerCase().replace(/ /g, "_") ?? "queued",
+    method: doc.lsh_delivery_method ?? "Hand Delivery",
+    locationId: doc.lsh_origin_location ?? "NYC",
+    customerId: doc.customer ?? null,
+    customer: {
+      name: doc.customer_name ?? "",
+      phone: doc.customer_phone ?? null,
+      email: null,
+    },
+    orderRef: doc.lsh_sales_order ?? null,
+    addressLine:
+      [doc.lsh_delivery_address, doc.lsh_delivery_apt].filter(Boolean).join(", ") || null,
+    city: doc.lsh_delivery_city ?? null,
+    scheduledAt: doc.lsh_scheduled_at ?? null,
+    deliveredAt: doc.lsh_delivered_at ?? null,
+    dispatchedAt: doc.lsh_dispatched_at ?? null,
+    qrToken: doc.lsh_qr_token ?? null,
+    courierName: doc.lsh_courier_name ?? null,
+    courierPhone: doc.lsh_courier_phone ?? null,
+    carrier: doc.lsh_carrier ?? null,
+    trackingNumber: doc.lsh_tracking_number ?? null,
+    trackingUrl: doc.lsh_tracking_url ?? null,
+    garmentSummary: doc.lsh_garment_summary ?? null,
+    garmentCount: doc.lsh_garment_count ?? 0,
+    notes: doc.lsh_delivery_notes ?? null,
+    podMethod: doc.lsh_pod_method ?? null,
+    signatureName: doc.lsh_signature_name ?? null,
+    signatureImageUrl: doc.lsh_signature_image_url ?? null,
+    gpsLat: doc.lsh_gps_lat ?? null,
+    gpsLng: doc.lsh_gps_lng ?? null,
+    photos: (doc.lsh_photos ?? []).map((p: any) => ({
+      url: p.photo_url,
+      type: p.photo_type,
+      capturedAt: p.captured_at,
+    })),
+    timeline: (doc.lsh_timeline ?? []).map((t: any) => ({
+      event: t.event_type,
+      at: t.event_at,
+      actor: t.actor_label,
+      message: t.message,
+    })),
+    erpnextSynced: true,
+    createdAt: doc.creation ?? null,
   };
 }
 
-async function fetchCustomerMap(ids: string[]): Promise<Map<string, any>> {
-  if (!ids.length || !supabaseAdmin) return new Map();
-  const { data } = await supabaseAdmin
-    .from("customers")
-    .select("id,full_name,phone,email,division,vip_tier,style_preferences,created_at,updated_at")
-    .in("id", ids);
-  return new Map((data ?? []).map((r: any) => [r.id, r]));
-}
+const LIST_FIELDS = [
+  "name",
+  "customer",
+  "customer_name",
+  "customer_phone",
+  "lsh_status",
+  "lsh_delivery_method",
+  "lsh_origin_location",
+  "lsh_scheduled_at",
+  "lsh_delivered_at",
+  "lsh_delivery_address",
+  "lsh_delivery_city",
+  "lsh_supabase_delivery_no",
+  "lsh_qr_token",
+  "lsh_courier_name",
+  "lsh_garment_summary",
+  "lsh_garment_count",
+  "lsh_tracking_number",
+  "lsh_sales_order",
+  "creation",
+  "modified",
+];
 
-function serializeDelivery(d: any, customerRow?: any) {
-  return {
-    id: d.id,
-    orderRef: d.order_id ?? null,
-    customOrderId: d.order_id ?? null,
-    customerId: d.customer_id,
-    customer: customerRow ? serializeCustomer(customerRow) : undefined,
-    locationId: d.origin_location,
-    driverId: d.courier_user_id ?? null,
-    driver: d.driver_name
-      ? { id: null, name: d.driver_name, email: null, role: "driver", locationId: null, image: null, isActive: true }
-      : null,
-    status: normalizeDeliveryStatus(d.status),
-    proofOfDeliveryUrl: d.pod_photo_1_path ?? null,
-    scheduledAt: d.scheduled_at ?? (d.scheduled_date ? d.scheduled_date + "T09:00:00Z" : null),
-    deliveredAt: d.delivered_at ?? null,
-    addressLine: [d.delivery_address, d.delivery_city].filter(Boolean).join(", ") || null,
-    notes: d.delivery_notes ?? d.garment_summary ?? null,
-    erpnextSynced: false,
-    createdAt: d.created_at,
-    deliveryNo: d.delivery_no ?? null,
-    qrToken: d.qr_token ?? null,
-    podMethod: d.pod_method ?? null,
-    receivedBy: d.received_by ?? null,
-    signatureName: d.signature_name ?? null,
-    hasSignature: !!d.signature_image_path,
-    gpsLatitude: d.gps_latitude ?? null,
-    gpsLongitude: d.gps_longitude ?? null,
-    gpsAccuracy: d.gps_accuracy_meters ?? null,
-  };
-}
-
-// ─── Routes ───────────────────────────────────────────────────────────────────
-
+// ── GET /api/deliveries ───────────────────────────────────────────────────────
 deliveriesRouter.get("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ data: [] });
 
-  let q = supabaseAdmin.from("deliveries").select("*");
+  const filters: unknown[] = [["docstatus", "!=", 2]];
 
   if (user.role === "driver") {
-    const ids = [user.id];
-    if (user.supabaseProfileId && user.supabaseProfileId !== user.id) ids.push(user.supabaseProfileId);
-    if (ids.length === 2) {
-      q = q.or(`courier_user_id.eq.${ids[0]},courier_user_id.eq.${ids[1]}`);
-    } else {
-      q = q.eq("courier_user_id", ids[0]);
-    }
-  } else {
+    filters.push(["lsh_courier_name", "=", user.name ?? user.email]);
+  } else if (user.role !== "super_admin") {
     const locCode = resolveLocationCode(user, c.req.query("locationId"));
-    if (locCode) q = q.eq("origin_location", locCode);
+    if (locCode) filters.push(["lsh_origin_location", "=", locCode]);
   }
 
-  const { data: rows, error } = await q.order("created_at", { ascending: false }).limit(200);
-  if (error) return c.json({ error: { message: error.message } }, 500);
+  const rows = await erpList("LSH Delivery", {
+    filters,
+    fields: LIST_FIELDS,
+    limit: 100,
+    order_by: "lsh_scheduled_at asc",
+  });
 
-  const customerIds = [...new Set((rows ?? []).map((r: any) => r.customer_id).filter(Boolean))] as string[];
-  const customerMap = await fetchCustomerMap(customerIds);
-
-  return c.json({ data: (rows ?? []).map((r: any) => serializeDelivery(r, customerMap.get(r.customer_id))) });
+  return c.json({ data: (rows as any[]).map(serializeDelivery) });
 });
 
+// ── GET /api/deliveries/candidates ───────────────────────────────────────────
 deliveriesRouter.get("/candidates", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ data: [] });
 
   try {
-    const { data, error } = await supabaseAdmin.rpc("rpc_get_delivery_candidates");
-    if (error) {
-      console.warn("rpc_get_delivery_candidates error:", error.message);
-      return c.json({ data: [] });
-    }
-    return c.json({ data: data ?? [] });
+    const orders = await erpList("Sales Order", {
+      filters: [["status", "=", "To Deliver and Bill"]],
+      fields: [
+        "name",
+        "customer_name",
+        "contact_mobile",
+        "contact_phone",
+        "shipping_address",
+        "delivery_date",
+      ],
+      limit: 50,
+    });
+    return c.json({ data: orders });
   } catch (err) {
-    console.warn("rpc_get_delivery_candidates exception:", err);
+    console.warn("candidates error:", err);
     return c.json({ data: [] });
   }
 });
 
+// ── POST /api/deliveries ──────────────────────────────────────────────────────
 deliveriesRouter.post("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!["super_admin", "store_manager"].includes(user.role)) {
     return c.json({ error: { message: "Forbidden" } }, 403);
   }
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
 
   const body = (await c.req.json()) as any;
-  if (!body.customer_id) return c.json({ error: { message: "customer_id is required" } }, 400);
-
-  const insert: any = {
-    customer_id: body.customer_id,
-    method: body.method ?? "Hand Delivery",
-    status: "Queued",
-    origin_location: body.origin_location ?? "NYC",
-  };
-
-  if (body.scheduled_at !== undefined) insert.scheduled_at = body.scheduled_at ? new Date(body.scheduled_at).toISOString() : null;
-  if (body.scheduled_date !== undefined) insert.scheduled_date = body.scheduled_date;
-  if (body.scheduled_window !== undefined) insert.scheduled_window = body.scheduled_window;
-  if (body.delivery_address !== undefined) insert.delivery_address = body.delivery_address;
-  if (body.delivery_apt !== undefined) insert.delivery_apt = body.delivery_apt;
-  if (body.delivery_building !== undefined) insert.delivery_building = body.delivery_building;
-  if (body.delivery_city !== undefined) insert.delivery_city = body.delivery_city;
-  if (body.delivery_state !== undefined) insert.delivery_state = body.delivery_state;
-  if (body.delivery_zip !== undefined) insert.delivery_zip = body.delivery_zip;
-  if (body.garment_summary !== undefined) insert.garment_summary = body.garment_summary;
-  if (body.garment_count !== undefined) insert.garment_count = body.garment_count;
-  if (body.driver_name !== undefined) insert.driver_name = body.driver_name;
-  if (body.notify_phone !== undefined) insert.notify_phone = body.notify_phone;
-  if (body.delivery_notes !== undefined) insert.delivery_notes = body.delivery_notes;
-
-  const { data: inserted, error } = await supabaseAdmin
-    .from("deliveries")
-    .insert(insert)
-    .select("*")
-    .single();
-
-  if (error || !inserted) return c.json({ error: { message: error?.message ?? "Insert failed" } }, 500);
-
-  const customerMap = await fetchCustomerMap(inserted.customer_id ? [inserted.customer_id] : []);
-  return c.json({ data: serializeDelivery(inserted, customerMap.get(inserted.customer_id)) }, 201);
-});
-
-deliveriesRouter.patch("/:id/pod", async (c) => {
-  const user = await getAuthedUser(c);
-  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ error: { message: "Not found" } }, 404);
-
-  const id = c.req.param("id");
-  const { data: existing, error: fetchErr } = await supabaseAdmin
-    .from("deliveries")
-    .select("*")
-    .eq("id", id)
-    .single();
-
-  if (fetchErr || !existing) return c.json({ error: { message: "Not found" } }, 404);
-
-  // Access check
-  if (user.role === "driver") {
-    if (existing.courier_user_id !== user.id && existing.courier_user_id !== user.supabaseProfileId) {
-      return c.json({ error: { message: "Forbidden" } }, 403);
-    }
-  } else if (!["super_admin", "store_manager"].includes(user.role)) {
-    return c.json({ error: { message: "Forbidden" } }, 403);
+  if (!body.customerId && !body.customer) {
+    return c.json({ error: { message: "customerId is required" } }, 400);
   }
 
-  const body = (await c.req.json()) as any;
-  const update: any = {
-    status: "Delivered",
-    delivered_at: new Date().toISOString(),
-  };
+  const token = randomBytes(12).toString("hex");
+  const locationId = body.locationId ?? "NYC";
 
-  if (body.pod_method !== undefined) update.pod_method = body.pod_method;
-  if (body.received_by !== undefined) update.received_by = body.received_by;
-  if (body.signature_name !== undefined) update.signature_name = body.signature_name;
-  if (body.pod_photo_1_path !== undefined) update.pod_photo_1_path = body.pod_photo_1_path;
-  if (body.pod_photo_2_path !== undefined) update.pod_photo_2_path = body.pod_photo_2_path;
-  if (body.pod_photo_3_path !== undefined) update.pod_photo_3_path = body.pod_photo_3_path;
-  if (body.signature_image_path !== undefined) update.signature_image_path = body.signature_image_path;
-  if (body.gps_latitude !== undefined) update.gps_latitude = body.gps_latitude;
-  if (body.gps_longitude !== undefined) update.gps_longitude = body.gps_longitude;
-  if (body.gps_accuracy_meters !== undefined) update.gps_accuracy_meters = body.gps_accuracy_meters;
+  try {
+    const doc = await erpCreate<any>("LSH Delivery", {
+      naming_series: locationId === "HOU" ? "DN-HOU-.YYYY.-" : "DN-NYC-.YYYY.-",
+      customer: body.customerId ?? body.customer,
+      lsh_status: "Queued",
+      lsh_delivery_method: body.method ?? "Hand Delivery",
+      lsh_origin_location: locationId,
+      lsh_delivery_address: body.addressLine ?? body.delivery_address ?? "",
+      lsh_delivery_apt: body.apt ?? body.delivery_apt ?? null,
+      lsh_delivery_building: body.building ?? body.delivery_building ?? null,
+      lsh_delivery_city: body.city ?? body.delivery_city ?? "New York",
+      lsh_scheduled_at: body.scheduledAt ?? null,
+      lsh_notify_phone: body.notifyPhone ?? null,
+      lsh_qr_token: token,
+      lsh_queued_at: new Date().toISOString(),
+      lsh_garment_summary: body.garmentSummary ?? null,
+      lsh_garment_count: body.garmentCount ?? null,
+      lsh_courier_name: body.courierName ?? body.driverName ?? null,
+      lsh_delivery_notes: body.notes ?? null,
+      lsh_sales_order: body.orderRef ?? null,
+    });
 
-  const { data: updated, error: updateErr } = await supabaseAdmin
-    .from("deliveries")
-    .update(update)
-    .eq("id", id)
-    .select("*")
-    .single();
-
-  if (updateErr || !updated) return c.json({ error: { message: updateErr?.message ?? "Update failed" } }, 500);
-
-  const customerMap = await fetchCustomerMap(updated.customer_id ? [updated.customer_id] : []);
-  return c.json({ data: serializeDelivery(updated, customerMap.get(updated.customer_id)) });
+    if (!doc) return c.json({ error: { message: "Create failed" } }, 500);
+    return c.json({ data: serializeDelivery(doc) }, 201);
+  } catch (err: any) {
+    return c.json({ error: { message: err.message ?? "Create failed" } }, 500);
+  }
 });
 
+// ── GET /api/deliveries/:id ───────────────────────────────────────────────────
 deliveriesRouter.get("/:id", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ error: { message: "Not found" } }, 404);
 
-  const { data: row, error } = await supabaseAdmin
-    .from("deliveries")
-    .select("*")
-    .eq("id", c.req.param("id"))
-    .single();
+  const id = c.req.param("id");
+  const doc = await erpGet<any>("LSH Delivery", id);
+  if (!doc) return c.json({ error: { message: "Not found" } }, 404);
 
-  if (error || !row) return c.json({ error: { message: "Not found" } }, 404);
-
-  // Access check
+  // Access checks
   if (user.role === "driver") {
-    if (row.courier_user_id !== user.id && row.courier_user_id !== user.supabaseProfileId) {
+    if (doc.lsh_courier_name !== user.name && doc.lsh_courier_name !== user.email) {
       return c.json({ error: { message: "Forbidden" } }, 403);
     }
-  } else if (user.role !== "super_admin" && !user.canViewAllLocations) {
+  } else if (user.role !== "super_admin") {
     const locCode = resolveLocationCode(user, null);
-    if (locCode && row.origin_location !== locCode) {
+    if (locCode && doc.lsh_origin_location !== locCode) {
       return c.json({ error: { message: "Forbidden" } }, 403);
     }
   }
 
-  const customerMap = await fetchCustomerMap(row.customer_id ? [row.customer_id] : []);
-  return c.json({ data: serializeDelivery(row, customerMap.get(row.customer_id)) });
+  return c.json({ data: serializeDelivery(doc) });
 });
 
+// ── PATCH /api/deliveries/:id ─────────────────────────────────────────────────
 deliveriesRouter.patch("/:id", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ error: { message: "Not found" } }, 404);
 
   const id = c.req.param("id");
-  const { data: existing, error: fetchErr } = await supabaseAdmin
-    .from("deliveries")
-    .select("*")
-    .eq("id", id)
-    .single();
 
-  if (fetchErr || !existing) return c.json({ error: { message: "Not found" } }, 404);
+  // Resolve by name or qrToken
+  let docName = id;
+  if (!id.startsWith("DN-")) {
+    // Might be a qrToken lookup
+    const list = await erpList<any>("LSH Delivery", {
+      filters: [["lsh_qr_token", "=", id]],
+      fields: ["name", "lsh_courier_name", "lsh_origin_location"],
+      limit: 1,
+    });
+    if (!list.length) return c.json({ error: { message: "Not found" } }, 404);
+    docName = list[0].name;
+  }
+
+  const existing = await erpGet<any>("LSH Delivery", docName);
+  if (!existing) return c.json({ error: { message: "Not found" } }, 404);
 
   // Write permission check
   if (user.role === "driver") {
-    if (existing.courier_user_id !== user.id && existing.courier_user_id !== user.supabaseProfileId) {
+    if (existing.lsh_courier_name !== user.name && existing.lsh_courier_name !== user.email) {
       return c.json({ error: { message: "Forbidden" } }, 403);
     }
   } else if (user.role === "store_manager") {
     const locCode = resolveLocationCode(user, null);
-    if (locCode && existing.origin_location !== locCode) {
+    if (locCode && existing.lsh_origin_location !== locCode) {
       return c.json({ error: { message: "Forbidden" } }, 403);
     }
   } else if (user.role !== "super_admin") {
@@ -293,125 +236,186 @@ deliveriesRouter.patch("/:id", async (c) => {
   }
 
   const body = (await c.req.json()) as any;
-  const update: any = {};
+  const updates: Record<string, unknown> = {};
 
   if (body.status) {
-    update.status = toDbDeliveryStatus(body.status);
-    if (body.status === "delivered") update.delivered_at = new Date().toISOString();
+    updates.lsh_status = body.status;
+    if (["delivered", "Delivered"].includes(body.status))
+      updates.lsh_delivered_at = new Date().toISOString();
+    if (["out_for_delivery", "Out for Delivery", "In Flight"].includes(body.status))
+      updates.lsh_dispatched_at = new Date().toISOString();
   }
-  if (body.proofOfDeliveryUrl !== undefined) update.pod_photo_1_path = body.proofOfDeliveryUrl;
 
   if (user.role === "super_admin" || user.role === "store_manager") {
-    if (body.driverId !== undefined) update.courier_user_id = body.driverId;
-    if (body.customerId !== undefined) update.customer_id = body.customerId;
-    if (body.scheduledAt !== undefined) {
-      update.scheduled_at = body.scheduledAt ? new Date(body.scheduledAt).toISOString() : null;
-    }
+    if (body.courierName !== undefined) updates.lsh_courier_name = body.courierName;
+    if (body.driverName !== undefined) updates.lsh_courier_name = body.driverName;
+    if (body.courierPhone !== undefined) updates.lsh_courier_phone = body.courierPhone;
+    if (body.customerId !== undefined) updates.customer = body.customerId;
+    if (body.scheduledAt !== undefined)
+      updates.lsh_scheduled_at = body.scheduledAt
+        ? new Date(body.scheduledAt).toISOString()
+        : null;
+    if (body.addressLine !== undefined) updates.lsh_delivery_address = body.addressLine;
+    if (body.city !== undefined) updates.lsh_delivery_city = body.city;
+    if (body.notes !== undefined) updates.lsh_delivery_notes = body.notes;
+    if (body.garmentSummary !== undefined) updates.lsh_garment_summary = body.garmentSummary;
+    if (body.garmentCount !== undefined) updates.lsh_garment_count = body.garmentCount;
+    if (body.carrier !== undefined) updates.lsh_carrier = body.carrier;
+    if (body.trackingNumber !== undefined) updates.lsh_tracking_number = body.trackingNumber;
+    if (body.trackingUrl !== undefined) updates.lsh_tracking_url = body.trackingUrl;
   }
 
-  const { data: updated, error: updateErr } = await supabaseAdmin
-    .from("deliveries")
-    .update(update)
-    .eq("id", id)
-    .select("*")
-    .single();
-
-  if (updateErr || !updated) return c.json({ error: { message: updateErr?.message ?? "Update failed" } }, 500);
-
-  const customerMap = await fetchCustomerMap(updated.customer_id ? [updated.customer_id] : []);
-  return c.json({ data: serializeDelivery(updated, customerMap.get(updated.customer_id)) });
+  try {
+    const updated = await erpUpdate<any>("LSH Delivery", docName, updates);
+    if (!updated) return c.json({ error: { message: "Update failed" } }, 500);
+    return c.json({ data: serializeDelivery(updated) });
+  } catch (err: any) {
+    return c.json({ error: { message: err.message ?? "Update failed" } }, 500);
+  }
 });
 
-// ── Signed URL for private POD/signature assets ──────────────────────────────
-deliveriesRouter.get("/:id/proof-url", async (c) => {
+// ── PATCH /api/deliveries/:id/pod ─────────────────────────────────────────────
+deliveriesRouter.patch("/:id/pod", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ error: { message: "Not found" } }, 404);
 
-  const { data: row, error } = await supabaseAdmin
-    .from("deliveries")
-    .select("id, courier_user_id, pod_photo_1_path, pod_photo_2_path, pod_photo_3_path, signature_image_path")
-    .eq("id", c.req.param("id"))
-    .single();
+  const id = c.req.param("id");
+  const existing = await erpGet<any>("LSH Delivery", id);
+  if (!existing) return c.json({ error: { message: "Not found" } }, 404);
 
-  if (error || !row) return c.json({ error: { message: "Not found" } }, 404);
-
+  // Access check
   if (user.role === "driver") {
-    if (row.courier_user_id !== user.id && row.courier_user_id !== user.supabaseProfileId) {
+    if (existing.lsh_courier_name !== user.name && existing.lsh_courier_name !== user.email) {
       return c.json({ error: { message: "Forbidden" } }, 403);
+    }
+  } else if (!["super_admin", "store_manager"].includes(user.role)) {
+    return c.json({ error: { message: "Forbidden" } }, 403);
+  }
+
+  const body = (await c.req.json()) as any;
+  const updates: Record<string, unknown> = {
+    lsh_status: "Delivered",
+    lsh_delivered_at: new Date().toISOString(),
+  };
+
+  if (body.podMethod !== undefined) updates.lsh_pod_method = body.podMethod;
+  if (body.signatureName !== undefined) updates.lsh_signature_name = body.signatureName;
+  if (body.signatureImageUrl !== undefined)
+    updates.lsh_signature_image_url = body.signatureImageUrl;
+  if (body.gpsLat !== undefined) updates.lsh_gps_lat = body.gpsLat;
+  if (body.gpsLng !== undefined) updates.lsh_gps_lng = body.gpsLng;
+
+  // Photo upload to Supabase Storage
+  let photoUrl: string | null = null;
+  if (body.photoBase64 && supabaseAdmin) {
+    try {
+      const buf = Buffer.from(body.photoBase64, "base64");
+      const ext = body.photoMimeType === "image/png" ? "png" : "jpg";
+      const path = `${id}/${Date.now()}.${ext}`;
+      const { error: upErr } = await supabaseAdmin.storage
+        .from("delivery-photos")
+        .upload(path, buf, { contentType: body.photoMimeType ?? "image/jpeg", upsert: false });
+      if (!upErr) {
+        const { data: pub } = supabaseAdmin.storage
+          .from("delivery-photos")
+          .getPublicUrl(path);
+        photoUrl = pub?.publicUrl ?? null;
+      }
+    } catch (e) {
+      console.warn("POD photo upload failed:", e);
     }
   }
 
-  const EXPIRES = 3600;
-  const sign = async (bucket: string, path: string | null): Promise<string | null> => {
-    if (!path) return null;
-    const { data: s } = await supabaseAdmin!.storage.from(bucket).createSignedUrl(path, EXPIRES);
-    return s?.signedUrl ?? null;
-  };
+  // Append photo to lsh_photos child table
+  if (photoUrl) {
+    const existingPhotos: any[] = existing.lsh_photos ?? [];
+    updates.lsh_photos = [
+      ...existingPhotos,
+      {
+        photo_url: photoUrl,
+        photo_type: body.photoType ?? "delivery",
+        captured_at: new Date().toISOString(),
+      },
+    ];
+  }
 
-  return c.json({
-    data: {
-      photo1: await sign("delivery-proofs", row.pod_photo_1_path),
-      photo2: await sign("delivery-proofs", row.pod_photo_2_path),
-      photo3: await sign("delivery-proofs", row.pod_photo_3_path),
-      signature: await sign("delivery-signatures", row.signature_image_path),
-    },
-  });
+  try {
+    const updated = await erpUpdate<any>("LSH Delivery", id, updates);
+    if (!updated) return c.json({ error: { message: "Update failed" } }, 500);
+    return c.json({ data: serializeDelivery(updated) });
+  } catch (err: any) {
+    return c.json({ error: { message: err.message ?? "Update failed" } }, 500);
+  }
 });
 
-// ── Label data ────────────────────────────────────────────────────────────────
+// ── PATCH /api/deliveries/:id/status ─────────────────────────────────────────
+deliveriesRouter.patch("/:id/status", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const id = c.req.param("id");
+  const body = (await c.req.json()) as any;
+  if (!body.status) return c.json({ error: { message: "status is required" } }, 400);
+
+  const updates: Record<string, unknown> = { lsh_status: body.status };
+
+  if (["delivered", "Delivered"].includes(body.status))
+    updates.lsh_delivered_at = new Date().toISOString();
+  if (["out_for_delivery", "Out for Delivery", "In Flight"].includes(body.status))
+    updates.lsh_dispatched_at = new Date().toISOString();
+
+  try {
+    const updated = await erpUpdate<any>("LSH Delivery", id, updates);
+    if (!updated) return c.json({ error: { message: "Update failed" } }, 500);
+    return c.json({ data: serializeDelivery(updated) });
+  } catch (err: any) {
+    return c.json({ error: { message: err.message ?? "Update failed" } }, 500);
+  }
+});
+
+// ── GET /api/deliveries/:id/label ─────────────────────────────────────────────
 deliveriesRouter.get("/:id/label", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ error: { message: "Not found" } }, 404);
 
-  const { data: row, error } = await supabaseAdmin
-    .from("deliveries")
-    .select("id,delivery_no,qr_token,customer_id,delivery_address,delivery_apt,delivery_building,delivery_city,delivery_state,delivery_zip,garment_summary,garment_count,method,driver_name")
-    .eq("id", c.req.param("id"))
-    .single();
-
-  if (error || !row) return c.json({ error: { message: "Not found" } }, 404);
-
-  let customerName: string | null = null;
-  let customerPhone: string | null = null;
-  if (row.customer_id) {
-    const { data: cust } = await supabaseAdmin.from("customers").select("full_name,phone").eq("id", row.customer_id).single();
-    customerName = cust?.full_name ?? null;
-    customerPhone = cust?.phone ?? null;
-  }
+  const doc = await erpGet<any>("LSH Delivery", c.req.param("id"));
+  if (!doc) return c.json({ error: { message: "Not found" } }, 404);
 
   return c.json({
     data: {
-      id: row.id,
-      delivery_number: row.delivery_no ? row.delivery_no.replace("DLV-", "") : row.id.slice(-6).toUpperCase(),
-      delivery_no: row.delivery_no,
-      qr_token: row.qr_token,
-      customer_name: customerName ?? "—",
-      customer_phone: customerPhone,
-      delivery_address: row.delivery_address,
-      delivery_apt: row.delivery_apt,
-      delivery_building: row.delivery_building,
-      delivery_city: row.delivery_city ?? "",
-      delivery_state: row.delivery_state ?? "",
-      delivery_zip: row.delivery_zip ?? "",
-      garment_summary: row.garment_summary,
-      garment_count: row.garment_count,
-      method: row.method,
+      id: doc.name,
+      delivery_number: doc.lsh_supabase_delivery_no
+        ? doc.lsh_supabase_delivery_no.replace("DLV-", "")
+        : doc.name.slice(-6).toUpperCase(),
+      delivery_no: doc.lsh_supabase_delivery_no ?? doc.name,
+      qr_token: doc.lsh_qr_token,
+      customer_name: doc.customer_name ?? "—",
+      customer_phone: doc.customer_phone ?? null,
+      delivery_address: doc.lsh_delivery_address,
+      delivery_apt: doc.lsh_delivery_apt,
+      delivery_building: doc.lsh_delivery_building,
+      delivery_city: doc.lsh_delivery_city ?? "",
+      garment_summary: doc.lsh_garment_summary,
+      garment_count: doc.lsh_garment_count,
+      method: doc.lsh_delivery_method,
     },
   });
 });
 
-// ── Log label print ───────────────────────────────────────────────────────────
+// ── POST /api/deliveries/:id/log-label-print ──────────────────────────────────
 deliveriesRouter.post("/:id/log-label-print", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ data: null });
 
-  await supabaseAdmin
-    .from("deliveries")
-    .update({ label_printed_at: new Date().toISOString(), label_printed_by: user.name ?? user.email ?? user.id })
-    .eq("id", c.req.param("id"));
+  // Best-effort: record the print timestamp in ERP
+  try {
+    await erpUpdate("LSH Delivery", c.req.param("id"), {
+      lsh_label_printed_at: new Date().toISOString(),
+      lsh_label_printed_by: user.name ?? user.email ?? user.id,
+    });
+  } catch {
+    // Non-fatal — label may not have those fields yet
+  }
 
   return c.json({ data: null });
 });
