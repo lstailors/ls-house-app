@@ -233,6 +233,14 @@ export default function DeliveryDetail() {
             <div className="col-span-2 flex items-start gap-1.5 text-cream-muted">
               <MapPin className="h-3.5 w-3.5 text-brass-light/60 mt-0.5 shrink-0" />
               <span>{delivery.addressLine}</span>
+              <a
+                href={`https://maps.apple.com/?daddr=${encodeURIComponent(delivery.addressLine)}&dirflg=d`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-auto text-xs text-brass-light hover:underline shrink-0"
+              >
+                Directions →
+              </a>
             </div>
           ) : null}
           <div>

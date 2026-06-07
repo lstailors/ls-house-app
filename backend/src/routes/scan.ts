@@ -47,13 +47,19 @@ scanRouter.get("/:token", async (c) => {
   if (erpDoc) {
     const isDelivered = erpDoc.lsh_status === "Delivered";
 
-    // Build proof URLs from lsh_photos child table (URLs stored in Supabase Storage)
+    // Build proof URLs from lsh_photos child table — sign all Supabase Storage paths
     const photos = (erpDoc.lsh_photos ?? []).map((p: any) => p.photo_url).filter(Boolean);
+    const signPath = async (path: string | null): Promise<string | null> => {
+      if (!path || !supabaseAdmin) return null;
+      const bucket = path.includes("signature") ? "delivery-signatures" : "delivery-proofs";
+      const { data } = await supabaseAdmin.storage.from(bucket).createSignedUrl(path, 300);
+      return data?.signedUrl ?? path;
+    };
     const proofUrls = {
-      photo1: photos[0] ? await supabaseAdmin?.storage.from("delivery-proofs").createSignedUrl(photos[0], 300).then(r => r.data?.signedUrl ?? photos[0]) : null,
-      photo2: photos[1] ?? null,
-      photo3: photos[2] ?? null,
-      signature: erpDoc.lsh_signature_image_url ?? null,
+      photo1: await signPath(photos[0] ?? null),
+      photo2: await signPath(photos[1] ?? null),
+      photo3: await signPath(photos[2] ?? null),
+      signature: await signPath(erpDoc.lsh_signature_image_url ?? null),
     };
 
     return c.json({
@@ -138,6 +144,18 @@ scanRouter.post("/:token/pod", async (c) => {
   const lat = form["lat"] ? parseFloat(String(form["lat"])) : null;
   const lng = form["lng"] ? parseFloat(String(form["lng"])) : null;
   const accuracy = form["accuracy"] ? parseFloat(String(form["accuracy"])) : null;
+
+  // ── Validate uploaded files ───────────────────────────────────────────────
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+  const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+  for (const key of ["photo_1", "photo_2", "photo_3", "signature"]) {
+    const f = form[key];
+    const file = Array.isArray(f) ? f[0] : f;
+    if (file instanceof File && file.size > 0) {
+      if (file.size > MAX_FILE_SIZE) return c.json({ error: { message: `${key} exceeds 10MB limit` } }, 400);
+      if (!ALLOWED_MIME.includes(file.type)) return c.json({ error: { message: `${key} must be an image (JPEG, PNG, WebP, HEIC)` } }, 400);
+    }
+  }
 
   // ── Try ERPNext first ────────────────────────────────────────────────────
   const erpDoc = await findErpDelivery(token);

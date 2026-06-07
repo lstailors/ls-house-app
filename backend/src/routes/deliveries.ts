@@ -357,12 +357,26 @@ deliveriesRouter.patch("/:id/status", async (c) => {
   const body = (await c.req.json()) as any;
   if (!body.status) return c.json({ error: { message: "status is required" } }, 400);
 
-  const updates: Record<string, unknown> = { lsh_status: body.status };
+  const ALLOWED_STATUSES: Record<string, string> = {
+    "queued": "Queued",
+    "out_for_delivery": "Out for Delivery",
+    "out for delivery": "Out for Delivery",
+    "delivered": "Delivered",
+    "failed": "Failed",
+    "cancelled": "Cancelled",
+    "Queued": "Queued",
+    "Out for Delivery": "Out for Delivery",
+    "Delivered": "Delivered",
+    "Failed": "Failed",
+    "Cancelled": "Cancelled",
+  };
+  const erpStatus = ALLOWED_STATUSES[body.status];
+  if (!erpStatus) return c.json({ error: { message: `Invalid status. Allowed: queued, out_for_delivery, delivered, failed, cancelled` } }, 400);
 
-  if (["delivered", "Delivered"].includes(body.status))
-    updates.lsh_delivered_at = new Date().toISOString();
-  if (["out_for_delivery", "Out for Delivery", "In Flight"].includes(body.status))
-    updates.lsh_dispatched_at = new Date().toISOString();
+  const updates: Record<string, unknown> = { lsh_status: erpStatus };
+
+  if (erpStatus === "Delivered") updates.lsh_delivered_at = new Date().toISOString();
+  if (erpStatus === "Out for Delivery") updates.lsh_dispatched_at = new Date().toISOString();
 
   try {
     const updated = await erpUpdate<any>("LSH Delivery", id, updates);
