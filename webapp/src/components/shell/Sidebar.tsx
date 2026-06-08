@@ -49,7 +49,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: "/orders/custom", label: "Custom Orders", icon: ClipboardList, roles: STAFF },
       { to: "/orders/alterations", label: "Alterations", icon: Scissors, roles: STAFF },
-      { to: "/scan", label: "QR Scanner", icon: Zap, roles: ALL },
+      { to: "https://erp.lstailors.com/lsh-scanner", label: "QR Scanner", icon: Zap, roles: ALL },
       { to: "/sales-orders", label: "Sales Orders", icon: Receipt, roles: MGMT },
       { to: "/invoices", label: "Invoices", icon: FileText, roles: MGMT },
     ],
@@ -189,34 +189,36 @@ export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: P
                     const isTasksItem = item.to === "/tasks";
                     const taskCount = taskCountData?.count ?? 0;
                     const taskOverdue = taskCountData?.overdue ?? 0;
-                    const link = (
-                      <NavLink
-                        to={item.to}
-                        end={item.to === "/"}
-                        onClick={onNavigate}
-                        className={({ isActive }) =>
-                          cn(
-                            "group flex items-center rounded-md transition-colors border-l-2 border-transparent",
-                            collapsed
-                              ? "justify-center px-1.5 py-2"
-                              : "gap-3 px-3 py-2 text-sm",
-                            "text-cream-muted hover:text-cream hover:bg-brass/5",
-                            isActive && "sidebar-active",
-                          )
-                        }
-                      >
+                    const isExternal = item.to.startsWith("http");
+                    const linkClass = cn(
+                      "group flex items-center rounded-md transition-colors border-l-2 border-transparent",
+                      collapsed ? "justify-center px-1.5 py-2" : "gap-3 px-3 py-2 text-sm",
+                      "text-cream-muted hover:text-cream hover:bg-brass/5",
+                    );
+                    const linkContent = (
+                      <>
                         <Icon className="h-4 w-4 shrink-0 opacity-70 group-hover:opacity-100" />
                         {!collapsed && <span className="truncate flex-1">{item.label}</span>}
                         {!collapsed && isTasksItem && taskCount > 0 ? (
                           <span className={cn(
                             "ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center",
-                            taskOverdue > 0
-                              ? "bg-signal-rose/20 text-signal-rose"
-                              : "bg-brass/15 text-brass-light",
-                          )}>
-                            {taskCount}
-                          </span>
+                            taskOverdue > 0 ? "bg-signal-rose/20 text-signal-rose" : "bg-brass/15 text-brass-light",
+                          )}>{taskCount}</span>
                         ) : null}
+                      </>
+                    );
+                    const link = isExternal ? (
+                      <a href={item.to} target="_blank" rel="noopener noreferrer" onClick={onNavigate} className={linkClass}>
+                        {linkContent}
+                      </a>
+                    ) : (
+                      <NavLink
+                        to={item.to}
+                        end={item.to === "/"}
+                        onClick={onNavigate}
+                        className={({ isActive }) => cn(linkClass, isActive && "sidebar-active")}
+                      >
+                        {linkContent}
                       </NavLink>
                     );
 
