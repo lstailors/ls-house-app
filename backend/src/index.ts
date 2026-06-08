@@ -81,6 +81,8 @@ app.route("/api/pay-info", payInfoRouter);
 app.route("/api/erpnext-customers", erpnextCustomersRouter);
 app.route("/api/carts", cartsRouter);
 app.route("/api/alterations/board", alternationsBoardRouter);
+import { transfersRouter } from "./routes/transfers";
+app.route("/api/transfers", transfersRouter);
 
 const port = Number(process.env.PORT) || 3000;
 
