@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser, canReadCustomer } from "../lib/scope";
+import { erpCreate, erpUpdate } from "../lib/erp";
 
 export const customersRouter = new Hono();
 
@@ -175,6 +176,16 @@ customersRouter.post("/", async (c) => {
   const { data, error } = await supabaseAdmin.from("customers").insert(insert).select("*").single();
   if (error) return c.json({ error: { message: error.message } }, 500);
 
+  // Sync to ERPNext (non-blocking)
+  erpCreate("Customer", {
+    customer_name: body.full_name,
+    customer_type: "Individual",
+    customer_group: "Bespoke",
+    territory: insert.division === "HOU" ? "Texas" : "New York",
+    mobile_no: body.phone ?? null,
+    email_id: body.email ?? null,
+  }).catch(() => {});
+
   return c.json({ data: serializeCustomer(data) }, 201);
 });
 
@@ -213,6 +224,14 @@ customersRouter.patch("/:id", async (c) => {
     .single();
 
   if (error) return c.json({ error: { message: error.message } }, 500);
+
+  // Sync to ERPNext (non-blocking)
+  if (data?.full_name) {
+    erpUpdate("Customer", data.full_name, {
+      mobile_no: update.phone ?? undefined,
+      email_id: update.email ?? undefined,
+    }).catch(() => {});
+  }
 
   return c.json({ data: serializeCustomer(data) });
 });
