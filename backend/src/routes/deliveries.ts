@@ -151,12 +151,29 @@ deliveriesRouter.get("/", async (c) => {
     if (locCode) filters.push(["lsh_origin_location", "=", locCode]);
   }
 
-  const rows = await erpList("LSH Delivery", {
-    filters,
-    fields: LIST_FIELDS,
-    limit: 100,
-    order_by: "lsh_scheduled_at asc",
-  });
+  // Fetch active deliveries first (not Delivered/Cancelled/Failed), then recent history
+  // Two-pass so the board never misses a Queued delivery due to the 200-row limit
+  const activeFilters = [...filters, ["lsh_status", "not in", ["Delivered", "Cancelled", "Failed"]]];
+  const [activeRows, recentRows] = await Promise.all([
+    erpList("LSH Delivery", {
+      filters: activeFilters,
+      fields: LIST_FIELDS,
+      limit: 200,
+      order_by: "creation desc",
+    }),
+    erpList("LSH Delivery", {
+      filters: [...filters, ["lsh_status", "in", ["Delivered", "Cancelled", "Failed"]]],
+      fields: LIST_FIELDS,
+      limit: 50,
+      order_by: "lsh_delivered_at desc",
+    }),
+  ]);
+  // Deduplicate and merge: active first, then recent history
+  const seen = new Set<string>();
+  const rows: unknown[] = [];
+  for (const r of [...(activeRows as any[]), ...(recentRows as any[])]) {
+    if (!seen.has(r.name)) { seen.add(r.name); rows.push(r); }
+  }
 
   return c.json({ data: (rows as any[]).map(serializeDelivery) });
 });
