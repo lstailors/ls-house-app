@@ -282,7 +282,7 @@ scanRouter.post("/:token/pod", async (c) => {
     delivery_id: id, photo_url: storagePath, photo_type: "proof", captured_at: deliveredAt,
   }));
   if (photoInserts.length > 0) {
-    await supabaseAdmin.from("delivery_photos").insert(photoInserts).catch(() => {});
+    await supabaseAdmin.from("delivery_photos").insert(photoInserts);
   }
 
   return c.json({ data: { ok: true, source: "legacy" } });

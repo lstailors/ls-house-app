@@ -242,19 +242,19 @@ customOrdersRouter.post("/", async (c) => {
         customer: customerName,
         order_type: "Sales",
         transaction_date: new Date().toISOString().slice(0, 10),
-        delivery_date: body.expectedDelivery ?? null,
+        delivery_date: (body as any).expectedDelivery ?? null,
         po_no: order.order_display_id ?? null,
         items: [
           {
             item_code: `MTM-${(body.garmentType ?? "SUIT").toUpperCase().replace(/ /g, "-")}`,
             qty: 1,
             rate: Number(body.quotedPrice ?? 0),
-            delivery_date: body.expectedDelivery ?? null,
+            delivery_date: (body as any).expectedDelivery ?? null,
           },
         ],
       });
-      if (erpSO?.name) {
-        await supabaseAdmin!.from("orders").update({ erp_sales_order: erpSO.name }).eq("id", order.id);
+      if ((erpSO as any)?.name) {
+        await supabaseAdmin!.from("orders").update({ erp_sales_order: (erpSO as any).name }).eq("id", order.id);
       }
     } catch (e) {
       console.error("[custom-orders] ERP SO create failed:", e);

@@ -184,9 +184,9 @@ customersRouter.post("/", async (c) => {
     territory: insert.division === "HOU" ? "Texas" : "New York",
     mobile_no: body.phone ?? null,
     email_id: body.email ?? null,
-  }).then(erp => {
+  }).then((erp: any) => {
     if (erp?.name && supabaseAdmin) {
-      supabaseAdmin.from("customers").update({ erpnext_name: erp.name }).eq("id", data.id).then().catch(() => {});
+      void supabaseAdmin.from("customers").update({ erpnext_name: erp.name }).eq("id", data.id);
     }
   }).catch(() => {});
 

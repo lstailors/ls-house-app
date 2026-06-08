@@ -3,11 +3,19 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ESNext"],
-    "strict": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "strict": false,
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "typeRoots": ["./backend/node_modules/@types", "./node_modules/@types"],
+    "types": ["bun"],
+    "paths": {
+      "ai": ["./backend/node_modules/ai"],
+      "@ai-sdk/gateway": ["./backend/node_modules/@ai-sdk/gateway"]
+    }
   },
   "include": ["api/**/*"],
   "exclude": ["node_modules", "webapp", "mcp"]

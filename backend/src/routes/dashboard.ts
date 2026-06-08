@@ -211,7 +211,7 @@ dashboardRouter.get("/kpis", async (c) => {
   const altReady = altReadyTickets.length;
   const altOverdue = altOverdueTickets.length;
   const altRush = altRushTickets.length;
-  const altRevenueMTD = altRevTickets.reduce((s, t: any) => s + Number(t.ticket_total ?? 0), 0);
+  const altRevenueMTD = (altRevTickets as any[]).reduce((s: number, t) => s + Number(t.ticket_total ?? 0), 0);
   const altByStatus = {
     received: altWithStatus.filter((t) => t.workflow_state === "Received").length,
     inProgress: altWithStatus.filter((t) => t.workflow_state === "In Progress").length,
@@ -237,7 +237,7 @@ dashboardRouter.get("/kpis", async (c) => {
 
   // revenueMTD: paid invoices this month (custom) + alteration revenue MTD
   const customRevenueMTD = canSeeFinancials(user.role)
-    ? erpPaidInvoices.reduce((s, i: any) => s + Number(i.grand_total ?? 0), 0)
+    ? (erpPaidInvoices as any[]).reduce((s: number, i) => s + Number(i.grand_total ?? 0), 0)
     : 0;
   const revenueMTD = customRevenueMTD + altRevenueMTD;
 

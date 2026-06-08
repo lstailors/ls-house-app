@@ -56,7 +56,7 @@ export async function commitParkedCart(id: string) {
     headers: { Authorization: `token ${process.env.ERPNEXT_API_KEY ?? process.env.ERP_API_KEY}:${process.env.ERPNEXT_API_SECRET ?? process.env.ERP_API_SECRET}`, "Content-Type": "application/json" },
     body: JSON.stringify(ticketDoc),
   });
-  const body = await res.json();
+  const body = await res.json() as any;
   if (!res.ok) throw new Error(body?.exception || body?.message || `ERPNext ${res.status}`);
   const ticketName = body.data.name as string;
   if (!supabaseAdmin) throw new Error("Supabase not configured");

@@ -111,7 +111,7 @@ invoicesRouter.post(
     if (!canSeeFinancials(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
 
     const invoiceId = c.req.param("id");
-    const { amount, method } = c.req.valid("json");
+    const { amount, method } = (c.req as any).valid("json");
 
     try {
       // Fetch the invoice to get customer + company

@@ -19,7 +19,7 @@ export async function totalsFromErpInvoice(invoiceName: string) {
     `${ERP_URL}/api/resource/Sales Invoice/${encodeURIComponent(invoiceName)}?fields=["net_total","total_taxes_and_charges","grand_total"]`,
     { headers: { Authorization: `token ${process.env.ERPNEXT_API_KEY ?? process.env.ERP_API_KEY}:${process.env.ERPNEXT_API_SECRET ?? process.env.ERP_API_SECRET}`, Accept: "application/json" } }
   );
-  const { data } = await res.json();
+  const { data } = await res.json() as any;
   return { subtotal: data.net_total, tax: data.total_taxes_and_charges, total: data.grand_total };
 }
 

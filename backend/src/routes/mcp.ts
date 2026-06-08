@@ -131,7 +131,7 @@ mcpRouter.post("/sms", async (c) => {
     await supabaseAdmin.from("sms_messages").insert({
       client_phone: to, direction: "outbound", body: message,
       sent_by: "claude-mcp", timestamp: new Date().toISOString(),
-    }).catch(() => {});
+    });
   }
 
   return c.json({ data: { sid, to, message } });
