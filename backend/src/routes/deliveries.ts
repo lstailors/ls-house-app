@@ -694,10 +694,9 @@ deliveriesRouter.get("/:id/label", async (c) => {
   return c.json({
     data: {
       id: doc.name,
-      delivery_number: doc.lsh_supabase_delivery_no
-        ? doc.lsh_supabase_delivery_no.replace("DLV-", "")
-        : doc.name.slice(-6).toUpperCase(),
-      delivery_no: doc.lsh_supabase_delivery_no ?? doc.name,
+      delivery_number: doc.name,
+      delivery_no: doc.name,
+      legacy_no: doc.lsh_supabase_delivery_no ?? null,
       qr_token: doc.lsh_qr_token,
       customer_name: doc.customer_name ?? "—",
       customer_phone: doc.customer_phone ?? null,

@@ -9,6 +9,7 @@ interface LabelData {
   id: string;
   delivery_number: string;
   delivery_no: string | null;
+  legacy_no?: string | null;
   qr_token: string | null;
   customer_name: string;
   customer_phone: string | null;
