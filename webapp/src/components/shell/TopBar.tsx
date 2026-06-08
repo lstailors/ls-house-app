@@ -399,7 +399,7 @@ export function TopBar({ user, onMenuClick }: Props) {
 
         {/* QR Scanner button */}
         <button
-          onClick={() => navigate("/scan")}
+          onClick={() => window.open("https://erp.lstailors.com/desk/lsh-scanner", "_blank")}
           className="h-9 w-9 rounded-full border border-brass/20 bg-forest-raised/40 hover:border-brass/40 transition-colors flex items-center justify-center"
           aria-label="QR Scanner"
           title="Scan QR code"
