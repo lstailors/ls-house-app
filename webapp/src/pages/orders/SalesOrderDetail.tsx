@@ -199,6 +199,8 @@ export default function SalesOrderDetail() {
   const qc = useQueryClient()
   const [expandedInvoice, setExpandedInvoice] = useState<string | null>(null)
   const [copiedInvoice, setCopiedInvoice] = useState<string | null>(null)
+  const [smsOpen, setSmsOpen] = useState(false)
+  const [smsText, setSmsText] = useState("")
 
   const {
     data: order,
@@ -215,6 +217,13 @@ export default function SalesOrderDetail() {
     queryFn: () => api.get<any[]>(`/api/sales-orders/${id}/factory`),
     enabled: !!id,
   })
+
+  // Initialize smsText when order loads (can't use order in useState initializer since hooks run before order loads)
+  const defaultSmsText = order
+    ? `Hi ${order.customerName?.split(" ")[0] ?? "there"}, your L&S order ${order.name} has a balance of $${Math.max(0, order.grandTotal - order.advancePaid).toFixed(2)}. Please call us at 212-752-1638 or reply to arrange. — L&S Custom Tailors`
+    : ""
+  // Only update smsText when it's still the empty default
+  if (order && !smsText && defaultSmsText) setSmsText(defaultSmsText)
 
   if (isLoading) {
     return (
@@ -242,10 +251,6 @@ export default function SalesOrderDetail() {
   const balanceDue = order.grandTotal - order.advancePaid
   const emailAddress = order.contactEmail ?? order.customerEmail ?? ""
   const phoneNumber = order.contactMobile ?? order.contactPhone ?? ""
-  const [smsOpen, setSmsOpen] = useState(false)
-  const [smsText, setSmsText] = useState(
-    `Hi ${order.customerName?.split(" ")[0] ?? "there"}, your L&S order ${order.name} has a balance of $${Math.max(0, balanceDue).toFixed(2)}. Please call us at 212-752-1638 or reply to arrange. — L&S Custom Tailors`
-  )
   const smsMutation = useMutation({
     mutationFn: () => api.post("/api/sofia/send", { to: phoneNumber, message: smsText }),
     onSuccess: () => { toast.success("SMS sent"); setSmsOpen(false); },

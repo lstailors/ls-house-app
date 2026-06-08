@@ -30,7 +30,7 @@ function serializeInvoice(row: any) {
     paidAmount: Number(row.paid_amount ?? 0),
     postingDate: row.posting_date ?? null,
     dueDate: row.due_date ?? null,
-    salesOrder: row.sales_order ?? null,    // reference field
+    salesOrder: row.alteration_ticket_ref ?? row.po_no ?? null,
     alterationTicketRef: row.remarks?.match(/ALT-[A-Z]+-\d{4}-\d+/)?.[0] ?? null,
     remarks: row.remarks ?? null,
     company: row.company ?? null,
@@ -62,7 +62,7 @@ invoicesRouter.get("/", async (c) => {
       fields: [
         "name", "customer", "customer_name", "status",
         "grand_total", "total", "outstanding_amount", "paid_amount",
-        "posting_date", "due_date", "remarks", "company", "sales_order",
+        "posting_date", "due_date", "remarks", "company", "alteration_ticket_ref", "po_no",
       ],
       limit: 300,
       order_by: "posting_date desc",
