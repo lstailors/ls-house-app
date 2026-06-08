@@ -105,8 +105,16 @@ export default function QRScanner() {
     if (scannedRef.current) return
     scannedRef.current = true
     setScanning(false)
-    setLoading(true)
     await stopScanner()
+
+    // Internal garment tag URL — navigate directly without API lookup
+    const garmentMatch = token.match(/\/garments\/([^/?#]+)\/([^/?#]+)/)
+    if (garmentMatch) {
+      navigate(`/garments/${garmentMatch[1]}/${garmentMatch[2]}`)
+      return
+    }
+
+    setLoading(true)
     try {
       const data = await api.get<ScanResult>(`/api/scan/${encodeURIComponent(token.trim())}`)
       setResult(data)
@@ -115,7 +123,7 @@ export default function QRScanner() {
     } finally {
       setLoading(false)
     }
-  }, [stopScanner])
+  }, [stopScanner, navigate])
 
   const startScanner = useCallback(async () => {
     if (didStart.current) return
