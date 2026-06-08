@@ -127,7 +127,7 @@ export default function QRScanner() {
       scannerRef.current = qr
       await qr.start(
         { facingMode: 'environment' },
-        { fps: 15, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 },
+        { fps: 15, qrbox: { width: 250, height: 250 } },
         (decoded) => handleToken(decoded),
         () => { /* per-frame failures ignored */ },
       )
@@ -168,46 +168,25 @@ export default function QRScanner() {
 
   return (
     <div className="relative min-h-screen bg-black overflow-hidden">
-      {/* Camera feed */}
+      {/* Camera feed — Html5Qrcode manages its own scan box overlay */}
       <div
         id={videoId}
-        className="absolute inset-0 w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover [&>canvas]:hidden"
+        className="absolute inset-0 w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover [&>canvas]:hidden [&_#lst-qr-video__dashboard_section_csr]:hidden [&_#lst-qr-video__dashboard_section]:hidden"
+        style={{ zIndex: 0 }}
       />
 
-      {/* Dark overlay with cutout */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute inset-x-0 top-0 h-[calc(50vh-120px)] bg-black/70" />
-        <div className="absolute inset-x-0 bottom-0 top-[calc(50vh+120px)] bg-black/70" />
-        <div className="absolute left-0 top-[calc(50vh-120px)] bottom-[calc(50vh-120px)] w-[calc(50vw-120px)] bg-black/70" />
-        <div className="absolute right-0 top-[calc(50vh-120px)] bottom-[calc(50vh-120px)] w-[calc(50vw-120px)] bg-black/70" />
-      </div>
-
-      {/* Viewfinder */}
-      <div className="absolute" style={{ left:'50%', top:'50%', transform:'translate(-50%,-50%)', width:240, height:240 }}>
-        {(['top-0 left-0 border-t-2 border-l-2','top-0 right-0 border-t-2 border-r-2','bottom-0 left-0 border-b-2 border-l-2','bottom-0 right-0 border-b-2 border-r-2'] as const).map((cls, i) => (
-          <div key={i} className={cn('absolute w-8 h-8 border-brass-shimmer rounded-sm', cls)} />
-        ))}
-        {scanning && !result && !loading && (
-          <motion.div
-            className="absolute inset-x-2 h-px bg-gradient-to-r from-transparent via-brass-shimmer to-transparent"
-            animate={{ top: ['10%','90%','10%'] }}
-            transition={{ duration: 2.4, ease: 'easeInOut', repeat: Infinity }}
-          />
-        )}
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Loader2 className="h-10 w-10 text-brass-shimmer animate-spin" />
-          </div>
-        )}
-        <AnimatePresence>
+      {/* Loading / success overlay — centered, no competing frame */}
+      {(loading || result) && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          {loading && <Loader2 className="h-12 w-12 text-brass-shimmer animate-spin drop-shadow-lg" />}
           {result && !loading && (
-            <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
-              className="absolute inset-0 flex items-center justify-center bg-emerald-500/20 rounded-sm">
-              <CheckCircle2 className="h-12 w-12 text-emerald-400" />
+            <motion.div initial={{ scale:0.5, opacity:0 }} animate={{ scale:1, opacity:1 }}
+              className="w-20 h-20 rounded-full bg-emerald-500/30 flex items-center justify-center">
+              <CheckCircle2 className="h-10 w-10 text-emerald-400" />
             </motion.div>
           )}
-        </AnimatePresence>
-      </div>
+        </div>
+      )}
 
       {/* Top bar */}
       <div className="absolute top-0 inset-x-0 flex items-center justify-between px-5 pt-12 pb-4">
