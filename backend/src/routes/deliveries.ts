@@ -13,6 +13,15 @@ function erpDatetime(d?: Date | string | null): string {
   const dt = d ? new Date(d) : new Date();
   return dt.toISOString().replace("T", " ").slice(0, 19);
 }
+
+// ERPNext returns "YYYY-MM-DD HH:MM:SS" without timezone — treat as UTC by appending Z
+function erpToIso(s: string | null | undefined): string | null {
+  if (!s) return null;
+  // Already has timezone indicator
+  if (s.includes("Z") || s.includes("+")) return s;
+  // Space-separated ERPNext format → ISO UTC
+  return s.replace(" ", "T") + "Z";
+}
 import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser, resolveLocationCode } from "../lib/scope";
 import { sendSms } from "../lib/twilio";
@@ -71,9 +80,9 @@ function serializeDelivery(doc: any): object {
     addressLine:
       [doc.lsh_delivery_address, doc.lsh_delivery_apt].filter(Boolean).join(", ") || null,
     city: doc.lsh_delivery_city ?? null,
-    scheduledAt: doc.lsh_scheduled_at ?? null,
-    deliveredAt: doc.lsh_delivered_at ?? null,
-    dispatchedAt: doc.lsh_dispatched_at ?? null,
+    scheduledAt: erpToIso(doc.lsh_scheduled_at),
+    deliveredAt: erpToIso(doc.lsh_delivered_at),
+    dispatchedAt: erpToIso(doc.lsh_dispatched_at),
     qrToken: doc.lsh_qr_token ?? null,
     courierName: doc.lsh_courier_name ?? null,
     courierPhone: doc.lsh_courier_phone ?? null,
@@ -110,7 +119,7 @@ function serializeDelivery(doc: any): object {
       message: t.message,
     })),
     erpnextSynced: true,
-    createdAt: doc.creation ?? null,
+    createdAt: erpToIso(doc.creation),
   };
 }
 
