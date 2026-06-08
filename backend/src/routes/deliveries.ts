@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { erpList, erpGet, erpCreate, erpUpdate } from "../lib/erp";
+import { erpList, erpGet, erpCreate, erpUpdate, erpPdf } from "../lib/erp";
 
 // Web Crypto API — works in both Edge and Node runtimes
 function generateToken(): string {
@@ -738,4 +738,21 @@ deliveriesRouter.post("/:id/log-label-print", async (c) => {
   }
 
   return c.json({ data: null });
+});
+
+// ── GET /api/deliveries/:id/confirmation ─────────────────────────────────────
+deliveriesRouter.get("/:id/confirmation", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  const id = c.req.param("id");
+  const erpRes = await erpPdf("LSH Delivery", id, "LSH Delivery Confirmation");
+  if (!erpRes.ok) return c.json({ error: { message: "Could not generate PDF" } }, 502);
+  const buf = await erpRes.arrayBuffer();
+  return new Response(buf, {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `inline; filename="${id}-confirmation.pdf"`,
+      "Cache-Control": "no-store",
+    },
+  });
 });

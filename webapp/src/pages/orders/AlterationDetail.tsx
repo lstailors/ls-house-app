@@ -143,28 +143,39 @@ export default function AlterationDetail() {
         </Link>
 
         {/* Header */}
-        <SectionHeader
-          eyebrow={`Alteration · ${ticketRef}`}
-          title={
-            <span className="flex items-center gap-3 flex-wrap">
-              {ticket.customer?.name ?? "—"}
-              {isRush ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/60 bg-amber-500/15 px-2.5 py-0.5 text-xs font-bold text-amber-300 tracking-widest uppercase">
-                  <Zap className="h-3 w-3" /> Rush
-                </span>
-              ) : null}
-            </span>
-          }
-          description={
-            <span className="flex items-center gap-2 text-cream-dim text-sm flex-wrap">
-              <span className="inline-flex items-center gap-1">
-                <MapPin className="h-3 w-3" /> {originLocation}
+        <div className="flex items-start justify-between gap-3">
+          <SectionHeader
+            eyebrow={`Alteration · ${ticketRef}`}
+            title={
+              <span className="flex items-center gap-3 flex-wrap">
+                {ticket.customer?.name ?? "—"}
+                {isRush ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/60 bg-amber-500/15 px-2.5 py-0.5 text-xs font-bold text-amber-300 tracking-widest uppercase">
+                    <Zap className="h-3 w-3" /> Rush
+                  </span>
+                ) : null}
               </span>
-              <span>·</span>
-              <StatusPill status={workflowState} />
-            </span>
-          }
-        />
+            }
+            description={
+              <span className="flex items-center gap-2 text-cream-dim text-sm flex-wrap">
+                <span className="inline-flex items-center gap-1">
+                  <MapPin className="h-3 w-3" /> {originLocation}
+                </span>
+                <span>·</span>
+                <StatusPill status={workflowState} />
+              </span>
+            }
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => window.open(`/api/intake/tickets/${ticket.id}/receipt`, "_blank")}
+            className="border-brass/20 hover:bg-brass/10 text-cream-muted h-8 px-2 shrink-0 mt-1"
+            title="Print receipt"
+          >
+            <FileText className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
 
       {/* Workflow actions */}

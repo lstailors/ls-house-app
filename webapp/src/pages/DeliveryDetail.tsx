@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Phone, MapPin, Clock, CheckCircle2, Truck, Printer,
   Camera, Search, Loader2, User, Pencil, PenLine, Navigation, QrCode,
-  Package, ExternalLink,
+  Package, ExternalLink, FileText,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { toast } from "sonner";
@@ -151,9 +151,18 @@ export default function DeliveryDetail() {
             variant="outline"
             onClick={() => navigate(`/deliveries/${id}/label`)}
             className="border-brass/20 hover:bg-brass/10 text-cream-muted h-8 px-2"
-            title="Print label"
+            title="Print 4×6 label"
           >
             <Printer className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => window.open(`/api/deliveries/${id}/confirmation`, "_blank")}
+            className="border-brass/20 hover:bg-brass/10 text-cream-muted h-8 px-2"
+            title="Print confirmation"
+          >
+            <FileText className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>

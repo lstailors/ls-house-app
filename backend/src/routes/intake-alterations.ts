@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { supabaseAdmin } from '../lib/supabase';
 import { getAuthedUser } from '../lib/scope';
-import { erpList } from '../lib/erp';
+import { erpList, erpPdf } from '../lib/erp';
 import { sendSms } from '../lib/twilio';
 
 // ---------------------------------------------------------------------------
@@ -848,4 +848,21 @@ intakeAlterationsRouter.patch('/customers/:id', async (c) => {
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }
+});
+
+// GET /tickets/:name/receipt — proxy ERPNext PDF
+intakeAlterationsRouter.get('/tickets/:name/receipt', async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+  const name = c.req.param('name');
+  const erpRes = await erpPdf('Alteration Ticket', name, 'LSH Alteration Receipt');
+  if (!erpRes.ok) return c.json({ error: { message: 'Could not generate PDF' } }, 502);
+  const buf = await erpRes.arrayBuffer();
+  return new Response(buf, {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${name}-receipt.pdf"`,
+      'Cache-Control': 'no-store',
+    },
+  });
 });
