@@ -169,7 +169,7 @@ export default function AlterationDetail() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => window.open(`/api/intake/tickets/${ticket.id}/receipt`, "_blank")}
+            onClick={() => window.open(`/api/intake-alterations/tickets/${ticket.id}/receipt`, "_blank")}
             className="border-brass/20 hover:bg-brass/10 text-cream-muted h-8 px-2 shrink-0 mt-1"
             title="Print receipt"
           >
