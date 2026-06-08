@@ -38,6 +38,7 @@ import { webhooksRouter } from "./routes/webhooks";
 import { unifiRouter } from "./routes/unifi";
 import { authRouter } from "./routes/auth";
 import { financialsUnlockRouter } from "./routes/financials-unlock";
+import { erpnextCustomersRouter } from "./routes/erpnext-customers";
 
 const app = new Hono();
 
@@ -110,5 +111,6 @@ app.route("/api/raven", ravenRouter);
 app.route("/api/mcp", mcpRouter);
 app.route("/api/webhooks", webhooksRouter);
 app.route("/api/unifi", unifiRouter);
+app.route("/api/erpnext-customers", erpnextCustomersRouter);
 
 export default app;

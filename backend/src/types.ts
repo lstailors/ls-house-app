@@ -109,14 +109,22 @@ export type CustomerDossier = z.infer<typeof CustomerDossier>;
 export const Customer = z.object({
   id: z.string(),
   name: z.string(),
-  phone: z.string(),
-  email: z.string().nullable(),
-  locationId: z.string(),
-  createdById: z.string(),
-  dossier: CustomerDossier,
-  createdAt: z.string(),
-  updatedAt: z.string(),
-});
+  phone: z.string().nullable().optional(),
+  email: z.string().nullable().optional(),
+  firstName: z.string().nullable().optional(),
+  lastName: z.string().nullable().optional(),
+  company: z.string().nullable().optional(),
+  address: z.string().nullable().optional(),
+  city: z.string().nullable().optional(),
+  state: z.string().nullable().optional(),
+  zipCode: z.string().nullable().optional(),
+  locationId: z.string().nullable().optional(),
+  createdById: z.string().optional(),
+  dossier: CustomerDossier.optional(),
+  erpnextName: z.string().nullable().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+}).passthrough();
 export type Customer = z.infer<typeof Customer>;
 
 export const AlterationItem = z.object({

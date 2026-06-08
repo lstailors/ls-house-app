@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Search, Plus, Loader2 } from "lucide-react";
+import { api } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -51,6 +52,7 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
   const createDelivery = useCreateDelivery();
   const [customerSearch, setCustomerSearch] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [loadingAddress, setLoadingAddress] = useState(false);
 
   const { data: searchResults = [], isFetching } = useCustomerSearch(customerSearch);
 
@@ -65,12 +67,58 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
     defaultValues: { method: "Hand Delivery", originLocation: "NYC" },
   });
 
+  // Fetch customer address from ERPNext when customer is selected
+  useEffect(() => {
+    if (!selectedCustomer?.erpnextName) return;
+
+    const fetchAddress = async () => {
+      setLoadingAddress(true);
+      try {
+        const data = await api.get<{
+          name: string;
+          fullName: string;
+          phone: string | null;
+          email: string | null;
+          address: {
+            line1: string | null;
+            line2: string | null;
+            city: string | null;
+            state: string | null;
+            zip: string | null;
+          } | null;
+        }>(`/api/erpnext-customers/${encodeURIComponent(selectedCustomer.erpnextName)}`);
+
+        if (data?.address) {
+          if (data.address.line1) setValue("addressLine", data.address.line1);
+          if (data.address.line2) setValue("addressApt", data.address.line2);
+          if (data.address.city) setValue("city", data.address.city);
+          if (data.address.state) setValue("state", data.address.state);
+          if (data.address.zip) setValue("zip", data.address.zip);
+          toast.success("Address auto-filled from customer record");
+        }
+      } catch (err) {
+        console.error("Failed to fetch customer address:", err);
+        // Don't toast error - address might just not be set in ERPNext
+      } finally {
+        setLoadingAddress(false);
+      }
+    };
+
+    fetchAddress();
+  }, [selectedCustomer?.erpnextName, setValue]);
+
   const onSubmit = async (values: FormValues) => {
     try {
+      // Use ERPNext customer name from erpnextName field
+      const erpnextCustomerId = selectedCustomer?.erpnextName ?? selectedCustomer?.name;
+      if (!erpnextCustomerId) {
+        toast.error("Customer not linked to ERPNext. Please try another customer.");
+        return;
+      }
+
       await createDelivery.mutateAsync({
-        // ERPNext expects customer name, not Supabase UUID
-        customerId: selectedCustomer?.name ?? values.customerId,
-        customer: selectedCustomer?.name ?? values.customerId,
+        customerId: erpnextCustomerId,
+        customer: erpnextCustomerId,
         notifyPhone: selectedCustomer?.phone ?? null,
         method: values.method,
         locationId: values.originLocation,

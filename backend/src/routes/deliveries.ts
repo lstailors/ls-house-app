@@ -183,13 +183,25 @@ deliveriesRouter.post("/", async (c) => {
     return c.json({ error: { message: "customerId is required" } }, 400);
   }
 
+  const customerId = body.customerId ?? body.customer;
+
+  // Validate customer exists in ERPNext
+  try {
+    const customer = await erpGet<any>("Customer", customerId);
+    if (!customer) {
+      return c.json({ error: { message: `Could not find Customer: ${customerId}` } }, 404);
+    }
+  } catch (err: any) {
+    return c.json({ error: { message: `Could not find Customer: ${customerId}` } }, 404);
+  }
+
   const token = generateToken();
   const locationId = body.locationId ?? "NYC";
 
   try {
     const doc = await erpCreate<any>("LSH Delivery", {
       naming_series: locationId === "HOU" ? "DN-HOU-.YYYY.-" : "DN-NYC-.YYYY.-",
-      customer: body.customerId ?? body.customer,
+      customer: customerId,
       lsh_status: "Queued",
       lsh_delivery_method: body.method ?? "Hand Delivery",
       lsh_origin_location: locationId,

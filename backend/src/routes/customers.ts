@@ -39,6 +39,7 @@ function serializeCustomer(row: any) {
     referralCredits: Number(row.referral_credits ?? 0),
     casaTier: row.casa_tier ?? null,
     erpnextCustomerId: row.erpnext_customer_id ?? null,
+    erpnextName: row.erpnext_name ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -61,7 +62,7 @@ customersRouter.get("/search", async (c) => {
   if (error) {
     const { data: fallback } = await supabaseAdmin
       .from("customers")
-      .select("id,customer_number,full_name,phone,email,division,vip_tier,status,company,created_at,updated_at")
+      .select("id,customer_number,full_name,phone,email,division,vip_tier,status,company,erpnext_name,created_at,updated_at")
       .or(`full_name.ilike.%${q}%,phone.ilike.%${q}%,email.ilike.%${q}%`)
       .neq("status", "Archived")
       .order("updated_at", { ascending: false })
