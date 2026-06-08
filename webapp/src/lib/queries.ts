@@ -358,6 +358,32 @@ export function useMarkDelivered() {
   });
 }
 
+export function useDeliveryAiSuggest(id: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ["delivery-ai-suggest", id],
+    queryFn: () =>
+      api.get<{ deliveryId: string; status: string; reason: string; model: string }>(
+        `/api/deliveries/${id}/suggest-status`,
+      ),
+    enabled: !!id && enabled,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
+export function useDeliveryAiSummary(id: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ["delivery-ai-summary", id],
+    queryFn: () =>
+      api.get<{ deliveryId: string; summary: string; model: string }>(
+        `/api/deliveries/${id}/summarize-timeline`,
+      ),
+    enabled: !!id && enabled,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
 export function useDeliveryProofUrls(id: string | null) {
   return useQuery({
     queryKey: ["delivery-proof", id],

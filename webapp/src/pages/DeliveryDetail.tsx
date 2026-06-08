@@ -17,6 +17,7 @@ import { StatusPill } from "@/components/glass/StatusPill";
 import { formatDateTime } from "@/lib/format";
 import { MarkDeliveredDialog } from "@/components/deliveries/MarkDeliveredDialog";
 import { DeliveryPinMap } from "@/components/maps/DeliveryPinMap";
+import { AiInsightsCard } from "@/components/deliveries/AiInsightsCard";
 import type { Delivery } from "@/lib/types";
 
 // Delivery extended with fields added to serializeDelivery
@@ -428,6 +429,9 @@ export default function DeliveryDetail() {
           ) : null}
         </GlassCard>
       ) : null}
+
+      {/* AI Insights */}
+      <AiInsightsCard deliveryId={delivery.id} />
 
       {/* QR code */}
       {delivery.qrToken ? (

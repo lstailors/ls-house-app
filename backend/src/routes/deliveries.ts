@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { erpList, erpGet, erpCreate, erpUpdate, erpPdf } from "../lib/erp";
+import { suggestDeliveryStatus, summarizeDeliveryTimeline, DEFAULT_MODEL } from "../lib/ai";
 
 // Web Crypto API — works in both Edge and Node runtimes
 function generateToken(): string {
@@ -782,6 +783,64 @@ deliveriesRouter.post("/:id/log-label-print", async (c) => {
   }
 
   return c.json({ data: null });
+});
+
+// ── GET /api/deliveries/:id/suggest-status ───────────────────────────────────
+deliveriesRouter.get("/:id/suggest-status", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const id = c.req.param("id");
+  const doc = await erpGet<any>("LSH Delivery", id);
+  if (!doc) return c.json({ error: { message: "Not found" } }, 404);
+
+  if (user.role === "driver") {
+    if (doc.lsh_courier_name !== user.name && doc.lsh_courier_name !== user.email) {
+      return c.json({ error: { message: "Forbidden" } }, 403);
+    }
+  } else if (user.role !== "super_admin") {
+    const locCode = resolveLocationCode(user, null);
+    if (locCode && doc.lsh_origin_location !== locCode) {
+      return c.json({ error: { message: "Forbidden" } }, 403);
+    }
+  }
+
+  try {
+    const result = await suggestDeliveryStatus(doc);
+    return c.json({ data: { deliveryId: id, ...result, model: DEFAULT_MODEL } });
+  } catch (err: any) {
+    console.error("[ai:suggest-status] error:", err?.message ?? err);
+    return c.json({ error: { message: err?.message ?? "AI call failed" } }, 502);
+  }
+});
+
+// ── GET /api/deliveries/:id/summarize-timeline ────────────────────────────────
+deliveriesRouter.get("/:id/summarize-timeline", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const id = c.req.param("id");
+  const doc = await erpGet<any>("LSH Delivery", id);
+  if (!doc) return c.json({ error: { message: "Not found" } }, 404);
+
+  if (user.role === "driver") {
+    if (doc.lsh_courier_name !== user.name && doc.lsh_courier_name !== user.email) {
+      return c.json({ error: { message: "Forbidden" } }, 403);
+    }
+  } else if (user.role !== "super_admin") {
+    const locCode = resolveLocationCode(user, null);
+    if (locCode && doc.lsh_origin_location !== locCode) {
+      return c.json({ error: { message: "Forbidden" } }, 403);
+    }
+  }
+
+  try {
+    const summary = await summarizeDeliveryTimeline(doc);
+    return c.json({ data: { deliveryId: id, summary, model: DEFAULT_MODEL } });
+  } catch (err: any) {
+    console.error("[ai:summarize-timeline] error:", err?.message ?? err);
+    return c.json({ error: { message: err?.message ?? "AI call failed" } }, 502);
+  }
 });
 
 // ── GET /api/deliveries/:id/confirmation ─────────────────────────────────────
