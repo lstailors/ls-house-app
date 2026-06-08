@@ -26,6 +26,38 @@ import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser, resolveLocationCode } from "../lib/scope";
 import { sendSms } from "../lib/twilio";
 
+// ── Timeline helper ───────────────────────────────────────────────────────────
+// ERPNext child tables must be sent in full. Fetch existing rows, append new entry.
+const EVENT_LABELS: Record<string, string> = {
+  "Queued":           "Queued",
+  "Out for Delivery": "Out for Delivery",
+  "Delivered":        "Delivered",
+  "Failed":           "Attempted — Failed",
+  "Cancelled":        "Cancelled",
+};
+
+function buildTimelineEntry(status: string, actor: string): Record<string, unknown> {
+  return {
+    doctype: "LSH Delivery Timeline",
+    event_type: EVENT_LABELS[status] ?? status,
+    event_at: erpDatetime(),
+    actor_label: actor,
+    message: "",
+  };
+}
+
+function withTimeline(existing: any, newEntry: Record<string, unknown>): Record<string, unknown>[] {
+  const rows = (existing?.lsh_timeline ?? []).map((r: any) => ({
+    doctype: "LSH Delivery Timeline",
+    name: r.name,
+    event_type: r.event_type,
+    event_at: r.event_at,
+    actor_label: r.actor_label,
+    message: r.message ?? "",
+  }));
+  return [...rows, newEntry];
+}
+
 // ── Delivery SMS notifications (fire-and-forget) ──────────────────────────────
 async function notifyCustomer(doc: any, event: "out_for_delivery" | "delivered"): Promise<void> {
   const phone = doc.lsh_notify_phone ?? doc.customer_phone ?? null;
@@ -348,6 +380,7 @@ deliveriesRouter.post("/", async (c) => {
       lsh_courier_name: body.courierName ?? body.driverName ?? null,
       lsh_delivery_notes: body.notes ?? null,
       lsh_sales_order: body.orderRef ?? null,
+      lsh_timeline: [buildTimelineEntry("Queued", user.name ?? user.email ?? "Staff")],
     });
 
     if (!doc) return c.json({ error: { message: "Create failed" } }, 500);
@@ -477,11 +510,17 @@ deliveriesRouter.patch("/:id", async (c) => {
   const updates: Record<string, unknown> = {};
 
   if (body.status) {
-    updates.lsh_status = body.status;
+    const erpSt = body.status === "out_for_delivery" ? "Out for Delivery"
+      : body.status === "delivered" ? "Delivered"
+      : body.status === "In Flight" ? "Out for Delivery"
+      : body.status;
+    updates.lsh_status = erpSt;
     if (["delivered", "Delivered"].includes(body.status))
       updates.lsh_delivered_at = erpDatetime();
     if (["out_for_delivery", "Out for Delivery", "In Flight"].includes(body.status))
       updates.lsh_dispatched_at = erpDatetime();
+    const actor = user.name ?? user.email ?? "Staff";
+    updates.lsh_timeline = withTimeline(existing, buildTimelineEntry(erpSt, actor));
   }
 
   if (user.role === "super_admin" || user.role === "store_manager") {
@@ -612,10 +651,12 @@ deliveriesRouter.patch("/:id/pod", async (c) => {
     ];
   }
 
+  const actor = user.name ?? user.email ?? "Driver";
+  updates.lsh_timeline = withTimeline(existing, buildTimelineEntry("Delivered", actor));
+
   try {
     const updated = await erpUpdate<any>("LSH Delivery", id, updates);
     if (!updated) return c.json({ error: { message: "Update failed" } }, 500);
-    // SMS delivery confirmation (non-blocking)
     void notifyCustomer(updated, "delivered");
     return c.json({ data: serializeDelivery(updated) });
   } catch (err: any) {
@@ -656,9 +697,12 @@ deliveriesRouter.patch("/:id/status", async (c) => {
   if (erpStatus === "Out for Delivery") updates.lsh_dispatched_at = erpDatetime();
 
   try {
+    const existing = await erpGet<any>("LSH Delivery", id);
+    const actor = user.name ?? user.email ?? "Staff";
+    updates.lsh_timeline = withTimeline(existing, buildTimelineEntry(erpStatus, actor));
+
     const updated = await erpUpdate<any>("LSH Delivery", id, updates);
     if (!updated) return c.json({ error: { message: "Update failed" } }, 500);
-    // Fire SMS notification (non-blocking)
     if (erpStatus === "Out for Delivery") void notifyCustomer(updated, "out_for_delivery");
     if (erpStatus === "Delivered") void notifyCustomer(updated, "delivered");
     return c.json({ data: serializeDelivery(updated) });
