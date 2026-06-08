@@ -2,6 +2,11 @@ import { Hono } from "hono";
 import { supabaseAdmin } from "../lib/supabase";
 import { erpList, erpGet, erpUpdate } from "../lib/erp";
 
+function erpDatetime(d?: Date | string | null): string {
+  const dt = d ? new Date(d) : new Date();
+  return dt.toISOString().replace("T", " ").slice(0, 19);
+}
+
 export const scanRouter = new Hono();
 
 // ── ERPNext lookup by QR token ─────────────────────────────────────────────
@@ -132,7 +137,7 @@ scanRouter.post("/:token/pod", async (c) => {
   catch { return c.json({ error: { message: "Bad form data" } }, 400); }
 
   const now = Date.now();
-  const deliveredAt = new Date().toISOString();
+  const deliveredAt = erpDatetime(); // ERPNext requires "YYYY-MM-DD HH:MM:SS"
   const receivedBy = String(form["received_by"] ?? "").trim() || null;
   const driverName = String(form["driver_name"] ?? "").trim() || null;
   const lat = form["lat"] ? parseFloat(String(form["lat"])) : null;
