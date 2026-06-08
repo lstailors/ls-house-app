@@ -176,14 +176,18 @@ customersRouter.post("/", async (c) => {
   const { data, error } = await supabaseAdmin.from("customers").insert(insert).select("*").single();
   if (error) return c.json({ error: { message: error.message } }, 500);
 
-  // Sync to ERPNext (non-blocking)
-  erpCreate("Customer", {
+  // Sync to ERPNext (non-blocking) and link back erpnext_name
+  void erpCreate("Customer", {
     customer_name: body.full_name,
     customer_type: "Individual",
     customer_group: "Bespoke",
     territory: insert.division === "HOU" ? "Texas" : "New York",
     mobile_no: body.phone ?? null,
     email_id: body.email ?? null,
+  }).then(erp => {
+    if (erp?.name && supabaseAdmin) {
+      supabaseAdmin.from("customers").update({ erpnext_name: erp.name }).eq("id", data.id).then().catch(() => {});
+    }
   }).catch(() => {});
 
   return c.json({ data: serializeCustomer(data) }, 201);
@@ -225,9 +229,9 @@ customersRouter.patch("/:id", async (c) => {
 
   if (error) return c.json({ error: { message: error.message } }, 500);
 
-  // Sync to ERPNext (non-blocking)
-  if (data?.full_name) {
-    erpUpdate("Customer", data.full_name, {
+  // Sync to ERPNext (non-blocking) using stored erpnext_name
+  if (data?.erpnext_name) {
+    void erpUpdate("Customer", data.erpnext_name, {
       mobile_no: update.phone ?? undefined,
       email_id: update.email ?? undefined,
     }).catch(() => {});
