@@ -52,7 +52,13 @@ function serializeDelivery(doc: any): object {
   return {
     id: doc.name,
     deliveryNo: doc.lsh_supabase_delivery_no ?? doc.name,
-    status: doc.lsh_status?.toLowerCase().replace(/ /g, "_") ?? "queued",
+    // Map ERP statuses to frontend status tokens
+    // "Queued" → "scheduled" so new deliveries appear in the Scheduled tab
+    status: (() => {
+      const s = doc.lsh_status ?? "Queued";
+      if (s === "Queued") return "scheduled";
+      return s.toLowerCase().replace(/ /g, "_");
+    })(),
     method: doc.lsh_delivery_method ?? "Hand Delivery",
     locationId: doc.lsh_origin_location ?? "NYC",
     customerId: doc.customer ?? null,
@@ -602,8 +608,10 @@ deliveriesRouter.patch("/:id/status", async (c) => {
 
   const ALLOWED_STATUSES: Record<string, string> = {
     "queued": "Queued",
+    "scheduled": "Queued",   // frontend uses "scheduled" for Queued deliveries
     "out_for_delivery": "Out for Delivery",
     "out for delivery": "Out for Delivery",
+    "In Flight": "Out for Delivery",
     "delivered": "Delivered",
     "failed": "Failed",
     "cancelled": "Cancelled",
