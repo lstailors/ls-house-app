@@ -142,39 +142,42 @@ export function MarkDeliveredDialog({ delivery, onClose }: Props) {
     try {
       const id = delivery.id;
       const now = Date.now();
+      const BUCKET = "delivery-photos";
 
-      // Upload photos
-      const photoPaths: (string | null)[] = [null, null, null];
+      // Upload photos → collect public URLs
+      const photoUrls: string[] = [];
       for (let i = 0; i < photos.length; i++) {
         const path = `${id}/photo_${i + 1}_${now}.jpg`;
-        const { error } = await supabase.storage.from("delivery-proofs").upload(path, photos[i], { contentType: "image/jpeg", upsert: true });
+        const { error } = await supabase.storage.from(BUCKET).upload(path, photos[i], { contentType: "image/jpeg", upsert: true });
         if (error) throw new Error(`Photo upload failed: ${error.message}`);
-        photoPaths[i] = path;
+        const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
+        if (pub?.publicUrl) photoUrls.push(pub.publicUrl);
       }
 
-      // Upload signature
-      let signaturePath: string | null = null;
+      // Upload signature → get public URL
+      let signatureImageUrl: string | undefined;
       if (needsSig && sigPadRef.current && !sigPadRef.current.isEmpty()) {
         const dataUrl = sigPadRef.current.getCanvas().toDataURL("image/png");
         const blob = await (await fetch(dataUrl)).blob();
         const sigFile = new File([blob], `signature_${now}.png`, { type: "image/png" });
         const sigPath = `${id}/signature_${now}.png`;
-        const { error } = await supabase.storage.from("delivery-signatures").upload(sigPath, sigFile, { contentType: "image/png", upsert: true });
-        if (!error) signaturePath = sigPath;
+        const { error } = await supabase.storage.from(BUCKET).upload(sigPath, sigFile, { contentType: "image/png", upsert: true });
+        if (!error) {
+          const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(sigPath);
+          signatureImageUrl = pub?.publicUrl ?? undefined;
+        }
       }
 
       await markDelivered.mutateAsync({
         id,
-        pod_method: values.pod_method,
-        received_by: values.received_by || undefined,
-        signature_name: values.signature_name || undefined,
-        pod_photo_1_path: photoPaths[0] ?? undefined,
-        pod_photo_2_path: photoPaths[1] ?? undefined,
-        pod_photo_3_path: photoPaths[2] ?? undefined,
-        signature_image_path: signaturePath ?? undefined,
-        gps_latitude: gps?.latitude,
-        gps_longitude: gps?.longitude,
-        gps_accuracy_meters: gps?.accuracy,
+        podMethod: values.pod_method,
+        receivedBy: values.received_by || undefined,
+        signatureName: values.signature_name || undefined,
+        photoUrls: photoUrls.length > 0 ? photoUrls : undefined,
+        signatureImageUrl,
+        gpsLat: gps?.latitude,
+        gpsLng: gps?.longitude,
+        gpsAccuracy: gps?.accuracy,
       });
 
       toast.success("Delivery marked as complete");

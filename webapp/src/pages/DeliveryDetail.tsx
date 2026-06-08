@@ -49,9 +49,9 @@ export default function DeliveryDetail() {
     enabled: !!id,
   });
 
-  // Auto-load proof URLs whenever the delivery has a POD photo
+  // Load proof URLs when delivered (photos/signature stored as public URLs in ERP)
   const { data: proof, isLoading: proofLoading } = useDeliveryProofUrls(
-    delivery?.proofOfDeliveryUrl ? (id ?? null) : null,
+    delivery?.status === "delivered" ? (id ?? null) : null,
   );
 
   const { data: contactResults = [], isFetching: searchingContact } = useCustomerSearch(contactSearch);
@@ -71,7 +71,7 @@ export default function DeliveryDetail() {
   useEffect(() => {
     if (!delivery?.qrToken) return;
     QRCode.toDataURL(
-      `https://ls-house-app.vercel.app/d/${delivery.qrToken}`,
+      `https://delivered.lstailors.com/d/${delivery.qrToken}`,
       { width: 200, margin: 1, color: { dark: "#000000", light: "#ffffff" } },
     ).then(setQrDataUrl).catch(() => {});
   }, [delivery?.qrToken]);
@@ -439,7 +439,7 @@ export default function DeliveryDetail() {
             <div className="space-y-1 text-xs text-cream-muted min-w-0">
               <div className="font-mono break-all text-[10px] text-cream-dim">{delivery.qrToken}</div>
               <a
-                href={`https://ls-house-app.vercel.app/d/${delivery.qrToken}`}
+                href={`https://delivered.lstailors.com/d/${delivery.qrToken}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-brass-light hover:underline block mt-1"

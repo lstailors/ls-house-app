@@ -301,6 +301,30 @@ export function useCreateDelivery() {
   });
 }
 
+export interface DeliverySearchResult {
+  type: "customer" | "alteration" | "order";
+  id: string;
+  label: string;
+  sublabel?: string;
+  customer?: string;
+  customerName?: string;
+  phone?: string | null;
+  address?: string | null;
+  garmentSummary?: string | null;
+  orderRef?: string | null;
+  alterationTicket?: string | null;
+}
+
+export function useDeliverySearchContext(q: string) {
+  return useQuery({
+    queryKey: ["delivery-search-context", q],
+    queryFn: () =>
+      api.get<DeliverySearchResult[]>(`/api/deliveries/search-context?q=${encodeURIComponent(q)}`),
+    enabled: q.trim().length >= 2,
+    staleTime: 30_000,
+  });
+}
+
 export function useDeliveryCandidates() {
   return useQuery({
     queryKey: ["delivery-candidates"],
@@ -314,17 +338,15 @@ export function useMarkDelivered() {
   return useMutation({
     mutationFn: (input: {
       id: string;
-      pod_method: string;
-      received_by?: string;
-      signature_name?: string;
+      podMethod: string;
+      receivedBy?: string;
+      signatureName?: string;
       notes?: string;
-      pod_photo_1_path?: string;
-      pod_photo_2_path?: string;
-      pod_photo_3_path?: string;
-      signature_image_path?: string;
-      gps_latitude?: number;
-      gps_longitude?: number;
-      gps_accuracy_meters?: number;
+      photoUrls?: string[];
+      signatureImageUrl?: string;
+      gpsLat?: number;
+      gpsLng?: number;
+      gpsAccuracy?: number;
     }) => {
       const { id, ...body } = input;
       return api.patch<Delivery>(`/api/deliveries/${id}/pod`, body);
@@ -341,7 +363,7 @@ export function useDeliveryProofUrls(id: string | null) {
     queryKey: ["delivery-proof", id],
     queryFn: () => api.get<{ photo1: string | null; photo2: string | null; photo3: string | null; signature: string | null }>(`/api/deliveries/${id}/proof-url`),
     enabled: !!id,
-    staleTime: 50 * 60 * 1000, // 50 min (URLs expire in 60 min)
+    staleTime: Infinity, // Public URLs from ERP never expire
   });
 }
 

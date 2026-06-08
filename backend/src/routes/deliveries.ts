@@ -80,8 +80,18 @@ function serializeDelivery(doc: any): object {
     podMethod: doc.lsh_pod_method ?? null,
     signatureName: doc.lsh_signature_name ?? null,
     signatureImageUrl: doc.lsh_signature_image_url ?? null,
+    hasSignature: !!doc.lsh_signature_image_url,
+    receivedBy: doc.lsh_signature_name ?? null,
+    // GPS — both naming conventions for frontend compatibility
     gpsLat: doc.lsh_gps_lat ?? null,
     gpsLng: doc.lsh_gps_lng ?? null,
+    gpsLatitude: doc.lsh_gps_lat ?? null,
+    gpsLongitude: doc.lsh_gps_lng ?? null,
+    gpsAccuracy: doc.lsh_gps_accuracy ?? null,
+    // Driver alias
+    driver: doc.lsh_courier_name ? { name: doc.lsh_courier_name, phone: doc.lsh_courier_phone ?? null } : null,
+    // Proof gate — truthy if any photo or signature is on record
+    proofOfDeliveryUrl: (doc.lsh_photos?.[0]?.photo_url) ?? doc.lsh_signature_image_url ?? null,
     photos: (doc.lsh_photos ?? []).map((p: any) => ({
       url: p.photo_url,
       type: p.photo_type,
@@ -143,6 +153,106 @@ deliveriesRouter.get("/", async (c) => {
   });
 
   return c.json({ data: (rows as any[]).map(serializeDelivery) });
+});
+
+// ── GET /api/deliveries/search-context ───────────────────────────────────────
+// Unified fuzzy search across customers, alteration tickets, and sales orders.
+// Returns tagged results the frontend uses to pre-fill a new delivery.
+deliveriesRouter.get("/search-context", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const q = (c.req.query("q") ?? "").trim();
+  if (q.length < 2) return c.json({ data: [] });
+
+  const [customers, alterations, salesOrders] = await Promise.allSettled([
+    erpList("Customer", {
+      filters: [["customer_name", "like", `%${q}%`]],
+      fields: ["name", "customer_name", "mobile_no", "email_id"],
+      limit: 5,
+    }),
+    erpList("Alteration Ticket", {
+      filters: [
+        ["docstatus", "!=", 2],
+        ["customer_name", "like", `%${q}%`],
+      ],
+      fields: ["name", "customer", "customer_name", "status", "delivery_method"],
+      limit: 5,
+      order_by: "creation desc",
+    }),
+    erpList("Sales Order", {
+      filters: [
+        ["status", "in", ["To Deliver and Bill", "To Deliver", "To Bill"]],
+        ["customer_name", "like", `%${q}%`],
+      ],
+      fields: ["name", "customer", "customer_name", "contact_mobile", "delivery_date", "shipping_address"],
+      limit: 5,
+      order_by: "creation desc",
+    }),
+  ]);
+
+  const results: Array<{
+    type: "customer" | "alteration" | "order";
+    id: string;
+    label: string;
+    sublabel?: string;
+    customer?: string;
+    customerName?: string;
+    phone?: string | null;
+    address?: string | null;
+    garmentSummary?: string | null;
+    orderRef?: string | null;
+    alterationTicket?: string | null;
+  }> = [];
+
+  if (customers.status === "fulfilled") {
+    for (const c of customers.value as any[]) {
+      results.push({
+        type: "customer",
+        id: c.name,
+        label: c.customer_name ?? c.name,
+        sublabel: c.mobile_no ?? c.email_id ?? undefined,
+        customer: c.name,
+        customerName: c.customer_name,
+        phone: c.mobile_no ?? null,
+      });
+    }
+  }
+
+  if (alterations.status === "fulfilled") {
+    for (const a of alterations.value as any[]) {
+      results.push({
+        type: "alteration",
+        id: a.name,
+        label: `${a.customer_name} — ${a.name}`,
+        sublabel: `Alteration · ${a.status ?? ""}`,
+        customer: a.customer,
+        customerName: a.customer_name,
+        orderRef: null,
+        alterationTicket: a.name,
+        garmentSummary: a.name,
+      });
+    }
+  }
+
+  if (salesOrders.status === "fulfilled") {
+    for (const so of salesOrders.value as any[]) {
+      results.push({
+        type: "order",
+        id: so.name,
+        label: `${so.customer_name} — ${so.name}`,
+        sublabel: `Sales Order · ${so.status ?? ""}`,
+        customer: so.customer,
+        customerName: so.customer_name,
+        phone: so.contact_mobile ?? null,
+        address: so.shipping_address ?? null,
+        orderRef: so.name,
+        alterationTicket: null,
+      });
+    }
+  }
+
+  return c.json({ data: results });
 });
 
 // ── GET /api/deliveries/candidates ───────────────────────────────────────────
@@ -374,6 +484,27 @@ deliveriesRouter.patch("/:id", async (c) => {
   }
 });
 
+// ── GET /api/deliveries/:id/proof-url ────────────────────────────────────────
+// Returns photo and signature URLs stored in ERP for this delivery.
+deliveriesRouter.get("/:id/proof-url", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const id = c.req.param("id");
+  const doc = await erpGet<any>("LSH Delivery", id);
+  if (!doc) return c.json({ error: { message: "Not found" } }, 404);
+
+  const photos: any[] = doc.lsh_photos ?? [];
+  return c.json({
+    data: {
+      photo1: photos[0]?.photo_url ?? null,
+      photo2: photos[1]?.photo_url ?? null,
+      photo3: photos[2]?.photo_url ?? null,
+      signature: doc.lsh_signature_image_url ?? null,
+    },
+  });
+});
+
 // ── PATCH /api/deliveries/:id/pod ─────────────────────────────────────────────
 deliveriesRouter.patch("/:id/pod", async (c) => {
   const user = await getAuthedUser(c);
@@ -404,38 +535,48 @@ deliveriesRouter.patch("/:id/pod", async (c) => {
     updates.lsh_signature_image_url = body.signatureImageUrl;
   if (body.gpsLat !== undefined) updates.lsh_gps_lat = body.gpsLat;
   if (body.gpsLng !== undefined) updates.lsh_gps_lng = body.gpsLng;
+  if (body.gpsAccuracy !== undefined) updates.lsh_gps_accuracy = body.gpsAccuracy;
 
-  // Photo upload to Supabase Storage
-  let photoUrl: string | null = null;
-  if (body.photoBase64 && supabaseAdmin) {
+  // Collect photo URLs — accepts either pre-uploaded public URLs or base64
+  const incomingUrls: string[] = [];
+
+  // Option A: frontend sends pre-uploaded public URLs (preferred)
+  if (body.photoUrls && Array.isArray(body.photoUrls)) {
+    incomingUrls.push(...body.photoUrls.filter(Boolean));
+  } else if (body.photoUrl) {
+    incomingUrls.push(body.photoUrl);
+  }
+
+  // Option B: legacy base64 upload (backend handles the upload)
+  if (incomingUrls.length === 0 && body.photoBase64 && supabaseAdmin) {
     try {
       const buf = Buffer.from(body.photoBase64, "base64");
       const ext = body.photoMimeType === "image/png" ? "png" : "jpg";
-      const path = `${id}/${Date.now()}.${ext}`;
+      const storagePath = `${id}/${Date.now()}.${ext}`;
       const { error: upErr } = await supabaseAdmin.storage
         .from("delivery-photos")
-        .upload(path, buf, { contentType: body.photoMimeType ?? "image/jpeg", upsert: false });
+        .upload(storagePath, buf, { contentType: body.photoMimeType ?? "image/jpeg", upsert: false });
       if (!upErr) {
         const { data: pub } = supabaseAdmin.storage
           .from("delivery-photos")
-          .getPublicUrl(path);
-        photoUrl = pub?.publicUrl ?? null;
+          .getPublicUrl(storagePath);
+        if (pub?.publicUrl) incomingUrls.push(pub.publicUrl);
       }
     } catch (e) {
       console.warn("POD photo upload failed:", e);
     }
   }
 
-  // Append photo to lsh_photos child table
-  if (photoUrl) {
+  // Append all incoming photos to lsh_photos child table
+  if (incomingUrls.length > 0) {
     const existingPhotos: any[] = existing.lsh_photos ?? [];
     updates.lsh_photos = [
       ...existingPhotos,
-      {
-        photo_url: photoUrl,
-        photo_type: body.photoType ?? "delivery",
+      ...incomingUrls.map((url) => ({
+        photo_url: url,
+        photo_type: body.photoType ?? "proof",
         captured_at: erpDatetime(),
-      },
+      })),
     ];
   }
 

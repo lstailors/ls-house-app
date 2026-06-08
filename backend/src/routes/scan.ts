@@ -47,19 +47,13 @@ scanRouter.get("/:token", async (c) => {
   if (erpDoc) {
     const isDelivered = erpDoc.lsh_status === "Delivered";
 
-    // Build proof URLs from lsh_photos child table — sign all Supabase Storage paths
+    // ERP stores full public URLs directly — no signing needed
     const photos = (erpDoc.lsh_photos ?? []).map((p: any) => p.photo_url).filter(Boolean);
-    const signPath = async (path: string | null): Promise<string | null> => {
-      if (!path || !supabaseAdmin) return null;
-      const bucket = path.includes("signature") ? "delivery-signatures" : "delivery-proofs";
-      const { data } = await supabaseAdmin.storage.from(bucket).createSignedUrl(path, 300);
-      return data?.signedUrl ?? path;
-    };
     const proofUrls = {
-      photo1: await signPath(photos[0] ?? null),
-      photo2: await signPath(photos[1] ?? null),
-      photo3: await signPath(photos[2] ?? null),
-      signature: await signPath(erpDoc.lsh_signature_image_url ?? null),
+      photo1: photos[0] ?? null,
+      photo2: photos[1] ?? null,
+      photo3: photos[2] ?? null,
+      signature: erpDoc.lsh_signature_image_url ?? null,
     };
 
     return c.json({
@@ -163,9 +157,10 @@ scanRouter.post("/:token/pod", async (c) => {
     if (erpDoc.lsh_status === "Delivered") return c.json({ error: { message: "Already delivered" } }, 409);
 
     const erpId = erpDoc.name;
-    const photoPaths: string[] = [];
+    const BUCKET = "delivery-photos"; // single bucket, public URLs stored in ERP
+    const photoUrls: string[] = [];
 
-    // Upload photos to Supabase Storage, store URLs in ERP
+    // Upload photos → get public URLs → store in ERP
     if (supabaseAdmin) {
       for (let i = 0; i < 3; i++) {
         const f = form[`photo_${i + 1}`];
@@ -173,34 +168,40 @@ scanRouter.post("/:token/pod", async (c) => {
         if (file instanceof File && file.size > 0) {
           const path = `${erpId}/photo_${i + 1}_${now}.jpg`;
           const buf = await file.arrayBuffer();
-          const { error: up } = await supabaseAdmin.storage.from("delivery-proofs").upload(path, buf, { contentType: file.type || "image/jpeg", upsert: false });
-          if (!up) photoPaths.push(path);
+          const { error: up } = await supabaseAdmin.storage.from(BUCKET).upload(path, buf, { contentType: file.type || "image/jpeg", upsert: false });
+          if (!up) {
+            const { data: pub } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(path);
+            if (pub?.publicUrl) photoUrls.push(pub.publicUrl);
+          }
         }
       }
     }
 
-    let signaturePath: string | null = null;
+    let signatureUrl: string | null = null;
     if (supabaseAdmin) {
       const sf = form["signature"];
       const sigFile = Array.isArray(sf) ? sf[0] : sf;
       if (sigFile instanceof File && sigFile.size > 0) {
         const path = `${erpId}/signature_${now}.png`;
         const buf = await sigFile.arrayBuffer();
-        const { error: up } = await supabaseAdmin.storage.from("delivery-signatures").upload(path, buf, { contentType: "image/png", upsert: false });
-        if (!up) signaturePath = path;
+        const { error: up } = await supabaseAdmin.storage.from(BUCKET).upload(path, buf, { contentType: "image/png", upsert: false });
+        if (!up) {
+          const { data: pub } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(path);
+          signatureUrl = pub?.publicUrl ?? null;
+        }
       }
     }
 
-    const hasPhotos = photoPaths.length > 0;
-    const hasSig = !!signaturePath;
+    const hasPhotos = photoUrls.length > 0;
+    const hasSig = !!signatureUrl;
     let podMethod: string;
     if (hasPhotos && hasSig) podMethod = "Signature + Photo";
     else if (hasPhotos) podMethod = "Photo Only";
     else if (hasSig) podMethod = "Signature";
     else podMethod = receivedBy ? "Verbal Confirmation" : "Left at Door";
 
-    // Build photos child table rows
-    const photoRows = photoPaths.map(url => ({
+    // Build photos child table rows with full public URLs
+    const photoRows = photoUrls.map(url => ({
       doctype: "LSH Delivery Photo", photo_url: url, photo_type: "proof", captured_at: deliveredAt, uploaded_by: driverName ?? "driver",
     }));
     const existingPhotos = erpDoc.lsh_photos ?? [];
@@ -211,7 +212,7 @@ scanRouter.post("/:token/pod", async (c) => {
       lsh_courier_name: driverName || erpDoc.lsh_courier_name,
       lsh_pod_method: podMethod,
       lsh_signature_name: receivedBy,
-      lsh_signature_image_url: signaturePath,
+      lsh_signature_image_url: signatureUrl,
       lsh_gps_lat: isNaN(lat as number) ? null : lat,
       lsh_gps_lng: isNaN(lng as number) ? null : lng,
       lsh_gps_accuracy: isNaN(accuracy as number) ? null : accuracy,
