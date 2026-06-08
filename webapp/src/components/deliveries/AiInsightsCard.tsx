@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Sparkles, RefreshCw, Loader2, AlertCircle } from "lucide-react";
+import { Sparkles, RefreshCw, Loader2, AlertCircle, Clock } from "lucide-react";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { Button } from "@/components/ui/button";
-import { useDeliveryAiSuggest, useDeliveryAiSummary } from "@/lib/queries";
+import { useDeliveryAiSuggest, useDeliveryAiSummary, useDeliveryEstimateTime } from "@/lib/queries";
 
 // Maps ERP-side status labels to UI colors
 const STATUS_COLOR: Record<string, string> = {
@@ -20,16 +20,20 @@ interface Props {
 export function AiInsightsCard({ deliveryId }: Props) {
   const [active, setActive] = useState(false);
 
-  const suggest = useDeliveryAiSuggest(deliveryId, active);
-  const summary = useDeliveryAiSummary(deliveryId, active);
+  const suggest  = useDeliveryAiSuggest(deliveryId, active);
+  const summary  = useDeliveryAiSummary(deliveryId, active);
+  const estimate = useDeliveryEstimateTime(deliveryId, active);
 
-  const loading = suggest.isFetching || summary.isFetching;
-  const hasData = suggest.data ?? summary.data;
-  const error   = suggest.error ?? summary.error;
+  const loading = suggest.isFetching || summary.isFetching || estimate.isFetching;
+  const hasData = suggest.data ?? summary.data ?? estimate.data;
+  const error   = suggest.error ?? summary.error ?? estimate.error;
+
+  const CONFIDENCE_COLOR = { high: "text-signal-emerald", medium: "text-signal-amber", low: "text-signal-rose" };
 
   const handleRefresh = () => {
     suggest.refetch();
     summary.refetch();
+    estimate.refetch();
   };
 
   return (
@@ -103,6 +107,18 @@ export function AiInsightsCard({ deliveryId }: Props) {
               <div className="text-xs text-cream-muted leading-relaxed">
                 {summary.data.summary}
               </div>
+            </div>
+          ) : null}
+
+          {estimate.data ? (
+            <div className="space-y-1">
+              <div className="text-[10px] uppercase tracking-widest text-cream-dim flex items-center gap-1">
+                <Clock className="h-2.5 w-2.5" /> Estimated arrival
+              </div>
+              <div className={`text-sm font-semibold ${CONFIDENCE_COLOR[estimate.data.confidence]}`}>
+                {estimate.data.estimate}
+              </div>
+              <div className="text-xs text-cream-muted leading-relaxed">{estimate.data.reasoning}</div>
             </div>
           ) : null}
 

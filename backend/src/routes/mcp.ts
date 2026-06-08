@@ -5,7 +5,16 @@ import { Hono } from "hono";
 import { erpList, erpGet, erpUpdate } from "../lib/erp";
 import { sendSms } from "../lib/twilio";
 import { supabaseAdmin } from "../lib/supabase";
-import { suggestDeliveryStatus, summarizeDeliveryTimeline, DEFAULT_MODEL } from "../lib/ai";
+import {
+  suggestDeliveryStatus,
+  summarizeDeliveryTimeline,
+  generateCustomerMessage,
+  detectDeliveryAnomalies,
+  estimateDeliveryTime,
+  summarizeDailyOps,
+  DEFAULT_MODEL,
+} from "../lib/ai";
+import type { MessageType } from "../lib/ai";
 
 export const mcpRouter = new Hono();
 
@@ -310,6 +319,66 @@ mcpRouter.get("/deliveries/:id/summarize-timeline", async (c) => {
   try {
     const summary = await summarizeDeliveryTimeline(doc);
     return c.json({ data: { deliveryId: id, summary, model: DEFAULT_MODEL } });
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? "AI call failed" }, 502);
+  }
+});
+
+// POST /api/mcp/deliveries/:id/generate-message
+mcpRouter.post("/deliveries/:id/generate-message", async (c) => {
+  const id = c.req.param("id");
+  const doc = await erpGet<any>("LSH Delivery", id);
+  if (!doc) return c.json({ error: "Not found" }, 404);
+  const { type, channel, customContext } = await c.req.json() as { type: MessageType; channel: "sms" | "email"; customContext?: string };
+  try {
+    const message = await generateCustomerMessage(doc, type, channel, customContext);
+    return c.json({ data: { deliveryId: id, message, type, channel, model: DEFAULT_MODEL } });
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? "AI call failed" }, 502);
+  }
+});
+
+// GET /api/mcp/deliveries/:id/estimate-time
+mcpRouter.get("/deliveries/:id/estimate-time", async (c) => {
+  const id = c.req.param("id");
+  const doc = await erpGet<any>("LSH Delivery", id);
+  if (!doc) return c.json({ error: "Not found" }, 404);
+  try {
+    const result = await estimateDeliveryTime(doc);
+    return c.json({ data: { deliveryId: id, ...result, model: DEFAULT_MODEL } });
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? "AI call failed" }, 502);
+  }
+});
+
+// GET /api/mcp/deliveries/anomalies
+mcpRouter.get("/deliveries/anomalies", async (c) => {
+  const docs = await erpList<any>("LSH Delivery", {
+    filters: [["docstatus", "!=", 2], ["lsh_status", "not in", ["Delivered", "Cancelled"]]],
+    fields: ["name", "customer_name", "lsh_status", "lsh_scheduled_at", "lsh_dispatched_at", "lsh_courier_name"],
+    limit: 100,
+    order_by: "creation desc",
+  });
+  try {
+    const anomalies = await detectDeliveryAnomalies(docs);
+    return c.json({ data: anomalies });
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? "AI call failed" }, 502);
+  }
+});
+
+// GET /api/mcp/deliveries/daily-ops-summary
+mcpRouter.get("/deliveries/daily-ops-summary", async (c) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const docs = await erpList<any>("LSH Delivery", {
+    filters: [["docstatus", "!=", 2], ["DATE(creation)", ">=", today]],
+    fields: ["name", "customer_name", "lsh_status", "lsh_courier_name", "lsh_delivered_at"],
+    limit: 200,
+    order_by: "creation desc",
+  });
+  try {
+    const result = await summarizeDailyOps(docs);
+    return c.json({ data: { ...result, totalDeliveries: docs.length, model: DEFAULT_MODEL } });
   } catch (err: any) {
     return c.json({ error: err?.message ?? "AI call failed" }, 502);
   }

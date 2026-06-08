@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Truck, MapPin, Clock, CheckCircle2, Phone, Camera, QrCode, Plus, Printer, ChevronDown, ChevronUp, Package } from "lucide-react";
+import { Truck, MapPin, Clock, CheckCircle2, Phone, Camera, QrCode, Plus, Printer, ChevronDown, ChevronUp, Package, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { SectionHeader } from "@/components/glass/SectionHeader";
@@ -13,7 +13,8 @@ import { DriverRoute } from "@/components/deliveries/DriverRoute";
 import { NewDeliveryDialog } from "@/components/deliveries/NewDeliveryDialog";
 import { MarkDeliveredDialog } from "@/components/deliveries/MarkDeliveredDialog";
 import { ProofViewerDialog } from "@/components/deliveries/ProofViewerDialog";
-import { useDeliveries, useUpdateDelivery } from "@/lib/queries";
+import { useDeliveries, useUpdateDelivery, useDeliveryDailyOpsSummary } from "@/lib/queries";
+import { AnomaliesCard } from "@/components/deliveries/AnomaliesCard";
 import { DispatchMap } from "@/components/maps/DispatchMap";
 import { useNavigate } from "react-router-dom";
 import { useMe } from "@/lib/session";
@@ -40,11 +41,14 @@ export default function Deliveries() {
   const [mapOpen, setMapOpen] = useState(false);
   const [deliverTarget, setDeliverTarget] = useState<Delivery | null>(null);
   const [proofTarget, setProofTarget] = useState<Delivery | null>(null);
-  const [activeTab, setActiveTab] = useState<"board" | "candidates">("board");
+  const [activeTab, setActiveTab]   = useState<"board" | "candidates">("board");
+  const [opsOpen, setOpsOpen]       = useState(false);
 
   const qc = useQueryClient();
   const navigate = useNavigate();
   const isDriver = me?.role === "driver";
+
+  const dailyOps = useDeliveryDailyOpsSummary(opsOpen);
 
   const { data: candidates = [] } = useQuery({
     queryKey: ["delivery-candidates"],
@@ -137,12 +141,22 @@ export default function Deliveries() {
         title={<>The <span className="text-brass-shimmer">dispatch</span> board.</>}
         description="Every finished garment, from the rack to the customer's hand."
         actions={
-          <Button
-            onClick={() => setNewDeliveryOpen(true)}
-            className="bg-[#c9a84c] hover:bg-[#b8963c] text-[#0a120e] font-medium h-9 text-sm"
-          >
-            <Plus className="h-3.5 w-3.5 mr-1.5" /> New Delivery
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setOpsOpen((v) => !v)}
+              className="border-brass/20 hover:bg-brass/10 text-cream-muted h-9 text-sm gap-1.5"
+            >
+              <BarChart3 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Daily ops</span>
+            </Button>
+            <Button
+              onClick={() => setNewDeliveryOpen(true)}
+              className="bg-[#c9a84c] hover:bg-[#b8963c] text-[#0a120e] font-medium h-9 text-sm"
+            >
+              <Plus className="h-3.5 w-3.5 mr-1.5" /> New Delivery
+            </Button>
+          </div>
         }
       />
 
@@ -179,6 +193,54 @@ export default function Deliveries() {
           active={activeTab === "candidates"}
         />
       </div>
+
+      {/* Daily ops summary panel (collapsible) */}
+      {opsOpen ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <GlassCard className="p-4 space-y-3">
+            <div className="text-[11px] uppercase tracking-widest text-cream-dim flex items-center gap-1.5">
+              <BarChart3 className="h-3.5 w-3.5 text-brass-light/70" /> Daily Ops Summary
+            </div>
+            {dailyOps.isFetching && !dailyOps.data ? (
+              <div className="flex items-center gap-2 text-xs text-cream-muted">
+                <Clock className="h-3.5 w-3.5 animate-spin" /> Generating summary…
+              </div>
+            ) : dailyOps.error ? (
+              <div className="text-xs text-signal-rose">Summary unavailable — check AI_GATEWAY_API_KEY.</div>
+            ) : dailyOps.data ? (
+              <div className="space-y-3">
+                <p className="text-xs text-cream-muted leading-relaxed">{dailyOps.data.summary}</p>
+                {dailyOps.data.highlights?.length ? (
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-cream-dim mb-1">Highlights</div>
+                    <ul className="space-y-0.5">
+                      {dailyOps.data.highlights.map((h, i) => (
+                        <li key={i} className="text-xs text-signal-emerald flex items-start gap-1.5">
+                          <span className="mt-0.5 shrink-0">✓</span>{h}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {dailyOps.data.flagged?.length ? (
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-cream-dim mb-1">Follow-up needed</div>
+                    <ul className="space-y-0.5">
+                      {dailyOps.data.flagged.map((f, i) => (
+                        <li key={i} className="text-xs text-signal-amber flex items-start gap-1.5">
+                          <span className="mt-0.5 shrink-0">⚑</span>{f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                <div className="text-[9px] text-cream-dim/50 font-mono">{dailyOps.data.model}</div>
+              </div>
+            ) : null}
+          </GlassCard>
+          <AnomaliesCard />
+        </div>
+      ) : null}
 
       {/* Delivery Map */}
       <GlassCard className="overflow-hidden">

@@ -358,6 +358,59 @@ export function useMarkDelivered() {
   });
 }
 
+export function useDeliveryAnomalies(enabled: boolean) {
+  const { activeLocationId } = useActiveLocation();
+  return useQuery({
+    queryKey: ["delivery-anomalies", activeLocationId],
+    queryFn: () =>
+      api.get<Array<{ deliveryId: string; customer: string; status: string; issue: string; severity: "high" | "medium" | "low"; recommendation: string }>>(
+        `/api/deliveries/anomalies${locationQueryString(activeLocationId)}`,
+      ),
+    enabled,
+    staleTime: 3 * 60_000,
+    retry: false,
+  });
+}
+
+export function useDeliveryDailyOpsSummary(enabled: boolean) {
+  const { activeLocationId } = useActiveLocation();
+  return useQuery({
+    queryKey: ["delivery-daily-ops", activeLocationId],
+    queryFn: () =>
+      api.get<{ summary: string; highlights: string[]; flagged: string[]; totalDeliveries: number; model: string }>(
+        `/api/deliveries/daily-ops-summary${locationQueryString(activeLocationId)}`,
+      ),
+    enabled,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
+export function useDeliveryGenerateMessage() {
+  return useMutation({
+    mutationFn: (input: { id: string; type: string; channel: "sms" | "email"; customContext?: string }) => {
+      const { id, ...body } = input;
+      return api.post<{ deliveryId: string; message: string; type: string; channel: string; model: string }>(
+        `/api/deliveries/${id}/generate-message`,
+        body,
+      );
+    },
+  });
+}
+
+export function useDeliveryEstimateTime(id: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ["delivery-estimate-time", id],
+    queryFn: () =>
+      api.get<{ deliveryId: string; estimate: string; confidence: "high" | "medium" | "low"; reasoning: string; model: string }>(
+        `/api/deliveries/${id}/estimate-time`,
+      ),
+    enabled: !!id && enabled,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
 export function useDeliveryAiSuggest(id: string | undefined, enabled: boolean) {
   return useQuery({
     queryKey: ["delivery-ai-suggest", id],

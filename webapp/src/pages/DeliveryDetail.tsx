@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Phone, MapPin, Clock, CheckCircle2, Truck, Printer,
   Camera, Search, Loader2, User, Pencil, PenLine, Navigation, QrCode,
-  Package, ExternalLink, FileText,
+  Package, ExternalLink, FileText, MessageSquare,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { toast } from "sonner";
@@ -18,6 +18,7 @@ import { formatDateTime } from "@/lib/format";
 import { MarkDeliveredDialog } from "@/components/deliveries/MarkDeliveredDialog";
 import { DeliveryPinMap } from "@/components/maps/DeliveryPinMap";
 import { AiInsightsCard } from "@/components/deliveries/AiInsightsCard";
+import { GenerateMessageDialog } from "@/components/deliveries/GenerateMessageDialog";
 import type { Delivery } from "@/lib/types";
 
 // Delivery extended with fields added to serializeDelivery
@@ -40,6 +41,7 @@ export default function DeliveryDetail() {
   const update = useUpdateDelivery();
 
   const [markDeliveredOpen, setMarkDeliveredOpen] = useState(false);
+  const [messageDialogOpen, setMessageDialogOpen] = useState(false);
   const [editingContact, setEditingContact] = useState(false);
   const [contactSearch, setContactSearch] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
@@ -180,6 +182,14 @@ export default function DeliveryDetail() {
             <CheckCircle2 className="h-4 w-4 mr-1.5" /> Mark delivered
           </Button>
         ) : null}
+        <Button
+          variant="outline"
+          className="border-brass/20 hover:bg-brass/10 text-cream-muted"
+          onClick={() => setMessageDialogOpen(true)}
+          title="Draft customer message"
+        >
+          <MessageSquare className="h-4 w-4" />
+        </Button>
         {delivery.customer?.phone ? (
           <Button variant="outline" className="border-brass/20 hover:bg-brass/10 text-cream-muted" asChild>
             <a href={`tel:${delivery.customer.phone}`}>
@@ -463,6 +473,12 @@ export default function DeliveryDetail() {
           </div>
         </GlassCard>
       ) : null}
+
+      <GenerateMessageDialog
+        deliveryId={messageDialogOpen ? (id ?? null) : null}
+        customerName={delivery.customer?.name}
+        onClose={() => setMessageDialogOpen(false)}
+      />
 
       <MarkDeliveredDialog
         delivery={markDeliveredOpen ? delivery : null}

@@ -1,6 +1,15 @@
 import { Hono } from "hono";
 import { erpList, erpGet, erpCreate, erpUpdate, erpPdf } from "../lib/erp";
-import { suggestDeliveryStatus, summarizeDeliveryTimeline, DEFAULT_MODEL } from "../lib/ai";
+import {
+  suggestDeliveryStatus,
+  summarizeDeliveryTimeline,
+  generateCustomerMessage,
+  detectDeliveryAnomalies,
+  estimateDeliveryTime,
+  summarizeDailyOps,
+  DEFAULT_MODEL,
+} from "../lib/ai";
+import type { MessageType } from "../lib/ai";
 
 // Web Crypto API — works in both Edge and Node runtimes
 function generateToken(): string {
@@ -446,6 +455,72 @@ deliveriesRouter.post("/from-order", async (c) => {
   return c.json({ data: serializeDelivery(doc) });
 });
 
+// ── GET /api/deliveries/anomalies ────────────────────────────────────────────
+deliveriesRouter.get("/anomalies", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const filters: unknown[] = [
+    ["docstatus", "!=", 2],
+    ["lsh_status", "not in", ["Delivered", "Cancelled"]],
+  ];
+  if (user.role !== "super_admin") {
+    const locCode = resolveLocationCode(user, c.req.query("locationId"));
+    if (locCode) filters.push(["lsh_origin_location", "=", locCode]);
+  }
+
+  const docs = await erpList<any>("LSH Delivery", {
+    filters,
+    fields: ["name", "customer_name", "lsh_status", "lsh_scheduled_at", "lsh_dispatched_at", "lsh_courier_name", "lsh_origin_location", "lsh_delivery_notes"],
+    limit: 100,
+    order_by: "creation desc",
+  });
+
+  try {
+    const anomalies = await detectDeliveryAnomalies(docs);
+    return c.json({ data: anomalies });
+  } catch (err: any) {
+    console.error("[ai:anomalies] error:", err?.message ?? err);
+    return c.json({ error: { message: err?.message ?? "AI call failed" } }, 502);
+  }
+});
+
+// ── GET /api/deliveries/daily-ops-summary ────────────────────────────────────
+deliveriesRouter.get("/daily-ops-summary", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const filters: unknown[] = [["docstatus", "!=", 2]];
+  let locationLabel: string | undefined;
+
+  if (user.role !== "super_admin") {
+    const locCode = resolveLocationCode(user, c.req.query("locationId"));
+    if (locCode) {
+      filters.push(["lsh_origin_location", "=", locCode]);
+      locationLabel = locCode;
+    }
+  }
+
+  // Today's deliveries
+  const today = new Date().toISOString().slice(0, 10);
+  filters.push(["DATE(creation)", ">=", today]);
+
+  const docs = await erpList<any>("LSH Delivery", {
+    filters,
+    fields: ["name", "customer_name", "lsh_status", "lsh_courier_name", "lsh_delivered_at", "lsh_dispatched_at"],
+    limit: 200,
+    order_by: "creation desc",
+  });
+
+  try {
+    const result = await summarizeDailyOps(docs, locationLabel);
+    return c.json({ data: { ...result, totalDeliveries: docs.length, model: DEFAULT_MODEL } });
+  } catch (err: any) {
+    console.error("[ai:daily-ops] error:", err?.message ?? err);
+    return c.json({ error: { message: err?.message ?? "AI call failed" } }, 502);
+  }
+});
+
 // ── GET /api/deliveries/:id ───────────────────────────────────────────────────
 deliveriesRouter.get("/:id", async (c) => {
   const user = await getAuthedUser(c);
@@ -783,6 +858,67 @@ deliveriesRouter.post("/:id/log-label-print", async (c) => {
   }
 
   return c.json({ data: null });
+});
+
+// ── POST /api/deliveries/:id/generate-message ────────────────────────────────
+deliveriesRouter.post("/:id/generate-message", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const id = c.req.param("id");
+  const doc = await erpGet<any>("LSH Delivery", id);
+  if (!doc) return c.json({ error: { message: "Not found" } }, 404);
+
+  if (user.role === "driver") {
+    if (doc.lsh_courier_name !== user.name && doc.lsh_courier_name !== user.email) {
+      return c.json({ error: { message: "Forbidden" } }, 403);
+    }
+  } else if (user.role !== "super_admin") {
+    const locCode = resolveLocationCode(user, null);
+    if (locCode && doc.lsh_origin_location !== locCode) {
+      return c.json({ error: { message: "Forbidden" } }, 403);
+    }
+  }
+
+  const body = await c.req.json() as { type: MessageType; channel: "sms" | "email"; customContext?: string };
+  if (!body.type || !body.channel) return c.json({ error: { message: "type and channel are required" } }, 400);
+
+  try {
+    const message = await generateCustomerMessage(doc, body.type, body.channel, body.customContext);
+    return c.json({ data: { deliveryId: id, message, type: body.type, channel: body.channel, model: DEFAULT_MODEL } });
+  } catch (err: any) {
+    console.error("[ai:generate-message] error:", err?.message ?? err);
+    return c.json({ error: { message: err?.message ?? "AI call failed" } }, 502);
+  }
+});
+
+// ── GET /api/deliveries/:id/estimate-time ────────────────────────────────────
+deliveriesRouter.get("/:id/estimate-time", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const id = c.req.param("id");
+  const doc = await erpGet<any>("LSH Delivery", id);
+  if (!doc) return c.json({ error: { message: "Not found" } }, 404);
+
+  if (user.role === "driver") {
+    if (doc.lsh_courier_name !== user.name && doc.lsh_courier_name !== user.email) {
+      return c.json({ error: { message: "Forbidden" } }, 403);
+    }
+  } else if (user.role !== "super_admin") {
+    const locCode = resolveLocationCode(user, null);
+    if (locCode && doc.lsh_origin_location !== locCode) {
+      return c.json({ error: { message: "Forbidden" } }, 403);
+    }
+  }
+
+  try {
+    const result = await estimateDeliveryTime(doc);
+    return c.json({ data: { deliveryId: id, ...result, model: DEFAULT_MODEL } });
+  } catch (err: any) {
+    console.error("[ai:estimate-time] error:", err?.message ?? err);
+    return c.json({ error: { message: err?.message ?? "AI call failed" } }, 502);
+  }
 });
 
 // ── GET /api/deliveries/:id/suggest-status ───────────────────────────────────

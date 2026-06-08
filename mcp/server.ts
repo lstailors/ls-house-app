@@ -311,6 +311,112 @@ server.tool(
   }
 );
 
+// AI: generate customer message
+server.tool(
+  "lst_generate_customer_message",
+  "Draft a personalized SMS or email to a customer based on their delivery. Types: delay_apology, out_for_delivery, delivered_confirmation, pickup_reminder, custom.",
+  {
+    delivery_id:    z.string().describe("Delivery ID e.g. DN-NYC-2025-00042"),
+    type:           z.enum(["delay_apology", "out_for_delivery", "delivered_confirmation", "pickup_reminder", "custom"]).describe("Message purpose"),
+    channel:        z.enum(["sms", "email"]).default("sms").describe("Communication channel"),
+    custom_context: z.string().optional().describe("Extra context when type is 'custom'"),
+  },
+  async ({ delivery_id, type, channel, custom_context }) => {
+    const result = await api(`/deliveries/${encodeURIComponent(delivery_id)}/generate-message`, {
+      method: "POST",
+      body: JSON.stringify({ type, channel, customContext: custom_context }),
+    });
+    return {
+      content: [{
+        type: "text",
+        text: [
+          `✍️ **Drafted ${channel.toUpperCase()} — ${type.replace(/_/g, " ")} — ${delivery_id}**`,
+          ``,
+          result.message,
+          ``,
+          `_Model: ${result.model}_`,
+        ].join("\n"),
+      }],
+    };
+  }
+);
+
+// AI: estimate delivery time
+server.tool(
+  "lst_estimate_delivery_time",
+  "Use AI to estimate when a delivery will be completed based on its current status, dispatch time, and timeline.",
+  {
+    delivery_id: z.string().describe("Delivery ID e.g. DN-NYC-2025-00042"),
+  },
+  async ({ delivery_id }) => {
+    const result = await api(`/deliveries/${encodeURIComponent(delivery_id)}/estimate-time`);
+    const conf = result.confidence === "high" ? "🟢" : result.confidence === "medium" ? "🟡" : "🔴";
+    return {
+      content: [{
+        type: "text",
+        text: [
+          `⏱️ **Delivery Estimate — ${delivery_id}**`,
+          ``,
+          `${conf} **${result.estimate}**`,
+          `Confidence: ${result.confidence}`,
+          `Reasoning: ${result.reasoning}`,
+          ``,
+          `_Model: ${result.model}_`,
+        ].join("\n"),
+      }],
+    };
+  }
+);
+
+// AI: detect anomalies across all active deliveries
+server.tool(
+  "lst_detect_delivery_anomalies",
+  "Use AI to scan all active deliveries and flag anything suspicious — overdue, stuck in transit, no courier, failed with no follow-up.",
+  {},
+  async () => {
+    const anomalies = await api("/deliveries/anomalies");
+    if (!anomalies.length) {
+      return { content: [{ type: "text", text: "✅ No anomalies detected across active deliveries." }] };
+    }
+    const ICON: Record<string, string> = { high: "🔴", medium: "🟡", low: "🟢" };
+    const lines = anomalies.map((a: any) =>
+      `${ICON[a.severity] ?? "⚪"} **${a.deliveryId}** (${a.customer}) — ${a.issue}\n   → ${a.recommendation}`
+    );
+    return {
+      content: [{
+        type: "text",
+        text: [`⚠️ **${anomalies.length} anomaly/anomalies detected**`, "", ...lines].join("\n"),
+      }],
+    };
+  }
+);
+
+// AI: daily ops summary
+server.tool(
+  "lst_daily_ops_summary",
+  "Generate an AI-written end-of-day operations briefing: what shipped, what failed, what's still open, and any patterns for the manager.",
+  {},
+  async () => {
+    const result = await api("/deliveries/daily-ops-summary");
+    const highlights = (result.highlights ?? []).map((h: string) => `  ✓ ${h}`).join("\n");
+    const flagged    = (result.flagged    ?? []).map((f: string) => `  ⚑ ${f}`).join("\n");
+    return {
+      content: [{
+        type: "text",
+        text: [
+          `📊 **Daily Ops Summary** (${result.totalDeliveries ?? "?"} deliveries today)`,
+          ``,
+          result.summary,
+          highlights ? `\n**Highlights:**\n${highlights}` : "",
+          flagged    ? `\n**Follow-up needed:**\n${flagged}` : "",
+          ``,
+          `_Model: ${result.model}_`,
+        ].filter(Boolean).join("\n"),
+      }],
+    };
+  }
+);
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 const transport = new StdioServerTransport();
