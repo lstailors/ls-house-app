@@ -2,9 +2,10 @@
 // All tools Claude needs to operate the L&S stack from chat.
 
 import { Hono } from "hono";
-import { erpList, erpGet } from "../lib/erp";
+import { erpList, erpGet, erpUpdate } from "../lib/erp";
 import { sendSms } from "../lib/twilio";
 import { supabaseAdmin } from "../lib/supabase";
+import { generateText, gatewayModel, DEFAULT_MODEL } from "../lib/ai";
 
 export const mcpRouter = new Hono();
 
@@ -219,6 +220,168 @@ mcpRouter.get("/summary", async (c) => {
       total: inProgress.length + ready.length + received.length,
     },
   });
+});
+
+// ── Deliveries (MCP) ──────────────────────────────────────────────────────────
+
+function erpDatetimeMcp(d?: Date | string | null): string {
+  const dt = d ? new Date(d) : new Date();
+  return dt.toISOString().replace("T", " ").slice(0, 19);
+}
+
+function buildDeliveryTimelineEntry(status: string, actor: string) {
+  const labels: Record<string, string> = {
+    "Queued": "Queued",
+    "Out for Delivery": "Out for Delivery",
+    "Delivered": "Delivered",
+    "Failed": "Attempted — Failed",
+    "Cancelled": "Cancelled",
+  };
+  return {
+    doctype: "LSH Delivery Timeline",
+    event_type: labels[status] ?? status,
+    event_at: erpDatetimeMcp(),
+    actor_label: actor,
+    message: "",
+  };
+}
+
+function withDeliveryTimeline(existing: any, newEntry: Record<string, unknown>) {
+  const rows = (existing?.lsh_timeline ?? []).map((r: any) => ({
+    doctype: "LSH Delivery Timeline",
+    name: r.name,
+    event_type: r.event_type,
+    event_at: r.event_at,
+    actor_label: r.actor_label,
+    message: r.message ?? "",
+  }));
+  return [...rows, newEntry];
+}
+
+// PATCH /api/mcp/deliveries/:id/status — update delivery status + timeline
+mcpRouter.patch("/deliveries/:id/status", async (c) => {
+  const id = c.req.param("id");
+  const { status, actor } = await c.req.json() as { status: string; actor?: string };
+
+  const VALID: Record<string, string> = {
+    "Queued": "Queued",
+    "Out for Delivery": "Out for Delivery",
+    "Delivered": "Delivered",
+    "Failed": "Failed",
+    "Cancelled": "Cancelled",
+  };
+  const erpStatus = VALID[status];
+  if (!erpStatus) return c.json({ error: `Invalid status. Allowed: ${Object.keys(VALID).join(", ")}` }, 400);
+
+  const existing = await erpGet<any>("LSH Delivery", id);
+  if (!existing) return c.json({ error: "Not found" }, 404);
+
+  const updates: Record<string, unknown> = {
+    lsh_status: erpStatus,
+    lsh_timeline: withDeliveryTimeline(existing, buildDeliveryTimelineEntry(erpStatus, actor ?? "Claude MCP")),
+  };
+  if (erpStatus === "Delivered") updates.lsh_delivered_at = erpDatetimeMcp();
+  if (erpStatus === "Out for Delivery") updates.lsh_dispatched_at = erpDatetimeMcp();
+
+  const updated = await erpUpdate<any>("LSH Delivery", id, updates);
+  if (!updated) return c.json({ error: "Update failed" }, 502);
+
+  return c.json({ data: { deliveryId: id, status: erpStatus } });
+});
+
+// GET /api/mcp/deliveries/:id/suggest-status — AI-powered next-status suggestion
+mcpRouter.get("/deliveries/:id/suggest-status", async (c) => {
+  const id = c.req.param("id");
+  const doc = await erpGet<any>("LSH Delivery", id);
+  if (!doc) return c.json({ error: "Not found" }, 404);
+
+  const timelineText = (doc.lsh_timeline ?? [])
+    .map((t: any) => `  - ${t.event_type} at ${t.event_at} by ${t.actor_label}${t.message ? `: ${t.message}` : ""}`)
+    .join("\n") || "  (no timeline entries yet)";
+
+  const prompt = `You are a logistics coordinator for L&S Custom Tailors, a luxury tailoring service in New York and Houston.
+
+Analyze the following delivery record and recommend what the next status should be.
+
+Delivery ID: ${doc.name}
+Customer: ${doc.customer_name ?? "Unknown"}
+Current Status: ${doc.lsh_status ?? "Queued"}
+Method: ${doc.lsh_delivery_method ?? "Hand Delivery"}
+Scheduled At: ${doc.lsh_scheduled_at ?? "Not scheduled"}
+Address: ${[doc.lsh_delivery_address, doc.lsh_delivery_city].filter(Boolean).join(", ") || "Not set"}
+Courier: ${doc.lsh_courier_name ?? "Not assigned"}
+Notes: ${doc.lsh_delivery_notes ?? "None"}
+
+Timeline:
+${timelineText}
+
+Valid next statuses: Queued, Out for Delivery, Delivered, Failed, Cancelled
+
+Respond ONLY with this exact JSON (no markdown, no extra text):
+{"status": "<next status>", "reason": "<one concise sentence explaining why>"}`;
+
+  try {
+    const { text, usage } = await generateText({
+      model: gatewayModel(),
+      prompt,
+      maxOutputTokens: 256,
+    });
+
+    console.log(`[ai:suggest-status] ${id} in=${usage.inputTokens} out=${usage.outputTokens}`);
+
+    const match = text.match(/\{[\s\S]*?\}/);
+    if (!match) return c.json({ error: "AI returned unexpected format", raw: text }, 502);
+
+    const parsed = JSON.parse(match[0]) as { status: string; reason: string };
+    return c.json({ data: { deliveryId: id, status: parsed.status, reason: parsed.reason, model: DEFAULT_MODEL } });
+  } catch (err: any) {
+    console.error("[ai:suggest-status] error:", err?.message ?? err);
+    return c.json({ error: err?.message ?? "AI call failed" }, 502);
+  }
+});
+
+// GET /api/mcp/deliveries/:id/summarize-timeline — AI-generated timeline narrative
+mcpRouter.get("/deliveries/:id/summarize-timeline", async (c) => {
+  const id = c.req.param("id");
+  const doc = await erpGet<any>("LSH Delivery", id);
+  if (!doc) return c.json({ error: "Not found" }, 404);
+
+  const timeline: any[] = doc.lsh_timeline ?? [];
+  if (!timeline.length) {
+    return c.json({ data: { deliveryId: id, summary: "No timeline events recorded yet.", model: DEFAULT_MODEL } });
+  }
+
+  const timelineText = timeline
+    .map((t) => `- ${t.event_type} on ${t.event_at} (by ${t.actor_label})${t.message ? `: "${t.message}"` : ""}`)
+    .join("\n");
+
+  const prompt = `You are a customer service assistant for L&S Custom Tailors, a luxury tailoring business.
+
+Write a short, clear, human-friendly summary (2–4 sentences) of the following delivery timeline for internal staff use. Focus on the key milestones and current state. Be concise and professional.
+
+Delivery: ${doc.name}
+Customer: ${doc.customer_name ?? "Unknown"}
+Current Status: ${doc.lsh_status ?? "Unknown"}
+
+Timeline events:
+${timelineText}
+
+Write the summary now (plain text only, no bullet points or headers):`;
+
+  try {
+    const { text, usage } = await generateText({
+      model: gatewayModel(),
+      prompt,
+      maxOutputTokens: 300,
+    });
+
+    console.log(`[ai:summarize-timeline] ${id} in=${usage.inputTokens} out=${usage.outputTokens}`);
+
+    return c.json({ data: { deliveryId: id, summary: text.trim(), model: DEFAULT_MODEL } });
+  } catch (err: any) {
+    console.error("[ai:summarize-timeline] error:", err?.message ?? err);
+    return c.json({ error: err?.message ?? "AI call failed" }, 502);
+  }
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -237,6 +237,80 @@ server.tool(
   }
 );
 
+// ── Deliveries ────────────────────────────────────────────────────────────────
+
+// Update delivery status
+server.tool(
+  "lst_update_delivery_status",
+  "Update a delivery's status and append a timestamped timeline entry in ERPNext.",
+  {
+    delivery_id: z.string().describe("Delivery ID e.g. DN-NYC-2025-00042"),
+    status: z.enum(["Queued", "Out for Delivery", "Delivered", "Failed", "Cancelled"]).describe("New delivery status"),
+    actor: z.string().optional().describe("Name to record in the timeline (defaults to 'Claude MCP')"),
+  },
+  async ({ delivery_id, status, actor }) => {
+    await api(`/deliveries/${encodeURIComponent(delivery_id)}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status, actor }),
+    });
+    const emoji: Record<string, string> = {
+      "Queued": "📋", "Out for Delivery": "🚚", "Delivered": "✅", "Failed": "❌", "Cancelled": "🚫",
+    };
+    return {
+      content: [{ type: "text", text: `${emoji[status] ?? "📦"} **${delivery_id}** → **${status}**` }],
+    };
+  }
+);
+
+// AI: suggest next delivery status
+server.tool(
+  "lst_suggest_delivery_status",
+  "Use AI to analyze a delivery's current state and timeline, then suggest the next logical status with a reason.",
+  {
+    delivery_id: z.string().describe("Delivery ID e.g. DN-NYC-2025-00042"),
+  },
+  async ({ delivery_id }) => {
+    const result = await api(`/deliveries/${encodeURIComponent(delivery_id)}/suggest-status`);
+    return {
+      content: [{
+        type: "text",
+        text: [
+          `🤖 **AI Status Suggestion — ${delivery_id}**`,
+          ``,
+          `Suggested: **${result.status}**`,
+          `Reason: ${result.reason}`,
+          ``,
+          `_Model: ${result.model}_`,
+        ].join("\n"),
+      }],
+    };
+  }
+);
+
+// AI: summarize delivery timeline
+server.tool(
+  "lst_summarize_delivery_timeline",
+  "Use AI to generate a concise, human-readable summary of a delivery's timeline for quick status briefings.",
+  {
+    delivery_id: z.string().describe("Delivery ID e.g. DN-NYC-2025-00042"),
+  },
+  async ({ delivery_id }) => {
+    const result = await api(`/deliveries/${encodeURIComponent(delivery_id)}/summarize-timeline`);
+    return {
+      content: [{
+        type: "text",
+        text: [
+          `📋 **Timeline Summary — ${delivery_id}**`,
+          ``,
+          result.summary,
+          ``,
+          `_Model: ${result.model}_`,
+        ].join("\n"),
+      }],
+    };
+  }
+);
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 const transport = new StdioServerTransport();
