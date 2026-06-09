@@ -61,7 +61,7 @@ const SECTIONS: NavSection[] = [
       { to: "/calendar", label: "Calendar", icon: Calendar, roles: STAFF },
       { to: "/deliveries", label: "Deliveries", icon: Truck, roles: ALL },
       { to: "/tasks", label: "Tasks", icon: CheckSquare, roles: MGMT },
-      { to: "/comms", label: "Intelligence", icon: Radio, roles: MGMT },
+      { to: "/comms", label: "Intelligence", icon: Radio, roles: [...MGMT, "salesperson"] as UserRole[] },
     ],
   },
   {
@@ -69,7 +69,7 @@ const SECTIONS: NavSection[] = [
     roles: STAFF,
     items: [
       { to: "/sofia", label: "Sofia — SMS", icon: MessageSquare, roles: STAFF },
-      { to: "/customers", label: "Customers", icon: Users, roles: MGMT },
+      { to: "/customers", label: "Customers", icon: Users, roles: [...MGMT, "salesperson"] as UserRole[] },
     ],
   },
   {
@@ -83,13 +83,13 @@ const SECTIONS: NavSection[] = [
   },
   {
     title: "Admin",
-    roles: ["super_admin"],
+    roles: ["super_admin", "salesperson"] as UserRole[],
     items: [
       { to: "/admin/users", label: "Users", icon: Shield, roles: ["super_admin"] },
       { to: "/admin/locations", label: "Locations", icon: Building2, roles: ["super_admin"] },
       { to: "/admin/tailors", label: "Tailors", icon: Shield, roles: ["super_admin"] },
       { to: "/admin/overview", label: "Org Overview", icon: Shield, roles: ["super_admin"] },
-      { to: "/admin/board", label: "Alterations Board", icon: Scissors, roles: ["super_admin"] },
+      { to: "/admin/board", label: "Alterations Board", icon: Scissors, roles: ["super_admin", "salesperson"] },
     ],
   },
 ];
