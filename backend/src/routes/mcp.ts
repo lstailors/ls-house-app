@@ -273,8 +273,8 @@ mcpRouter.patch("/deliveries/:id/status", async (c) => {
   const { status, actor } = await c.req.json() as { status: string; actor?: string };
 
   const VALID: Record<string, string> = {
-    "Queued": "queued",
-    "queued": "queued",
+    "Queued": "Queued",
+    "queued": "Queued",
     "Out for Delivery": "Out for Delivery",
     "Delivered": "Delivered",
     "Failed": "Failed",

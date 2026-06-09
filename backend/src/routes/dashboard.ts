@@ -95,7 +95,7 @@ dashboardRouter.get("/kpis", async (c) => {
   if (locCode) siFilters.push(["company", "like", locCode === "HOU" ? "%TX%" : "%NY%"]);
 
   // LSH Delivery for deliveriesDue
-  const deliveryFilters: any[] = [["lsh_status", "in", ["queued", "Out for Delivery"]]];
+  const deliveryFilters: any[] = [["lsh_status", "in", ["Queued", "Out for Delivery"]]];
   if (locCode) deliveryFilters.push(["origin_location", "=", locCode]);
 
   // Today's intake from ERPNext SOs

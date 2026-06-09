@@ -107,8 +107,8 @@ function serializeDelivery(doc: any): object {
     // Map ERP statuses to frontend status tokens
     // "Queued" → "scheduled" so new deliveries appear in the Scheduled tab
     status: (() => {
-      const s = doc.lsh_status ?? "queued";
-      if (s === "queued" || s === "Queued") return "scheduled";
+      const s = doc.lsh_status ?? "Queued";
+      if (s === "Queued" || s === "queued") return "scheduled";
       return s.toLowerCase().replace(/ /g, "_");
     })(),
     method: doc.lsh_delivery_method ?? "Hand Delivery",
@@ -375,7 +375,7 @@ deliveriesRouter.post("/", async (c) => {
     const doc = await erpCreate<any>("LSH Delivery", {
       naming_series: locationId === "HOU" ? "DN-HOU-.YYYY.-" : "DN-NYC-.YYYY.-",
       customer: body.customerId ?? body.customer,
-      lsh_status: "queued",
+      lsh_status: "Queued",
       lsh_delivery_method: body.method ?? "Hand Delivery",
       lsh_origin_location: locationId,
       lsh_delivery_address: body.addressLine ?? body.delivery_address ?? "",
@@ -426,7 +426,7 @@ deliveriesRouter.post("/from-order", async (c) => {
     customer: body.customer_erp_name ?? body.customer_name ?? "Walk-in",
     customer_name: body.customer_name ?? "Walk-in",
     customer_phone: body.customer_phone ?? notifyPhone ?? null,
-    lsh_status: isHandDeliver ? "Delivered" : "queued",
+    lsh_status: isHandDeliver ? "Delivered" : "Queued",
     lsh_delivery_method: body.method ?? "Hand Delivery",
     lsh_origin_location: location,
     lsh_sales_order: body.sales_order ?? null,
@@ -751,15 +751,15 @@ deliveriesRouter.patch("/:id/status", async (c) => {
   if (!body.status) return c.json({ error: { message: "status is required" } }, 400);
 
   const ALLOWED_STATUSES: Record<string, string> = {
-    "queued": "queued",
-    "scheduled": "queued",   // frontend uses "scheduled" for Queued deliveries
+    "queued": "Queued",
+    "scheduled": "Queued",   // frontend uses "scheduled" for Queued deliveries
     "out_for_delivery": "Out for Delivery",
     "out for delivery": "Out for Delivery",
     "In Flight": "Out for Delivery",
     "delivered": "Delivered",
     "failed": "Failed",
     "cancelled": "Cancelled",
-    "Queued": "queued",
+    "Queued": "Queued",
     "Out for Delivery": "Out for Delivery",
     "Delivered": "Delivered",
     "Failed": "Failed",
