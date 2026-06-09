@@ -18,10 +18,13 @@ import {
   Bell,
   Mic,
   CheckCircle2,
+  ShoppingCart,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useMe } from '@/lib/session'
+import type { CartPayload } from '@/lib/cart/parked'
 import { ChargeTerminalButton } from '@/components/payments/ChargeTerminalButton'
 import { EditTicketDrawer } from '@/components/alterations/EditTicketDrawer'
 import {
@@ -833,6 +836,7 @@ export default function TicketDetail() {
 
   const [copiedPayLink, setCopiedPayLink] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+  const { data: me } = useMe()
 
   const [autoNotify, setAutoNotify] = useState<boolean>(() => {
     try { return localStorage.getItem(`notify-ready-${ticketName}`) === 'true' } catch { return false }
@@ -879,6 +883,47 @@ export default function TicketDetail() {
       location: ticket?.origin_location ?? 'NYC',
     };
   };
+
+  const openInIntakeMutation = useMutation({
+    mutationFn: async () => {
+      if (!ticket) throw new Error('No ticket')
+      const cartPayload: CartPayload = {
+        garments: (ticket.garments ?? []).map((g) => ({
+          id: g.garment_id,
+          ref: g.garment_id,
+          garmentType: g.garment_type,
+          description: g.garment_description,
+          color: g.color ?? '',
+          notes: '',
+          lines: (ticket.lines ?? [])
+            .filter((l) => l.garment_ref === g.garment_id)
+            .map((l) => ({
+              preset: l.preset ?? '',
+              description: l.description,
+              price: l.price,
+              estMinutes: null,
+            })),
+        })),
+        lines: [],
+      }
+      return api.post<{ id: string }>('/api/carts', {
+        createdBy: me?.user?.email ?? '',
+        location: ticket.origin_location ?? 'NYC',
+        customer: {
+          name: ticket.customer_name ?? '',
+          phone: ticket.customer_mobile ?? '',
+          email: '',
+        },
+        customerRef: ticket.customer ?? null,
+        cart: cartPayload,
+      })
+    },
+    onSuccess: () => {
+      toast.success('Cart created — open Saved Carts in intake')
+      navigate('/intake/alterations')
+    },
+    onError: () => toast.error('Could not create cart'),
+  })
 
   const createDeliveryMutation = useMutation({
     mutationFn: async () => api.post<{ id: string; qrToken: string }>('/api/deliveries/from-order', buildDeliveryPayload()),
@@ -995,18 +1040,34 @@ export default function TicketDetail() {
           </div>
 
           <div className="flex flex-col items-end gap-2">
-            <button
-              type="button"
-              onClick={() => setEditOpen(true)}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all',
-                'bg-forest-raised border-brass/25 text-cream-muted',
-                'hover:border-brass/50 hover:text-cream'
-              )}
-            >
-              <Pencil size={12} />
-              Edit
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => openInIntakeMutation.mutate()}
+                disabled={openInIntakeMutation.isPending}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all',
+                  'bg-forest-raised border-brass/25 text-cream-muted',
+                  'hover:border-brass/50 hover:text-cream',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
+                )}
+              >
+                <ShoppingCart size={12} />
+                {openInIntakeMutation.isPending ? 'Creating…' : 'Open in Intake'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditOpen(true)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all',
+                  'bg-forest-raised border-brass/25 text-cream-muted',
+                  'hover:border-brass/50 hover:text-cream'
+                )}
+              >
+                <Pencil size={12} />
+                Edit
+              </button>
+            </div>
             <InlineDueDate ticket={ticket} ticketName={ticketName!} />
           </div>
         </div>

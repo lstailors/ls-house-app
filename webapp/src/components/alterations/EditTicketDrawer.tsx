@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
@@ -22,6 +22,14 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 
 // ── Types ──────────────────────────────────────────────────────────────────
+
+interface Preset {
+  id: string
+  preset_name: string
+  price: number
+  est_minutes: number | null
+  garment_types: string[]
+}
 
 interface Garment {
   garment_id: string
@@ -75,6 +83,12 @@ export function EditTicketDrawer({
   initialLines,
 }: Props) {
   const queryClient = useQueryClient()
+
+  const { data: presets = [] } = useQuery<Preset[]>({
+    queryKey: ['presets', 'NYC'],
+    queryFn: () => api.get<Preset[]>('/api/intake-alterations/presets?origin=NYC'),
+    staleTime: 5 * 60 * 1000,
+  })
 
   const [garments, setGarments] = useState<Array<Garment & { _key: string }>>(() =>
     initialGarments.map((g) => ({
@@ -153,6 +167,34 @@ export function EditTicketDrawer({
         return { ...g, [field]: value }
       })
     )
+  }
+
+  // ── Preset helpers ──────────────────────────────────────────────────────
+
+  function presetsForGarment(garmentType: string) {
+    return presets.filter(
+      (p) => p.garment_types.length === 0 || p.garment_types.includes(garmentType)
+    )
+  }
+
+  function isPresetActive(garmentId: string, preset: Preset) {
+    return lines.some(
+      (l) => l.garment_ref === garmentId && l.description === preset.preset_name
+    )
+  }
+
+  function togglePreset(garmentId: string, preset: Preset) {
+    const existing = lines.find(
+      (l) => l.garment_ref === garmentId && l.description === preset.preset_name
+    )
+    if (existing) {
+      setLines((prev) => prev.filter((l) => l._key !== existing._key))
+    } else {
+      setLines((prev) => [
+        ...prev,
+        { _key: uid(), garment_ref: garmentId, description: preset.preset_name, price: preset.price },
+      ])
+    }
   }
 
   // ── Line helpers ────────────────────────────────────────────────────────
@@ -318,6 +360,35 @@ export function EditTicketDrawer({
                       </button>
                     </div>
                   ))}
+
+                  {/* Preset chips */}
+                  {presetsForGarment(g.garment_type).length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {presetsForGarment(g.garment_type).map((preset) => {
+                        const active = isPresetActive(g.garment_id, preset)
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() => togglePreset(g.garment_id, preset)}
+                            className={cn(
+                              'px-2 py-0.5 rounded-full text-xs border transition-all',
+                              active
+                                ? 'bg-brass-shimmer/25 border-brass/60 text-brass-light font-medium'
+                                : 'bg-transparent border-brass/20 text-cream-dim/60 hover:border-brass/40 hover:text-cream-dim'
+                            )}
+                          >
+                            {preset.preset_name}
+                            {active ? null : (
+                              <span className="ml-1 text-cream-dim/40">
+                                ${preset.price}
+                              </span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : null}
 
                   <button
                     type="button"
