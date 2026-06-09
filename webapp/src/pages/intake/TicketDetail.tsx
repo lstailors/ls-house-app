@@ -911,6 +911,10 @@ export default function TicketDetail() {
       api.patch(`/api/intake-alterations/tickets/${ticketName}/status`, { status }),
     onSuccess: async (_data, status) => {
       toast.success(`Status updated to "${status}"`)
+      // Immediately update the progress bar without waiting for refetch
+      queryClient.setQueryData(['ticket', ticketName], (old: any) =>
+        old ? { ...old, workflow_state: status } : old
+      )
       if (status === 'Ready' && autoNotify && ticket?.customer_mobile) {
         const firstName = ticket.customer_name?.split(' ')[0] ?? 'there'
         const eTicketUrl = `${window.location.origin}/e-ticket/${ticketName}`
