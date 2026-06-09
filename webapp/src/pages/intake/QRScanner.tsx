@@ -117,13 +117,13 @@ export default function QRScanner() {
     // Customer e-ticket URL (https://app.lstailors.com/e-ticket/ALT-NYC-2026-XXXXX)
     const eTicketMatch = token.match(/\/e-ticket\/(ALT-[^/?#\s]+)/)
     if (eTicketMatch) {
-      navigate(`/intake/tickets/${eTicketMatch[1]}`)
+      navigate(`/orders/alterations/${eTicketMatch[1]}`)
       return
     }
 
     // Bare alteration ticket name (ALT-NYC-2026-XXXXX) scanned or typed directly
     if (/^ALT-[A-Z]+-\d{4}-\d+$/.test(token.trim())) {
-      navigate(`/intake/tickets/${token.trim()}`)
+      navigate(`/orders/alterations/${token.trim()}`)
       return
     }
 
