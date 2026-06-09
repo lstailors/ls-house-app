@@ -127,19 +127,9 @@ export default function PayInvoice() {
 
         const card = await payments.card({
           style: {
-            ".input-container": {
-              borderColor: "#B08D57",
-              borderRadius: "6px",
-              backgroundColor: "#132a1a",
-            },
-            ".input-container.is-focused": { borderColor: "#F1E9D6" },
-            input: {
-              color: "#F1E9D6",
-              backgroundColor: "#132a1a",
-              fontFamily: "Montserrat, sans-serif",
-              fontSize: "14px",
-            },
-            "input::placeholder": { color: "#6B7A6B" },
+            ".input-container": { borderColor: "#4a7c59", borderRadius: "6px" },
+            input: { color: "#1a2e1d", fontFamily: "Montserrat", fontSize: "14px" },
+            "input::placeholder": { color: "#9ca3af" },
           },
         });
         await card.attach("#card-container");
@@ -357,7 +347,7 @@ export default function PayInvoice() {
                   <CreditCard className="h-3 w-3" />
                   Card details
                 </div>
-                <div id="card-container" className="rounded-md overflow-hidden" style={{ border: "1px solid rgba(176, 141, 87, 0.35)", background: "#132a1a", minHeight: "54px" }} />
+                <div id="card-container" className="rounded-md overflow-hidden" style={{ border: "1px solid rgba(176, 141, 87, 0.5)", background: "#ffffff", minHeight: "54px" }} />
               </div>
 
               {errorMsg && (
