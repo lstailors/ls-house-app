@@ -126,6 +126,26 @@ export function MarkDeliveredDialog({ delivery, onClose }: Props) {
     onClose();
   };
 
+  const handleNoPod = async () => {
+    if (!delivery) return;
+    setSubmitting(true);
+    try {
+      await markDelivered.mutateAsync({
+        id: delivery.id,
+        podMethod: "No POD",
+        gpsLat: gps?.latitude,
+        gpsLng: gps?.longitude,
+        gpsAccuracy: gps?.accuracy,
+      });
+      toast.success("Delivery marked as done");
+      handleClose();
+    } catch (e) {
+      toast.error((e as Error).message || "Could not update delivery");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const onSubmit = async (values: FormValues) => {
     if (!delivery) return;
 
@@ -200,6 +220,22 @@ export function MarkDeliveredDialog({ delivery, onClose }: Props) {
             {delivery ? `Confirm delivery for ${delivery.customer?.name ?? "this customer"}.` : ""}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Quick mark done — no POD required */}
+        <Button
+          type="button"
+          onClick={handleNoPod}
+          disabled={submitting}
+          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium h-11 mb-1"
+        >
+          <CheckCircle2 className="h-4 w-4 mr-1.5" />
+          Mark as done (no proof needed)
+        </Button>
+        <div className="flex items-center gap-2 my-3">
+          <div className="flex-1 h-px bg-[#c9a84c]/15" />
+          <span className="text-[10px] uppercase tracking-widest text-[#8a7560]">or add proof of delivery</span>
+          <div className="flex-1 h-px bg-[#c9a84c]/15" />
+        </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-1">
 
