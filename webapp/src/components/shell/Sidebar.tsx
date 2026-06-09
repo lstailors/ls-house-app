@@ -56,7 +56,7 @@ const SECTIONS: NavSection[] = [
   },
   {
     title: "Ops",
-    roles: [...MGMT, "tailor"] as UserRole[],
+    roles: [...MGMT, "tailor", "salesperson"] as UserRole[],
     items: [
       { to: "/calendar", label: "Calendar", icon: Calendar, roles: STAFF },
       { to: "/deliveries", label: "Deliveries", icon: Truck, roles: ALL },
