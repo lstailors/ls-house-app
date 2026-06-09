@@ -39,10 +39,11 @@ import { sendSms } from "../lib/twilio";
 // ── Timeline helper ───────────────────────────────────────────────────────────
 // ERPNext child tables must be sent in full. Fetch existing rows, append new entry.
 const EVENT_LABELS: Record<string, string> = {
-  "Queued":           "Queued",
+  "queued":           "queued",
+  "Queued":           "queued",
   "Out for Delivery": "Out for Delivery",
   "Delivered":        "Delivered",
-  "Failed":           "Attempted — Failed",
+  "Failed":           "Failed",
   "Cancelled":        "Cancelled",
 };
 
