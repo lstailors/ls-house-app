@@ -2,7 +2,7 @@ import { createGateway } from "@ai-sdk/gateway";
 import { generateText, streamText } from "ai";
 
 if (!process.env.AI_GATEWAY_API_KEY) {
-  process.stderr.write("[ai] WARNING: AI_GATEWAY_API_KEY is not set — AI features will fail\n");
+  console.warn("[ai] WARNING: AI_GATEWAY_API_KEY is not set — AI features will fail");
 }
 
 const _gateway = createGateway({
