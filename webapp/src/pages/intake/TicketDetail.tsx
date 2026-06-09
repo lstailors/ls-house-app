@@ -929,7 +929,10 @@ export default function TicketDetail() {
           toast.error('Status updated but SMS notification failed')
         }
       }
-      queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
+      // Delay refetch — ERPNext workflow state takes a moment to propagate
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
+      }, 3000)
     },
     onError: () => {
       toast.error('Failed to update status')
