@@ -472,15 +472,19 @@ intakeAlterationsRouter.patch('/tickets/:name/status', async (c) => {
       return c.json({ data: { ok: true } }); // already at target
     }
 
-    // Apply each transition via Frappe REST API using __workflow_action
+    // Apply each transition via frappe.model.workflow.apply_workflow (same approach as alterations.ts)
     for (const action of path) {
       const res = await fetch(
-        `${ERP_BASE}/api/resource/${encodeURIComponent('Alteration Ticket')}/${encodeURIComponent(ticketName)}`,
-        { method: 'PUT', headers: erpHeaders(), body: JSON.stringify({ __workflow_action: action }) }
+        `${ERP_BASE}/api/method/frappe.model.workflow.apply_workflow`,
+        {
+          method: 'POST',
+          headers: erpHeaders(),
+          body: JSON.stringify({ doc: JSON.stringify({ doctype: 'Alteration Ticket', name: ticketName }), action }),
+        }
       );
       if (!res.ok) {
-        const t = await res.text().catch(() => '');
-        return c.json({ error: { message: `Workflow action "${action}" failed: ${t.slice(0, 150)}` } }, 502);
+        const err = await res.json().catch(() => ({})) as any;
+        return c.json({ error: { message: `Workflow action "${action}" failed: ${err._server_messages ?? err.message ?? res.status}` } }, 502);
       }
     }
 
