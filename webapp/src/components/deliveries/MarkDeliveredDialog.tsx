@@ -40,9 +40,6 @@ const POD_METHODS = [
   "Signature",
   "Photo Only",
   "Signature + Photo",
-  "Verbal Confirmation",
-  "Left with Doorman",
-  "Left at Door",
 ];
 
 const REQUIRES_PHOTO = new Set(["Photo Only", "Signature + Photo"]);
@@ -132,7 +129,7 @@ export function MarkDeliveredDialog({ delivery, onClose }: Props) {
     try {
       await markDelivered.mutateAsync({
         id: delivery.id,
-        podMethod: "No POD",
+        podMethod: "",
         gpsLat: gps?.latitude,
         gpsLng: gps?.longitude,
         gpsAccuracy: gps?.accuracy,
