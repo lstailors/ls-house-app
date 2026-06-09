@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Phone, MapPin, Clock, CheckCircle2, Truck, Printer,
   Camera, Search, Loader2, User, Pencil, PenLine, Navigation, QrCode,
-  Package, ExternalLink, FileText, MessageSquare,
+  Package, ExternalLink, FileText, MessageSquare, XCircle,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 import { useUpdateDelivery, useCustomerSearch, useDeliveryProofUrls } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { StatusPill } from "@/components/glass/StatusPill";
 import { formatDateTime } from "@/lib/format";
@@ -100,6 +101,15 @@ export default function DeliveryDetail() {
     } catch { toast.error("Could not update"); }
   };
 
+  const handleCancel = async () => {
+    try {
+      await update.mutateAsync({ id: id!, status: "cancelled" });
+      qc.invalidateQueries({ queryKey: ["delivery", id] });
+      qc.invalidateQueries({ queryKey: ["deliveries"] });
+      toast.success("Delivery cancelled");
+    } catch { toast.error("Could not cancel delivery"); }
+  };
+
   if (isLoading) {
     return <div className="flex items-center justify-center h-48 text-cream-muted text-sm">Loading…</div>;
   }
@@ -115,6 +125,9 @@ export default function DeliveryDetail() {
 
   const isOut = delivery.status === "out_for_delivery";
   const isDelivered = delivery.status === "delivered";
+  const isCancelled = delivery.status === "cancelled";
+  const isScheduled = delivery.status === "scheduled";
+  const canCancel = !isDelivered && !isCancelled;
   const photos = [proof?.photo1, proof?.photo2, proof?.photo3].filter(Boolean) as string[];
   const mapsUrl = delivery.gpsLatitude && delivery.gpsLongitude
     ? `https://maps.google.com/?q=${delivery.gpsLatitude},${delivery.gpsLongitude}`
@@ -171,13 +184,13 @@ export default function DeliveryDetail() {
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2">
-        {delivery.status === "scheduled" ? (
+      <div className="flex gap-2 flex-wrap">
+        {isScheduled ? (
           <Button onClick={handleStart} disabled={update.isPending} className="btn-brass flex-1">
             <Truck className="h-4 w-4 mr-1.5" /> Start delivery
           </Button>
         ) : null}
-        {isOut ? (
+        {(isOut || isScheduled) ? (
           <Button onClick={() => setMarkDeliveredOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white flex-1">
             <CheckCircle2 className="h-4 w-4 mr-1.5" /> Mark delivered
           </Button>
@@ -196,6 +209,32 @@ export default function DeliveryDetail() {
               <Phone className="h-4 w-4" />
             </a>
           </Button>
+        ) : null}
+        {canCancel ? (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" className="border-red-500/30 hover:bg-red-500/10 text-red-400" title="Cancel delivery">
+                <XCircle className="h-4 w-4" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Cancel this delivery?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will mark the delivery as cancelled. It will be removed from the active board.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Keep it</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleCancel}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Yes, cancel delivery
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         ) : null}
       </div>
 
