@@ -127,13 +127,25 @@ export default function PayInvoice() {
 
         const card = await payments.card({
           style: {
-            ".input-container": { borderColor: "#B08D57", borderRadius: "4px" },
+            ".input-container": {
+              borderColor: "#B08D57",
+              borderRadius: "6px",
+              backgroundColor: "#132a1a",
+            },
             ".input-container.is-focused": { borderColor: "#F1E9D6" },
-            input: { color: "#F1E9D6", fontFamily: "Montserrat, sans-serif", fontSize: "14px" },
+            input: {
+              color: "#F1E9D6",
+              backgroundColor: "#132a1a",
+              fontFamily: "Montserrat, sans-serif",
+              fontSize: "14px",
+            },
             "input::placeholder": { color: "#6B7A6B" },
           },
         });
         await card.attach("#card-container");
+        if (!document.querySelector("#card-container iframe")) {
+          throw new Error("Card element did not render — check Square Dashboard configuration.");
+        }
         cardRef.current = card;
 
         const amountStr = (invoice.outstanding_amount ?? invoice.grand_total ?? 0).toFixed(2);
@@ -345,7 +357,7 @@ export default function PayInvoice() {
                   <CreditCard className="h-3 w-3" />
                   Card details
                 </div>
-                <div id="card-container" className="rounded-md min-h-[48px] px-1" style={{ border: "1px solid rgba(176, 141, 87, 0.35)", background: "rgba(13, 26, 16, 0.5)", padding: "12px" }} />
+                <div id="card-container" className="rounded-md overflow-hidden" style={{ border: "1px solid rgba(176, 141, 87, 0.35)", background: "#132a1a", minHeight: "54px" }} />
               </div>
 
               {errorMsg && (
