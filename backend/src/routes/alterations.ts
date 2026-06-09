@@ -388,6 +388,68 @@ alterationsRouter.patch("/:id", async (c) => {
   return c.json({ data: data.data ?? {} });
 });
 
+// PATCH /api/alterations/:id/full — replace garments + lines child tables
+alterationsRouter.patch("/:id/full", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const id = c.req.param("id");
+  const body = await c.req.json() as {
+    garments: Array<{
+      garment_id: string;
+      garment_type: string;
+      garment_description: string;
+      color?: string;
+      fabric_notes?: string;
+    }>;
+    lines: Array<{
+      garment_ref: string;
+      description: string;
+      price: number;
+    }>;
+  };
+
+  const { base, key, secret } = {
+    base: process.env.ERPNEXT_BASE_URL ?? "",
+    key: process.env.ERPNEXT_API_KEY ?? "",
+    secret: process.env.ERPNEXT_API_SECRET ?? "",
+  };
+
+  const res = await fetch(
+    `${base}/api/resource/Alteration%20Ticket/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `token ${key}:${secret}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        garments: body.garments.map((g) => ({
+          garment_id: g.garment_id,
+          garment_type: g.garment_type,
+          garment_description: g.garment_description,
+          color: g.color ?? "",
+          fabric_notes: g.fabric_notes ?? "",
+        })),
+        lines: body.lines.map((l) => ({
+          garment_ref: l.garment_ref,
+          description: l.description,
+          price: l.price,
+        })),
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as any;
+    return c.json({ error: { message: err._server_messages || err.exception || "Update failed" } }, 502);
+  }
+
+  const updated = await res.json() as { data: ErpTicket };
+  return c.json({ data: serialize(updated.data) });
+});
+
 // GET /api/alterations/:ticketId/garments/:garmentId
 alterationsRouter.get("/:ticketId/garments/:garmentId", async (c) => {
   const user = await getAuthedUser(c);

@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ChargeTerminalButton } from '@/components/payments/ChargeTerminalButton'
+import { EditTicketDrawer } from '@/components/alterations/EditTicketDrawer'
 import {
   Dialog,
   DialogContent,
@@ -831,6 +832,7 @@ export default function TicketDetail() {
   const queryClient = useQueryClient()
 
   const [copiedPayLink, setCopiedPayLink] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
 
   const [autoNotify, setAutoNotify] = useState<boolean>(() => {
     try { return localStorage.getItem(`notify-ready-${ticketName}`) === 'true' } catch { return false }
@@ -992,7 +994,21 @@ export default function TicketDetail() {
             </div>
           </div>
 
-          <InlineDueDate ticket={ticket} ticketName={ticketName!} />
+          <div className="flex flex-col items-end gap-2">
+            <button
+              type="button"
+              onClick={() => setEditOpen(true)}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all',
+                'bg-forest-raised border-brass/25 text-cream-muted',
+                'hover:border-brass/50 hover:text-cream'
+              )}
+            >
+              <Pencil size={12} />
+              Edit
+            </button>
+            <InlineDueDate ticket={ticket} ticketName={ticketName!} />
+          </div>
         </div>
 
         {/* ── Workflow Stepper ── */}
@@ -1168,6 +1184,14 @@ export default function TicketDetail() {
         </div>
 
       </div>
+
+      <EditTicketDrawer
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        ticketName={ticketName!}
+        initialGarments={ticket.garments ?? []}
+        initialLines={ticket.lines ?? []}
+      />
     </div>
   )
 }
