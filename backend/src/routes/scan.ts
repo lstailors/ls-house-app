@@ -132,7 +132,7 @@ scanRouter.get("/:token", async (c) => {
 
 scanRouter.post("/:token/pod", async (c) => {
   const token = c.req.param("token");
-  let form: Record<string, string | File | (string | File)[]>;
+  let form: Record<string, any>;
   try { form = await c.req.parseBody({ all: true }); }
   catch { return c.json({ error: { message: "Bad form data" } }, 400); }
 
