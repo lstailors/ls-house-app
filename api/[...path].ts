@@ -1,6 +1,5 @@
-// Vercel Edge function — Hono's app.fetch IS the Fetch API handler.
-// No adapter needed: Vercel Edge and Hono both use Request/Response natively.
-export const config = { runtime: "edge" };
+// Vercel Node.js serverless function — supports full Node.js APIs (required for ai/gateway packages).
+export const config = { runtime: "nodejs" };
 
 import app from "../backend/src/app";
 
