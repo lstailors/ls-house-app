@@ -21,7 +21,7 @@ export interface AlterationRow {
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${ERP_URL}${path}`, { headers: authHeaders, cache: "no-store" });
   if (!res.ok) throw new Error(`ERPNext ${res.status} on ${path}`);
-  return (await res.json()).data as T;
+  return ((await res.json()) as any).data as T;
 }
 
 export async function loadAlterationRows(filter: BoardFilter = "all", location?: string): Promise<AlterationRow[]> {

@@ -12,7 +12,7 @@ authRouter.post(
   "/login",
   zValidator("json", z.object({ email: z.string().email(), password: z.string().min(1) })),
   async (c) => {
-    const { email, password } = c.req.valid("json");
+    const { email, password } = (c.req as any).valid("json");
     const base = ERP_BASE();
     if (!base) return c.json({ error: { message: "Auth service unavailable" } }, 503);
 

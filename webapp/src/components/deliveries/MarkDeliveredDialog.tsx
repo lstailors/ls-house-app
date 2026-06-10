@@ -40,9 +40,6 @@ const POD_METHODS = [
   "Signature",
   "Photo Only",
   "Signature + Photo",
-  "Verbal Confirmation",
-  "Left with Doorman",
-  "Left at Door",
 ];
 
 const REQUIRES_PHOTO = new Set(["Photo Only", "Signature + Photo"]);
@@ -126,6 +123,26 @@ export function MarkDeliveredDialog({ delivery, onClose }: Props) {
     onClose();
   };
 
+  const handleNoPod = async () => {
+    if (!delivery) return;
+    setSubmitting(true);
+    try {
+      await markDelivered.mutateAsync({
+        id: delivery.id,
+        podMethod: "",
+        gpsLat: gps?.latitude,
+        gpsLng: gps?.longitude,
+        gpsAccuracy: gps?.accuracy,
+      });
+      toast.success("Delivery marked as done");
+      handleClose();
+    } catch (e) {
+      toast.error((e as Error).message || "Could not update delivery");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const onSubmit = async (values: FormValues) => {
     if (!delivery) return;
 
@@ -142,39 +159,42 @@ export function MarkDeliveredDialog({ delivery, onClose }: Props) {
     try {
       const id = delivery.id;
       const now = Date.now();
+      const BUCKET = "delivery-photos";
 
-      // Upload photos
-      const photoPaths: (string | null)[] = [null, null, null];
+      // Upload photos → collect public URLs
+      const photoUrls: string[] = [];
       for (let i = 0; i < photos.length; i++) {
         const path = `${id}/photo_${i + 1}_${now}.jpg`;
-        const { error } = await supabase.storage.from("delivery-proofs").upload(path, photos[i], { contentType: "image/jpeg", upsert: true });
+        const { error } = await supabase.storage.from(BUCKET).upload(path, photos[i], { contentType: "image/jpeg", upsert: true });
         if (error) throw new Error(`Photo upload failed: ${error.message}`);
-        photoPaths[i] = path;
+        const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
+        if (pub?.publicUrl) photoUrls.push(pub.publicUrl);
       }
 
-      // Upload signature
-      let signaturePath: string | null = null;
+      // Upload signature → get public URL
+      let signatureImageUrl: string | undefined;
       if (needsSig && sigPadRef.current && !sigPadRef.current.isEmpty()) {
         const dataUrl = sigPadRef.current.getCanvas().toDataURL("image/png");
         const blob = await (await fetch(dataUrl)).blob();
         const sigFile = new File([blob], `signature_${now}.png`, { type: "image/png" });
         const sigPath = `${id}/signature_${now}.png`;
-        const { error } = await supabase.storage.from("delivery-signatures").upload(sigPath, sigFile, { contentType: "image/png", upsert: true });
-        if (!error) signaturePath = sigPath;
+        const { error } = await supabase.storage.from(BUCKET).upload(sigPath, sigFile, { contentType: "image/png", upsert: true });
+        if (!error) {
+          const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(sigPath);
+          signatureImageUrl = pub?.publicUrl ?? undefined;
+        }
       }
 
       await markDelivered.mutateAsync({
         id,
-        pod_method: values.pod_method,
-        received_by: values.received_by || undefined,
-        signature_name: values.signature_name || undefined,
-        pod_photo_1_path: photoPaths[0] ?? undefined,
-        pod_photo_2_path: photoPaths[1] ?? undefined,
-        pod_photo_3_path: photoPaths[2] ?? undefined,
-        signature_image_path: signaturePath ?? undefined,
-        gps_latitude: gps?.latitude,
-        gps_longitude: gps?.longitude,
-        gps_accuracy_meters: gps?.accuracy,
+        podMethod: values.pod_method,
+        receivedBy: values.received_by || undefined,
+        signatureName: values.signature_name || undefined,
+        photoUrls: photoUrls.length > 0 ? photoUrls : undefined,
+        signatureImageUrl,
+        gpsLat: gps?.latitude,
+        gpsLng: gps?.longitude,
+        gpsAccuracy: gps?.accuracy,
       });
 
       toast.success("Delivery marked as complete");
@@ -197,6 +217,22 @@ export function MarkDeliveredDialog({ delivery, onClose }: Props) {
             {delivery ? `Confirm delivery for ${delivery.customer?.name ?? "this customer"}.` : ""}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Quick mark done — no POD required */}
+        <Button
+          type="button"
+          onClick={handleNoPod}
+          disabled={submitting}
+          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium h-11 mb-1"
+        >
+          <CheckCircle2 className="h-4 w-4 mr-1.5" />
+          Mark as done (no proof needed)
+        </Button>
+        <div className="flex items-center gap-2 my-3">
+          <div className="flex-1 h-px bg-[#c9a84c]/15" />
+          <span className="text-[10px] uppercase tracking-widest text-[#8a7560]">or add proof of delivery</span>
+          <div className="flex-1 h-px bg-[#c9a84c]/15" />
+        </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-1">
 

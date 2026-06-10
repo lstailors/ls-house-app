@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser, canSeeFinancials } from "../lib/scope";
+import { erpList } from "../lib/erp";
 
 export const notificationsRouter = new Hono();
 
@@ -116,6 +117,61 @@ notificationsRouter.get("/", async (c) => {
       });
     }
   } catch {}
+
+  // ── ERPNext ToDos — overdue + high priority ───────────────
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const todoFilters: unknown[] = [["status", "=", "Open"]];
+    if (user.role !== "super_admin") todoFilters.push(["allocated_to", "=", user.email]);
+    const todos = await erpList<any>("ToDo", {
+      filters: todoFilters,
+      fields: ["name", "description", "priority", "date", "allocated_to"],
+      limit: 20,
+    }).catch(() => [] as any[]);
+
+    for (const t of todos) {
+      const overdue = t.date && t.date < today;
+      const isHigh = t.priority === "High" || overdue;
+      if (!isHigh) continue;
+      const desc = String(t.description ?? "").replace(/<[^>]*>/g, "").trim().slice(0, 80);
+      notifications.push({
+        id: `todo-${t.name}`,
+        kind: "todo",
+        priority: overdue ? "critical" : "high",
+        title: overdue ? `⚠ Overdue: ${desc}` : desc,
+        body: t.allocated_to ? `→ ${t.allocated_to.split("@")[0]}` : null,
+        meta: t.date ? `Due ${t.date}` : null,
+        ts: t.date ?? null,
+        href: `/tasks`,
+        read: false,
+      });
+    }
+  } catch {}
+
+  // ── Ready-to-deliver orders ───────────────────────────────
+  if (canSeeFinancials(user.role)) {
+    try {
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19);
+      const readyOrders = await erpList<any>("Sales Order", {
+        filters: [["status", "=", "To Deliver and Bill"], ["modified", ">=", weekAgo]],
+        fields: ["name", "customer_name", "delivery_date", "modified"],
+        limit: 5,
+      }).catch(() => [] as any[]);
+
+      for (const o of readyOrders) {
+        notifications.push({
+          id: `ready-${o.name}`,
+          kind: "order_ready",
+          priority: "high",
+          title: `${o.customer_name}'s order is ready`,
+          body: `${o.name} — ready to deliver`,
+          ts: o.modified,
+          href: `/sales-orders/${o.name}`,
+          read: false,
+        });
+      }
+    } catch {}
+  }
 
   // ── Overdue invoices ──────────────────────────────────────
   if (canSeeFinancials(user.role)) {

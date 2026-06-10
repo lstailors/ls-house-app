@@ -233,9 +233,9 @@ export default function Financials() {
   const canSee = me?.role === "super_admin" || me?.role === "store_manager";
   const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem("fin_unlocked") === "1");
 
-  if (!canSee && !unlocked) return <FinancialsGate onUnlock={() => setUnlocked(true)} />;
-
   const { data: rawFin, isLoading } = useFinancials();
+
+  if (!canSee && !unlocked) return <FinancialsGate onUnlock={() => setUnlocked(true)} />;
   const fin = rawFin as unknown as FinData | undefined;
 
   const totalPipeline = fin ? fin.pipeline.reduce((s, p) => s + p.count, 0) : 0;

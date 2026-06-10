@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
-import { erpList, erpGet } from "../lib/erp";
+import { erpList, erpGet, erpCreate, erpUpdate } from "../lib/erp";
 import { sendSms } from "../lib/twilio";
 
 async function callGrok(prompt: string): Promise<string> {
@@ -88,6 +88,7 @@ interface ErpTicket {
   picked_up_at: string | null;
   modified: string;
   creation: string;
+  assigned_tailor: string | null;
   lines?: Array<{ description: string; price: number; garment_ref: string }>;
 }
 
@@ -116,8 +117,8 @@ function serialize(t: ErpTicket) {
     price: t.ticket_total ?? 0,
     status: mapStatus(t.workflow_state),
     workflow_state: t.workflow_state,
-    tailorId: null,
-    tailor: null,
+    tailorId: t.assigned_tailor ?? null,
+    tailor: t.assigned_tailor ? { id: t.assigned_tailor, name: t.assigned_tailor } : null,
     ticketDate: t.ticket_date ?? null,
     dueDate: t.due_date ?? null,
     promisedDate: t.promised_date ?? null,
@@ -145,7 +146,7 @@ const LIST_FIELDS = [
   "is_rush", "internal_notes", "customer_notes",
   "sales_invoice", "linked_sales_order", "included_in_custom",
   "delivery_method", "notified_ready_at", "picked_up_at",
-  "modified", "creation", "lines",
+  "modified", "creation", "assigned_tailor", "lines",
 ];
 
 // GET /api/alterations/kpis — must be before /:id
@@ -209,16 +210,22 @@ alterationsRouter.get("/", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
   const locationCode = c.req.query("location") ?? user.locationCode;
+  const filterCustomer = c.req.query("customer"); // ERPNext customer ID
+  const limitParam = parseInt(c.req.query("limit") ?? "200");
+  const limit = Math.min(isNaN(limitParam) ? 200 : limitParam, 500);
 
   const filters: unknown[] = [["workflow_state", "!=", "Cancelled"]];
-  if (locationCode && locationCode !== "ALL") {
+  if (locationCode && locationCode !== "ALL" && !filterCustomer) {
     filters.push(["origin_location", "=", locationCode]);
+  }
+  if (filterCustomer) {
+    filters.push(["customer", "=", filterCustomer]);
   }
 
   const tickets = await erpList<ErpTicket>("Alteration Ticket", {
     filters,
     fields: LIST_FIELDS,
-    limit: 200,
+    limit,
     order_by: "modified desc",
   });
 
@@ -253,7 +260,44 @@ alterationsRouter.get("/:id", async (c) => {
 alterationsRouter.post("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  return c.json({ error: { message: "Create tickets via intake.lstailors.com" } }, 501);
+
+  const body = await c.req.json() as {
+    customer: string;
+    due_date?: string | null;
+    promised_date?: string | null;
+    origin_location?: string;
+    is_rush?: boolean;
+    internal_notes?: string | null;
+    customer_notes?: string | null;
+    delivery_method?: string | null;
+    assigned_tailor?: string | null;
+    lines?: Array<{ description: string; price: number; garment_ref?: string }>;
+  };
+
+  if (!body.customer) {
+    return c.json({ error: { message: "customer is required" } }, 400);
+  }
+
+  const doc: Record<string, unknown> = {
+    customer: body.customer,
+    origin_location: body.origin_location ?? user.locationCode ?? "",
+    ticket_date: new Date().toISOString().slice(0, 10),
+  };
+  if (body.due_date != null)       doc.due_date = body.due_date;
+  if (body.promised_date != null)  doc.promised_date = body.promised_date;
+  if (body.is_rush != null)        doc.is_rush = body.is_rush ? 1 : 0;
+  if (body.internal_notes != null) doc.internal_notes = body.internal_notes;
+  if (body.customer_notes != null) doc.customer_notes = body.customer_notes;
+  if (body.delivery_method != null) doc.delivery_method = body.delivery_method;
+  if (body.assigned_tailor != null) doc.assigned_tailor = body.assigned_tailor;
+  if (body.lines?.length)          doc.lines = body.lines;
+
+  const created = await erpCreate<ErpTicket>("Alteration Ticket", doc);
+  if (!created) {
+    return c.json({ error: { message: "Failed to create ticket in ERPNext" } }, 502);
+  }
+
+  return c.json({ data: serialize(created) }, 201);
 });
 
 alterationsRouter.patch("/:id/state", async (c) => {
@@ -303,6 +347,7 @@ alterationsRouter.patch("/:id", async (c) => {
     internalNotes?: string | null;
     customerNotes?: string | null;
     deliveryMethod?: string | null;
+    tailorId?: string | null;
   };
 
   const { base, key, secret } = {
@@ -319,6 +364,7 @@ alterationsRouter.patch("/:id", async (c) => {
   if (body.internalNotes !== undefined) updates.internal_notes = body.internalNotes ?? "";
   if (body.customerNotes !== undefined) updates.customer_notes = body.customerNotes ?? "";
   if (body.deliveryMethod !== undefined) updates.delivery_method = body.deliveryMethod ?? "";
+  if (body.tailorId !== undefined) updates.assigned_tailor = body.tailorId ?? "";
 
   if (Object.keys(updates).length === 0) {
     return c.json({ error: { message: "No fields to update" } }, 400);
@@ -340,6 +386,68 @@ alterationsRouter.patch("/:id", async (c) => {
 
   const data = await res.json() as { data: unknown };
   return c.json({ data: data.data ?? {} });
+});
+
+// PATCH /api/alterations/:id/full — replace garments + lines child tables
+alterationsRouter.patch("/:id/full", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const id = c.req.param("id");
+  const body = await c.req.json() as {
+    garments: Array<{
+      garment_id: string;
+      garment_type: string;
+      garment_description: string;
+      color?: string;
+      fabric_notes?: string;
+    }>;
+    lines: Array<{
+      garment_ref: string;
+      description: string;
+      price: number;
+    }>;
+  };
+
+  const { base, key, secret } = {
+    base: process.env.ERPNEXT_BASE_URL ?? "",
+    key: process.env.ERPNEXT_API_KEY ?? "",
+    secret: process.env.ERPNEXT_API_SECRET ?? "",
+  };
+
+  const res = await fetch(
+    `${base}/api/resource/Alteration%20Ticket/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `token ${key}:${secret}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        garments: body.garments.map((g) => ({
+          garment_id: g.garment_id,
+          garment_type: g.garment_type,
+          garment_description: g.garment_description,
+          color: g.color ?? "",
+          fabric_notes: g.fabric_notes ?? "",
+        })),
+        lines: body.lines.map((l) => ({
+          garment_ref: l.garment_ref,
+          description: l.description,
+          price: l.price,
+        })),
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as any;
+    return c.json({ error: { message: err._server_messages || err.exception || "Update failed" } }, 502);
+  }
+
+  const updated = await res.json() as { data: ErpTicket };
+  return c.json({ data: serialize(updated.data) });
 });
 
 // GET /api/alterations/:ticketId/garments/:garmentId

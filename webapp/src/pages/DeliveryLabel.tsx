@@ -9,6 +9,7 @@ interface LabelData {
   id: string;
   delivery_number: string;
   delivery_no: string | null;
+  legacy_no?: string | null;
   qr_token: string | null;
   customer_name: string;
   customer_phone: string | null;
@@ -21,6 +22,8 @@ interface LabelData {
   garment_summary: string | null;
   garment_count: number | null;
   method: string | null;
+  items?: { name: string; qty: number; desc?: string | null }[];
+  order_ref?: string | null;
 }
 
 export default function DeliveryLabel() {
@@ -47,7 +50,7 @@ export default function DeliveryLabel() {
   useEffect(() => {
     if (!data?.qr_token) return;
     QRCode.toDataURL(
-      `https://ls-house-app.vercel.app/d/${data.qr_token}`,
+      `https://delivered.lstailors.com/d/${data.qr_token}`,
       { width: 300, margin: 2, color: { dark: "#000000", light: "#ffffff" } },
     ).then(setQrDataUrl).catch(() => setQrDataUrl(""));
   }, [data?.qr_token]);
@@ -210,6 +213,11 @@ function LabelPreview({ label, qrDataUrl }: { label: LabelData; qrDataUrl: strin
           <div style={{ fontWeight: 800, fontSize: 42, letterSpacing: "0.04em", lineHeight: 1, color: "#fff" }}>
             #{label.delivery_number}
           </div>
+          {label.order_ref ? (
+            <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.1em", color: "rgba(255,255,255,0.7)", marginTop: 4 }}>
+              {label.order_ref}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -254,9 +262,25 @@ function LabelPreview({ label, qrDataUrl }: { label: LabelData; qrDataUrl: strin
         <div style={{ flex: 1, display: "flex", gap: 14, minHeight: 90 }}>
           <div style={{ flex: 2, border: "2.5px solid #000", padding: "14px 16px" }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.28em", marginBottom: 6, color: "#000" }}>GARMENTS</div>
-            <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, fontStyle: "italic", fontSize: 30, lineHeight: 1.15, color: "#000" }}>
-              {label.garment_summary ?? "—"}
-            </div>
+            {label.items && label.items.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {label.items.slice(0, 6).map((item, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                    <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, fontStyle: "italic", fontSize: 24, lineHeight: 1.2, color: "#000" }}>
+                      {item.name}
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: 18, color: "#000", marginLeft: 8 }}>×{item.qty}</div>
+                  </div>
+                ))}
+                {label.items.length > 6 ? (
+                  <div style={{ fontSize: 16, color: "#666", fontStyle: "italic" }}>+{label.items.length - 6} more</div>
+                ) : null}
+              </div>
+            ) : (
+              <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 600, fontStyle: "italic", fontSize: 30, lineHeight: 1.15, color: "#000" }}>
+                {label.garment_summary ?? "—"}
+              </div>
+            )}
           </div>
           <div style={{ flex: 1, border: "2.5px solid #000", padding: "14px 16px" }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.28em", marginBottom: 6, color: "#000" }}>METHOD</div>

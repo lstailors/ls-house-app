@@ -1,0 +1,579 @@
+{
+  "run_at": "2026-06-07T09:14:08.702Z",
+  "total": 95,
+  "success": 84,
+  "skipped": 0,
+  "errors": 11,
+  "results": [
+    {
+      "delivery_id": "762f6042-8b10-4875-b06c-93fbe7821cbe",
+      "delivery_no": "DLV-2026-01001",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00001"
+    },
+    {
+      "delivery_id": "21ee206e-3fb0-4f9e-8a79-4744f07a9c62",
+      "delivery_no": "DLV-2026-01008",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00002"
+    },
+    {
+      "delivery_id": "91551aeb-6ebc-4722-a876-213f76f965ce",
+      "delivery_no": "DLV-2026-01010",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00003"
+    },
+    {
+      "delivery_id": "b838ac63-15c6-4ce9-a626-4b820d100e59",
+      "delivery_no": "DLV-2026-01011",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00004"
+    },
+    {
+      "delivery_id": "06c25126-f15a-4c03-9323-aea285b99dbf",
+      "delivery_no": "DLV-2026-01012",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00005"
+    },
+    {
+      "delivery_id": "ef3a946a-7c42-462e-a79c-172e1472be4c",
+      "delivery_no": "DLV-2026-01013",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00006"
+    },
+    {
+      "delivery_id": "205d2052-0bf3-477d-be39-a9901a167e09",
+      "delivery_no": "DLV-2026-01026",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00007"
+    },
+    {
+      "delivery_id": "ec9cceb7-38b4-4f1f-aa2d-ba34efd32af8",
+      "delivery_no": "DLV-2026-01027",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00008"
+    },
+    {
+      "delivery_id": "5bd90292-ef1e-44cb-85de-9787abd9f4b2",
+      "delivery_no": "DLV-2026-01028",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00009"
+    },
+    {
+      "delivery_id": "aa0b183f-08f8-4eaa-877a-794be178f54b",
+      "delivery_no": "DLV-2026-01029",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00010"
+    },
+    {
+      "delivery_id": "003cc2ce-1f85-4ce8-8284-24bdce02b8fc",
+      "delivery_no": "DLV-2026-01030",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00011"
+    },
+    {
+      "delivery_id": "06aadb93-7897-4306-bd01-08bab19778ea",
+      "delivery_no": "DLV-2026-01031",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00012"
+    },
+    {
+      "delivery_id": "f7e475ff-fcd4-49e1-9823-d8234ec70f08",
+      "delivery_no": "DLV-2026-01032",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00013"
+    },
+    {
+      "delivery_id": "b240a80b-8e10-49ac-a768-b7012639f3fa",
+      "delivery_no": "DLV-2026-01033",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00014"
+    },
+    {
+      "delivery_id": "d5363932-1a22-4aef-a4bb-36a1f861c9f1",
+      "delivery_no": "DLV-2026-01034",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00015"
+    },
+    {
+      "delivery_id": "a5db2459-f3cb-4696-a4ba-784f494a7458",
+      "delivery_no": "DLV-2026-01035",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00016"
+    },
+    {
+      "delivery_id": "be0827f0-64dc-4061-ae2e-3addb807867a",
+      "delivery_no": "DLV-2026-01036",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00017"
+    },
+    {
+      "delivery_id": "ff5786ea-6240-4983-b3b5-d97b140a6c21",
+      "delivery_no": "DLV-2026-01037",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00018"
+    },
+    {
+      "delivery_id": "d58efd02-b038-4721-b3a5-9298d626b040",
+      "delivery_no": "DLV-2026-01038",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00019"
+    },
+    {
+      "delivery_id": "6e15530d-ab99-43bf-bbb0-93c2c89b01f8",
+      "delivery_no": "DLV-2026-01039",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00020"
+    },
+    {
+      "delivery_id": "42dda156-cafa-4178-99e6-aa1a70e61421",
+      "delivery_no": "DLV-2026-01040",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00021"
+    },
+    {
+      "delivery_id": "9abe040a-a1a1-4177-989a-d6cd6d407f56",
+      "delivery_no": "DLV-2026-01041",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00022"
+    },
+    {
+      "delivery_id": "eae8d976-0adf-4e30-86e6-0576ed74fe4a",
+      "delivery_no": "DLV-2026-01042",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00023"
+    },
+    {
+      "delivery_id": "6077240f-42f2-44ae-9036-92d4b82f6c79",
+      "delivery_no": "DLV-2026-01043",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00024"
+    },
+    {
+      "delivery_id": "08cc30a7-c883-4635-b4f3-e169f8b18ddc",
+      "delivery_no": "DLV-2026-01044",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00025"
+    },
+    {
+      "delivery_id": "d2eb3fd6-6494-4c7c-a8c0-f3a411ed6ef2",
+      "delivery_no": "DLV-2026-01045",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00026"
+    },
+    {
+      "delivery_id": "a1081805-100d-4f3e-b2c4-afbc1b1f8628",
+      "delivery_no": "DLV-2026-01046",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00027"
+    },
+    {
+      "delivery_id": "f3a1409f-9198-420c-b064-37e080d97de2",
+      "delivery_no": "DLV-2026-01047",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00028"
+    },
+    {
+      "delivery_id": "812572e3-115e-4f41-b2cd-19694759439b",
+      "delivery_no": "DLV-2026-01048",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00029"
+    },
+    {
+      "delivery_id": "21d71473-7a62-4099-9c07-59d477351008",
+      "delivery_no": "DLV-2026-01049",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00030"
+    },
+    {
+      "delivery_id": "00c8fc41-231f-41d5-8a1b-3d45f72fea9c",
+      "delivery_no": "DLV-2026-01050",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00031"
+    },
+    {
+      "delivery_id": "3474f1de-3409-4a8f-bed0-ef735be79519",
+      "delivery_no": "DLV-2026-01051",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00032"
+    },
+    {
+      "delivery_id": "361a47df-5f01-43a3-b9ed-7512184bca69",
+      "delivery_no": "DLV-2026-01052",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00033"
+    },
+    {
+      "delivery_id": "4614bfba-968e-4c86-8c8f-b5d87a959636",
+      "delivery_no": "DLV-2026-01053",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00034"
+    },
+    {
+      "delivery_id": "1bc543c6-36d7-4830-9ece-942a1c299d1f",
+      "delivery_no": "DLV-2026-01054",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00035"
+    },
+    {
+      "delivery_id": "b55503a9-99bd-4bb9-8009-c95125348315",
+      "delivery_no": "DLV-2026-01055",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00036"
+    },
+    {
+      "delivery_id": "527de7dc-ebd8-43e0-8046-e7c043cdf780",
+      "delivery_no": "DLV-2026-01056",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00037"
+    },
+    {
+      "delivery_id": "783fa611-d38f-4a61-80b9-3041dca39994",
+      "delivery_no": "DLV-2026-01057",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00038"
+    },
+    {
+      "delivery_id": "786cb838-d2b0-43ad-837d-2a3f9ad12b9d",
+      "delivery_no": "DLV-2026-01058",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00039"
+    },
+    {
+      "delivery_id": "2108b4c2-5dbe-4205-9628-a14d27a89eed",
+      "delivery_no": "DLV-2026-01059",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00040"
+    },
+    {
+      "delivery_id": "ff36efe3-5f32-480d-ad2b-920069758495",
+      "delivery_no": "DLV-2026-01060",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00041"
+    },
+    {
+      "delivery_id": "b9b204e6-bad4-44cf-9290-e2611124b52a",
+      "delivery_no": "DLV-2026-01061",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00042"
+    },
+    {
+      "delivery_id": "87373e2f-e35f-4765-973f-9ea4bded7254",
+      "delivery_no": "DLV-2026-01062",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00043"
+    },
+    {
+      "delivery_id": "619e34fa-9fae-4b75-a77a-f7d68790621c",
+      "delivery_no": "DLV-2026-01063",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00044"
+    },
+    {
+      "delivery_id": "73c075ed-11da-47af-8f82-cae3a683aa7e",
+      "delivery_no": "DLV-2026-01064",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00045"
+    },
+    {
+      "delivery_id": "9f0be61d-5470-48a8-8b37-943c824a70dd",
+      "delivery_no": "DLV-2026-01065",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00046"
+    },
+    {
+      "delivery_id": "37e64542-6f48-4188-894b-95d6177de2f9",
+      "delivery_no": "DLV-2026-01066",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00047"
+    },
+    {
+      "delivery_id": "6791929d-5e63-4e6b-8f81-163c924f40a9",
+      "delivery_no": "DLV-2026-01067",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00048"
+    },
+    {
+      "delivery_id": "d55f763c-e7ea-4456-a5e8-8d974cddbc71",
+      "delivery_no": "DLV-2026-01068",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00049"
+    },
+    {
+      "delivery_id": "2f2ffcaa-07e6-462e-bc80-4bf8a05cb322",
+      "delivery_no": "DLV-2026-01069",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00050"
+    },
+    {
+      "delivery_id": "75a49bb8-2353-47ab-9b35-83afa23326a7",
+      "delivery_no": "DLV-2026-01070",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00051"
+    },
+    {
+      "delivery_id": "492564a7-0a2b-41c0-beda-a80fc4fd2267",
+      "delivery_no": "DLV-2026-01071",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00052"
+    },
+    {
+      "delivery_id": "52f26b52-c017-47d3-a204-43488efb158b",
+      "delivery_no": "DLV-2026-01072",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00053"
+    },
+    {
+      "delivery_id": "e049e3a0-ea23-4874-aa83-bf2ecdac3b22",
+      "delivery_no": "DLV-2026-01073",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00054"
+    },
+    {
+      "delivery_id": "32f9c59f-e71c-4bd6-a16c-629ecca7dc26",
+      "delivery_no": "DLV-2026-01074",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00055"
+    },
+    {
+      "delivery_id": "9993cbef-479c-4ff7-9d63-1d361cf0f22d",
+      "delivery_no": "DLV-2026-01075",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00056"
+    },
+    {
+      "delivery_id": "b005d71a-70a8-43b2-8c52-55ca0d3b3dd4",
+      "delivery_no": "DLV-2026-01076",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00057"
+    },
+    {
+      "delivery_id": "e8ce00d3-5a7c-4a02-bf0b-1fb5b0f32261",
+      "delivery_no": "DLV-2026-01077",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00058"
+    },
+    {
+      "delivery_id": "9a8bc501-9c8a-4e9c-939c-e0ef4b47741a",
+      "delivery_no": "DLV-2026-01078",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00059"
+    },
+    {
+      "delivery_id": "5738ad8f-d38e-41b2-9e00-4051b97843f0",
+      "delivery_no": "DLV-2026-01079",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00060"
+    },
+    {
+      "delivery_id": "94a5b7ea-1627-4406-af6a-5383ff3caa62",
+      "delivery_no": "DLV-2026-01080",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00061"
+    },
+    {
+      "delivery_id": "5dd5809a-c521-48ab-9f2a-89c8d90bca3b",
+      "delivery_no": "DLV-2026-01081",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00062"
+    },
+    {
+      "delivery_id": "97187510-ab40-416a-9914-4ab3c6fe5ff1",
+      "delivery_no": "DLV-2026-01082",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00063"
+    },
+    {
+      "delivery_id": "80bfb94f-d417-4b65-b208-5f90500a2008",
+      "delivery_no": "DLV-2026-01083",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00064"
+    },
+    {
+      "delivery_id": "52848cb5-34a7-432e-8363-2a2339785e00",
+      "delivery_no": "DLV-2026-01084",
+      "status": "error",
+      "error": "ERP 417: {\"exception\":\"frappe.exceptions.MandatoryError: [LSH Delivery, DN-NYC-2026-00065]: customer\",\"exc_type\":\"MandatoryError\",\"exc\":\"[\\\"Traceback (most recent call last):\\\\n  File \\\\\\\"apps/frappe/frappe/app.py\\\\\\\", line 121, in application\\\\n    response = frappe.api.handle(request)\\\\n  File \\\\\\\"apps/frappe/frappe/api/__init__.py\\\\\\\", line 63, in handle\\\\n    data = endpoint(**arguments)\\\\n  File \\\\\\\"apps/frappe/frappe/api/v1.py\\\\\\\", line 46, in create_doc\\\\n    return frappe.new_doc(doctype, **data)"
+    },
+    {
+      "delivery_id": "e30ee260-babd-4e77-a8a8-8b68ad20e769",
+      "delivery_no": "DLV-2026-01085",
+      "status": "error",
+      "error": "ERP 417: {\"exception\":\"frappe.exceptions.MandatoryError: [LSH Delivery, DN-NYC-2026-00065]: customer\",\"exc_type\":\"MandatoryError\",\"exc\":\"[\\\"Traceback (most recent call last):\\\\n  File \\\\\\\"apps/frappe/frappe/app.py\\\\\\\", line 121, in application\\\\n    response = frappe.api.handle(request)\\\\n  File \\\\\\\"apps/frappe/frappe/api/__init__.py\\\\\\\", line 63, in handle\\\\n    data = endpoint(**arguments)\\\\n  File \\\\\\\"apps/frappe/frappe/api/v1.py\\\\\\\", line 46, in create_doc\\\\n    return frappe.new_doc(doctype, **data)"
+    },
+    {
+      "delivery_id": "21e51f2e-a9a7-4def-9d44-86f6dd9499d0",
+      "delivery_no": "DLV-2026-01086",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00065"
+    },
+    {
+      "delivery_id": "dfc6c8bf-6c4f-40e7-bb22-e0f60b7d558a",
+      "delivery_no": "DLV-2026-01087",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00066"
+    },
+    {
+      "delivery_id": "7313472c-16c4-476f-a392-eaccb0f3de8d",
+      "delivery_no": "DLV-2026-01088",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00067"
+    },
+    {
+      "delivery_id": "59787344-c355-4f69-88de-0f390950e4db",
+      "delivery_no": "DLV-2026-01089",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00068"
+    },
+    {
+      "delivery_id": "f3f5e82a-993e-4225-b4cd-8998c04867c9",
+      "delivery_no": "DLV-2026-01090",
+      "status": "error",
+      "error": "ERP 417: {\"exception\":\"frappe.exceptions.MandatoryError: [LSH Delivery, DN-NYC-2026-00069]: customer\",\"exc_type\":\"MandatoryError\",\"exc\":\"[\\\"Traceback (most recent call last):\\\\n  File \\\\\\\"apps/frappe/frappe/app.py\\\\\\\", line 121, in application\\\\n    response = frappe.api.handle(request)\\\\n  File \\\\\\\"apps/frappe/frappe/api/__init__.py\\\\\\\", line 63, in handle\\\\n    data = endpoint(**arguments)\\\\n  File \\\\\\\"apps/frappe/frappe/api/v1.py\\\\\\\", line 46, in create_doc\\\\n    return frappe.new_doc(doctype, **data)"
+    },
+    {
+      "delivery_id": "7c75754f-8b16-4bf7-b9b6-2b3dfb5722a1",
+      "delivery_no": "DLV-2026-01091",
+      "status": "error",
+      "error": "ERP 417: {\"exception\":\"frappe.exceptions.MandatoryError: [LSH Delivery, DN-NYC-2026-00069]: customer\",\"exc_type\":\"MandatoryError\",\"exc\":\"[\\\"Traceback (most recent call last):\\\\n  File \\\\\\\"apps/frappe/frappe/app.py\\\\\\\", line 121, in application\\\\n    response = frappe.api.handle(request)\\\\n  File \\\\\\\"apps/frappe/frappe/api/__init__.py\\\\\\\", line 63, in handle\\\\n    data = endpoint(**arguments)\\\\n  File \\\\\\\"apps/frappe/frappe/api/v1.py\\\\\\\", line 46, in create_doc\\\\n    return frappe.new_doc(doctype, **data)"
+    },
+    {
+      "delivery_id": "ea2445ec-a1b4-4f61-86f4-9231a3becbd2",
+      "delivery_no": "DLV-2026-01092",
+      "status": "error",
+      "error": "ERP 417: {\"exception\":\"frappe.exceptions.MandatoryError: [LSH Delivery, DN-NYC-2026-00069]: customer\",\"exc_type\":\"MandatoryError\",\"exc\":\"[\\\"Traceback (most recent call last):\\\\n  File \\\\\\\"apps/frappe/frappe/app.py\\\\\\\", line 121, in application\\\\n    response = frappe.api.handle(request)\\\\n  File \\\\\\\"apps/frappe/frappe/api/__init__.py\\\\\\\", line 63, in handle\\\\n    data = endpoint(**arguments)\\\\n  File \\\\\\\"apps/frappe/frappe/api/v1.py\\\\\\\", line 46, in create_doc\\\\n    return frappe.new_doc(doctype, **data)"
+    },
+    {
+      "delivery_id": "b12bea56-28f6-4d3b-9096-b73710d1b1eb",
+      "delivery_no": "DLV-2026-01093",
+      "status": "error",
+      "error": "ERP 417: {\"exception\":\"frappe.exceptions.MandatoryError: [LSH Delivery, DN-NYC-2026-00069]: customer\",\"exc_type\":\"MandatoryError\",\"exc\":\"[\\\"Traceback (most recent call last):\\\\n  File \\\\\\\"apps/frappe/frappe/app.py\\\\\\\", line 121, in application\\\\n    response = frappe.api.handle(request)\\\\n  File \\\\\\\"apps/frappe/frappe/api/__init__.py\\\\\\\", line 63, in handle\\\\n    data = endpoint(**arguments)\\\\n  File \\\\\\\"apps/frappe/frappe/api/v1.py\\\\\\\", line 46, in create_doc\\\\n    return frappe.new_doc(doctype, **data)"
+    },
+    {
+      "delivery_id": "064fd113-29e2-4227-ae76-9e90c7e23a42",
+      "delivery_no": "DLV-2026-01095",
+      "status": "error",
+      "error": "ERP 417: {\"exception\":\"frappe.exceptions.MandatoryError: [LSH Delivery, DN-NYC-2026-00069]: customer\",\"exc_type\":\"MandatoryError\",\"exc\":\"[\\\"Traceback (most recent call last):\\\\n  File \\\\\\\"apps/frappe/frappe/app.py\\\\\\\", line 121, in application\\\\n    response = frappe.api.handle(request)\\\\n  File \\\\\\\"apps/frappe/frappe/api/__init__.py\\\\\\\", line 63, in handle\\\\n    data = endpoint(**arguments)\\\\n  File \\\\\\\"apps/frappe/frappe/api/v1.py\\\\\\\", line 46, in create_doc\\\\n    return frappe.new_doc(doctype, **data)"
+    },
+    {
+      "delivery_id": "8a001b46-4558-4879-a1dc-f4e47fddad9a",
+      "delivery_no": "DLV-2026-01096",
+      "status": "error",
+      "error": "ERP 417: {\"exception\":\"frappe.exceptions.MandatoryError: [LSH Delivery, DN-NYC-2026-00069]: customer\",\"exc_type\":\"MandatoryError\",\"exc\":\"[\\\"Traceback (most recent call last):\\\\n  File \\\\\\\"apps/frappe/frappe/app.py\\\\\\\", line 121, in application\\\\n    response = frappe.api.handle(request)\\\\n  File \\\\\\\"apps/frappe/frappe/api/__init__.py\\\\\\\", line 63, in handle\\\\n    data = endpoint(**arguments)\\\\n  File \\\\\\\"apps/frappe/frappe/api/v1.py\\\\\\\", line 46, in create_doc\\\\n    return frappe.new_doc(doctype, **data)"
+    },
+    {
+      "delivery_id": "a8d94ae9-14ce-4dff-be9e-83ced08e488a",
+      "delivery_no": "DLV-2026-01097",
+      "status": "error",
+      "error": "ERP 417: {\"exception\":\"frappe.exceptions.MandatoryError: [LSH Delivery, DN-NYC-2026-00069]: customer\",\"exc_type\":\"MandatoryError\",\"exc\":\"[\\\"Traceback (most recent call last):\\\\n  File \\\\\\\"apps/frappe/frappe/app.py\\\\\\\", line 121, in application\\\\n    response = frappe.api.handle(request)\\\\n  File \\\\\\\"apps/frappe/frappe/api/__init__.py\\\\\\\", line 63, in handle\\\\n    data = endpoint(**arguments)\\\\n  File \\\\\\\"apps/frappe/frappe/api/v1.py\\\\\\\", line 46, in create_doc\\\\n    return frappe.new_doc(doctype, **data)"
+    },
+    {
+      "delivery_id": "b9a3075e-9717-43b6-bf7f-52591feb02d4",
+      "delivery_no": "DLV-2026-01098",
+      "status": "error",
+      "error": "ERP 417: {\"exception\":\"frappe.exceptions.MandatoryError: [LSH Delivery, DN-NYC-2026-00069]: customer\",\"exc_type\":\"MandatoryError\",\"exc\":\"[\\\"Traceback (most recent call last):\\\\n  File \\\\\\\"apps/frappe/frappe/app.py\\\\\\\", line 121, in application\\\\n    response = frappe.api.handle(request)\\\\n  File \\\\\\\"apps/frappe/frappe/api/__init__.py\\\\\\\", line 63, in handle\\\\n    data = endpoint(**arguments)\\\\n  File \\\\\\\"apps/frappe/frappe/api/v1.py\\\\\\\", line 46, in create_doc\\\\n    return frappe.new_doc(doctype, **data)"
+    },
+    {
+      "delivery_id": "cebb66c6-4362-4890-9d88-e79fd6097c85",
+      "delivery_no": "DLV-2026-01099",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00069"
+    },
+    {
+      "delivery_id": "6e8ac1f4-b17a-4881-af51-f798e30b0e1f",
+      "delivery_no": "DLV-2026-01100",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00070"
+    },
+    {
+      "delivery_id": "0b41b3ef-7886-426f-bbfa-f427f94b97ac",
+      "delivery_no": "DLV-2026-01101",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00071"
+    },
+    {
+      "delivery_id": "26397227-14ba-45a8-88cd-8426994b95e2",
+      "delivery_no": "DLV-2026-01102",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00072"
+    },
+    {
+      "delivery_id": "8c3f51fc-42be-453a-8253-19fe7df9a335",
+      "delivery_no": "DLV-2026-01103",
+      "status": "error",
+      "error": "ERP 417: {\"exception\":\"frappe.exceptions.MandatoryError: [LSH Delivery, DN-NYC-2026-00073]: customer\",\"exc_type\":\"MandatoryError\",\"exc\":\"[\\\"Traceback (most recent call last):\\\\n  File \\\\\\\"apps/frappe/frappe/app.py\\\\\\\", line 121, in application\\\\n    response = frappe.api.handle(request)\\\\n  File \\\\\\\"apps/frappe/frappe/api/__init__.py\\\\\\\", line 63, in handle\\\\n    data = endpoint(**arguments)\\\\n  File \\\\\\\"apps/frappe/frappe/api/v1.py\\\\\\\", line 46, in create_doc\\\\n    return frappe.new_doc(doctype, **data)"
+    },
+    {
+      "delivery_id": "1112f5dc-50b3-4424-bb6b-bd2c1c733b36",
+      "delivery_no": "DLV-2026-01104",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00073"
+    },
+    {
+      "delivery_id": "f9fd4fb2-7c3f-4184-9566-ed349c5fabdf",
+      "delivery_no": "DLV-2026-01105",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00074"
+    },
+    {
+      "delivery_id": "d93b611b-6c37-41c8-8484-4e61937172fe",
+      "delivery_no": "DLV-2026-01106",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00075"
+    },
+    {
+      "delivery_id": "6076e6a2-8189-4948-b748-3d6ca055892f",
+      "delivery_no": "DLV-2026-01107",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00076"
+    },
+    {
+      "delivery_id": "62034d4f-d930-437d-8b4d-0d878d4a9ba4",
+      "delivery_no": "DLV-2026-01108",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00077"
+    },
+    {
+      "delivery_id": "369d3cb1-ba1a-4519-af92-1b23949355ea",
+      "delivery_no": "DLV-2026-01109",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00078"
+    },
+    {
+      "delivery_id": "59d5e137-5d8b-4309-adee-1d42388c5deb",
+      "delivery_no": "DLV-2026-01110",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00079"
+    },
+    {
+      "delivery_id": "56b73bdf-0af4-40bd-bb44-a222706f4679",
+      "delivery_no": "DLV-2026-01111",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00080"
+    },
+    {
+      "delivery_id": "f3384b22-6cda-49e7-b9bd-24f7e76ca05c",
+      "delivery_no": "DLV-2026-01112",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00081"
+    },
+    {
+      "delivery_id": "4cc2b372-9a41-4176-9269-8660694a981f",
+      "delivery_no": "DLV-2026-01113",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00082"
+    },
+    {
+      "delivery_id": "ce65b178-3587-463e-8e09-20a1ead45817",
+      "delivery_no": "DLV-2026-01114",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00083"
+    },
+    {
+      "delivery_id": "19714aa8-6603-446c-87c7-b410df7d0b75",
+      "delivery_no": "DLV-2026-01115",
+      "status": "success",
+      "erp_name": "DN-NYC-2026-00084"
+    }
+  ]
+}

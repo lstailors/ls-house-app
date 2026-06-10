@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Printer,
   Tag,
+  Truck,
   User,
   AlertTriangle,
   Copy,
@@ -16,11 +17,16 @@ import {
   Pencil,
   Bell,
   Mic,
+  CheckCircle2,
+  ShoppingCart,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useMe } from '@/lib/session'
+import type { CartPayload } from '@/lib/cart/parked'
 import { ChargeTerminalButton } from '@/components/payments/ChargeTerminalButton'
+import { EditTicketDrawer } from '@/components/alterations/EditTicketDrawer'
 import {
   Dialog,
   DialogContent,
@@ -829,6 +835,8 @@ export default function TicketDetail() {
   const queryClient = useQueryClient()
 
   const [copiedPayLink, setCopiedPayLink] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const { data: me } = useMe()
 
   const [autoNotify, setAutoNotify] = useState<boolean>(() => {
     try { return localStorage.getItem(`notify-ready-${ticketName}`) === 'true' } catch { return false }
@@ -858,11 +866,102 @@ export default function TicketDetail() {
 
   // ── Mutations ────────────────────────────────────────────────────────────
 
+  const buildDeliveryPayload = () => {
+    const garmentSummary = ticket?.lines && ticket.lines.length > 0
+      ? ticket.lines.map((l: any) => l.description).filter(Boolean).join(', ')
+      : ticket?.garments && ticket.garments.length > 0
+        ? ticket.garments.map((g: any) => g.garment_type).join(', ')
+        : 'Alteration';
+    return {
+      alteration_ticket: ticketName,
+      customer_name: ticket?.customer_name ?? 'Walk-in',
+      customer_phone: ticket?.customer_mobile ?? null,
+      customer_erp_name: ticket?.customer ?? null,
+      notify_phone: ticket?.customer_mobile ?? null,
+      garment_summary: garmentSummary,
+      garment_count: ticket?.lines?.length ?? ticket?.garments?.length ?? 1,
+      location: ticket?.origin_location ?? 'NYC',
+    };
+  };
+
+  const openInIntakeMutation = useMutation({
+    mutationFn: async () => {
+      if (!ticket) throw new Error('No ticket')
+      const cartPayload: CartPayload = {
+        garments: (ticket.garments ?? []).map((g) => ({
+          id: g.garment_id,
+          ref: g.garment_id,
+          garmentType: g.garment_type,
+          description: g.garment_description,
+          color: g.color ?? '',
+          notes: '',
+          lines: (ticket.lines ?? [])
+            .filter((l) => l.garment_ref === g.garment_id)
+            .map((l) => ({
+              preset: l.preset ?? '',
+              description: l.description,
+              price: l.price,
+              estMinutes: null,
+            })),
+        })),
+        lines: [],
+      }
+      return api.post<{ id: string }>('/api/carts', {
+        createdBy: me?.user?.email ?? '',
+        location: ticket.origin_location ?? 'NYC',
+        customer: {
+          name: ticket.customer_name ?? '',
+          phone: ticket.customer_mobile ?? '',
+          email: '',
+        },
+        customerRef: ticket.customer ?? null,
+        cart: cartPayload,
+      })
+    },
+    onSuccess: () => {
+      toast.success('Cart created — open Saved Carts in intake')
+      navigate('/intake/alterations')
+    },
+    onError: () => toast.error('Could not create cart'),
+  })
+
+  const createDeliveryMutation = useMutation({
+    mutationFn: async () => api.post<{ id: string; qrToken: string }>('/api/deliveries/from-order', buildDeliveryPayload()),
+    onSuccess: (result) => {
+      toast.success('Delivery created — opening label');
+      navigate(`/deliveries/${result.id}/label`);
+    },
+    onError: () => toast.error('Could not create delivery'),
+  });
+
+  const handDeliverMutation = useMutation({
+    mutationFn: async () => {
+      // Create delivery as already Delivered (in-store hand-off)
+      const delivery = await api.post<{ id: string }>('/api/deliveries/from-order', {
+        ...buildDeliveryPayload(),
+        hand_deliver: true,
+        method: 'Hand Delivery',
+      });
+      // Also mark ticket as Picked Up
+      await api.patch(`/api/intake-alterations/tickets/${ticketName}/status`, { status: 'Picked Up' });
+      return delivery;
+    },
+    onSuccess: (result) => {
+      toast.success('Marked hand delivered — opening label');
+      navigate(`/deliveries/${result.id}/label`);
+    },
+    onError: () => toast.error('Could not mark hand delivered'),
+  });
+
   const updateStatusMutation = useMutation({
     mutationFn: (status: string) =>
       api.patch(`/api/intake-alterations/tickets/${ticketName}/status`, { status }),
     onSuccess: async (_data, status) => {
       toast.success(`Status updated to "${status}"`)
+      // Immediately update the progress bar without waiting for refetch
+      queryClient.setQueryData(['ticket', ticketName], (old: any) =>
+        old ? { ...old, workflow_state: status } : old
+      )
       if (status === 'Ready' && autoNotify && ticket?.customer_mobile) {
         const firstName = ticket.customer_name?.split(' ')[0] ?? 'there'
         const eTicketUrl = `${window.location.origin}/e-ticket/${ticketName}`
@@ -877,7 +976,10 @@ export default function TicketDetail() {
           toast.error('Status updated but SMS notification failed')
         }
       }
-      queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
+      // Delay refetch — ERPNext workflow state takes a moment to propagate
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
+      }, 3000)
     },
     onError: () => {
       toast.error('Failed to update status')
@@ -937,7 +1039,37 @@ export default function TicketDetail() {
             </div>
           </div>
 
-          <InlineDueDate ticket={ticket} ticketName={ticketName!} />
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => openInIntakeMutation.mutate()}
+                disabled={openInIntakeMutation.isPending}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all',
+                  'bg-forest-raised border-brass/25 text-cream-muted',
+                  'hover:border-brass/50 hover:text-cream',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
+                )}
+              >
+                <ShoppingCart size={12} />
+                {openInIntakeMutation.isPending ? 'Creating…' : 'Open in Intake'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditOpen(true)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all',
+                  'bg-forest-raised border-brass/25 text-cream-muted',
+                  'hover:border-brass/50 hover:text-cream'
+                )}
+              >
+                <Pencil size={12} />
+                Edit
+              </button>
+            </div>
+            <InlineDueDate ticket={ticket} ticketName={ticketName!} />
+          </div>
         </div>
 
         {/* ── Workflow Stepper ── */}
@@ -1043,6 +1175,39 @@ export default function TicketDetail() {
 
         {/* ── Actions ── */}
         <div className="flex items-center gap-3 flex-wrap">
+          <button
+            type="button"
+            onClick={() => createDeliveryMutation.mutate()}
+            disabled={createDeliveryMutation.isPending}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium',
+              'bg-forest-raised border border-brass/20 text-cream-muted',
+              'hover:border-brass/40 hover:text-cream transition-all',
+              'disabled:opacity-60 disabled:cursor-not-allowed'
+            )}
+          >
+            <Truck size={15} />
+            {createDeliveryMutation.isPending ? 'Creating…' : 'Create Delivery'}
+          </button>
+
+          {/* Hand Delivered — shown when ticket is Ready */}
+          {(ticket?.workflow_state === 'Ready' || ticket?.workflow_state === 'Complete') && (
+            <button
+              type="button"
+              onClick={() => handDeliverMutation.mutate()}
+              disabled={handDeliverMutation.isPending}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium',
+                'bg-signal-emerald/10 border border-signal-emerald/40 text-signal-emerald',
+                'hover:bg-signal-emerald/20 hover:border-signal-emerald/60 transition-all',
+                'disabled:opacity-60 disabled:cursor-not-allowed'
+              )}
+            >
+              <CheckCircle2 size={15} />
+              {handDeliverMutation.isPending ? 'Processing…' : 'Mark Hand Delivered'}
+            </button>
+          )}
+
           <Link
             to={`/orders/alterations/${ticketName}/receipt`}
             className={cn(
@@ -1080,6 +1245,14 @@ export default function TicketDetail() {
         </div>
 
       </div>
+
+      <EditTicketDrawer
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        ticketName={ticketName!}
+        initialGarments={ticket.garments ?? []}
+        initialLines={ticket.lines ?? []}
+      />
     </div>
   )
 }

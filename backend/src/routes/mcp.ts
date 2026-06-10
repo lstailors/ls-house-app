@@ -2,9 +2,19 @@
 // All tools Claude needs to operate the L&S stack from chat.
 
 import { Hono } from "hono";
-import { erpList, erpGet } from "../lib/erp";
+import { erpList, erpGet, erpUpdate } from "../lib/erp";
 import { sendSms } from "../lib/twilio";
 import { supabaseAdmin } from "../lib/supabase";
+import {
+  suggestDeliveryStatus,
+  summarizeDeliveryTimeline,
+  generateCustomerMessage,
+  detectDeliveryAnomalies,
+  estimateDeliveryTime,
+  summarizeDailyOps,
+  DEFAULT_MODEL,
+} from "../lib/ai";
+import type { MessageType } from "../lib/ai";
 
 export const mcpRouter = new Hono();
 
@@ -121,7 +131,7 @@ mcpRouter.post("/sms", async (c) => {
     await supabaseAdmin.from("sms_messages").insert({
       client_phone: to, direction: "outbound", body: message,
       sent_by: "claude-mcp", timestamp: new Date().toISOString(),
-    }).catch(() => {});
+    });
   }
 
   return c.json({ data: { sid, to, message } });
@@ -219,6 +229,160 @@ mcpRouter.get("/summary", async (c) => {
       total: inProgress.length + ready.length + received.length,
     },
   });
+});
+
+// ── Deliveries (MCP) ──────────────────────────────────────────────────────────
+
+function erpDatetimeMcp(d?: Date | string | null): string {
+  const dt = d ? new Date(d) : new Date();
+  return dt.toISOString().replace("T", " ").slice(0, 19);
+}
+
+function buildDeliveryTimelineEntry(status: string, actor: string) {
+  const labels: Record<string, string> = {
+    "Queued": "Queued",
+    "Out for Delivery": "Out for Delivery",
+    "Delivered": "Delivered",
+    "Failed": "Attempted — Failed",
+    "Cancelled": "Cancelled",
+  };
+  return {
+    doctype: "LSH Delivery Timeline",
+    event_type: labels[status] ?? status,
+    event_at: erpDatetimeMcp(),
+    actor_label: actor,
+    message: "",
+  };
+}
+
+function withDeliveryTimeline(existing: any, newEntry: Record<string, unknown>) {
+  const rows = (existing?.lsh_timeline ?? []).map((r: any) => ({
+    doctype: "LSH Delivery Timeline",
+    name: r.name,
+    event_type: r.event_type,
+    event_at: r.event_at,
+    actor_label: r.actor_label,
+    message: r.message ?? "",
+  }));
+  return [...rows, newEntry];
+}
+
+// PATCH /api/mcp/deliveries/:id/status — update delivery status + timeline
+mcpRouter.patch("/deliveries/:id/status", async (c) => {
+  const id = c.req.param("id");
+  const { status, actor } = await c.req.json() as { status: string; actor?: string };
+
+  const VALID: Record<string, string> = {
+    "Queued": "Queued",
+    "queued": "Queued",
+    "Out for Delivery": "Out for Delivery",
+    "Delivered": "Delivered",
+    "Failed": "Failed",
+    "Cancelled": "Cancelled",
+  };
+  const erpStatus = VALID[status];
+  if (!erpStatus) return c.json({ error: `Invalid status. Allowed: ${Object.keys(VALID).join(", ")}` }, 400);
+
+  const existing = await erpGet<any>("LSH Delivery", id);
+  if (!existing) return c.json({ error: "Not found" }, 404);
+
+  const updates: Record<string, unknown> = {
+    lsh_status: erpStatus,
+    lsh_timeline: withDeliveryTimeline(existing, buildDeliveryTimelineEntry(erpStatus, actor ?? "Claude MCP")),
+  };
+  if (erpStatus === "Delivered") updates.lsh_delivered_at = erpDatetimeMcp();
+  if (erpStatus === "Out for Delivery") updates.lsh_dispatched_at = erpDatetimeMcp();
+
+  const updated = await erpUpdate<any>("LSH Delivery", id, updates);
+  if (!updated) return c.json({ error: "Update failed" }, 502);
+
+  return c.json({ data: { deliveryId: id, status: erpStatus } });
+});
+
+// GET /api/mcp/deliveries/:id/suggest-status — AI-powered next-status suggestion
+mcpRouter.get("/deliveries/:id/suggest-status", async (c) => {
+  const id = c.req.param("id");
+  const doc = await erpGet<any>("LSH Delivery", id);
+  if (!doc) return c.json({ error: "Not found" }, 404);
+  try {
+    const result = await suggestDeliveryStatus(doc);
+    return c.json({ data: { deliveryId: id, ...result, model: DEFAULT_MODEL } });
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? "AI call failed" }, 502);
+  }
+});
+
+// GET /api/mcp/deliveries/:id/summarize-timeline — AI-generated timeline narrative
+mcpRouter.get("/deliveries/:id/summarize-timeline", async (c) => {
+  const id = c.req.param("id");
+  const doc = await erpGet<any>("LSH Delivery", id);
+  if (!doc) return c.json({ error: "Not found" }, 404);
+  try {
+    const summary = await summarizeDeliveryTimeline(doc);
+    return c.json({ data: { deliveryId: id, summary, model: DEFAULT_MODEL } });
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? "AI call failed" }, 502);
+  }
+});
+
+// POST /api/mcp/deliveries/:id/generate-message
+mcpRouter.post("/deliveries/:id/generate-message", async (c) => {
+  const id = c.req.param("id");
+  const doc = await erpGet<any>("LSH Delivery", id);
+  if (!doc) return c.json({ error: "Not found" }, 404);
+  const { type, channel, customContext } = await c.req.json() as { type: MessageType; channel: "sms" | "email"; customContext?: string };
+  try {
+    const message = await generateCustomerMessage(doc, type, channel, customContext);
+    return c.json({ data: { deliveryId: id, message, type, channel, model: DEFAULT_MODEL } });
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? "AI call failed" }, 502);
+  }
+});
+
+// GET /api/mcp/deliveries/:id/estimate-time
+mcpRouter.get("/deliveries/:id/estimate-time", async (c) => {
+  const id = c.req.param("id");
+  const doc = await erpGet<any>("LSH Delivery", id);
+  if (!doc) return c.json({ error: "Not found" }, 404);
+  try {
+    const result = await estimateDeliveryTime(doc);
+    return c.json({ data: { deliveryId: id, ...result, model: DEFAULT_MODEL } });
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? "AI call failed" }, 502);
+  }
+});
+
+// GET /api/mcp/deliveries/anomalies
+mcpRouter.get("/deliveries/anomalies", async (c) => {
+  const docs = await erpList<any>("LSH Delivery", {
+    filters: [["docstatus", "!=", 2], ["lsh_status", "not in", ["Delivered", "Cancelled"]]],
+    fields: ["name", "customer_name", "lsh_status", "lsh_scheduled_at", "lsh_dispatched_at", "lsh_courier_name"],
+    limit: 100,
+    order_by: "creation desc",
+  });
+  try {
+    const anomalies = await detectDeliveryAnomalies(docs);
+    return c.json({ data: anomalies });
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? "AI call failed" }, 502);
+  }
+});
+
+// GET /api/mcp/deliveries/daily-ops-summary
+mcpRouter.get("/deliveries/daily-ops-summary", async (c) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const docs = await erpList<any>("LSH Delivery", {
+    filters: [["docstatus", "!=", 2], ["DATE(creation)", ">=", today]],
+    fields: ["name", "customer_name", "lsh_status", "lsh_courier_name", "lsh_delivered_at"],
+    limit: 200,
+    order_by: "creation desc",
+  });
+  try {
+    const result = await summarizeDailyOps(docs);
+    return c.json({ data: { ...result, totalDeliveries: docs.length, model: DEFAULT_MODEL } });
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? "AI call failed" }, 502);
+  }
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

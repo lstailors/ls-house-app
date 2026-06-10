@@ -1,9 +1,10 @@
 {
   "framework": null,
-  "installCommand": "bun install && cd webapp && bun install",
+  "installCommand": "bun install && cd backend && bun install && cd ../webapp && bun install",
   "buildCommand": "cd webapp && bun run build",
   "outputDirectory": "webapp/dist",
   "rewrites": [
+    { "source": "/.well-known/apple-developer-merchantid-domain-association", "destination": "/api/[...path]" },
     { "source": "/api/:path*", "destination": "/api/[...path]" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],

@@ -6,7 +6,7 @@ import {
   ChevronLeft, ChevronRight, FileText, Calendar, type LucideIcon,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useMaestroApprovalCount } from "@/lib/queries";
+import { useMaestroApprovalCount, useTaskCount } from "@/lib/queries";
 import { useMe } from "@/lib/session";
 import type { UserRole } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -56,12 +56,12 @@ const SECTIONS: NavSection[] = [
   },
   {
     title: "Ops",
-    roles: [...MGMT, "tailor"] as UserRole[],
+    roles: [...MGMT, "tailor", "salesperson"] as UserRole[],
     items: [
       { to: "/calendar", label: "Calendar", icon: Calendar, roles: STAFF },
       { to: "/deliveries", label: "Deliveries", icon: Truck, roles: ALL },
       { to: "/tasks", label: "Tasks", icon: CheckSquare, roles: MGMT },
-      { to: "/comms", label: "Intelligence", icon: Radio, roles: MGMT },
+      { to: "/comms", label: "Intelligence", icon: Radio, roles: [...MGMT, "salesperson"] as UserRole[] },
     ],
   },
   {
@@ -69,7 +69,7 @@ const SECTIONS: NavSection[] = [
     roles: STAFF,
     items: [
       { to: "/sofia", label: "Sofia — SMS", icon: MessageSquare, roles: STAFF },
-      { to: "/customers", label: "Customers", icon: Users, roles: MGMT },
+      { to: "/customers", label: "Customers", icon: Users, roles: [...MGMT, "salesperson"] as UserRole[] },
     ],
   },
   {
@@ -83,13 +83,13 @@ const SECTIONS: NavSection[] = [
   },
   {
     title: "Admin",
-    roles: ["super_admin"],
+    roles: ["super_admin", "salesperson"] as UserRole[],
     items: [
       { to: "/admin/users", label: "Users", icon: Shield, roles: ["super_admin"] },
       { to: "/admin/locations", label: "Locations", icon: Building2, roles: ["super_admin"] },
       { to: "/admin/tailors", label: "Tailors", icon: Shield, roles: ["super_admin"] },
       { to: "/admin/overview", label: "Org Overview", icon: Shield, roles: ["super_admin"] },
-      { to: "/admin/board", label: "Alterations Board", icon: Scissors, roles: ["super_admin"] },
+      { to: "/admin/board", label: "Alterations Board", icon: Scissors, roles: ["super_admin", "salesperson"] },
     ],
   },
 ];
@@ -105,6 +105,7 @@ interface Props {
 
 export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: Props) {
   const { data: approvalCount = 0 } = useMaestroApprovalCount();
+  const { data: taskCountData } = useTaskCount();
   const { data: me } = useMe();
   const collapsed = mode === "icons";
 
@@ -185,24 +186,39 @@ export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: P
                 <ul className="space-y-0.5">
                   {items.map((item) => {
                     const Icon = item.icon;
-                    const link = (
+                    const isTasksItem = item.to === "/tasks";
+                    const taskCount = taskCountData?.count ?? 0;
+                    const taskOverdue = taskCountData?.overdue ?? 0;
+                    const isExternal = item.to.startsWith("http");
+                    const linkClass = cn(
+                      "group flex items-center rounded-md transition-colors border-l-2 border-transparent",
+                      collapsed ? "justify-center px-1.5 py-2" : "gap-3 px-3 py-2 text-sm",
+                      "text-cream-muted hover:text-cream hover:bg-brass/5",
+                    );
+                    const linkContent = (
+                      <>
+                        <Icon className="h-4 w-4 shrink-0 opacity-70 group-hover:opacity-100" />
+                        {!collapsed && <span className="truncate flex-1">{item.label}</span>}
+                        {!collapsed && isTasksItem && taskCount > 0 ? (
+                          <span className={cn(
+                            "ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center",
+                            taskOverdue > 0 ? "bg-signal-rose/20 text-signal-rose" : "bg-brass/15 text-brass-light",
+                          )}>{taskCount}</span>
+                        ) : null}
+                      </>
+                    );
+                    const link = isExternal ? (
+                      <a href={item.to} target="_blank" rel="noopener noreferrer" onClick={onNavigate} className={linkClass}>
+                        {linkContent}
+                      </a>
+                    ) : (
                       <NavLink
                         to={item.to}
                         end={item.to === "/"}
                         onClick={onNavigate}
-                        className={({ isActive }) =>
-                          cn(
-                            "group flex items-center rounded-md transition-colors border-l-2 border-transparent",
-                            collapsed
-                              ? "justify-center px-1.5 py-2"
-                              : "gap-3 px-3 py-2 text-sm",
-                            "text-cream-muted hover:text-cream hover:bg-brass/5",
-                            isActive && "sidebar-active",
-                          )
-                        }
+                        className={({ isActive }) => cn(linkClass, isActive && "sidebar-active")}
                       >
-                        <Icon className="h-4 w-4 shrink-0 opacity-70 group-hover:opacity-100" />
-                        {!collapsed && <span className="truncate">{item.label}</span>}
+                        {linkContent}
                       </NavLink>
                     );
 

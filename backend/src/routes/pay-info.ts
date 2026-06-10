@@ -119,3 +119,57 @@ payInfoRouter.get('/:id', async (c) => {
 
   return c.json({ error: 'Not found' }, 404);
 });
+
+// Public charge endpoint — no auth required (customer payment link).
+payInfoRouter.post('/:id/charge', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => null);
+  if (!body?.source_id || !body?.amount_cents) {
+    return c.json({ error: 'source_id and amount_cents are required' }, 400);
+  }
+
+  const accessToken = process.env.SQUARE_ACCESS_TOKEN ?? '';
+  const locationId  = process.env.SQUARE_LOCATION_ID ?? '';
+
+  if (!accessToken || !locationId) {
+    return c.json({ error: 'Payment processing is not configured' }, 500);
+  }
+
+  const squareRes = await fetch('https://connect.squareup.com/v2/payments', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'Square-Version': '2024-12-18',
+    },
+    body: JSON.stringify({
+      idempotency_key: crypto.randomUUID(),
+      source_id: body.source_id,
+      amount_money: { amount: body.amount_cents, currency: 'USD' },
+      reference_id: id,
+      note: `L&S Custom Tailors — ${id}`,
+      location_id: locationId,
+    }),
+  });
+
+  const squareData: any = await squareRes.json();
+
+  if (!squareRes.ok) {
+    const code = squareData?.errors?.[0]?.code ?? '';
+    const ERRORS: Record<string, string> = {
+      CARD_DECLINED: 'Your card was declined. Please try a different card.',
+      VERIFY_CVV_FAILURE: 'CVV did not match. Please check your card details.',
+      INSUFFICIENT_FUNDS: 'Insufficient funds on this card.',
+      CARD_EXPIRED: 'This card has expired. Please use a different card.',
+      INVALID_EXPIRATION: 'Card expiration date is invalid.',
+    };
+    return c.json({ error: ERRORS[code] ?? 'Payment could not be processed. Please try again.' }, 422);
+  }
+
+  const payment = squareData.payment;
+  if (payment?.status !== 'COMPLETED') {
+    return c.json({ error: 'Payment was not completed. Please try again.' }, 422);
+  }
+
+  return c.json({ data: { payment_id: payment.id as string, status: 'success' } });
+});

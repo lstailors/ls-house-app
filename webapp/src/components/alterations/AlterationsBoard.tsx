@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 export interface AlterationRow {
   name: string; customerName: string; location: string; garmentCount: number; garmentSummary: string;
@@ -19,6 +20,7 @@ function daysUntil(d: string | null) {
 }
 
 export function AlterationsBoard({ rows }: { rows: AlterationRow[] }) {
+  const navigate = useNavigate();
   const [sortKey, setSortKey] = useState<SortKey>("dueDate");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -83,9 +85,11 @@ export function AlterationsBoard({ rows }: { rows: AlterationRow[] }) {
       {sorted.map((r) => {
         const blocked = isPickupBlocked(r);
         return (
-          <div key={r.name} title={blocked ? "Ready but unpaid — collect payment before pickup" : undefined}
+          <div key={r.name} title={blocked ? "Ready but unpaid — collect payment before pickup" : r.name}
+            onClick={() => navigate(`/orders/alterations/${r.name}`)}
             style={{ display: "grid", gridTemplateColumns: GRID, gap: 10, alignItems: "center", padding: "14px 4px 14px 8px",
-              borderBottom: "0.5px solid rgba(241,233,214,0.07)", borderLeft: blocked ? `2px solid ${RED}` : "2px solid transparent" }}>
+              borderBottom: "0.5px solid rgba(241,233,214,0.07)", borderLeft: blocked ? `2px solid ${RED}` : "2px solid transparent",
+              cursor: "pointer" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
               <div style={{ width: 34, height: 34, borderRadius: "50%", flex: "none", background: "rgba(176,141,87,0.18)", color: BRASS, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>{initials(r.customerName)}</div>
               <div style={{ minWidth: 0 }}>

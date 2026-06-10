@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, Star, Phone, Mail, Building2, MapPin,
+  ArrowLeft, Star, Phone, MapPin,
   Edit2, Save, X, Trash2, Plus, Tag, Calendar,
-  FileText, Heart, Ruler, AlertCircle
+  FileText, Heart, Ruler, AlertCircle, ShoppingBag,
+  Scissors, Receipt, ExternalLink, DollarSign
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -90,6 +91,330 @@ function Section({ title, icon: Icon, children }: { title: string; icon: any; ch
   );
 }
 
+// ── Status Badge ─────────────────────────────────────────────────────────────
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    quote: "border-cream-dim/30 text-cream-dim bg-cream-dim/5",
+    deposit_paid: "border-brass/40 text-brass-light bg-brass/10",
+    in_production: "border-signal-amber/40 text-signal-amber bg-signal-amber/10",
+    ready: "border-signal-green/40 text-signal-green bg-signal-green/10",
+    delivered: "border-forest-mid/40 text-cream-muted bg-forest-mid/20",
+    cancelled: "border-signal-rose/30 text-signal-rose bg-signal-rose/10",
+    intake: "border-cream-dim/30 text-cream-dim bg-cream-dim/5",
+    in_progress: "border-signal-amber/40 text-signal-amber bg-signal-amber/10",
+    picked_up: "border-forest-mid/40 text-cream-muted bg-forest-mid/20",
+    paid: "border-signal-green/40 text-signal-green bg-signal-green/10",
+    unpaid: "border-signal-rose/30 text-signal-rose bg-signal-rose/10",
+    partly_paid: "border-signal-amber/40 text-signal-amber bg-signal-amber/10",
+    overdue: "border-signal-rose/40 text-signal-rose bg-signal-rose/15",
+    draft: "border-cream-dim/30 text-cream-dim bg-cream-dim/5",
+  };
+  const label: Record<string, string> = {
+    quote: "Quote", deposit_paid: "Deposit Paid", in_production: "In Production",
+    ready: "Ready", delivered: "Delivered", cancelled: "Cancelled",
+    intake: "Intake", in_progress: "In Progress", picked_up: "Picked Up",
+    paid: "Paid", unpaid: "Unpaid", partly_paid: "Partly Paid", overdue: "Overdue", draft: "Draft",
+  };
+  return (
+    <span className={cn("text-[9px] font-bold tracking-wider uppercase px-2 py-0.5 rounded border", map[status] ?? "border-brass/15 text-cream-dim")}>
+      {label[status] ?? status}
+    </span>
+  );
+}
+
+// ── Orders Tab ───────────────────────────────────────────────────────────────
+function OrdersTab({ customerId, erpnextCustomerId }: { customerId: string; erpnextCustomerId: string | null }) {
+  const { data: orders, isLoading: ordersLoading } = useQuery({
+    queryKey: ["customer-orders", customerId],
+    queryFn: () => api.get<any[]>(`/api/custom-orders?customerId=${customerId}&limit=10`),
+    enabled: !!customerId,
+  });
+
+  const { data: alterations, isLoading: altsLoading } = useQuery({
+    queryKey: ["customer-alterations", erpnextCustomerId],
+    queryFn: () => api.get<any[]>(`/api/alterations?customer=${encodeURIComponent(erpnextCustomerId!)}&limit=10`),
+    enabled: !!erpnextCustomerId,
+  });
+
+  const loading = ordersLoading || altsLoading;
+  const hasOrders = (orders?.length ?? 0) > 0;
+  const hasAlts = (alterations?.length ?? 0) > 0;
+
+  if (loading) {
+    return (
+      <div className="space-y-2 animate-pulse">
+        {[1,2,3].map(i => <div key={i} className="h-12 rounded-lg bg-brass/5 border border-brass/10" />)}
+      </div>
+    );
+  }
+
+  if (!hasOrders && !hasAlts) {
+    return (
+      <div className="glass-panel rounded-2xl p-8 border border-brass/10 text-center">
+        <ShoppingBag className="w-8 h-8 text-brass/30 mx-auto mb-3" />
+        <p className="text-cream-muted text-sm">No orders on record.</p>
+        <p className="text-cream-dim text-xs mt-1">Custom orders and alteration tickets will appear here.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {hasOrders && (
+        <div className="glass-panel rounded-2xl border border-brass/10 overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-brass/10">
+            <ShoppingBag className="w-3.5 h-3.5 text-brass-light" />
+            <span className="ui-label text-brass-light text-[10px] tracking-wider">Custom Orders</span>
+          </div>
+          <div className="divide-y divide-brass/8">
+            {(orders ?? []).map((order: any) => (
+              <Link key={order.id} to={`/custom-orders/${order.id}`}
+                className="flex items-center justify-between px-4 py-3 hover:bg-brass/5 transition-colors group">
+                <div className="flex items-center gap-3">
+                  <div>
+                    <p className="text-cream text-sm font-medium capitalize">{order.garmentType?.replace(/_/g, " ") ?? "Order"}</p>
+                    <p className="text-cream-dim text-[10px] font-mono mt-0.5">#{order.id?.slice(-8)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <StatusBadge status={order.status} />
+                  <div className="text-right">
+                    <p className="text-brass-shimmer text-sm font-display italic">${Number(order.quotedPrice ?? 0).toFixed(0)}</p>
+                    <p className="text-cream-dim text-[10px]">{order.createdAt ? new Date(order.createdAt).toLocaleDateString() : "—"}</p>
+                  </div>
+                  <ExternalLink className="w-3 h-3 text-cream-dim group-hover:text-brass transition-colors" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {hasAlts && (
+        <div className="glass-panel rounded-2xl border border-brass/10 overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-brass/10">
+            <Scissors className="w-3.5 h-3.5 text-brass-light" />
+            <span className="ui-label text-brass-light text-[10px] tracking-wider">Alteration Tickets</span>
+          </div>
+          <div className="divide-y divide-brass/8">
+            {(alterations ?? []).map((alt: any) => (
+              <Link key={alt.id} to={`/alterations/${alt.id}`}
+                className="flex items-center justify-between px-4 py-3 hover:bg-brass/5 transition-colors group">
+                <div>
+                  <p className="text-cream text-sm font-mono">{alt.id}</p>
+                  <p className="text-cream-dim text-[10px] mt-0.5">
+                    Due: {alt.dueDate ? new Date(alt.dueDate).toLocaleDateString() : "—"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <StatusBadge status={alt.status} />
+                  <p className="text-brass-shimmer text-sm font-display italic">${Number(alt.price ?? 0).toFixed(0)}</p>
+                  <ExternalLink className="w-3 h-3 text-cream-dim group-hover:text-brass transition-colors" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Measurements Tab ──────────────────────────────────────────────────────────
+function MeasurementsTab({ customer }: { customer: any }) {
+  const measurementFields = [
+    { key: "chest", label: "Chest" },
+    { key: "waist", label: "Waist" },
+    { key: "hips", label: "Hips" },
+    { key: "inseam", label: "Inseam" },
+    { key: "shoulder", label: "Shoulder" },
+    { key: "sleeve", label: "Sleeve" },
+    { key: "neck", label: "Neck" },
+    { key: "thigh", label: "Thigh" },
+    { key: "rise", label: "Rise" },
+    { key: "back_length", label: "Back Length" },
+    { key: "jacket_length", label: "Jacket Length" },
+    { key: "trouser_length", label: "Trouser Length" },
+  ];
+
+  // Check for measurements in the dossier's fit_notes_structured or body_measurement_set
+  const measurements = customer?.dossier?.body_measurement_set ?? customer?.dossier?.measurements ?? customer?.measurements ?? null;
+  const fitNotesStructured = customer?.dossier?.fit_notes_structured ?? null;
+
+  const hasMeasurements = measurements && typeof measurements === "object" && Object.keys(measurements).length > 0;
+
+  if (!hasMeasurements && !fitNotesStructured) {
+    return (
+      <div className="glass-panel rounded-2xl p-8 border border-brass/10 text-center">
+        <Ruler className="w-8 h-8 text-brass/30 mx-auto mb-3" />
+        <p className="text-cream-muted text-sm">No measurements on file.</p>
+        <p className="text-cream-dim text-xs mt-1 max-w-xs mx-auto">
+          Add measurements via ERPNext using the customer ID: <span className="font-mono text-brass-light">{customer?.erpnextCustomerId ?? "—"}</span>
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {hasMeasurements && (
+        <div className="glass-panel rounded-2xl p-5 border border-brass/10">
+          <div className="flex items-center gap-2 mb-4">
+            <Ruler className="w-4 h-4 text-brass-light" />
+            <h3 className="ui-label text-brass-light tracking-wider">Body Measurements</h3>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {measurementFields.map(({ key, label }) => {
+              const val = measurements[key];
+              if (!val && val !== 0) return null;
+              return (
+                <div key={key} className="bg-forest-deep/50 rounded-lg px-3 py-2.5 border border-brass/10">
+                  <p className="text-cream-dim text-[9px] uppercase tracking-wider mb-0.5">{label}</p>
+                  <p className="text-cream text-sm font-display italic">{val}<span className="text-cream-dim text-[10px] ml-0.5">″</span></p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {fitNotesStructured && typeof fitNotesStructured === "object" && (
+        <div className="glass-panel rounded-2xl p-5 border border-brass/10">
+          <div className="flex items-center gap-2 mb-4">
+            <FileText className="w-4 h-4 text-brass-light" />
+            <h3 className="ui-label text-brass-light tracking-wider">Fit Notes</h3>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {Object.entries(fitNotesStructured).map(([key, val]) => (
+              <div key={key}>
+                <p className="text-cream-dim text-[9px] uppercase tracking-wider mb-0.5">{key.replace(/_/g, " ")}</p>
+                <p className="text-cream text-xs">{String(val)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Balance Tab ───────────────────────────────────────────────────────────────
+function BalanceTab({ erpnextCustomerId }: { erpnextCustomerId: string | null }) {
+  const { data: invoiceData, isLoading } = useQuery({
+    queryKey: ["customer-invoices", erpnextCustomerId],
+    queryFn: () => api.get<any>(`/api/invoices?customer=${encodeURIComponent(erpnextCustomerId!)}&status=unpaid`),
+    enabled: !!erpnextCustomerId,
+    select: (raw: any) => {
+      // raw could be { data: [...], summary: {...} } or just an array
+      if (Array.isArray(raw)) return { invoices: raw, summary: null };
+      return { invoices: raw?.data ?? [], summary: raw?.summary ?? null };
+    },
+  });
+
+  if (!erpnextCustomerId) {
+    return (
+      <div className="glass-panel rounded-2xl p-8 border border-brass/10 text-center">
+        <Receipt className="w-8 h-8 text-brass/30 mx-auto mb-3" />
+        <p className="text-cream-muted text-sm">No ERPNext account linked.</p>
+        <p className="text-cream-dim text-xs mt-1">Link this client to an ERPNext customer to view invoices.</p>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="space-y-2 animate-pulse">
+        {[1,2,3].map(i => <div key={i} className="h-12 rounded-lg bg-brass/5 border border-brass/10" />)}
+      </div>
+    );
+  }
+
+  const invoices: any[] = invoiceData?.invoices ?? [];
+  const totalOutstanding = invoices.reduce((s: number, i: any) => s + (i.outstandingAmount ?? 0), 0);
+  const hasInvoices = invoices.length > 0;
+
+  return (
+    <div className="space-y-4">
+      {/* Outstanding KPI */}
+      <div className={cn(
+        "glass-panel rounded-2xl p-5 border",
+        totalOutstanding > 0 ? "border-signal-rose/20 bg-signal-rose/5" : "border-signal-green/20 bg-signal-green/5"
+      )}>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="ui-label text-[10px] tracking-wider text-cream-muted mb-1">Total Outstanding</p>
+            <p className={cn("font-display italic text-3xl", totalOutstanding > 0 ? "text-signal-rose" : "text-signal-green")}>
+              ${totalOutstanding.toFixed(2)}
+            </p>
+          </div>
+          <DollarSign className={cn("w-8 h-8", totalOutstanding > 0 ? "text-signal-rose/40" : "text-signal-green/40")} />
+        </div>
+        {!hasInvoices && <p className="text-cream-dim text-xs mt-2">No unpaid invoices — account is clear.</p>}
+      </div>
+
+      {hasInvoices && (
+        <div className="glass-panel rounded-2xl border border-brass/10 overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-brass/10">
+            <Receipt className="w-3.5 h-3.5 text-brass-light" />
+            <span className="ui-label text-brass-light text-[10px] tracking-wider">Unpaid Invoices</span>
+          </div>
+          <div className="divide-y divide-brass/8">
+            {invoices.map((inv: any) => {
+              const isOverdue = inv.status === "overdue" ||
+                (inv.dueDate && new Date(inv.dueDate) < new Date() && inv.status !== "paid");
+              return (
+                <div key={inv.id} className="flex items-center justify-between px-4 py-3">
+                  <div>
+                    <p className="text-cream text-sm font-mono">{inv.id}</p>
+                    <p className="text-cream-dim text-[10px] mt-0.5">
+                      Due: {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : "—"}
+                      {isOverdue && <span className="text-signal-rose ml-2 font-bold">OVERDUE</span>}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <StatusBadge status={inv.status} />
+                    <p className="text-signal-rose font-display italic">${Number(inv.outstandingAmount ?? inv.total ?? 0).toFixed(2)}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Tab Switcher ──────────────────────────────────────────────────────────────
+type TabKey = "orders" | "measurements" | "balance";
+
+function TabSwitcher({ active, onChange }: { active: TabKey; onChange: (t: TabKey) => void }) {
+  const tabs: { key: TabKey; label: string; icon: any }[] = [
+    { key: "orders", label: "Orders", icon: ShoppingBag },
+    { key: "measurements", label: "Measurements", icon: Ruler },
+    { key: "balance", label: "Balance", icon: Receipt },
+  ];
+  return (
+    <div className="flex items-center gap-1.5 p-1 bg-forest-deep/60 border border-brass/15 rounded-xl w-fit">
+      {tabs.map(({ key, label, icon: Icon }) => (
+        <button
+          key={key}
+          onClick={() => onChange(key)}
+          className={cn(
+            "flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium transition-all",
+            active === key
+              ? "bg-brass/20 text-brass-shimmer border border-brass/30 shadow-sm"
+              : "text-cream-muted hover:text-cream hover:bg-brass/8"
+          )}
+        >
+          <Icon className="w-3.5 h-3.5" />
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function CustomerDetail() {
   const { id } = useParams<{ id: string }>();
@@ -99,6 +424,7 @@ export default function CustomerDetail() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Record<string, any>>({});
   const [newTag, setNewTag] = useState("");
+  const [activeTab, setActiveTab] = useState<TabKey>("orders");
 
   const { data: customer, isLoading, error } = useQuery({
     queryKey: ["customer", id],
@@ -383,6 +709,21 @@ export default function CustomerDetail() {
             </div>
           </div>
         </Section>
+      </div>
+
+      {/* ── Activity Tabs ─────────────────────────────────────────────────────── */}
+      <div className="space-y-4">
+        <TabSwitcher active={activeTab} onChange={setActiveTab} />
+
+        {activeTab === "orders" && (
+          <OrdersTab customerId={c.id} erpnextCustomerId={c.erpnextCustomerId} />
+        )}
+        {activeTab === "measurements" && (
+          <MeasurementsTab customer={c} />
+        )}
+        {activeTab === "balance" && (
+          <BalanceTab erpnextCustomerId={c.erpnextCustomerId} />
+        )}
       </div>
     </div>
   );

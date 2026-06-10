@@ -75,67 +75,82 @@ dashboardRouter.get("/kpis", async (c) => {
 
   // ── Manager / Salesperson path ───────────────────────────────────────────────
 
-  const [orderDataRes, deliveriesDueRes, garmentsProdRes, todayOrdersRes] = await Promise.all([
-    // All orders for location — fetch status + financials
-    (() => {
-      let q = supabaseAdmin!.from("orders").select("status,order_total,deposit_amount,created_at");
-      if (locCode) q = q.eq("origin_location", locCode);
-      if (user.role === "salesperson") {
-        const createdBy = user.supabaseProfileId || user.id;
-        q = q.eq("sales_rep_id", createdBy);
-      }
-      return q;
-    })(),
+  // ERPNext SO status → dashboard stage
+  function soStageKpi(status: string): string {
+    if (["Draft", "On Hold", "To Pay"].includes(status)) return "quote";
+    if (status === "To Deliver and Bill" || status === "To Deliver") return "in_production";
+    if (status === "To Bill") return "ready";
+    if (status === "Completed" || status === "Closed") return "delivered";
+    return "other";
+  }
 
-    // Deliveries not yet completed
-    (() => {
-      let q = supabaseAdmin!
-        .from("deliveries")
-        .select("*", { count: "exact", head: true })
-        .not("status", "in", '("Delivered","delivered","Picked Up","Cancelled","Stale","failed","Failed")');
-      if (locCode) q = q.eq("origin_location", locCode);
-      return q;
-    })(),
+  const monthStartStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
 
-    // Garments in active production
-    (() => {
-      return supabaseAdmin!
-        .from("garments")
-        .select("status")
-        .in("status", ["Ordered", "Pattern Draft", "Cutting", "Sewing", "Basting", "First Fitting", "Alterations", "Second Fitting"])
-        .limit(500);
-    })(),
+  // ERPNext Sales Orders for ordersByStage, revenue, depositsPending
+  const soFilters: any[] = [["docstatus", "=", 1]];
+  if (locCode) soFilters.push(["company", "like", locCode === "HOU" ? "%TX%" : "%NY%"]);
 
-    // Today's intake (orders created today)
-    (() => {
-      let q = supabaseAdmin!
-        .from("orders")
-        .select("*", { count: "exact", head: true })
-        .gte("created_at", startOfDay.toISOString())
-        .lte("created_at", endOfDay.toISOString());
-      if (locCode) q = q.eq("origin_location", locCode);
-      if (user.role === "salesperson") {
-        const createdBy = user.supabaseProfileId || user.id;
-        q = q.eq("sales_rep_id", createdBy);
-      }
-      return q;
-    })(),
+  // ERPNext Paid Sales Invoices for revenueMTD
+  const siFilters: any[] = [["docstatus", "=", 1], ["status", "=", "Paid"], ["posting_date", ">=", monthStartStr]];
+  if (locCode) siFilters.push(["company", "like", locCode === "HOU" ? "%TX%" : "%NY%"]);
+
+  // LSH Delivery for deliveriesDue
+  const deliveryFilters: any[] = [["lsh_status", "in", ["Queued", "Out for Delivery"]]];
+  if (locCode) deliveryFilters.push(["origin_location", "=", locCode]);
+
+  // Today's intake from ERPNext SOs
+  const todayFilters: any[] = [["docstatus", "=", 1], ["transaction_date", "=", todayDate]];
+  if (locCode) todayFilters.push(["company", "like", locCode === "HOU" ? "%TX%" : "%NY%"]);
+
+  const [erpSalesOrders, erpPaidInvoices, erpDeliveriesDue, erpTodaySOs] = await Promise.all([
+    erpList<{ name: string; grand_total: number; status: string; transaction_date: string }>("Sales Order", {
+      filters: soFilters,
+      fields: ["name", "grand_total", "status", "transaction_date"],
+      limit: 2000,
+    }).catch(() => []),
+    erpList<{ name: string; grand_total: number }>("Sales Invoice", {
+      filters: siFilters,
+      fields: ["name", "grand_total"],
+      limit: 2000,
+    }).catch(() => []),
+    erpList<{ name: string }>("LSH Delivery", {
+      filters: deliveryFilters,
+      fields: ["name"],
+      limit: 500,
+    }).catch(() => []),
+    erpList<{ name: string }>("Sales Order", {
+      filters: todayFilters,
+      fields: ["name"],
+      limit: 500,
+    }).catch(() => []),
   ]);
-
-  const orders = (orderDataRes.data as any[]) ?? [];
 
   const ordersByStage: Record<string, number> = {};
   let revenue = 0;
   let depositsPending = 0;
+  let depositsPendingAmount = 0;
 
-  for (const o of orders) {
-    const stage = toAppStatus(o.status);
+  for (const o of erpSalesOrders) {
+    const stage = soStageKpi(o.status);
+    if (stage === "other") continue;
     ordersByStage[stage] = (ordersByStage[stage] ?? 0) + 1;
-    if (canSeeFinancials(user.role)) revenue += Number(o.order_total ?? 0);
-    if (stage === "quote") depositsPending++;
+    if (canSeeFinancials(user.role)) revenue += Number(o.grand_total ?? 0);
+    if (stage === "quote") {
+      depositsPending++;
+      depositsPendingAmount += Number(o.grand_total ?? 0);
+    }
   }
 
   const customInProduction = ordersByStage["in_production"] ?? 0;
+
+  // garmentsProd / garmentsByStage — keep from Supabase as before
+  const garmentsProdRes = supabaseAdmin
+    ? await supabaseAdmin
+        .from("garments")
+        .select("status")
+        .in("status", ["Ordered", "Pattern Draft", "Cutting", "Sewing", "Basting", "First Fitting", "Alterations", "Second Fitting"])
+        .limit(500)
+    : { data: [] };
 
   const garmentRows = (garmentsProdRes as any).data ?? [];
   const garmentsProd = garmentRows.length;
@@ -144,26 +159,26 @@ dashboardRouter.get("/kpis", async (c) => {
     garmentsByStage[g.status] = (garmentsByStage[g.status] ?? 0) + 1;
   }
 
-  const depositsPendingAmount = orders.filter((o: any) => toAppStatus(o.status) === "quote").reduce((s: number, o: any) => s + Number(o.order_total ?? 0), 0);
-
-  // Low-activity locations for super_admin
+  // Low-activity locations for super_admin (using ERPNext SOs from last 7 days)
   let lowActivityLocations: any[] | undefined;
-  if (user.role === "super_admin") {
+  if (user.role === "super_admin" && supabaseAdmin) {
     const { data: locs } = await supabaseAdmin
       .from("locations")
       .select("code,name,id,active")
       .eq("active", true);
 
     if (locs) {
+      const weekAgoStr = weekAgo.toISOString().slice(0, 10);
       const locCounts = await Promise.all(
         locs.map(async (loc: any) => {
           if (!loc.code) return { loc, count: 0 };
-          const { count } = await supabaseAdmin!
-            .from("orders")
-            .select("id", { count: "exact", head: true })
-            .eq("origin_location", loc.code)
-            .gte("created_at", weekAgo.toISOString());
-          return { loc, count: count ?? 0 };
+          const companyLike = loc.code === "HOU" ? "%TX%" : "%NY%";
+          const rows = await erpList("Sales Order", {
+            filters: [["docstatus", "=", 1], ["transaction_date", ">=", weekAgoStr], ["company", "like", companyLike]],
+            fields: ["name"],
+            limit: 500,
+          }).catch(() => []);
+          return { loc, count: rows.length };
         }),
       );
       lowActivityLocations = locCounts
@@ -184,8 +199,7 @@ dashboardRouter.get("/kpis", async (c) => {
 
   // Additional alteration stats from ERPNext
   const erpLocFilter: unknown[] = locCode ? [["origin_location", "=", locCode]] : [];
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const monthStartStr = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+  const todayStr = todayDate;
 
   const [altReadyTickets, altOverdueTickets, altRushTickets, altRevTickets] = await Promise.all([
     erpList("Alteration Ticket", { filters: [...erpLocFilter, ["workflow_state", "=", "Ready"]], fields: ["name"], limit: 500 }).catch(() => []),
@@ -197,7 +211,7 @@ dashboardRouter.get("/kpis", async (c) => {
   const altReady = altReadyTickets.length;
   const altOverdue = altOverdueTickets.length;
   const altRush = altRushTickets.length;
-  const altRevenueMTD = altRevTickets.reduce((s, t: any) => s + Number(t.ticket_total ?? 0), 0);
+  const altRevenueMTD = (altRevTickets as any[]).reduce((s: number, t) => s + Number(t.ticket_total ?? 0), 0);
   const altByStatus = {
     received: altWithStatus.filter((t) => t.workflow_state === "Received").length,
     inProgress: altWithStatus.filter((t) => t.workflow_state === "In Progress").length,
@@ -221,20 +235,21 @@ dashboardRouter.get("/kpis", async (c) => {
     }
   }
 
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const mtdOrders = orders.filter((o: any) => new Date(o.created_at) >= startOfMonth);
-  const customRevenueMTD = canSeeFinancials(user.role) ? mtdOrders.reduce((s: number, o: any) => s + Number(o.order_total ?? 0), 0) : 0;
+  // revenueMTD: paid invoices this month (custom) + alteration revenue MTD
+  const customRevenueMTD = canSeeFinancials(user.role)
+    ? (erpPaidInvoices as any[]).reduce((s: number, i) => s + Number(i.grand_total ?? 0), 0)
+    : 0;
   const revenueMTD = customRevenueMTD + altRevenueMTD;
 
   return c.json({
     data: {
       revenue,
       ordersByStage,
-      deliveriesDue: deliveriesDueRes.count ?? 0,
+      deliveriesDue: erpDeliveriesDue.length,
       openAlterations,
       customInProduction,
       depositsPending,
-      todayIntakeCount: todayOrdersRes.count ?? 0,
+      todayIntakeCount: erpTodaySOs.length,
       garmentsProd,
       garmentsByStage,
       lowActivityLocations,

@@ -1,6 +1,6 @@
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
-  ArrowLeft, Sparkles, User, Phone, Mail, Calendar, CreditCard, Star, FileText, Printer,
+  ArrowLeft, Sparkles, User, Phone, Mail, Calendar, CreditCard, Star, FileText, Printer, Truck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SectionHeader } from "@/components/glass/SectionHeader";
@@ -37,6 +37,30 @@ export default function CustomOrderDetail() {
   const navigate = useNavigate();
   const { data: order, isLoading } = useCustomOrder(id);
   const qc = useQueryClient();
+
+  const createDelivery = useMutation({
+    mutationFn: async () => {
+      const summary = order?.garments?.map((g: any) => `${g.garmentType || g.type}`).join(", ")
+        || order?.spec?.garment || "Custom Order";
+
+      return api.post<{ id: string; qrToken: string }>("/api/deliveries/from-order", {
+        sales_order: order?.erpName ?? order?.erpnextName ?? null,
+        customer_name: order?.customer?.name ?? "Walk-in",
+        customer_phone: order?.customer?.phone ?? null,
+        customer_erp_name: order?.customer?.name ?? null,
+        address: order?.customer?.address ?? null,
+        notify_phone: order?.customer?.phone ?? null,
+        garment_summary: summary,
+        garment_count: order?.garments?.length ?? 1,
+        location: order?.locationId ?? "NYC",
+      });
+    },
+    onSuccess: (result) => {
+      toast.success("Delivery created — opening label");
+      navigate(`/deliveries/${result.id}/label`);
+    },
+    onError: () => toast.error("Could not create delivery"),
+  });
 
   const updateStatus = useMutation({
     mutationFn: (status: string) =>
@@ -89,6 +113,15 @@ export default function CustomOrderDetail() {
               <StatusPill status={order.status} />
               <Button variant="outline" className="border-brass/20 hover:bg-brass/10 text-cream-muted">
                 <Printer className="h-4 w-4 mr-1.5" /> Print
+              </Button>
+              <Button
+                variant="outline"
+                className="border-brass/20 hover:bg-brass/10 text-cream-muted"
+                onClick={() => createDelivery.mutate()}
+                disabled={createDelivery.isPending}
+              >
+                <Truck className="h-4 w-4 mr-1.5" />
+                {createDelivery.isPending ? "Creating…" : "Create Delivery"}
               </Button>
             </div>
           }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Outlet, Navigate, useLocation } from "react-router-dom";
 import { Sidebar, type SidebarMode } from "./Sidebar";
 import { TopBar } from "./TopBar";
@@ -11,6 +11,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import { QuickCreateFAB } from "./QuickCreateFAB";
 
 export function AppShell() {
   const { data: user, isLoading } = useMe();
@@ -91,6 +92,7 @@ export function AppShell() {
             </div>
           </main>
         </div>
+        <QuickCreateFAB userEmail={user.email} />
       </div>
     </LocationProvider>
   );

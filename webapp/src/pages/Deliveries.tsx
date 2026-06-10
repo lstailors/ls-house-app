@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { Truck, MapPin, Clock, CheckCircle2, Phone, Camera, QrCode, Plus, Printer, ChevronDown, ChevronUp } from "lucide-react";
+import { Truck, MapPin, Clock, CheckCircle2, Phone, Camera, QrCode, Plus, Printer, ChevronDown, ChevronUp, Package, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { KpiCard } from "@/components/glass/KpiCard";
@@ -12,12 +13,14 @@ import { DriverRoute } from "@/components/deliveries/DriverRoute";
 import { NewDeliveryDialog } from "@/components/deliveries/NewDeliveryDialog";
 import { MarkDeliveredDialog } from "@/components/deliveries/MarkDeliveredDialog";
 import { ProofViewerDialog } from "@/components/deliveries/ProofViewerDialog";
-import { useDeliveries, useUpdateDelivery } from "@/lib/queries";
+import { useDeliveries, useUpdateDelivery, useDeliveryDailyOpsSummary } from "@/lib/queries";
+import { AnomaliesCard } from "@/components/deliveries/AnomaliesCard";
 import { DispatchMap } from "@/components/maps/DispatchMap";
 import { useNavigate } from "react-router-dom";
 import { useMe } from "@/lib/session";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import type { Delivery } from "@/lib/types";
 
 const FILTERS = [
@@ -38,9 +41,39 @@ export default function Deliveries() {
   const [mapOpen, setMapOpen] = useState(false);
   const [deliverTarget, setDeliverTarget] = useState<Delivery | null>(null);
   const [proofTarget, setProofTarget] = useState<Delivery | null>(null);
+  const [activeTab, setActiveTab]   = useState<"board" | "candidates">("board");
+  const [opsOpen, setOpsOpen]       = useState(false);
 
+  const qc = useQueryClient();
   const navigate = useNavigate();
   const isDriver = me?.role === "driver";
+
+  const dailyOps = useDeliveryDailyOpsSummary(opsOpen);
+
+  const { data: candidates = [] } = useQuery({
+    queryKey: ["delivery-candidates"],
+    queryFn: () => api.get<any[]>("/api/deliveries/candidates"),
+    staleTime: 5 * 60_000,
+    enabled: activeTab === "candidates",
+  });
+
+  const scheduleDelivery = useMutation({
+    mutationFn: (candidate: any) =>
+      api.post<Delivery>("/api/deliveries/from-order", {
+        sales_order: candidate.name,
+        customer_name: candidate.customer_name,
+        customer_phone: candidate.contact_mobile ?? candidate.contact_phone ?? null,
+        notify_phone: candidate.contact_mobile ?? candidate.contact_phone ?? null,
+        location: (me as any)?.locationId ?? "NYC",
+      }),
+    onSuccess: () => {
+      toast.success("Delivery scheduled");
+      setActiveTab("board");
+      qc.invalidateQueries({ queryKey: ["deliveries"] });
+      qc.invalidateQueries({ queryKey: ["delivery-candidates"] });
+    },
+    onError: () => toast.error("Could not schedule delivery"),
+  });
 
   const filtered = useMemo(() => {
     const s = search.toLowerCase();
@@ -108,16 +141,26 @@ export default function Deliveries() {
         title={<>The <span className="text-brass-shimmer">dispatch</span> board.</>}
         description="Every finished garment, from the rack to the customer's hand."
         actions={
-          <Button
-            onClick={() => setNewDeliveryOpen(true)}
-            className="bg-[#c9a84c] hover:bg-[#b8963c] text-[#0a120e] font-medium h-9 text-sm"
-          >
-            <Plus className="h-3.5 w-3.5 mr-1.5" /> New Delivery
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setOpsOpen((v) => !v)}
+              className="border-brass/20 hover:bg-brass/10 text-cream-muted h-9 text-sm gap-1.5"
+            >
+              <BarChart3 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Daily ops</span>
+            </Button>
+            <Button
+              onClick={() => setNewDeliveryOpen(true)}
+              className="bg-[#c9a84c] hover:bg-[#b8963c] text-[#0a120e] font-medium h-9 text-sm"
+            >
+              <Plus className="h-3.5 w-3.5 mr-1.5" /> New Delivery
+            </Button>
+          </div>
         }
       />
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
         <KpiCard
           label="Scheduled"
           value={counts.scheduled}
@@ -141,7 +184,63 @@ export default function Deliveries() {
           onClick={() => setFilter((f) => f === "delivered" ? "all" : "delivered")}
           active={filter === "delivered"}
         />
+        <KpiCard
+          label="Ready to Ship"
+          value={candidates.length}
+          icon={<Package className="h-4 w-4" />}
+          accent="amber"
+          onClick={() => setActiveTab((t) => t === "candidates" ? "board" : "candidates")}
+          active={activeTab === "candidates"}
+        />
       </div>
+
+      {/* Daily ops summary panel (collapsible) */}
+      {opsOpen ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <GlassCard className="p-4 space-y-3">
+            <div className="text-[11px] uppercase tracking-widest text-cream-dim flex items-center gap-1.5">
+              <BarChart3 className="h-3.5 w-3.5 text-brass-light/70" /> Daily Ops Summary
+            </div>
+            {dailyOps.isFetching && !dailyOps.data ? (
+              <div className="flex items-center gap-2 text-xs text-cream-muted">
+                <Clock className="h-3.5 w-3.5 animate-spin" /> Generating summary…
+              </div>
+            ) : dailyOps.error ? (
+              <div className="text-xs text-signal-rose">Summary unavailable — check AI_GATEWAY_API_KEY.</div>
+            ) : dailyOps.data ? (
+              <div className="space-y-3">
+                <p className="text-xs text-cream-muted leading-relaxed">{dailyOps.data.summary}</p>
+                {dailyOps.data.highlights?.length ? (
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-cream-dim mb-1">Highlights</div>
+                    <ul className="space-y-0.5">
+                      {dailyOps.data.highlights.map((h, i) => (
+                        <li key={i} className="text-xs text-signal-emerald flex items-start gap-1.5">
+                          <span className="mt-0.5 shrink-0">✓</span>{h}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {dailyOps.data.flagged?.length ? (
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-cream-dim mb-1">Follow-up needed</div>
+                    <ul className="space-y-0.5">
+                      {dailyOps.data.flagged.map((f, i) => (
+                        <li key={i} className="text-xs text-signal-amber flex items-start gap-1.5">
+                          <span className="mt-0.5 shrink-0">⚑</span>{f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                <div className="text-[9px] text-cream-dim/50 font-mono">{dailyOps.data.model}</div>
+              </div>
+            ) : null}
+          </GlassCard>
+          <AnomaliesCard />
+        </div>
+      ) : null}
 
       {/* Delivery Map */}
       <GlassCard className="overflow-hidden">
@@ -168,6 +267,87 @@ export default function Deliveries() {
         )}
       </GlassCard>
 
+      {/* Tab switcher */}
+      <div className="flex gap-1 p-1 bg-forest-dark/40 border border-brass/10 rounded-lg w-fit">
+        <button
+          type="button"
+          onClick={() => setActiveTab("board")}
+          className={cn(
+            "px-4 py-1.5 rounded-md text-xs font-medium transition-colors",
+            activeTab === "board"
+              ? "bg-brass/20 text-brass-light border border-brass/30"
+              : "text-cream-dim hover:text-cream"
+          )}
+        >
+          Dispatch Board
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("candidates")}
+          className={cn(
+            "px-4 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5",
+            activeTab === "candidates"
+              ? "bg-brass/20 text-brass-light border border-brass/30"
+              : "text-cream-dim hover:text-cream"
+          )}
+        >
+          Ready to Deliver
+          {candidates.length > 0 ? (
+            <span className="bg-signal-amber/20 text-signal-amber text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+              {candidates.length}
+            </span>
+          ) : null}
+        </button>
+      </div>
+
+      {activeTab === "candidates" ? (
+        candidates.length === 0 ? (
+          <EmptyState
+            icon={Package}
+            title="No orders ready to dispatch"
+            description="Sales orders marked 'To Deliver and Bill' will appear here."
+          />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {candidates.map((c: any) => (
+              <GlassCard key={c.name} className="p-4">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="min-w-0">
+                    <div className="text-cream font-medium truncate text-base">{c.customer_name}</div>
+                    <div className="text-[11px] text-brass-light/60 font-mono mt-0.5">{c.name}</div>
+                  </div>
+                  <span className="text-[10px] text-cream-dim bg-forest-dark/60 border border-brass/10 rounded px-2 py-0.5 shrink-0 ml-2">
+                    Ready
+                  </span>
+                </div>
+                {c.delivery_date ? (
+                  <div className="flex items-center gap-1.5 text-xs text-cream-dim mb-2">
+                    <Clock className="h-3 w-3" />
+                    <span>{c.delivery_date}</span>
+                  </div>
+                ) : null}
+                {(c.contact_mobile ?? c.contact_phone) ? (
+                  <div className="flex items-center gap-1.5 text-xs text-cream-muted mb-3">
+                    <Phone className="h-3 w-3 text-brass-light/60" />
+                    <span className="font-mono">{c.contact_mobile ?? c.contact_phone}</span>
+                  </div>
+                ) : null}
+                <div className="pt-3 border-t border-brass/10">
+                  <Button
+                    size="sm"
+                    onClick={() => scheduleDelivery.mutate(c)}
+                    disabled={scheduleDelivery.isPending}
+                    className="btn-brass w-full text-xs h-8"
+                  >
+                    <Truck className="h-3.5 w-3.5 mr-1.5" /> Schedule Delivery
+                  </Button>
+                </div>
+              </GlassCard>
+            ))}
+          </div>
+        )
+      ) : (
+        <>
       <FilterBar
         search={search}
         onSearchChange={setSearch}
@@ -224,10 +404,13 @@ export default function Deliveries() {
               })()}
 
               {d.addressLine ? (
-                <div className="flex items-start gap-1.5 text-xs text-cream-muted mb-2">
+                <div className="flex items-start gap-1.5 text-xs text-cream-muted mb-1">
                   <MapPin className="h-3 w-3 text-brass-light/60 mt-0.5 shrink-0" />
                   <span className="leading-snug">{d.addressLine}</span>
                 </div>
+              ) : null}
+              {(d as any).orderRef ? (
+                <div className="text-[10px] text-brass-light/50 font-mono mt-0.5 mb-2">{(d as any).orderRef}</div>
               ) : null}
 
               <div className="flex items-center gap-1.5 text-xs text-cream-dim mb-3">
@@ -297,6 +480,8 @@ export default function Deliveries() {
             </GlassCard>
           ))}
         </div>
+      )}
+        </>
       )}
 
       <NewDeliveryDialog

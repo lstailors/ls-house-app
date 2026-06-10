@@ -67,18 +67,22 @@ app.route("/api/maestro", maestroRouter);
 app.route("/api/sofia", sofiaRouter);
 app.route("/api/intake-alterations", intakeAlterationsRouter);
 app.route("/api/raven", ravenRouter);
+import { outreachRouter } from "./routes/outreach";
 import { searchRouter } from "./routes/search";
 import { notificationsRouter } from "./routes/notifications";
 import { erpnextCustomersRouter } from "./routes/erpnext-customers";
 import { cartsRouter } from "./routes/carts";
 import { alternationsBoardRouter } from "./routes/alterations-board";
 import { payInfoRouter } from "./routes/pay-info";
+app.route("/api/outreach", outreachRouter);
 app.route("/api/search", searchRouter);
 app.route("/api/notifications", notificationsRouter);
 app.route("/api/pay-info", payInfoRouter);
 app.route("/api/erpnext-customers", erpnextCustomersRouter);
 app.route("/api/carts", cartsRouter);
 app.route("/api/alterations/board", alternationsBoardRouter);
+import { transfersRouter } from "./routes/transfers";
+app.route("/api/transfers", transfersRouter);
 
 const port = Number(process.env.PORT) || 3000;
 

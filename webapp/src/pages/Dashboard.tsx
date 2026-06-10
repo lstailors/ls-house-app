@@ -1,8 +1,9 @@
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 import {
   Wallet, Scissors, Truck, ShoppingBag, CheckCircle2, Sparkles,
   AlertTriangle, Hammer, Coffee, Square, MessageSquare, Clock,
-  Zap, TrendingUp, TrendingDown, Receipt, BarChart2,
+  Zap, TrendingUp, TrendingDown, Receipt, BarChart2, QrCode, ArrowLeftRight,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { useMe } from "@/lib/session";
@@ -18,6 +19,7 @@ import { SalesLeaderboard } from "@/components/dashboard/SalesLeaderboard";
 import { TopCustomers } from "@/components/dashboard/TopCustomers";
 import { TopGarments } from "@/components/dashboard/TopGarments";
 import { AlterationsPipeline } from "@/components/dashboard/AlterationsPipeline";
+import { TransferModal } from "@/components/alterations/TransferModal";
 
 function weatherEmoji(code: number): string {
   if (code <= 1) return "☀️";
@@ -276,6 +278,7 @@ export default function Dashboard() {
   }
 
   // ── Manager / Super Admin dashboard ──────────────────────────────────────
+  const [transferOpen, setTransferOpen] = useState(false);
   const { data: fin } = useFinancials();
 
   const stages = kpis?.ordersByStage ?? {};
@@ -290,12 +293,42 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8 animate-fade-up">
-      {/* 1. Header */}
-      <SectionHeader
-        eyebrow={`${greeting()}, ${firstName}`}
-        title={<span className="text-brass-shimmer">The atelier is open.</span>}
-        description="Operations overview across intake, production, and delivery."
-      />
+      <TransferModal open={transferOpen} onClose={() => setTransferOpen(false)} />
+
+      {/* 1. Header + quick actions */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <SectionHeader
+          eyebrow={`${greeting()}, ${firstName}`}
+          title={<span className="text-brass-shimmer">The atelier is open.</span>}
+          description="Operations overview across intake, production, and delivery."
+        />
+        <div className="flex items-center gap-2 flex-wrap shrink-0 pt-1">
+          <button
+            onClick={() => navigate("/intake/alterations")}
+            className="inline-flex items-center gap-1.5 rounded-full border border-brass/30 bg-brass/8 px-3.5 py-2 text-xs font-medium text-brass-shimmer hover:bg-brass/15 hover:border-brass/50 transition-all"
+          >
+            <Scissors className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">New Alteration</span>
+            <span className="sm:hidden">Alteration</span>
+          </button>
+          <button
+            onClick={() => navigate("/scan")}
+            className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/8 px-3.5 py-2 text-xs font-medium text-emerald-300 hover:bg-emerald-500/15 hover:border-emerald-500/50 transition-all"
+          >
+            <QrCode className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Pickup Checkout</span>
+            <span className="sm:hidden">Pickup</span>
+          </button>
+          <button
+            onClick={() => setTransferOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-blue-400/30 bg-blue-400/8 px-3.5 py-2 text-xs font-medium text-blue-300 hover:bg-blue-400/15 hover:border-blue-400/50 transition-all"
+          >
+            <ArrowLeftRight className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Transfer Warehouse</span>
+            <span className="sm:hidden">Transfer</span>
+          </button>
+        </div>
+      </div>
 
       {/* 2. KPI strip */}
       <div className="grid grid-cols-3 lg:grid-cols-7 gap-3">

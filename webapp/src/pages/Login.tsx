@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
 import { signIn } from "@/lib/authClient";
@@ -11,16 +11,20 @@ import { toast } from "sonner";
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
   const { data: me } = useMe();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  const from = (location.state as any)?.from?.pathname ?? null;
+
   useEffect(() => {
     if (me) {
-      navigate(me.role === "driver" ? "/deliveries" : "/", { replace: true });
+      const dest = from ?? (me.role === "driver" ? "/deliveries" : "/");
+      navigate(dest, { replace: true });
     }
-  }, [me, navigate]);
+  }, [me, navigate, from]);
 
   const signInMutation = useMutation({
     mutationFn: async (): Promise<null> => {

@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Phone, MapPin, Clock, CheckCircle2, Truck, Printer,
   Camera, Search, Loader2, User, Pencil, PenLine, Navigation, QrCode,
+  Package, ExternalLink, FileText, MessageSquare, XCircle,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { toast } from "sonner";
@@ -11,11 +12,14 @@ import { api } from "@/lib/api";
 import { useUpdateDelivery, useCustomerSearch, useDeliveryProofUrls } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { StatusPill } from "@/components/glass/StatusPill";
 import { formatDateTime } from "@/lib/format";
 import { MarkDeliveredDialog } from "@/components/deliveries/MarkDeliveredDialog";
 import { DeliveryPinMap } from "@/components/maps/DeliveryPinMap";
+import { AiInsightsCard } from "@/components/deliveries/AiInsightsCard";
+import { GenerateMessageDialog } from "@/components/deliveries/GenerateMessageDialog";
 import type { Delivery } from "@/lib/types";
 
 // Delivery extended with fields added to serializeDelivery
@@ -27,6 +31,8 @@ interface DeliveryDetail extends Delivery {
   gpsLatitude?: number | null;
   gpsLongitude?: number | null;
   gpsAccuracy?: number | null;
+  garmentSummary?: string | null;
+  garmentCount?: number | null;
 }
 
 export default function DeliveryDetail() {
@@ -36,6 +42,7 @@ export default function DeliveryDetail() {
   const update = useUpdateDelivery();
 
   const [markDeliveredOpen, setMarkDeliveredOpen] = useState(false);
+  const [messageDialogOpen, setMessageDialogOpen] = useState(false);
   const [editingContact, setEditingContact] = useState(false);
   const [contactSearch, setContactSearch] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
@@ -46,18 +53,29 @@ export default function DeliveryDetail() {
     enabled: !!id,
   });
 
-  // Auto-load proof URLs whenever the delivery has a POD photo
+  // Load proof URLs when delivered (photos/signature stored as public URLs in ERP)
   const { data: proof, isLoading: proofLoading } = useDeliveryProofUrls(
-    delivery?.proofOfDeliveryUrl ? (id ?? null) : null,
+    delivery?.status === "delivered" ? (id ?? null) : null,
   );
 
   const { data: contactResults = [], isFetching: searchingContact } = useCustomerSearch(contactSearch);
+
+  const { data: orderItems } = useQuery({
+    queryKey: ["delivery-order-items", delivery?.orderRef],
+    queryFn: async () => {
+      if (!delivery?.orderRef) return null;
+      const so = await api.get<any>(`/api/sales-orders/${encodeURIComponent(delivery.orderRef)}`);
+      return (so as any)?.items ?? null;
+    },
+    enabled: !!delivery?.orderRef,
+    staleTime: 5 * 60_000,
+  });
 
   // Generate QR on load
   useEffect(() => {
     if (!delivery?.qrToken) return;
     QRCode.toDataURL(
-      `https://ls-house-app.vercel.app/d/${delivery.qrToken}`,
+      `https://delivered.lstailors.com/d/${delivery.qrToken}`,
       { width: 200, margin: 1, color: { dark: "#000000", light: "#ffffff" } },
     ).then(setQrDataUrl).catch(() => {});
   }, [delivery?.qrToken]);
@@ -83,6 +101,15 @@ export default function DeliveryDetail() {
     } catch { toast.error("Could not update"); }
   };
 
+  const handleCancel = async () => {
+    try {
+      await update.mutateAsync({ id: id!, status: "cancelled" });
+      qc.invalidateQueries({ queryKey: ["delivery", id] });
+      qc.invalidateQueries({ queryKey: ["deliveries"] });
+      toast.success("Delivery cancelled");
+    } catch { toast.error("Could not cancel delivery"); }
+  };
+
   if (isLoading) {
     return <div className="flex items-center justify-center h-48 text-cream-muted text-sm">Loading…</div>;
   }
@@ -98,6 +125,9 @@ export default function DeliveryDetail() {
 
   const isOut = delivery.status === "out_for_delivery";
   const isDelivered = delivery.status === "delivered";
+  const isCancelled = delivery.status === "cancelled";
+  const isScheduled = delivery.status === "scheduled";
+  const canCancel = !isDelivered && !isCancelled;
   const photos = [proof?.photo1, proof?.photo2, proof?.photo3].filter(Boolean) as string[];
   const mapsUrl = delivery.gpsLatitude && delivery.gpsLongitude
     ? `https://maps.google.com/?q=${delivery.gpsLatitude},${delivery.gpsLongitude}`
@@ -121,6 +151,14 @@ export default function DeliveryDetail() {
           <div className="text-xs text-cream-dim font-mono mt-1">
             {delivery.deliveryNo ?? `#${delivery.id.slice(-6).toUpperCase()}`}
           </div>
+          {delivery.orderRef ? (
+            <Link
+              to={`/sales-orders/${delivery.orderRef}`}
+              className="text-xs text-brass-light/70 hover:text-brass-light font-mono flex items-center gap-1 mt-1"
+            >
+              <ExternalLink className="h-3 w-3" /> {delivery.orderRef}
+            </Link>
+          ) : null}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <StatusPill status={delivery.status} />
@@ -129,31 +167,74 @@ export default function DeliveryDetail() {
             variant="outline"
             onClick={() => navigate(`/deliveries/${id}/label`)}
             className="border-brass/20 hover:bg-brass/10 text-cream-muted h-8 px-2"
-            title="Print label"
+            title="Print 4×6 label"
           >
             <Printer className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => window.open(`/api/deliveries/${id}/confirmation`, "_blank")}
+            className="border-brass/20 hover:bg-brass/10 text-cream-muted h-8 px-2"
+            title="Print confirmation"
+          >
+            <FileText className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2">
-        {delivery.status === "scheduled" ? (
+      <div className="flex gap-2 flex-wrap">
+        {isScheduled ? (
           <Button onClick={handleStart} disabled={update.isPending} className="btn-brass flex-1">
             <Truck className="h-4 w-4 mr-1.5" /> Start delivery
           </Button>
         ) : null}
-        {isOut ? (
+        {(isOut || isScheduled) ? (
           <Button onClick={() => setMarkDeliveredOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white flex-1">
             <CheckCircle2 className="h-4 w-4 mr-1.5" /> Mark delivered
           </Button>
         ) : null}
+        <Button
+          variant="outline"
+          className="border-brass/20 hover:bg-brass/10 text-cream-muted"
+          onClick={() => setMessageDialogOpen(true)}
+          title="Draft customer message"
+        >
+          <MessageSquare className="h-4 w-4" />
+        </Button>
         {delivery.customer?.phone ? (
           <Button variant="outline" className="border-brass/20 hover:bg-brass/10 text-cream-muted" asChild>
             <a href={`tel:${delivery.customer.phone}`}>
               <Phone className="h-4 w-4" />
             </a>
           </Button>
+        ) : null}
+        {canCancel ? (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" className="border-red-500/30 hover:bg-red-500/10 text-red-400" title="Cancel delivery">
+                <XCircle className="h-4 w-4" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Cancel this delivery?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will mark the delivery as cancelled. It will be removed from the active board.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Keep it</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleCancel}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Yes, cancel delivery
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         ) : null}
       </div>
 
@@ -233,6 +314,14 @@ export default function DeliveryDetail() {
             <div className="col-span-2 flex items-start gap-1.5 text-cream-muted">
               <MapPin className="h-3.5 w-3.5 text-brass-light/60 mt-0.5 shrink-0" />
               <span>{delivery.addressLine}</span>
+              <a
+                href={`https://maps.apple.com/?daddr=${encodeURIComponent(delivery.addressLine)}&dirflg=d`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-auto text-xs text-brass-light hover:underline shrink-0"
+              >
+                Directions →
+              </a>
             </div>
           ) : null}
           <div>
@@ -259,6 +348,34 @@ export default function DeliveryDetail() {
           ) : null}
         </div>
       </GlassCard>
+
+      {/* Order Items */}
+      {(orderItems?.length || delivery.garmentSummary) ? (
+        <GlassCard className="p-4">
+          <div className="text-[11px] uppercase tracking-widest text-cream-dim mb-3 flex items-center gap-1.5">
+            <Package className="h-3.5 w-3.5" /> Items in this Delivery
+          </div>
+          {orderItems?.length ? (
+            <div className="space-y-2">
+              {orderItems.map((item: any, i: number) => (
+                <div key={i} className="flex items-center justify-between py-2 border-b border-brass/10 last:border-0">
+                  <div>
+                    <div className="text-sm text-cream font-medium">{item.item_name}</div>
+                    {item.description ? (
+                      <div className="text-[11px] text-cream-dim mt-0.5 leading-snug">
+                        {item.description.replace(/<[^>]*>/g, "").slice(0, 80)}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="text-sm font-bold text-brass-light ml-4">×{item.qty}</div>
+                </div>
+              ))}
+            </div>
+          ) : delivery.garmentSummary ? (
+            <div className="text-sm text-cream">{delivery.garmentSummary}</div>
+          ) : null}
+        </GlassCard>
+      ) : null}
 
       {/* Map — GPS drop point if available, else geocode address */}
       {(delivery.gpsLatitude || delivery.addressLine) ? (
@@ -362,6 +479,9 @@ export default function DeliveryDetail() {
         </GlassCard>
       ) : null}
 
+      {/* AI Insights */}
+      <AiInsightsCard deliveryId={delivery.id} />
+
       {/* QR code */}
       {delivery.qrToken ? (
         <GlassCard className="p-4 space-y-3">
@@ -381,7 +501,7 @@ export default function DeliveryDetail() {
             <div className="space-y-1 text-xs text-cream-muted min-w-0">
               <div className="font-mono break-all text-[10px] text-cream-dim">{delivery.qrToken}</div>
               <a
-                href={`https://ls-house-app.vercel.app/d/${delivery.qrToken}`}
+                href={`https://delivered.lstailors.com/d/${delivery.qrToken}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-brass-light hover:underline block mt-1"
@@ -392,6 +512,12 @@ export default function DeliveryDetail() {
           </div>
         </GlassCard>
       ) : null}
+
+      <GenerateMessageDialog
+        deliveryId={messageDialogOpen ? (id ?? null) : null}
+        customerName={delivery.customer?.name}
+        onClose={() => setMessageDialogOpen(false)}
+      />
 
       <MarkDeliveredDialog
         delivery={markDeliveredOpen ? delivery : null}

@@ -98,6 +98,12 @@ export async function erpSubmit(doctype: string, name: string): Promise<void> {
   }
 }
 
+export async function erpPdf(doctype: string, name: string, format: string): Promise<Response> {
+  const { base, key, secret } = creds()
+  const url = `${base}/api/method/frappe.utils.print_format.download_pdf?doctype=${encodeURIComponent(doctype)}&name=${encodeURIComponent(name)}&format=${encodeURIComponent(format)}&no_letterhead=0`
+  return fetch(url, { headers: { Authorization: `token ${key}:${secret}` } })
+}
+
 export async function erpRunMethod(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
   const { base, key, secret } = creds()
   if (!base || !key || !secret) return null

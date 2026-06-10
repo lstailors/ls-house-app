@@ -42,6 +42,8 @@ export function TransferModal({ open, onClose }: TransferModalProps) {
   const videoId = 'lst-transfer-qr'
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const didStart = useRef(false)
+  const processingRef = useRef(false)          // blocks re-entry while async API call is in flight
+  const scannedIdsRef = useRef<Set<string>>(new Set()) // instant duplicate check (not stale state)
 
   const { data: tailors = [] } = useQuery({
     queryKey: ['transfer-tailors'],
@@ -62,32 +64,36 @@ export function TransferModal({ open, onClose }: TransferModalProps) {
   }, [])
 
   const handleDecode = useCallback(async (decoded: string) => {
+    // Block concurrent calls — Html5Qrcode fires on every frame
+    if (processingRef.current) return
     const ticketMatch = decoded.match(/ALT-[A-Z]+-\d{4}-\d+/)
-    if (!ticketMatch) {
-      toast.error('Not a valid ticket QR')
-      return
-    }
+    if (!ticketMatch) return  // silent — lots of non-ticket frames
     const ticketId = ticketMatch[0]
-    if (scannedTickets.find(t => t.ticketId === ticketId)) {
+    if (scannedIdsRef.current.has(ticketId)) {
       toast.warning('Already scanned')
       return
     }
+    processingRef.current = true
+    scannedIdsRef.current.add(ticketId)  // mark immediately before async call
     try {
-      const ticket = await api.get<any>(`/api/alterations/${ticketId}`)
+      const ticket = await api.get<any>(`/api/intake-alterations/tickets/${ticketId}`)
       const item: ScannedTicket = {
         ticketId,
-        customerName: ticket.customer?.name ?? ticketId,
-        garmentType: ticket.items?.[0]?.label ?? 'Garment',
-        items: ticket.items?.slice(0, 2).map((i: any) => i.label).join(', ') ?? '',
-        total: ticket.price ?? 0,
+        customerName: ticket.customer_name ?? ticketId,
+        garmentType: (ticket.garments?.[0]?.garment_type) ?? 'Garment',
+        items: (ticket.garments ?? []).slice(0, 2).map((g: any) => g.garment_type).join(', ') ?? '',
+        total: ticket.ticket_total ?? 0,
       }
       setScannedTickets(prev => [...prev, item])
       navigator.vibrate?.(100)
       toast.success(`Added ${ticketId}`)
     } catch {
+      scannedIdsRef.current.delete(ticketId)  // allow retry on error
       toast.error('Could not load ticket')
+    } finally {
+      processingRef.current = false
     }
-  }, [scannedTickets])
+  }, [])
 
   const startScanner = useCallback(async () => {
     if (didStart.current || !selectedTailor) return
@@ -124,6 +130,8 @@ export function TransferModal({ open, onClose }: TransferModalProps) {
       setCheckNumber('')
       setSubmitting(false)
       setResult(null)
+      processingRef.current = false
+      scannedIdsRef.current.clear()
     }
   }, [open, stopScanner])
 

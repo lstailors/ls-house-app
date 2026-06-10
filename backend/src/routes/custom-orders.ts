@@ -2,8 +2,22 @@ import { Hono } from "hono";
 import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser, resolveLocationCode, canSeeFinancials } from "../lib/scope";
 import { CreateCustomOrderInput, TakeDepositInput, UpdateOrderStatusInput } from "../types";
+import { erpCreate, erpUpdate, erpGet } from "../lib/erp";
 
 export const customOrdersRouter = new Hono();
+
+// ── ERP status mapper ────────────────────────────────────────────────────────
+function toErpStatus(appStatus: string): string {
+  const map: Record<string, string> = {
+    quote: "Draft",
+    deposit_paid: "To Deliver and Bill",
+    in_production: "To Deliver and Bill",
+    ready: "To Deliver and Bill",
+    delivered: "Closed",
+    cancelled: "Cancelled",
+  };
+  return map[appStatus] ?? "Draft";
+}
 
 // ── Status mappers ──────────────────────────────────────────────────────────
 function toAppStatus(dbStatus: string): string {
@@ -77,6 +91,7 @@ function serializeOrder(order: any, garments: any[], customerRow: any) {
     createdById: order.sales_rep_id ?? null,
     createdAt: order.created_at,
     updatedAt: order.updated_at,
+    erpName: order.erp_sales_order ?? null,
   };
 }
 
@@ -89,9 +104,13 @@ customOrdersRouter.get("/", async (c) => {
   if (!supabaseAdmin) return c.json({ data: [] });
 
   const locCode = resolveLocationCode(user, c.req.query("locationId"));
+  const filterCustomerId = c.req.query("customerId");
+  const limitParam = parseInt(c.req.query("limit") ?? "200");
+  const limit = Math.min(isNaN(limitParam) ? 200 : limitParam, 500);
 
-  let q = supabaseAdmin.from("orders").select("*").order("created_at", { ascending: false }).limit(200);
+  let q = supabaseAdmin.from("orders").select("*").order("created_at", { ascending: false }).limit(limit);
   if (locCode) q = q.eq("origin_location", locCode);
+  if (filterCustomerId) q = q.eq("customer_id", filterCustomerId);
   if (user.role === "salesperson") {
     const createdBy = user.supabaseProfileId || user.id;
     q = q.eq("sales_rep_id", createdBy);
@@ -143,8 +162,14 @@ customOrdersRouter.get("/:id", async (c) => {
     fetchCustomerMap(row.customer_id ? [row.customer_id] : []),
   ]);
 
+  let erpData: any = null;
+  if (row.erp_sales_order) {
+    erpData = await erpGet("Sales Order", row.erp_sales_order).catch(() => null);
+  }
+
+  const serialized = serializeOrder(row, garmentRes.data ?? [], customerMap.get(row.customer_id));
   return c.json({
-    data: serializeOrder(row, garmentRes.data ?? [], customerMap.get(row.customer_id)),
+    data: erpData ? { ...serialized, erp: erpData } : serialized,
   });
 });
 
@@ -208,6 +233,34 @@ customOrdersRouter.post("/", async (c) => {
 
   if (orderErr || !order) return c.json({ error: { message: orderErr?.message ?? "Failed to create order" } }, 500);
 
+  // Create linked ERPNext Sales Order (non-blocking sync)
+  void (async () => {
+    try {
+      const { data: custRow } = await supabaseAdmin!.from("customers").select("full_name").eq("id", customerId).single();
+      const customerName = custRow?.full_name ?? "Walk-in";
+      const erpSO = await erpCreate("Sales Order", {
+        customer: customerName,
+        order_type: "Sales",
+        transaction_date: new Date().toISOString().slice(0, 10),
+        delivery_date: (body as any).expectedDelivery ?? null,
+        po_no: order.order_display_id ?? null,
+        items: [
+          {
+            item_code: `MTM-${(body.garmentType ?? "SUIT").toUpperCase().replace(/ /g, "-")}`,
+            qty: 1,
+            rate: Number(body.quotedPrice ?? 0),
+            delivery_date: (body as any).expectedDelivery ?? null,
+          },
+        ],
+      });
+      if ((erpSO as any)?.name) {
+        await supabaseAdmin!.from("orders").update({ erp_sales_order: (erpSO as any).name }).eq("id", order.id);
+      }
+    } catch (e) {
+      console.error("[custom-orders] ERP SO create failed:", e);
+    }
+  })();
+
   const { data: garment } = await supabaseAdmin
     .from("garments")
     .insert({
@@ -224,42 +277,7 @@ customOrdersRouter.post("/", async (c) => {
   return c.json({ data: serializeOrder(order, garment ? [garment] : [], customerMap.get(customerId)) }, 201);
 });
 
-customOrdersRouter.patch("/:id", async (c) => {
-  const user = await getAuthedUser(c);
-  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ error: { message: "Not found" } }, 404);
-
-  const id = c.req.param("id");
-  const parsed = UpdateOrderStatusInput.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: { message: "Invalid input" } }, 400);
-  const input = parsed.data;
-
-  const { data: existing, error: fetchErr } = await supabaseAdmin.from("orders").select("*").eq("id", id).single();
-  if (fetchErr || !existing) return c.json({ error: { message: "Not found" } }, 404);
-
-  const locCode = resolveLocationCode(user, null);
-  if (user.role !== "super_admin" && locCode && existing.origin_location !== locCode) {
-    return c.json({ error: { message: "Forbidden" } }, 403);
-  }
-
-  const { data: updated, error: updateErr } = await supabaseAdmin
-    .from("orders")
-    .update({ status: toDbStatus(input.status) })
-    .eq("id", id)
-    .select("*")
-    .single();
-
-  if (updateErr || !updated) return c.json({ error: { message: updateErr?.message ?? "Update failed" } }, 500);
-
-  const [garmentRes, customerMap] = await Promise.all([
-    supabaseAdmin.from("garments").select("*").eq("order_id", id),
-    fetchCustomerMap(updated.customer_id ? [updated.customer_id] : []),
-  ]);
-
-  return c.json({ data: serializeOrder(updated, garmentRes.data ?? [], customerMap.get(updated.customer_id)) });
-});
-
-// STUB: Square card-present deposit
+// STUB: Square card-present deposit — must be before /:id to avoid param capture
 customOrdersRouter.post("/deposit", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
@@ -307,4 +325,46 @@ customOrdersRouter.post("/deposit", async (c) => {
       },
     },
   });
+});
+
+customOrdersRouter.patch("/:id", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!supabaseAdmin) return c.json({ error: { message: "Not found" } }, 404);
+
+  const id = c.req.param("id");
+  const parsed = UpdateOrderStatusInput.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: { message: "Invalid input" } }, 400);
+  const input = parsed.data;
+
+  const { data: existing, error: fetchErr } = await supabaseAdmin.from("orders").select("*").eq("id", id).single();
+  if (fetchErr || !existing) return c.json({ error: { message: "Not found" } }, 404);
+
+  const locCode = resolveLocationCode(user, null);
+  if (user.role !== "super_admin" && locCode && existing.origin_location !== locCode) {
+    return c.json({ error: { message: "Forbidden" } }, 403);
+  }
+
+  const { data: updated, error: updateErr } = await supabaseAdmin
+    .from("orders")
+    .update({ status: toDbStatus(input.status) })
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (updateErr || !updated) return c.json({ error: { message: updateErr?.message ?? "Update failed" } }, 500);
+
+  // Sync status to ERPNext if linked (non-blocking)
+  if (existing.erp_sales_order && input.status) {
+    void erpUpdate("Sales Order", existing.erp_sales_order, {
+      // ERPNext Sales Order status is auto-computed from docstatus; log for now
+    }).catch(() => {});
+  }
+
+  const [garmentRes, customerMap] = await Promise.all([
+    supabaseAdmin.from("garments").select("*").eq("order_id", id),
+    fetchCustomerMap(updated.customer_id ? [updated.customer_id] : []),
+  ]);
+
+  return c.json({ data: serializeOrder(updated, garmentRes.data ?? [], customerMap.get(updated.customer_id)) });
 });
