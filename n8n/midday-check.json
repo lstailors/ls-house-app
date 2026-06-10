@@ -1,0 +1,166 @@
+{
+  "name": "Midday Check",
+  "nodes": [
+    {
+      "parameters": {
+        "expression": "0 12 * * 1,2,3,4,5,6",
+        "timezone": "America/New_York"
+      },
+      "id": "cron-midday-001",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.cronTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://erp.lstailors.com/api/resource/ToDo",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "filters",
+              "value": "[[[\"ToDo\", \"status\", \"=\", \"Open\"], [\"ToDo\", \"allocated_to\", \"=\", \"carl@lstailors.com\"]]]"
+            },
+            {
+              "name": "fields",
+              "value": "[[\"name\", \"description\", \"date\", \"priority\", \"lsh_context\", \"reference_type\", \"reference_name\", \"lsh_agent\", \"lsh_comms_source\"]]"
+            },
+            {
+              "name": "limit_page_length",
+              "value": "50"
+            },
+            {
+              "name": "order_by",
+              "value": "priority asc, date asc"
+            }
+          ]
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth"
+      },
+      "id": "get-todos-midday-001",
+      "name": "Get Open Todos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 200],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "erpApiKey",
+          "name": "ERP API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.cal.com/v1/bookings",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "upcoming"
+            },
+            {
+              "name": "dateFrom",
+              "value": "={{$today}}"
+            },
+            {
+              "name": "dateTo",
+              "value": "={{$today}}"
+            }
+          ]
+        }
+      },
+      "id": "get-calendar-midday-001",
+      "name": "Get Active Calendar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "calApiKey",
+          "name": "Cal API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "mode": "runOnceForAllItems",
+        "jsCode": "const todos = $input.all()[0]?.json?.data || [];\nconst calendar = $input.all()[1]?.json?.data || [];\n\nconst todosFormatted = todos.map(todo => {\n  let priority_emoji = '';\n  if (todo.priority === 'High') priority_emoji = '🔴';\n  else if (todo.priority === 'Medium') priority_emoji = '🟡';\n  else priority_emoji = '🟢';\n\n  return `${priority_emoji} [${todo.priority}] ${todo.name}\n   📅 Due: ${todo.date || 'No date'}\n   Context: ${todo.lsh_context || 'N/A'}\n`;\n}).join('\\n\\n');\n\nconst activeBookings = calendar.slice(0, 5).map(booking => {\n  const startTime = new Date(booking.startTime);\n  return `📞 ${booking.title || 'Meeting'}\n   ⏰ ${startTime.toLocaleTimeString()}\n   Duration: ${booking.duration}min\n   Guest: ${booking.attendees?.[0]?.name || 'TBD'}\n`;\n}).join('\\n\\n');\n\nconst message = `\n⏰ MIDDAY CHECK - ${new Date().toLocaleTimeString()}\n\n📋 PENDING TODOS\n${todosFormatted || 'No pending todos'}\n\n📅 AFTERNOON MEETINGS\n${activeBookings || 'No scheduled meetings'}\n\n---\nCheck in completed\n`;\n\nreturn [{ json: { message } }];"
+      },
+      "id": "transform-midday-001",
+      "name": "Transform Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://10.0.1.213:1234/api/v1/message/text",
+        "sendBody": true,
+        "bodyParametersUi": "json",
+        "body": {
+          "to": "carl@lstailors.com",
+          "message": "={{$node[\"Transform Data\"].json.message}}"
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-KEY",
+              "value": "={{$env.BLUEBUBBLES_PASSWORD}}"
+            }
+          ]
+        }
+      },
+      "id": "send-midday-001",
+      "name": "Send BlueBubbles",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          { "node": "Get Open Todos", "type": "main", "index": 0 },
+          { "node": "Get Active Calendar", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Get Open Todos": {
+      "main": [
+        [{ "node": "Transform Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Active Calendar": {
+      "main": [
+        [{ "node": "Transform Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Transform Data": {
+      "main": [
+        [{ "node": "Send BlueBubbles", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "versionId": "version-001",
+  "meta": {
+    "instanceId": "ls-house-n8n"
+  },
+  "id": "midday-check",
+  "tags": ["scheduling", "todos", "calendar", "messaging"]
+}

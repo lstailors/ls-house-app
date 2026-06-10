@@ -1,0 +1,170 @@
+{
+  "name": "EOD Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "expression": "0 18 * * 1,2,3,4,5",
+        "timezone": "America/New_York"
+      },
+      "id": "cron-eod-001",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.cronTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://erp.lstailors.com/api/resource/ToDo",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "filters",
+              "value": "[[[\"ToDo\", \"status\", \"=\", \"Closed\"], [\"ToDo\", \"allocated_to\", \"=\", \"carl@lstailors.com\"], [\"ToDo\", \"modified\", \">=\", \"={{$now.toISOString()}}\"]]}"
+            },
+            {
+              "name": "fields",
+              "value": "[[\"name\", \"description\", \"priority\", \"lsh_context\", \"reference_type\", \"reference_name\", \"modified\"]]"
+            },
+            {
+              "name": "limit_page_length",
+              "value": "50"
+            },
+            {
+              "name": "order_by",
+              "value": "modified desc"
+            }
+          ]
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth"
+      },
+      "id": "get-completed-001",
+      "name": "Get Completed Todos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 200],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "erpApiKey",
+          "name": "ERP API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://erp.lstailors.com/api/resource/ToDo",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "filters",
+              "value": "[[[\"ToDo\", \"status\", \"=\", \"Open\"], [\"ToDo\", \"allocated_to\", \"=\", \"carl@lstailors.com\"]]]"
+            },
+            {
+              "name": "fields",
+              "value": "[[\"name\", \"description\", \"date\", \"priority\", \"lsh_context\"]]"
+            },
+            {
+              "name": "limit_page_length",
+              "value": "50"
+            },
+            {
+              "name": "order_by",
+              "value": "priority asc, date asc"
+            }
+          ]
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth"
+      },
+      "id": "get-remaining-001",
+      "name": "Get Remaining Todos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 400],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "erpApiKey",
+          "name": "ERP API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "mode": "runOnceForAllItems",
+        "jsCode": "const completed = $input.all()[0]?.json?.data || [];\nconst remaining = $input.all()[1]?.json?.data || [];\n\nconst completedFormatted = completed.map(todo => {\n  let priority_emoji = '';\n  if (todo.priority === 'High') priority_emoji = '🔴';\n  else if (todo.priority === 'Medium') priority_emoji = '🟡';\n  else priority_emoji = '🟢';\n\n  return `${priority_emoji} ${todo.name}\n   Context: ${todo.lsh_context || 'N/A'}\n`;\n}).join('\\n\\n');\n\nconst remainingFormatted = remaining.map(todo => {\n  let priority_emoji = '';\n  if (todo.priority === 'High') priority_emoji = '🔴';\n  else if (todo.priority === 'Medium') priority_emoji = '🟡';\n  else priority_emoji = '🟢';\n\n  return `${priority_emoji} [${todo.priority}] ${todo.name}\n   Due: ${todo.date || 'No date'}\n`;\n}).join('\\n\\n');\n\nconst message = `\n🌆 END OF DAY DIGEST - ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}\n\n✅ COMPLETED TODAY\n${completedFormatted || 'No todos completed today'}\n\n📋 TOMORROW'S TODOS\n${remainingFormatted || 'No open todos'}\n\n---\nSent at ${new Date().toLocaleTimeString()}\n`;\n\nreturn [{ json: { message } }];"
+      },
+      "id": "transform-eod-001",
+      "name": "Transform Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://10.0.1.213:1234/api/v1/message/text",
+        "sendBody": true,
+        "bodyParametersUi": "json",
+        "body": {
+          "to": "carl@lstailors.com",
+          "message": "={{$node[\"Transform Data\"].json.message}}"
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-KEY",
+              "value": "={{$env.BLUEBUBBLES_PASSWORD}}"
+            }
+          ]
+        }
+      },
+      "id": "send-eod-001",
+      "name": "Send BlueBubbles",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          { "node": "Get Completed Todos", "type": "main", "index": 0 },
+          { "node": "Get Remaining Todos", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Get Completed Todos": {
+      "main": [
+        [{ "node": "Transform Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Remaining Todos": {
+      "main": [
+        [{ "node": "Transform Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Transform Data": {
+      "main": [
+        [{ "node": "Send BlueBubbles", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "versionId": "version-001",
+  "meta": {
+    "instanceId": "ls-house-n8n"
+  },
+  "id": "eod-digest",
+  "tags": ["scheduling", "todos", "messaging", "reporting"]
+}

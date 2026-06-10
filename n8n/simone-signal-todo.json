@@ -1,0 +1,134 @@
+{
+  "name": "Simone Signal Todo",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "simone-signal",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-simone-001",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "webhook-simone-001"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "mode": "runOnceForAllItems",
+        "jsCode": "const signal = $json.signal || '';\nconst priority = $json.priority || 'High';\nconst context = $json.context || 'Simone Signal';\n\nconst titleMap = {\n  'urgent': '🚨 Urgent Action Required',\n  'important': '⚠️ Important Item',\n  'follow_up': '📞 Follow Up Needed',\n  'deadline': '⏰ Deadline Alert',\n  'review': '👁️ Review Needed'\n};\n\nconst title = titleMap[signal] || `Signal: ${signal}`;\n\nreturn [{\n  json: {\n    title,\n    signal,\n    priority,\n    context,\n    created_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "extract-signal-001",
+      "name": "Extract Signal Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://erp.lstailors.com/api/resource/ToDo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{`Bearer ${$env.ERP_API_KEY}:${$env.ERP_API_SECRET}`}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParametersUi": "json",
+        "body": {
+          "title": "={{$node[\"Extract Signal Data\"].json.title}}",
+          "description": "={{$json.details || \"\"}}",
+          "priority": "={{$node[\"Extract Signal Data\"].json.priority}}",
+          "allocated_to": "carl@lstailors.com",
+          "lsh_context": "={{$node[\"Extract Signal Data\"].json.context}}",
+          "lsh_agent": "Simone",
+          "lsh_comms_source": "={{$json.source || \"signal-webhook\"}}"
+        }
+      },
+      "id": "create-signal-todo-001",
+      "name": "Create Signal Todo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://10.0.1.213:1234/api/v1/message/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-KEY",
+              "value": "={{$env.BLUEBUBBLES_PASSWORD}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParametersUi": "json",
+        "body": {
+          "to": "carl@lstailors.com",
+          "message": "={{`${$node[\"Extract Signal Data\"].json.title} — Added to your todo list`}}"
+        }
+      },
+      "id": "alert-simone-001",
+      "name": "Send Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"status\": \"processed\", \"signal\": \"={{$json.signal}}\", \"todo_created\": true}"
+      },
+      "id": "respond-simone-001",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1100, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [{ "node": "Extract Signal Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extract Signal Data": {
+      "main": [
+        [{ "node": "Create Signal Todo", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create Signal Todo": {
+      "main": [
+        [{ "node": "Send Alert", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Alert": {
+      "main": [
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "versionId": "version-001",
+  "meta": {
+    "instanceId": "ls-house-n8n"
+  },
+  "id": "simone-signal-todo",
+  "tags": ["webhooks", "todos", "ai-integration", "messaging"]
+}

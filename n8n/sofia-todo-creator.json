@@ -1,0 +1,141 @@
+{
+  "name": "Sofia Todo Creator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sofia-todo",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-sofia-001",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "webhook-sofia-001"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.title}}",
+              "operation": "exists"
+            }
+          ]
+        }
+      },
+      "id": "validate-sofia-001",
+      "name": "Validate Payload",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://erp.lstailors.com/api/resource/ToDo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{`Bearer ${$env.ERP_API_KEY}:${$env.ERP_API_SECRET}`}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParametersUi": "json",
+        "body": {
+          "title": "={{$json.title}}",
+          "description": "={{$json.description || \"\"}}",
+          "priority": "={{$json.priority || \"Medium\"}}",
+          "date": "={{$json.due_date || \"\"}}",
+          "allocated_to": "={{$json.assigned_to || \"carl@lstailors.com\"}}",
+          "lsh_context": "={{$json.context || \"Sofia Request\"}}",
+          "lsh_agent": "Sofia",
+          "lsh_comms_source": "={{$json.source || \"webhook\"}}"
+        }
+      },
+      "id": "create-todo-sofia-001",
+      "name": "Create Todo in ERP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://10.0.1.213:1234/api/v1/message/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-KEY",
+              "value": "={{$env.BLUEBUBBLES_PASSWORD}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParametersUi": "json",
+        "body": {
+          "to": "carl@lstailors.com",
+          "message": "={{`✅ Sofia created todo: ${$json.title}`}}"
+        }
+      },
+      "id": "confirm-sofia-001",
+      "name": "Send Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"status\": \"success\", \"message\": \"={{`Todo created: ${$json.title}`}}\"}"
+      },
+      "id": "respond-sofia-001",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1100, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [{ "node": "Validate Payload", "type": "main", "index": 0 }]
+      ]
+    },
+    "Validate Payload": {
+      "main": [
+        [{ "node": "Create Todo in ERP", "type": "main", "index": 0 }],
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create Todo in ERP": {
+      "main": [
+        [{ "node": "Send Confirmation", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Confirmation": {
+      "main": [
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "versionId": "version-001",
+  "meta": {
+    "instanceId": "ls-house-n8n"
+  },
+  "id": "sofia-todo-creator",
+  "tags": ["webhooks", "todos", "ai-integration", "messaging"]
+}

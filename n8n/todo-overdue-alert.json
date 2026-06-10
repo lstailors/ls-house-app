@@ -1,0 +1,140 @@
+{
+  "name": "Todo Overdue Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "todo-overdue",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-overdue-001",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "webhook-overdue-001"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.status}}",
+              "operation": "equals",
+              "value2": "Open"
+            }
+          ]
+        }
+      },
+      "id": "check-status-001",
+      "name": "Check Status",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://erp.lstailors.com/api/resource/Raven Message",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{`Bearer ${$env.ERP_API_KEY}:${$env.ERP_API_SECRET}`}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParametersUi": "json",
+        "body": {
+          "channel_id": "L&S Tailors-todos",
+          "text": "={{`🚨 OVERDUE: ${$json.description} · context: ${$json.context} · was due ${$json.due}`}}",
+          "message_type": "Text",
+          "is_bot_message": 1,
+          "bot": "Maestro-Raven"
+        }
+      },
+      "id": "raven-message-001",
+      "name": "Send Raven Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://10.0.1.213:1234/api/v1/message/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-KEY",
+              "value": "={{$env.BLUEBUBBLES_PASSWORD}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParametersUi": "json",
+        "body": {
+          "chatGuid": "={{$json.chatGuid}}",
+          "message": "={{`🚨 Overdue todo: ${$json.description} (${$json.context}) — was due ${$json.due}`}}",
+          "method": "apple-script"
+        }
+      },
+      "id": "bluebubbles-overdue-001",
+      "name": "Send BlueBubbles",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"status\": \"alerted\"}"
+      },
+      "id": "respond-webhook-001",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1100, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [{ "node": "Check Status", "type": "main", "index": 0 }]
+      ]
+    },
+    "Check Status": {
+      "main": [
+        [{ "node": "Send Raven Message", "type": "main", "index": 0 }],
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Raven Message": {
+      "main": [
+        [{ "node": "Send BlueBubbles", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send BlueBubbles": {
+      "main": [
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "versionId": "version-001",
+  "meta": {
+    "instanceId": "ls-house-n8n"
+  },
+  "id": "todo-overdue-alert",
+  "tags": ["webhooks", "todos", "alerts", "messaging"]
+}
