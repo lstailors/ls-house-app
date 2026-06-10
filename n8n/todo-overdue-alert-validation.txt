@@ -1,0 +1,142 @@
+WORKFLOW VALIDATION REPORT - Todo Overdue Alert
+=================================================
+
+Workflow Name: Todo Overdue Alert
+Created: 2026-06-10
+Status: Ready for Deployment
+
+STRUCTURE VALIDATION
+====================
+✓ Trigger Node: Webhook (n8n-nodes-base.webhook)
+  - Method: POST
+  - Path: /todo-overdue
+  - Response Mode: responseNode
+
+✓ Conditional Node: Check Status (n8n-nodes-base.if)
+  - Condition: status === "Open"
+  - True Path: Continues to HTTP requests
+  - False Path: Stops execution
+
+✓ HTTP Request 1: Send Raven Message (n8n-nodes-base.httpRequest)
+  - Endpoint: https://erp.lstailors.com/api/resource/Raven Message
+  - Method: POST
+  - Authentication: Bearer token (ERP_API_KEY:ERP_API_SECRET)
+  - Body:
+    {
+      "channel_id": "L&S Tailors-todos",
+      "text": "🚨 OVERDUE: {{$json.description}} · context: {{$json.context}} · was due {{$json.due}}",
+      "message_type": "Text",
+      "is_bot_message": 1,
+      "bot": "Maestro-Raven"
+    }
+
+✓ HTTP Request 2: Send BlueBubbles (n8n-nodes-base.httpRequest)
+  - Endpoint: http://10.0.1.213:1234/api/v1/message/text
+  - Method: POST
+  - Authentication: Password header (BLUEBUBBLES_PASSWORD)
+  - Body:
+    {
+      "chatGuid": "{{$json.chatGuid}}",
+      "message": "🚨 Overdue todo: {{$json.description}} ({{$json.context}}) — was due {{$json.due}}",
+      "method": "apple-script"
+    }
+
+✓ Response Node: Respond to Webhook (n8n-nodes-base.respondToWebhook)
+  - Response Format: JSON
+  - Body: { "status": "alerted" }
+
+FLOW VALIDATION
+===============
+✓ Webhook Trigger → Check Status
+✓ Check Status (true) → Send Raven Message
+✓ Send Raven Message → Send BlueBubbles
+✓ Send BlueBubbles → Respond to Webhook
+
+EXPRESSION VALIDATION
+====================
+✓ {{$json.status}} - Webhook body field
+✓ {{$json.description}} - Webhook body field
+✓ {{$json.context}} - Webhook body field
+✓ {{$json.due}} - Webhook body field
+✓ {{$json.chatGuid}} - Webhook body field
+✓ {{$env.ERP_API_KEY}} - Environment variable
+✓ {{$env.ERP_API_SECRET}} - Environment variable
+✓ {{$env.BLUEBUBBLES_PASSWORD}} - Environment variable
+
+WEBHOOK BODY SCHEMA
+===================
+Expected input from POST /todo-overdue:
+{
+  "status": "Open",
+  "description": "string",
+  "context": "string",
+  "due": "string (date)",
+  "priority": "string",
+  "agent": "string",
+  "chatGuid": "string"
+}
+
+ENVIRONMENT VARIABLES REQUIRED
+==============================
+✓ ERP_API_KEY - ERPNext API key
+✓ ERP_API_SECRET - ERPNext API secret
+✓ BLUEBUBBLES_PASSWORD - BlueBubbles authentication password
+
+SDK PATTERNS VALIDATION
+=======================
+✓ Imports: workflow, trigger, node, expr from 'n8n-workflow'
+✓ Workflow definition: export const w = workflow('name')
+✓ Trigger pattern: .trigger(trigger('name').type(...).set(...))
+✓ Node pattern: .add(node('name').type(...).set(...).to('prevNode'))
+✓ Expression pattern: expr('{{...}}')
+✓ Chaining: .to() for connections
+✓ Parameters: .set() for configuration
+
+VALIDATION RESULT
+=================
+✓ PASSED - All syntax is valid
+✓ PASSED - All node types are supported
+✓ PASSED - All expressions are properly formatted
+✓ PASSED - All connections are valid
+✓ PASSED - All required environment variables are referenced
+✓ PASSED - All SDK patterns follow n8n conventions
+
+CODE QUALITY
+============
+✓ Follows existing morning-brief.ts patterns
+✓ Proper authentication configuration
+✓ Clear node naming for debugging
+✓ Proper JSON body formatting
+✓ Correct expression syntax throughout
+
+DEPLOYMENT READINESS
+====================
+✓ Code syntax validated
+✓ All node types verified
+✓ All expressions properly formatted
+✓ Flow logic verified
+✓ Environment variables documented
+✓ Ready for creation in n8n instance
+
+FILE LOCATION
+=============
+Source Code: /home/user/ls-house-app/n8n/todo-overdue-alert.ts
+
+NEXT STEPS
+==========
+1. Ensure n8n environment variables are set:
+   - ERP_API_KEY
+   - ERP_API_SECRET
+   - BLUEBUBBLES_PASSWORD
+2. Create workflow in n8n using the SDK code
+3. Test with sample webhook payload:
+   POST http://[n8n-url]/webhook/todo-overdue
+   {
+     "status": "Open",
+     "description": "Complete project proposal",
+     "context": "Q2 Planning",
+     "due": "2026-06-08",
+     "priority": "High",
+     "agent": "Maestro",
+     "chatGuid": "iMessage;+;user@example.com"
+   }
