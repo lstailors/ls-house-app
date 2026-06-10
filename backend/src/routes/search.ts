@@ -215,18 +215,18 @@ searchRouter.get("/", async (c) => {
     }
   } catch {}
 
-  // Tasks
+  // Tasks — ERPNext ToDos
   try {
-    const { data: tasks } = await supabaseAdmin
-      ?.from("ls_tasks")
-      .select("id, task_no, title, status, priority, assigned_to_name")
-      .or(`title.ilike.${like2},assigned_to_name.ilike.${like2}`)
-      .neq("status", "completed")
-      .neq("status", "cancelled")
-      .limit(4) ?? { data: [] };
-
-    for (const t of tasks ?? []) {
-      results.push({ type: "task", id: t.id, title: t.title, subtitle: t.assigned_to_name ? `Assigned to ${t.assigned_to_name}` : null, meta: t.priority, href: `/tasks` });
+    const erpBase = process.env.ERPNEXT_BASE_URL ?? "https://erp.lstailors.com";
+    const erpAuth = `token ${process.env.ERPNEXT_API_KEY ?? ""}:${process.env.ERPNEXT_API_SECRET ?? ""}`;
+    const filters = JSON.stringify([["ToDo","description","like",`%${q}%`],["ToDo","status","=","Open"],["ToDo","allocated_to","=","carl@lstailors.com"]]);
+    const fields = JSON.stringify(["name","description","lsh_context","priority"]);
+    const erpRes = await fetch(`${erpBase}/api/resource/ToDo?filters=${encodeURIComponent(filters)}&fields=${encodeURIComponent(fields)}&limit_page_length=5`, {
+      headers: { Authorization: erpAuth },
+    });
+    const erpData = await erpRes.json() as any;
+    for (const t of (erpData?.data ?? [])) {
+      results.push({ type: "task", id: t.name, title: t.description, subtitle: t.lsh_context ?? null, meta: (t.priority ?? "").toLowerCase(), href: `/tasks` });
     }
   } catch {}
 

@@ -41,30 +41,30 @@ notificationsRouter.get("/", async (c) => {
     }
   } catch {}
 
-  // ── Open tasks — overdue + high priority ──────────────────
+  // ── Open todos from ERPNext — overdue + high priority ───────
   try {
-    const now = new Date().toISOString();
-    const { data: tasks } = await supabaseAdmin
-      .from("ls_tasks")
-      .select("id, task_no, title, priority, status, due_at, assigned_to_name")
-      .in("status", ["pending", "in_progress"])
-      .order("due_at", { ascending: true })
-      .limit(20);
-
-    for (const t of tasks ?? []) {
-      const overdue = t.due_at && t.due_at < now;
-      const isHigh = t.priority === "high" || t.priority === "critical" || overdue;
-      if (!isHigh && notifications.filter(n => n.kind === "task").length >= 5) continue;
-
+    const erpBase = process.env.ERPNEXT_BASE_URL ?? "https://erp.lstailors.com";
+    const erpAuth = `token ${process.env.ERPNEXT_API_KEY ?? ""}:${process.env.ERPNEXT_API_SECRET ?? ""}`;
+    const filters = JSON.stringify([["ToDo","status","=","Open"],["ToDo","allocated_to","=","carl@lstailors.com"]]);
+    const fields = JSON.stringify(["name","description","date","priority","lsh_context"]);
+    const erpRes = await fetch(`${erpBase}/api/resource/ToDo?filters=${encodeURIComponent(filters)}&fields=${encodeURIComponent(fields)}&order_by=date+asc&limit_page_length=20`, {
+      headers: { Authorization: erpAuth },
+    });
+    const erpData = await erpRes.json() as any;
+    const today = new Date().toISOString().slice(0, 10);
+    for (const t of (erpData?.data ?? [])) {
+      const overdue = t.date && t.date < today;
+      const isHigh = t.priority === "High" || overdue;
+      if (!isHigh && notifications.filter((n: any) => n.kind === "task").length >= 5) continue;
       notifications.push({
-        id: `task-${t.id}`,
+        id: `todo-${t.name}`,
         kind: "task",
-        priority: overdue ? "critical" : t.priority === "critical" ? "critical" : t.priority === "high" ? "high" : "normal",
-        title: `${overdue ? "⚠ OVERDUE — " : ""}${t.title}`,
-        body: t.assigned_to_name ? `Assigned to ${t.assigned_to_name}` : null,
-        meta: t.due_at ? `Due ${new Date(t.due_at).toLocaleDateString()}` : null,
-        ts: t.due_at ?? null,
-        href: `/tasks?id=${t.id}`,
+        priority: overdue ? "critical" : t.priority === "High" ? "high" : "normal",
+        title: `${overdue ? "⚠ OVERDUE — " : ""}${t.description}`,
+        body: t.lsh_context ?? null,
+        meta: t.date ? `Due ${t.date}` : null,
+        ts: t.date ?? null,
+        href: `/tasks`,
         read: false,
       });
     }
