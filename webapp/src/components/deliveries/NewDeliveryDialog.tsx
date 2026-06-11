@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Search, Plus, Loader2, User, Scissors, ShoppingBag } from "lucide-react";
+import { Search, Plus, Loader2, User, Scissors, ShoppingBag, UserPlus } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -50,22 +50,26 @@ const TYPE_ICON = {
   customer: User,
   alteration: Scissors,
   order: ShoppingBag,
+  new: UserPlus,
 };
 const TYPE_COLOR = {
   customer: "text-brass-light",
   alteration: "text-signal-amber",
   order: "text-signal-emerald",
+  new: "text-signal-emerald",
 };
 const TYPE_LABEL = {
   customer: "Customer",
   alteration: "Alteration",
   order: "Sales Order",
+  new: "New Customer",
 };
 
 export function NewDeliveryDialog({ open, onClose }: Props) {
   const createDelivery = useCreateDelivery();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<DeliverySearchResult | null>(null);
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
 
   const { data: searchResults = [], isFetching } = useDeliverySearchContext(search);
 
@@ -81,11 +85,14 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
   });
 
   const onSubmit = async (values: FormValues) => {
+    const isNew = selected?.customer === "__new__";
     try {
       await createDelivery.mutateAsync({
-        customer: selected?.customer ?? values.customerId,
-        customer_name: selected?.customerName ?? values.customerId,
-        notifyPhone: selected?.phone ?? null,
+        customer: isNew ? undefined : (selected?.customer ?? values.customerId),
+        customer_name: isNew ? undefined : (selected?.customerName ?? values.customerId),
+        newCustomerName: isNew ? selected?.customerName : undefined,
+        newCustomerPhone: isNew ? (newCustomerPhone || null) : undefined,
+        notifyPhone: isNew ? (newCustomerPhone || null) : (selected?.phone ?? null),
         method: values.method,
         locationId: values.originLocation,
         origin_location: values.originLocation,
@@ -113,6 +120,7 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
     reset();
     setSearch("");
     setSelected(null);
+    setNewCustomerPhone("");
     onClose();
   };
 
@@ -179,7 +187,28 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
                 {search.length >= 2 && (
                   <div className="max-h-52 overflow-y-auto rounded-lg border border-[#c9a84c]/20 bg-[#0e1a14] divide-y divide-[#c9a84c]/10">
                     {searchResults.length === 0 && !isFetching ? (
-                      <div className="px-3 py-2 text-xs text-[#8a7560]">No results found</div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newEntry: DeliverySearchResult = {
+                            type: "new",
+                            id: "__new__",
+                            label: search,
+                            customer: "__new__",
+                            customerName: search,
+                            phone: null,
+                          };
+                          setSelected(newEntry);
+                          setValue("customerId", "__new__", { shouldValidate: true });
+                          setSearch("");
+                        }}
+                        className="w-full text-left px-3 py-2.5 hover:bg-[#c9a84c]/10 transition-colors flex items-center gap-2.5"
+                      >
+                        <UserPlus className="h-3.5 w-3.5 shrink-0 text-signal-emerald" />
+                        <span className="text-sm text-[#f5f0e8]">
+                          + Create <span className="font-medium">"{search}"</span> as new customer
+                        </span>
+                      </button>
                     ) : (
                       searchResults.map((r) => {
                         const Icon = TYPE_ICON[r.type];
@@ -204,6 +233,17 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
                     )}
                   </div>
                 )}
+              </div>
+            )}
+            {selected?.customer === "__new__" && (
+              <div className="space-y-1.5 mt-2">
+                <Label className="text-[11px] uppercase tracking-widest text-[#8a7560]">Phone (optional)</Label>
+                <Input
+                  placeholder="+1 (555) 000-0000"
+                  value={newCustomerPhone}
+                  onChange={(e) => setNewCustomerPhone(e.target.value)}
+                  className="bg-[#162118]/60 border-[#c9a84c]/20 text-[#f5f0e8] placeholder:text-[#8a7560] focus:border-[#c9a84c]/50"
+                />
               </div>
             )}
             {errors.customerId && (

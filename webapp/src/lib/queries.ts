@@ -302,7 +302,7 @@ export function useCreateDelivery() {
 }
 
 export interface DeliverySearchResult {
-  type: "customer" | "alteration" | "order";
+  type: "customer" | "alteration" | "order" | "new";
   id: string;
   label: string;
   sublabel?: string;

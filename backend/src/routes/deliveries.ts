@@ -364,17 +364,33 @@ deliveriesRouter.post("/", async (c) => {
   }
 
   const body = (await c.req.json()) as any;
-  if (!body.customerId && !body.customer) {
+  if (!body.customerId && !body.customer && !body.newCustomerName) {
     return c.json({ error: { message: "customerId is required" } }, 400);
   }
 
   const token = generateToken();
   const locationId = body.locationId ?? "NYC";
 
+  // Create a new ERPNext customer on-the-fly if requested
+  let resolvedCustomer: string = body.customerId ?? body.customer;
+  if (body.newCustomerName) {
+    try {
+      const newCust = await erpCreate<any>("Customer", {
+        customer_name: body.newCustomerName,
+        customer_type: "Individual",
+        customer_group: "Bespoke",
+        mobile_no: body.newCustomerPhone ?? null,
+      });
+      resolvedCustomer = newCust?.name ?? body.newCustomerName;
+    } catch (err: any) {
+      return c.json({ error: { message: `Could not create customer: ${err.message ?? err}` } }, 500);
+    }
+  }
+
   try {
     const doc = await erpCreate<any>("LSH Delivery", {
       naming_series: locationId === "HOU" ? "DN-HOU-.YYYY.-" : "DN-NYC-.YYYY.-",
-      customer: body.customerId ?? body.customer,
+      customer: resolvedCustomer,
       lsh_status: "Queued",
       lsh_delivery_method: body.method ?? "Hand Delivery",
       lsh_origin_location: locationId,
@@ -382,8 +398,9 @@ deliveriesRouter.post("/", async (c) => {
       lsh_delivery_apt: body.apt ?? body.delivery_apt ?? null,
       lsh_delivery_building: body.building ?? body.delivery_building ?? null,
       lsh_delivery_city: body.city ?? body.delivery_city ?? "New York",
+      customer_phone: body.newCustomerPhone ?? null,
       lsh_scheduled_at: body.scheduledAt ?? null,
-      lsh_notify_phone: body.notifyPhone ?? null,
+      lsh_notify_phone: body.notifyPhone ?? body.newCustomerPhone ?? null,
       lsh_qr_token: token,
       lsh_queued_at: erpDatetime(),
       lsh_garment_summary: body.garmentSummary ?? null,
