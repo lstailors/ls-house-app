@@ -511,3 +511,22 @@ export const DelegateTaskBody = z.object({
   due_at: z.string().optional(),
 });
 export type DelegateTaskBody = z.infer<typeof DelegateTaskBody>;
+
+// ─── YongZheng (YZ) Helpdesk tickets ──────────────────────────────────────
+// Open ERPNext HD Ticket rows assigned to the YongZheng agent group.
+
+export const YZTicket = z.object({
+  name: z.string(),                              // ERPNext ticket id
+  subject: z.string().nullable(),
+  status: z.string().nullable(),
+  priority: z.string().nullable(),
+  orderId: z.string().nullable(),               // lsh_mtm_pro_order || lsh_yz_order_no || null
+  proOrder: z.string().nullable(),              // lsh_mtm_pro_order
+  yzOrderNo: z.string().nullable(),             // lsh_yz_order_no
+  creation: z.string(),                         // ISO datetime
+  assignees: z.array(z.string()),               // parsed from _assign
+  daysOpen: z.number(),                         // whole days since creation
+  escalate: z.boolean(),                        // open >= 3 days AND status !== 'Resolved'
+  url: z.string(),                              // ERPNext deep link
+});
+export type YZTicket = z.infer<typeof YZTicket>;

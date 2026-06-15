@@ -18,6 +18,7 @@ import type {
   SalesOrder,
   StyleOption,
   Tailor,
+  YZTicket,
 } from "./types";
 
 export interface DepositReceipt {
@@ -821,5 +822,13 @@ export function useAllTasks(status?: string) {
       api.get<any[]>(`/api/agents/approvals/pending`),
     refetchInterval: 20_000,
     staleTime: 10_000,
+  });
+}
+
+export function useOpenYZTickets() {
+  return useQuery({
+    queryKey: ["yz", "open-tickets"],
+    queryFn: () => api.get<YZTicket[]>("/api/yz/open-tickets"),
+    staleTime: 60_000,
   });
 }
