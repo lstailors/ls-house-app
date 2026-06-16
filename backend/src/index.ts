@@ -83,6 +83,8 @@ app.route("/api/carts", cartsRouter);
 app.route("/api/alterations/board", alternationsBoardRouter);
 import { transfersRouter } from "./routes/transfers";
 app.route("/api/transfers", transfersRouter);
+import { yzRouter } from "./routes/yz";
+app.route("/api/yz", yzRouter);
 
 const port = Number(process.env.PORT) || 3000;
 

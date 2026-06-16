@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { useMe } from "@/lib/session";
-import { useDashboardKpis, useDailyEspresso, useFinancials } from "@/lib/queries";
+import { useDashboardKpis, useDailyEspresso, useFinancials, useOpenYZTickets } from "@/lib/queries";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { KpiCard } from "@/components/glass/KpiCard";
 import { GlassCard } from "@/components/glass/GlassCard";
@@ -19,6 +19,7 @@ import { SalesLeaderboard } from "@/components/dashboard/SalesLeaderboard";
 import { TopCustomers } from "@/components/dashboard/TopCustomers";
 import { TopGarments } from "@/components/dashboard/TopGarments";
 import { AlterationsPipeline } from "@/components/dashboard/AlterationsPipeline";
+import { OpenYZTickets } from "@/components/dashboard/OpenYZTickets";
 import { TransferModal } from "@/components/alterations/TransferModal";
 
 function weatherEmoji(code: number): string {
@@ -280,6 +281,7 @@ export default function Dashboard() {
   // ── Manager / Super Admin dashboard ──────────────────────────────────────
   const [transferOpen, setTransferOpen] = useState(false);
   const { data: fin } = useFinancials();
+  const { data: yzTickets } = useOpenYZTickets();
 
   const stages = kpis?.ordersByStage ?? {};
   const altOverdue = kpis?.altOverdue ?? 0;
@@ -432,6 +434,9 @@ export default function Dashboard() {
           </div>
         </GlassCard>
       </div>
+
+      {/* 5b. YongZheng helpdesk tickets */}
+      <OpenYZTickets data={yzTickets ?? []} />
 
       {/* 6. Customer intelligence + Top Garments */}
       {((fin as any)?.topCustomers?.length || (fin as any)?.topGarments?.length) ? (

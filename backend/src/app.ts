@@ -39,6 +39,7 @@ import { unifiRouter } from "./routes/unifi";
 import { authRouter } from "./routes/auth";
 import { financialsUnlockRouter } from "./routes/financials-unlock";
 import { payInfoRouter } from "./routes/pay-info";
+import { yzRouter } from "./routes/yz";
 
 const app = new Hono();
 
@@ -121,5 +122,6 @@ app.route("/api/mcp", mcpRouter);
 app.route("/api/webhooks", webhooksRouter);
 app.route("/api/unifi", unifiRouter);
 app.route("/api/pay-info", payInfoRouter);
+app.route("/api/yz", yzRouter);
 
 export default app;
