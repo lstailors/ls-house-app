@@ -65,7 +65,8 @@ helpdeskRouter.get("/tickets", async (c) => {
   const statusFilter = c.req.query("status");
   const mine = c.req.query("mine") === "1";
 
-  const filters: unknown[] = [["status", "!=", "Deleted"]];
+  const filters: unknown[] = [];
+
   if (statusFilter && statusFilter !== "all") {
     filters.push(["status", "=", statusFilter]);
   } else if (!isManager(user.role)) {
@@ -79,11 +80,14 @@ helpdeskRouter.get("/tickets", async (c) => {
   }
 
   const rows = await erpList<any>("HD Ticket", {
-    filters,
+    filters: filters.length > 0 ? filters : undefined,
     fields: LIST_FIELDS,
     order_by: "creation desc",
-    limit: 0,
-  }).catch(() => []);
+    limit: 100,
+  }).catch((e) => {
+    console.error("[helpdesk] erpList failed:", e?.message ?? e);
+    return [] as any[];
+  });
 
   const tickets = rows.map(toHDTicket);
   return c.json({ data: tickets });
@@ -214,7 +218,7 @@ helpdeskRouter.get("/open-count", async (c) => {
   const rows = await erpList<any>("HD Ticket", {
     filters,
     fields: ["name", "creation", "status", "_assign"],
-    limit: 0,
+    limit: 100,
   }).catch(() => []);
 
   const now = Date.now();
