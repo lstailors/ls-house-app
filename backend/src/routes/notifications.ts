@@ -200,6 +200,39 @@ notificationsRouter.get("/", async (c) => {
     } catch {}
   }
 
+  // ── Escalated helpdesk tickets ───────────────────────────────
+  try {
+    const hdFilters: unknown[] = [["status", "not in", ["Closed", "Resolved"]]];
+    if (user.role !== "super_admin" && user.role !== "store_manager") {
+      hdFilters.push(["_assign", "like", `%${user.email}%`]);
+    }
+    const hdTickets = await erpList<any>("HD Ticket", {
+      filters: hdFilters,
+      fields: ["name", "subject", "status", "priority", "creation", "_assign"],
+      limit: 20,
+    }).catch(() => [] as any[]);
+
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    for (const t of hdTickets) {
+      const daysOpen = Math.floor((now - new Date(t.creation).getTime()) / DAY_MS);
+      const escalated = daysOpen >= 3;
+      if (!escalated && t.priority !== "High" && t.priority !== "Urgent") continue;
+      const isUrgent = t.priority === "Urgent" || daysOpen >= 5;
+      notifications.push({
+        id: `hd-${t.name}`,
+        kind: "helpdesk",
+        priority: isUrgent ? "critical" : "high",
+        title: escalated ? `${daysOpen}d open — ${t.subject ?? t.name}` : `${t.priority}: ${t.subject ?? t.name}`,
+        body: `${t.name} · ${t.status}`,
+        meta: `Helpdesk · ${daysOpen}d`,
+        ts: t.creation,
+        href: `/helpdesk/${t.name}`,
+        read: false,
+      });
+    }
+  } catch {}
+
   // Sort: critical first, then high, then normal; within tier sort by recency
   const priority = (p: string) => (p === "critical" ? 0 : p === "high" ? 1 : 2);
   notifications.sort((a, b) => {

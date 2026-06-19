@@ -530,3 +530,57 @@ export const YZTicket = z.object({
   url: z.string(),                              // ERPNext deep link
 });
 export type YZTicket = z.infer<typeof YZTicket>;
+
+// ─── Helpdesk (HD Ticket) ──────────────────────────────────────────────────
+
+export const HDCommunication = z.object({
+  name: z.string(),
+  sender: z.string().nullable(),
+  senderName: z.string().nullable(),
+  content: z.string().nullable(),
+  sentOrReceived: z.string().nullable(),  // "Sent" | "Received"
+  creation: z.string(),
+  communicationType: z.string().nullable(),
+});
+export type HDCommunication = z.infer<typeof HDCommunication>;
+
+export const HDTicket = z.object({
+  name: z.string(),
+  subject: z.string().nullable(),
+  status: z.string().nullable(),
+  priority: z.string().nullable(),
+  ticketType: z.string().nullable(),
+  agentGroup: z.string().nullable(),
+  proOrder: z.string().nullable(),
+  yzOrderNo: z.string().nullable(),
+  orderId: z.string().nullable(),
+  creation: z.string(),
+  modified: z.string(),
+  assignees: z.array(z.string()),
+  daysOpen: z.number(),
+  escalate: z.boolean(),
+  url: z.string(),
+});
+export type HDTicket = z.infer<typeof HDTicket>;
+
+export const HDTicketDetail = HDTicket.extend({
+  description: z.string().nullable(),
+  communications: z.array(HDCommunication),
+});
+export type HDTicketDetail = z.infer<typeof HDTicketDetail>;
+
+export const NewHDTicketBody = z.object({
+  subject: z.string().min(1),
+  description: z.string().optional(),
+  priority: z.enum(["Low", "Medium", "High", "Urgent"]).default("Medium"),
+  agentGroup: z.string().optional(),
+});
+export type NewHDTicketBody = z.infer<typeof NewHDTicketBody>;
+
+export const UpdateHDTicketStatusBody = z.object({
+  status: z.string().min(1),
+});
+
+export const HDTicketReplyBody = z.object({
+  message: z.string().min(1),
+});

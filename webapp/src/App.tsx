@@ -50,6 +50,8 @@ const SofiaChat = lazy(() => import('./pages/SofiaChat'));
 const Customers = lazy(() => import('./pages/Customers'));
 const CustomerDetail = lazy(() => import('./pages/CustomerDetail'));
 const CalendarPage = lazy(() => import('./pages/Calendar'));
+const Helpdesk = lazy(() => import('./pages/Helpdesk'));
+const HelpdeskTicketDetail = lazy(() => import('./pages/helpdesk/HelpdeskTicketDetail'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -310,6 +312,22 @@ const App = () => (
               element={
                 <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
                   <CalendarPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/helpdesk"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
+                  <Helpdesk />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/helpdesk/:id"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
+                  <HelpdeskTicketDetail />
                 </RoleGuard>
               }
             />

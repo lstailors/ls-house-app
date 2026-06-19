@@ -8,6 +8,8 @@ import type {
   Alteration,
   Communication,
   CustomOrder,
+  HDTicket,
+  HDTicketDetail,
   Customer,
   DashboardKpis,
   Delivery,
@@ -830,5 +832,66 @@ export function useOpenYZTickets() {
     queryKey: ["yz", "open-tickets"],
     queryFn: () => api.get<YZTicket[]>("/api/yz/open-tickets"),
     staleTime: 60_000,
+  });
+}
+
+// ── Helpdesk ──────────────────────────────────────────────────────────────
+
+export function useHelpdeskTickets(params?: { status?: string; mine?: boolean }) {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status", params.status);
+  if (params?.mine) qs.set("mine", "1");
+  return useQuery({
+    queryKey: ["helpdesk", "tickets", params],
+    queryFn: () => api.get<HDTicket[]>(`/api/helpdesk/tickets?${qs}`),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useHelpdeskTicket(id: string | undefined) {
+  return useQuery({
+    queryKey: ["helpdesk", "ticket", id],
+    queryFn: () => api.get<HDTicketDetail>(`/api/helpdesk/tickets/${id}`),
+    enabled: !!id,
+    staleTime: 15_000,
+  });
+}
+
+export function useHelpdeskOpenCount() {
+  return useQuery({
+    queryKey: ["helpdesk", "open-count"],
+    queryFn: () => api.get<{ total: number; escalated: number }>("/api/helpdesk/open-count"),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useHelpdeskReply(ticketId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (message: string) =>
+      api.post(`/api/helpdesk/tickets/${ticketId}/reply`, { message }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["helpdesk", "ticket", ticketId] }),
+  });
+}
+
+export function useHelpdeskUpdateStatus(ticketId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (status: string) =>
+      api.put(`/api/helpdesk/tickets/${ticketId}/status`, { status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["helpdesk"] });
+    },
+  });
+}
+
+export function useHelpdeskCreateTicket() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { subject: string; description?: string; priority?: string; agentGroup?: string }) =>
+      api.post<HDTicket>("/api/helpdesk/tickets", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["helpdesk"] }),
   });
 }

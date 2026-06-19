@@ -3,10 +3,10 @@ import {
   LayoutDashboard, Zap, ClipboardList, Scissors, Receipt,
   Truck, CheckSquare, Radio, MessageSquare, Users, Wallet,
   Palette, Layers, Shield, Building2, Settings, Bell,
-  ChevronLeft, ChevronRight, FileText, Calendar, type LucideIcon,
+  ChevronLeft, ChevronRight, FileText, Calendar, Headphones, type LucideIcon,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useMaestroApprovalCount, useTaskCount } from "@/lib/queries";
+import { useMaestroApprovalCount, useTaskCount, useHelpdeskOpenCount } from "@/lib/queries";
 import { useMe } from "@/lib/session";
 import type { UserRole } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -62,6 +62,7 @@ const SECTIONS: NavSection[] = [
       { to: "/deliveries", label: "Deliveries", icon: Truck, roles: ALL },
       { to: "/tasks", label: "Tasks", icon: CheckSquare, roles: MGMT },
       { to: "/comms", label: "Intelligence", icon: Radio, roles: [...MGMT, "salesperson"] as UserRole[] },
+      { to: "/helpdesk", label: "Helpdesk", icon: Headphones, roles: [...MGMT, "salesperson"] as UserRole[] },
     ],
   },
   {
@@ -106,6 +107,7 @@ interface Props {
 export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: Props) {
   const { data: approvalCount = 0 } = useMaestroApprovalCount();
   const { data: taskCountData } = useTaskCount();
+  const { data: helpdeskCount } = useHelpdeskOpenCount();
   const { data: me } = useMe();
   const collapsed = mode === "icons";
 
@@ -187,8 +189,11 @@ export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: P
                   {items.map((item) => {
                     const Icon = item.icon;
                     const isTasksItem = item.to === "/tasks";
+                    const isHelpdeskItem = item.to === "/helpdesk";
                     const taskCount = taskCountData?.count ?? 0;
                     const taskOverdue = taskCountData?.overdue ?? 0;
+                    const hdCount = helpdeskCount?.total ?? 0;
+                    const hdEscalated = (helpdeskCount?.escalated ?? 0) > 0;
                     const isExternal = item.to.startsWith("http");
                     const linkClass = cn(
                       "group flex items-center rounded-md transition-colors border-l-2 border-transparent",
@@ -204,6 +209,12 @@ export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: P
                             "ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center",
                             taskOverdue > 0 ? "bg-signal-rose/20 text-signal-rose" : "bg-brass/15 text-brass-light",
                           )}>{taskCount}</span>
+                        ) : null}
+                        {!collapsed && isHelpdeskItem && hdCount > 0 ? (
+                          <span className={cn(
+                            "ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center",
+                            hdEscalated ? "bg-signal-rose/20 text-signal-rose" : "bg-brass/15 text-brass-light",
+                          )}>{hdCount}</span>
                         ) : null}
                       </>
                     );

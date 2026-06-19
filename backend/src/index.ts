@@ -85,6 +85,8 @@ import { transfersRouter } from "./routes/transfers";
 app.route("/api/transfers", transfersRouter);
 import { yzRouter } from "./routes/yz";
 app.route("/api/yz", yzRouter);
+import { helpdeskRouter } from "./routes/helpdesk";
+app.route("/api/helpdesk", helpdeskRouter);
 
 const port = Number(process.env.PORT) || 3000;
 
