@@ -50,6 +50,7 @@ const SofiaChat = lazy(() => import('./pages/SofiaChat'));
 const Customers = lazy(() => import('./pages/Customers'));
 const CustomerDetail = lazy(() => import('./pages/CustomerDetail'));
 const CalendarPage = lazy(() => import('./pages/Calendar'));
+const AppointmentsPage = lazy(() => import('./pages/Appointments'));
 const Helpdesk = lazy(() => import('./pages/Helpdesk'));
 const HelpdeskTicketDetail = lazy(() => import('./pages/helpdesk/HelpdeskTicketDetail'));
 
@@ -312,6 +313,14 @@ const App = () => (
               element={
                 <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
                   <CalendarPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/appointments"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
+                  <AppointmentsPage />
                 </RoleGuard>
               }
             />
