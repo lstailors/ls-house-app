@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Zap, ClipboardList, Scissors, Receipt,
   Truck, CheckSquare, Radio, MessageSquare, Users, Wallet,
   Palette, Layers, Shield, Building2, Settings, Bell,
-  ChevronLeft, ChevronRight, FileText, Calendar, Headphones, type LucideIcon,
+  ChevronLeft, ChevronRight, FileText, Calendar, Headphones, CalendarCheck, type LucideIcon,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useMaestroApprovalCount, useTaskCount, useHelpdeskOpenCount } from "@/lib/queries";
@@ -58,6 +58,7 @@ const SECTIONS: NavSection[] = [
     title: "Ops",
     roles: [...MGMT, "tailor", "salesperson"] as UserRole[],
     items: [
+      { to: "/appointments", label: "Appointments", icon: CalendarCheck, roles: STAFF },
       { to: "/calendar", label: "Calendar", icon: Calendar, roles: STAFF },
       { to: "/deliveries", label: "Deliveries", icon: Truck, roles: ALL },
       { to: "/tasks", label: "Tasks", icon: CheckSquare, roles: MGMT },

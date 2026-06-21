@@ -584,3 +584,87 @@ export const UpdateHDTicketStatusBody = z.object({
 export const HDTicketReplyBody = z.object({
   message: z.string().min(1),
 });
+
+// ─── Staff Appointments Dashboard ─────────────────────────────────────────────
+
+export const LSHAgent = z.object({
+  name: z.string(),
+  agentUser: z.string(),
+  displayName: z.string(),
+  tagAliases: z.string(),
+  active: z.boolean(),
+});
+export type LSHAgent = z.infer<typeof LSHAgent>;
+
+export const LSHAppointmentType = z.object({
+  name: z.string(),
+  appointmentType: z.string(),
+  category: z.string(),
+  needsRoom: z.boolean(),
+  publiclyBookable: z.boolean(),
+});
+export type LSHAppointmentType = z.infer<typeof LSHAppointmentType>;
+
+export const StaffAppointment = z.object({
+  name: z.string(),
+  scheduledTime: z.string(),
+  endTime: z.string().nullable(),
+  status: z.enum(["Open", "Unverified", "Closed"]),
+  assignedAgent: z.string().nullable(),
+  agentDisplayName: z.string().nullable(),
+  customerName: z.string(),
+  customerEmail: z.string(),
+  customerPhone: z.string().nullable(),
+  customerDetails: z.string().nullable(),
+  appointmentType: z.string().nullable(),
+  needsRoom: z.boolean(),
+  calendarEventId: z.string().nullable(),
+  isBlock: z.literal(false),
+});
+export type StaffAppointment = z.infer<typeof StaffAppointment>;
+
+export const TimeBlock = z.object({
+  name: z.string(),
+  subject: z.string(),
+  startsOn: z.string(),
+  endsOn: z.string().nullable(),
+  allDay: z.boolean(),
+  agentUser: z.string().nullable(),
+  agentDisplayName: z.string().nullable(),
+  reason: z.string().nullable(),
+  isWholeshop: z.boolean(),
+  isBlock: z.literal(true),
+});
+export type TimeBlock = z.infer<typeof TimeBlock>;
+
+export const AppointmentsListResponse = z.object({
+  appointments: z.array(StaffAppointment),
+  blocks: z.array(TimeBlock),
+});
+export type AppointmentsListResponse = z.infer<typeof AppointmentsListResponse>;
+
+export const BlockTimeRequest = z.object({
+  start: z.string(),
+  end: z.string().optional(),
+  reason: z.string().optional(),
+  all_day: z.boolean().optional().default(false),
+  whole_shop: z.boolean().optional().default(false),
+});
+export type BlockTimeRequest = z.infer<typeof BlockTimeRequest>;
+
+export const StaffBookingRequest = z.object({
+  agent_user: z.string(),
+  appointment_type: z.string(),
+  scheduled_time: z.string(),
+  end_time: z.string().optional(),
+  customer_name: z.string().min(1),
+  customer_email: z.string().email(),
+  customer_phone: z.string().optional(),
+  notes: z.string().optional(),
+});
+export type StaffBookingRequest = z.infer<typeof StaffBookingRequest>;
+
+export const SetAppointmentStatusRequest = z.object({
+  status: z.enum(["confirm", "complete", "no_show", "cancel"]),
+});
+export type SetAppointmentStatusRequest = z.infer<typeof SetAppointmentStatusRequest>;

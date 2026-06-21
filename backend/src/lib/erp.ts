@@ -104,6 +104,19 @@ export async function erpPdf(doctype: string, name: string, format: string): Pro
   return fetch(url, { headers: { Authorization: `token ${key}:${secret}` } })
 }
 
+export async function erpDelete(doctype: string, name: string): Promise<void> {
+  const { base, key, secret } = creds()
+  if (!base || !key || !secret) return
+  const res = await fetch(
+    `${base}/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`,
+    { method: 'DELETE', headers: authHeaders(key, secret) },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as any
+    throw new Error(err._server_messages || err.exception || `ERP delete failed: ${res.status}`)
+  }
+}
+
 export async function erpRunMethod(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
   const { base, key, secret } = creds()
   if (!base || !key || !secret) return null
