@@ -9,8 +9,11 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 import httpx
+
+NYC = ZoneInfo("America/New_York")
 
 from web.config import settings
 
@@ -92,51 +95,144 @@ async def find_customer_by_phone(phone: str) -> Optional[str]:
         return None
 
 
+def _fmt_nyc(ts_str: str) -> str:
+    """Convert a stored timestamp string to a readable NYC local time."""
+    if not ts_str:
+        return ""
+    try:
+        # ERPNext stores as "YYYY-MM-DD HH:MM:SS" — treat as NYC (that's how we store it)
+        dt = datetime.strptime(ts_str[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=NYC)
+        return dt.strftime("%a %b %-d, %Y at %-I:%M %p ET")
+    except Exception:
+        return ts_str[:16]
+
+
 async def get_caller_context(phone: str) -> dict:
     """
-    Return customer name and recent interaction history for a caller.
-    Used to personalize the session prompt before Grok starts.
-    Returns: {customer_name: str|None, history_summary: str}
+    Build full caller memory for session prompt injection.
+    Returns: {customer_name: str|None, memory_block: str}
+
+    Fetches:
+    - Customer name and record from ERPNext Customers
+    - Complete interaction history (all calls + SMS, oldest first)
+    - Upcoming and past appointments
     """
     if not phone or not settings.ERPNEXT_URL:
-        return {"customer_name": None, "history_summary": ""}
+        return {"customer_name": None, "memory_block": ""}
 
-    customer_name = await find_customer_by_phone(phone)
+    normalized = phone[-10:]
 
-    # Fetch last 5 inbound interactions (calls + SMS) for memory context
-    history_summary = ""
-    try:
-        normalized = phone[-10:]
-        resp = await erp_get(
-            "resource/LSH Communication Log",
-            params={
-                "filters": json.dumps([
-                    ["caller_phone", "like", f"%{normalized}%"],
-                    ["direction", "=", "Inbound"],
-                ]),
-                "fields": '["timestamp","communication_type","content","transcript"]',
-                "order_by": "timestamp desc",
-                "limit": 5,
-            },
-        )
-        rows = resp.get("data", [])
-        if rows:
+    # Run all lookups concurrently
+    import asyncio
+    customer_task = asyncio.create_task(find_customer_by_phone(phone))
+
+    async def _fetch_communications():
+        try:
+            resp = await erp_get(
+                "resource/LSH Communication Log",
+                params={
+                    "filters": json.dumps([
+                        ["caller_phone", "like", f"%{normalized}%"],
+                    ]),
+                    "fields": '["name","timestamp","communication_type","direction","content","transcript","appointment_booked"]',
+                    "order_by": "timestamp asc",
+                    "limit": 100,  # full history
+                },
+            )
+            return resp.get("data", [])
+        except Exception as e:
+            logger.warning(f"Could not fetch communications for {phone}: {e}")
+            return []
+
+    async def _fetch_appointments(cust_name: Optional[str]):
+        if not cust_name:
+            return []
+        try:
+            resp = await erp_get(
+                "resource/Appointment",
+                params={
+                    "filters": json.dumps([["customer", "=", cust_name]]),
+                    "fields": '["name","scheduled_time","status","appointment_with","notes"]',
+                    "order_by": "scheduled_time desc",
+                    "limit": 10,
+                },
+            )
+            return resp.get("data", [])
+        except Exception as e:
+            logger.warning(f"Could not fetch appointments for {cust_name}: {e}")
+            return []
+
+    comms, customer_name = await asyncio.gather(_fetch_communications(), customer_task)
+    appointments = await _fetch_appointments(customer_name)
+
+    sections: list[str] = []
+
+    # ── Customer identity ─────────────────────────────────────────────────────
+    if customer_name:
+        sections.append(f"KNOWN CUSTOMER: {customer_name}")
+    else:
+        sections.append("NEW CALLER: No existing customer record in ERPNext.")
+
+    # ── Appointment history ───────────────────────────────────────────────────
+    if appointments:
+        now_nyc = datetime.now(NYC)
+        upcoming = [a for a in appointments if a.get("scheduled_time", "") > now_nyc.strftime("%Y-%m-%d %H:%M:%S")]
+        past = [a for a in appointments if a not in upcoming]
+
+        if upcoming:
             lines = []
-            for r in reversed(rows):
-                date = r.get("timestamp", "")[:10]
-                ctype = r.get("communication_type", "")
-                # For calls use transcript; for SMS use content
-                text = (r.get("transcript") or r.get("content") or "").strip()
-                if text:
-                    # Truncate long transcripts to first 300 chars
-                    preview = text[:300] + ("..." if len(text) > 300 else "")
-                    lines.append(f"- {date} ({ctype}): {preview}")
-            if lines:
-                history_summary = "Recent interactions with this client:\n" + "\n".join(lines)
-    except Exception as e:
-        logger.warning(f"Could not fetch caller history for {phone}: {e}")
+            for a in sorted(upcoming, key=lambda x: x.get("scheduled_time", "")):
+                with_who = a.get("appointment_with") or "—"
+                ts = _fmt_nyc(a.get("scheduled_time", ""))
+                lines.append(f"  • {ts} with {with_who} [{a.get('status','')}]")
+            sections.append("UPCOMING APPOINTMENTS:\n" + "\n".join(lines))
 
-    return {"customer_name": customer_name, "history_summary": history_summary}
+        if past:
+            lines = []
+            for a in past[:5]:  # last 5 past appointments
+                with_who = a.get("appointment_with") or "—"
+                ts = _fmt_nyc(a.get("scheduled_time", ""))
+                status = a.get("status", "")
+                notes = a.get("notes", "").strip()
+                entry = f"  • {ts} with {with_who} [{status}]"
+                if notes:
+                    entry += f"\n    Notes: {notes[:200]}"
+                lines.append(entry)
+            sections.append("PAST APPOINTMENTS (most recent first):\n" + "\n".join(lines))
+
+    # ── Full communication history ────────────────────────────────────────────
+    if comms:
+        lines = []
+        for r in comms:
+            ts = _fmt_nyc(r.get("timestamp", ""))
+            ctype = r.get("communication_type", "")
+            direction = r.get("direction", "")
+            appt = r.get("appointment_booked")
+
+            if ctype == "Call":
+                transcript = (r.get("transcript") or "").strip()
+                if transcript:
+                    lines.append(f"[{ts}] CALL ({direction}):\n{transcript}\n")
+                else:
+                    lines.append(f"[{ts}] CALL ({direction}): no transcript recorded")
+            else:
+                content = (r.get("content") or "").strip()
+                if content:
+                    lines.append(f"[{ts}] {ctype} ({direction}): {content}")
+
+            if appt:
+                lines.append(f"  → Appointment booked: {appt}")
+
+        sections.append("FULL INTERACTION HISTORY (oldest first):\n" + "\n".join(lines))
+    else:
+        sections.append("INTERACTION HISTORY: No previous interactions on record.")
+
+    # ── Current NYC time ──────────────────────────────────────────────────────
+    now_str = datetime.now(NYC).strftime("%A, %B %-d, %Y at %-I:%M %p ET")
+    sections.append(f"CURRENT DATE/TIME (New York): {now_str}")
+
+    memory_block = "\n\n".join(sections)
+    return {"customer_name": customer_name, "memory_block": memory_block}
 
 
 # ─── LSH Communication Log ────────────────────────────────────────────────────
@@ -173,7 +269,7 @@ async def create_communication_log(
         "session_id": session_id,
         "duration_seconds": duration_seconds,
         "transcript": transcript,
-        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": datetime.now(NYC).strftime("%Y-%m-%d %H:%M:%S"),
     }
     if customer_name:
         doc["customer"] = customer_name
@@ -408,7 +504,7 @@ async def search_communications(query: str, limit: int = 100) -> list[dict]:
 async def get_stats() -> dict:
     if not settings.ERPNEXT_URL:
         return {"today_total": 0, "today_calls": 0, "today_sms": 0, "total_all_time": 0}
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(NYC).date().isoformat()
     try:
         async def count(extra_filters: list) -> int:
             resp = await erp_get(

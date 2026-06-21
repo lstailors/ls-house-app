@@ -64,32 +64,24 @@ def load_tools() -> list[dict]:
 
 async def build_session_prompt(mode: str, caller_phone: str) -> str:
     """
-    Load the base prompt and prepend caller-specific context:
-    customer name (for greeting) and recent interaction history (memory).
+    Load the base prompt and prepend full caller memory:
+    identity, appointment history, and complete interaction log.
+    Staff callers skip customer memory — they get the base internal prompt.
     """
     base = load_system_prompt(mode)
     if mode == "internal":
-        return base  # staff don't need customer memory
+        return base
 
     ctx = await get_caller_context(caller_phone)
-    prefix_lines = []
+    memory = ctx.get("memory_block", "")
 
-    if ctx["customer_name"]:
-        prefix_lines.append(
-            f"## This Caller\n"
-            f"Caller is an existing customer: **{ctx['customer_name']}**. "
-            f"Greet them by name when appropriate."
+    if memory:
+        return (
+            "## CALLER MEMORY (loaded from ERPNext — use this to personalize the conversation)\n\n"
+            + memory
+            + "\n\n---\n\n"
+            + base
         )
-    else:
-        prefix_lines.append(
-            "## This Caller\nNew caller — no existing customer record found."
-        )
-
-    if ctx["history_summary"]:
-        prefix_lines.append(ctx["history_summary"])
-
-    if prefix_lines:
-        return "\n\n".join(prefix_lines) + "\n\n---\n\n" + base
     return base
 
 
