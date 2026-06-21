@@ -41,6 +41,7 @@ import { sendSms } from "../lib/twilio";
 const EVENT_LABELS: Record<string, string> = {
   "queued":           "queued",
   "Queued":           "queued",
+  "Ready for Pickup": "Ready for Pickup",
   "Out for Delivery": "Out for Delivery",
   "Delivered":        "Delivered",
   "Failed":           "Failed",
@@ -70,12 +71,14 @@ function withTimeline(existing: any, newEntry: Record<string, unknown>): Record<
 }
 
 // ── Delivery SMS notifications (fire-and-forget) ──────────────────────────────
-async function notifyCustomer(doc: any, event: "out_for_delivery" | "delivered"): Promise<void> {
+async function notifyCustomer(doc: any, event: "out_for_delivery" | "delivered" | "ready_for_pickup"): Promise<void> {
   const phone = doc.lsh_notify_phone ?? doc.customer_phone ?? null;
   if (!phone) return;
   const first = (doc.customer_name ?? "").split(" ")[0] || "there";
   const msg = event === "out_for_delivery"
     ? `Hi ${first}, your order from L&S Custom Tailors is on its way. Your driver is en route — we'll see you shortly!`
+    : event === "ready_for_pickup"
+    ? `Hi ${first}, great news — your garments from L&S Custom Tailors are ready for pickup at 138 E 61st St, Suite 201, New York. We're open Mon–Fri 9–5:30 and Sat 9–4. Questions? Call (212) 752-1638. See you soon!`
     : `Hi ${first}, your garments from L&S Custom Tailors have been delivered. Thank you — enjoy!`;
   try {
     const sid = await sendSms(phone, msg);
@@ -607,6 +610,7 @@ deliveriesRouter.patch("/:id", async (c) => {
     const erpSt = body.status === "out_for_delivery" ? "Out for Delivery"
       : body.status === "delivered" ? "Delivered"
       : body.status === "In Flight" ? "Out for Delivery"
+      : (body.status === "ready_for_pickup" || body.status === "ready") ? "Ready for Pickup"
       : body.status;
     updates.lsh_status = erpSt;
     if (["delivered", "Delivered"].includes(body.status))
@@ -642,6 +646,9 @@ deliveriesRouter.patch("/:id", async (c) => {
     // Fire SMS notification (non-blocking)
     if (["out_for_delivery", "Out for Delivery"].includes(body.status ?? "")) {
       void notifyCustomer(updated, "out_for_delivery");
+    }
+    if (["ready_for_pickup", "ready", "Ready for Pickup"].includes(body.status ?? "")) {
+      void notifyCustomer(updated, "ready_for_pickup");
     }
     return c.json({ data: serializeDelivery(updated) });
   } catch (err: any) {
@@ -770,6 +777,9 @@ deliveriesRouter.patch("/:id/status", async (c) => {
   const ALLOWED_STATUSES: Record<string, string> = {
     "queued": "Queued",
     "scheduled": "Queued",   // frontend uses "scheduled" for Queued deliveries
+    "ready_for_pickup": "Ready for Pickup",
+    "ready": "Ready for Pickup",
+    "Ready for Pickup": "Ready for Pickup",
     "out_for_delivery": "Out for Delivery",
     "out for delivery": "Out for Delivery",
     "In Flight": "Out for Delivery",
@@ -797,6 +807,7 @@ deliveriesRouter.patch("/:id/status", async (c) => {
 
     const updated = await erpUpdate<any>("LSH Delivery", id, updates);
     if (!updated) return c.json({ error: { message: "Update failed" } }, 500);
+    if (erpStatus === "Ready for Pickup") void notifyCustomer(updated, "ready_for_pickup");
     if (erpStatus === "Out for Delivery") void notifyCustomer(updated, "out_for_delivery");
     if (erpStatus === "Delivered") void notifyCustomer(updated, "delivered");
     return c.json({ data: serializeDelivery(updated) });
