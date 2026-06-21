@@ -14,6 +14,7 @@ import json
 import logging
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +36,7 @@ from web.erp_integration import (
     update_communication_log,
     NYC,
 )
-from web.tools import execute_tool, TOOL_REGISTRY
+from web.tools import execute_tool, TOOL_REGISTRY, prep_note
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
@@ -126,11 +127,100 @@ async def check_voice_endpoint() -> None:
         logger.error("❌ VOICE: could not reach xAI Realtime endpoint: %s", e)
 
 
+def _parse_service(customer_details: str) -> str:
+    """Pull the service type out of an Appointment's customer_details string,
+    which is stored as 'Service: <type>. Notes: ...'."""
+    if not customer_details or "Service:" not in customer_details:
+        return "appointment"
+    after = customer_details.split("Service:", 1)[1].strip()
+    return after.split(".")[0].strip() or "appointment"
+
+
+async def send_day_before_reminders() -> None:
+    """Text every customer with an Open appointment scheduled for tomorrow."""
+    if not settings.ERPNEXT_URL:
+        return
+    tomorrow = (datetime.now(NYC) + timedelta(days=1)).strftime("%Y-%m-%d")
+    try:
+        resp = await erp_get(
+            "resource/Appointment",
+            params={
+                "filters": json.dumps([
+                    ["scheduled_time", ">=", f"{tomorrow} 00:00:00"],
+                    ["scheduled_time", "<=", f"{tomorrow} 23:59:59"],
+                    ["status", "=", "Open"],
+                ]),
+                "fields": '["name","scheduled_time","customer_name","customer_phone_number","customer_details","party"]',
+                "limit": 200,
+            },
+        )
+    except Exception as e:
+        logger.error(f"Reminder query failed: {e}")
+        return
+
+    appts = resp.get("data", [])
+    logger.info(f"Day-before reminders: {len(appts)} appointment(s) for {tomorrow}")
+
+    for a in appts:
+        phone = a.get("customer_phone_number", "")
+        if not phone or phone == "unknown":
+            continue
+        try:
+            sched = a.get("scheduled_time", "")
+            appt_dt = datetime.strptime(sched[:16], "%Y-%m-%d %H:%M").replace(tzinfo=NYC)
+            when = appt_dt.strftime("%A, %B %-d at %-I:%M %p")
+        except Exception:
+            when = a.get("scheduled_time", "")
+        service = _parse_service(a.get("customer_details", ""))
+        tailor = (a.get("party") or "").split()[0] if a.get("party") else "our team"
+        first_name = (a.get("customer_name") or "").split()[0]
+
+        body = (
+            f"Hi{' ' + first_name if first_name else ''}, a reminder from L&S Custom Tailors — "
+            f"your {service} is tomorrow, {when}, with {tailor} at 138 E 61st St, Suite 201. "
+            f"{prep_note(service)} "
+            f"Need to reschedule? Reply here or call (212) 752-1638. See you then!"
+        )
+        try:
+            twilio_client.messages.create(
+                body=body, from_=settings.TWILIO_PHONE_NUMBER, to=phone,
+            )
+            await create_communication_log(
+                communication_type="SMS",
+                direction="Outbound",
+                caller_phone=phone,
+                content=body,
+                mode="system",
+                appointment_name=a.get("name", ""),
+            )
+            logger.info(f"Reminder sent to {phone} for {a.get('name')}")
+        except Exception as e:
+            logger.warning(f"Reminder SMS failed for {phone}: {e}")
+
+
+async def reminder_scheduler() -> None:
+    """Fire send_day_before_reminders once daily at 10:00 AM NYC."""
+    while True:
+        now = datetime.now(NYC)
+        target = now.replace(hour=10, minute=0, second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(days=1)
+        sleep_secs = (target - now).total_seconds()
+        logger.info(f"Next appointment reminders at {target:%Y-%m-%d %H:%M %Z} ({sleep_secs/3600:.1f}h)")
+        await asyncio.sleep(sleep_secs)
+        try:
+            await send_day_before_reminders()
+        except Exception as e:
+            logger.error(f"Reminder run errored: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Sophia is online. ERPNext: %s", settings.ERPNEXT_URL or "not configured")
     await check_voice_endpoint()
+    reminder_task = asyncio.create_task(reminder_scheduler())
     yield
+    reminder_task.cancel()
     logger.info("Sophia shutting down.")
 
 
@@ -158,10 +248,10 @@ async def appointment_ics(
     Generate a tap-to-add calendar file so the confirmation SMS/email can carry
     an 'Add to calendar' link. `start` is UTC, formatted YYYYMMDDTHHMMSSZ.
     """
-    from datetime import datetime as _dt, timedelta, timezone as _tz
+    from datetime import timezone as _tz
 
     try:
-        dt_start = _dt.strptime(start, "%Y%m%dT%H%M%SZ").replace(tzinfo=_tz.utc)
+        dt_start = datetime.strptime(start, "%Y%m%dT%H%M%SZ").replace(tzinfo=_tz.utc)
     except (ValueError, TypeError):
         dt_start = datetime.now(NYC).astimezone(_tz.utc)
     dt_end = dt_start + timedelta(minutes=minutes or 70)

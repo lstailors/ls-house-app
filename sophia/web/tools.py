@@ -32,6 +32,24 @@ logger = logging.getLogger("sophia.tools")
 TOOL_REGISTRY: dict[str, Any] = {}
 
 
+def prep_note(service_type: str) -> str:
+    """A friendly 'what to bring' line tailored to the appointment type.
+    Used in both the booking confirmation and the day-before reminder."""
+    s = (service_type or "").lower()
+    if "fitting" in s:
+        return ("Please bring the shoes you plan to wear with this garment so we can "
+                "perfect the length — and any shirt or accessories you'd like to pair.")
+    if "alteration" in s:
+        return ("Please bring the garment(s) for your appointment, along with the shoes "
+                "you'll wear with them.")
+    if "pickup" in s:
+        return "Just bring yourself — your garment will be ready and pressed."
+    # Initial Consultation / Bespoke / Made-to-Measure / default
+    return ("Feel free to bring any inspiration photos or a garment whose fit you love. "
+            "If you have the dress shoes you'd wear with the suit, bring them so we can set "
+            "the trouser break — but no need if not.")
+
+
 def tool(name: str):
     def decorator(fn):
         TOOL_REGISTRY[name] = fn
@@ -206,6 +224,7 @@ async def book_appointment(
                     f"L&S Custom Tailors — your {service_type} is confirmed for "
                     f"{appt_display} with {tailor}. "
                     f"We're at 138 E 61st St, Suite 201, New York. "
+                    + prep_note(service_type) + " "
                     + (f"Add to calendar: {cal_link} " if cal_link else "")
                     + f"Questions? Reply or call (212) 752-1638."
                 )
@@ -238,6 +257,7 @@ async def book_appointment(
                     + (f'<a href="{cal_link}" style="display:inline-block;padding:10px 18px;'
                        f'background:#1a1a1a;color:#fff;text-decoration:none;border-radius:4px;">'
                        f'Add to calendar</a><br><br>' if cal_link else "")
+                    + f"{prep_note(service_type)}<br><br>"
                     + f"Please arrive 5 minutes early. If you need to reschedule, reply to this email "
                     f"or call us at (212) 752-1638.<br><br>"
                     f"We look forward to seeing you.<br><br>"
