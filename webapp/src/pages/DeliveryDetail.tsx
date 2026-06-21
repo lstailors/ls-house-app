@@ -101,6 +101,14 @@ export default function DeliveryDetail() {
     } catch { toast.error("Could not update"); }
   };
 
+  const handleReadyForPickup = async () => {
+    try {
+      await update.mutateAsync({ id: id!, status: "ready_for_pickup" });
+      qc.invalidateQueries({ queryKey: ["delivery", id] });
+      toast.success("Marked ready for pickup");
+    } catch { toast.error("Could not update"); }
+  };
+
   const handleCancel = async () => {
     try {
       await update.mutateAsync({ id: id!, status: "cancelled" });
@@ -127,6 +135,8 @@ export default function DeliveryDetail() {
   const isDelivered = delivery.status === "delivered";
   const isCancelled = delivery.status === "cancelled";
   const isScheduled = delivery.status === "scheduled";
+  const isPickup = (delivery as any).method === "Pickup";
+  const canMarkReadyForPickup = isPickup && isScheduled;
   const canCancel = !isDelivered && !isCancelled;
   const photos = [proof?.photo1, proof?.photo2, proof?.photo3].filter(Boolean) as string[];
   const mapsUrl = delivery.gpsLatitude && delivery.gpsLongitude
@@ -188,6 +198,11 @@ export default function DeliveryDetail() {
         {isScheduled ? (
           <Button onClick={handleStart} disabled={update.isPending} className="btn-brass flex-1">
             <Truck className="h-4 w-4 mr-1.5" /> Start delivery
+          </Button>
+        ) : null}
+        {canMarkReadyForPickup ? (
+          <Button onClick={handleReadyForPickup} disabled={update.isPending} className="bg-signal-amber hover:bg-signal-amber/90 text-[#0a120e] font-medium flex-1">
+            <Package className="h-4 w-4 mr-1.5" /> Mark ready for pickup
           </Button>
         ) : null}
         {(isOut || isScheduled) ? (

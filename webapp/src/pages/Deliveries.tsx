@@ -26,6 +26,7 @@ import type { Delivery } from "@/lib/types";
 const FILTERS = [
   { value: "all", label: "All" },
   { value: "scheduled", label: "Scheduled" },
+  { value: "ready_for_pickup", label: "Ready for Pickup" },
   { value: "out_for_delivery", label: "Out" },
   { value: "delivered", label: "Delivered" },
   { value: "failed", label: "Failed" },
@@ -79,6 +80,7 @@ export default function Deliveries() {
     const s = search.toLowerCase();
     const STATUS_RANK: Record<string, number> = {
       out_for_delivery: 0,
+      ready_for_pickup: 1,
       scheduled:        1,
       failed:           2,
       delivered:        3,

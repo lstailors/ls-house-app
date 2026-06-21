@@ -16,6 +16,7 @@ const ORDER_MAP: Record<string, Variant> = {
   delivered: "emerald",
 
   scheduled: "brass",
+  ready_for_pickup: "amber",
   out_for_delivery: "amber",
   failed: "rose",
 
@@ -26,6 +27,11 @@ const ORDER_MAP: Record<string, Variant> = {
 
   active: "amber",
   completed: "emerald",
+};
+
+// Status tokens whose default label differs from the auto-generated one.
+const LABEL_OVERRIDES: Record<string, string> = {
+  ready_for_pickup: "Ready for Pickup",
 };
 
 const VARIANT_CLASS: Record<Variant, string> = {
@@ -57,7 +63,7 @@ export function StatusPill({ status, variant, className, label }: Props) {
           v === "muted" && "bg-cream-dim",
         )}
       />
-      {label ?? statusToLabel(status)}
+      {label ?? LABEL_OVERRIDES[status] ?? statusToLabel(status)}
     </span>
   );
 }
