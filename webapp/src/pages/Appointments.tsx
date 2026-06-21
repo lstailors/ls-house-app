@@ -7,6 +7,7 @@ import { SectionHeader } from "@/components/glass/SectionHeader";
 import { useMe } from "@/lib/session";
 import { AgendaView } from "@/components/appointments/AgendaView";
 import { WeekView } from "@/components/appointments/WeekView";
+import { MonthView } from "@/components/appointments/MonthView";
 import { RoomUsageBar } from "@/components/appointments/RoomUsageBar";
 import { AppointmentDetailModal } from "@/components/appointments/AppointmentDetailModal";
 import { BlockTimeModal } from "@/components/appointments/BlockTimeModal";
@@ -44,7 +45,7 @@ export default function Appointments() {
     d.setHours(0, 0, 0, 0);
     return d;
   });
-  const [view, setView] = useState<"today" | "week">("today");
+  const [view, setView] = useState<"today" | "week" | "month">("today");
   const [filter, setFilter] = useState<"my" | "all">("my");
   const [selectedAppointment, setSelectedAppointment] = useState<StaffAppointment | null>(null);
   const [blockModalOpen, setBlockModalOpen] = useState(false);
@@ -58,8 +59,23 @@ export default function Appointments() {
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekStart.getDate() + 6);
 
-  const dateFrom = view === "today" ? toDateStr(selectedDate) : toDateStr(weekStart);
-  const dateTo = view === "today" ? toDateStr(selectedDate) : toDateStr(weekEnd);
+  // Month grid range: covers the full calendar grid including bleed days
+  const monthFirst = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+  const monthLast  = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
+  const gridStart  = new Date(monthFirst);
+  gridStart.setDate(monthFirst.getDate() - monthFirst.getDay());
+  const gridEnd    = new Date(monthLast);
+  const daysUntilSat = 6 - monthLast.getDay();
+  gridEnd.setDate(monthLast.getDate() + daysUntilSat);
+
+  const dateFrom =
+    view === "today" ? toDateStr(selectedDate) :
+    view === "week"  ? toDateStr(weekStart) :
+    toDateStr(gridStart);
+  const dateTo =
+    view === "today" ? toDateStr(selectedDate) :
+    view === "week"  ? toDateStr(weekEnd) :
+    toDateStr(gridEnd);
 
   const { data, isLoading } = useAppointmentsData(dateFrom, dateTo);
   const { data: agents = [] } = useLSHAgents();
@@ -76,8 +92,10 @@ export default function Appointments() {
     const d = new Date(selectedDate);
     if (view === "today") {
       d.setDate(d.getDate() - 1);
-    } else {
+    } else if (view === "week") {
       d.setDate(d.getDate() - 7);
+    } else {
+      d.setMonth(d.getMonth() - 1);
     }
     setSelectedDate(d);
   }
@@ -86,8 +104,10 @@ export default function Appointments() {
     const d = new Date(selectedDate);
     if (view === "today") {
       d.setDate(d.getDate() + 1);
-    } else {
+    } else if (view === "week") {
       d.setDate(d.getDate() + 7);
+    } else {
+      d.setMonth(d.getMonth() + 1);
     }
     setSelectedDate(d);
   }
@@ -98,11 +118,16 @@ export default function Appointments() {
     setSelectedDate(d);
   }
 
-  const dateLabel = view === "today"
-    ? (isToday
-        ? "Today"
-        : selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }))
-    : "Week of " + weekStart.toLocaleDateString("en-US", { month: "long", day: "numeric" });
+  const dateLabel =
+    view === "month"
+      ? selectedDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })
+      : view === "week"
+      ? weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" }) +
+        " – " +
+        weekEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      : isToday
+      ? "Today"
+      : selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
   async function handleStatusChange(name: string, status: "confirm" | "complete" | "no_show" | "cancel") {
     try {
@@ -189,31 +214,22 @@ export default function Appointments() {
           </div>
 
           <div className="flex items-center bg-white/5 rounded-lg border border-white/10 p-0.5">
-            <button
-              type="button"
-              onClick={() => setView("today")}
-              className={cn(
-                "flex items-center gap-1 px-2.5 py-1 rounded-md text-xs transition-colors",
-                view === "today"
-                  ? "bg-[#B08D57]/20 text-[#B08D57] border border-[#B08D57]/30"
-                  : "text-white/40 hover:text-white/70"
-              )}
-            >
-              <CalendarDays className="w-3 h-3" />
-              Day
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("week")}
-              className={cn(
-                "flex items-center gap-1 px-2.5 py-1 rounded-md text-xs transition-colors",
-                view === "week"
-                  ? "bg-[#B08D57]/20 text-[#B08D57] border border-[#B08D57]/30"
-                  : "text-white/40 hover:text-white/70"
-              )}
-            >
-              Week
-            </button>
+            {(["today", "week", "month"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                className={cn(
+                  "flex items-center gap-1 px-2.5 py-1 rounded-md text-xs transition-colors capitalize",
+                  view === v
+                    ? "bg-[#B08D57]/20 text-[#B08D57] border border-[#B08D57]/30"
+                    : "text-white/40 hover:text-white/70"
+                )}
+              >
+                {v === "today" && <CalendarDays className="w-3 h-3" />}
+                {v === "today" ? "Day" : v === "week" ? "Week" : "Month"}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -257,6 +273,19 @@ export default function Appointments() {
           <div className="flex items-center justify-center py-16">
             <Loader2 className="w-6 h-6 text-[#B08D57]/60 animate-spin" />
           </div>
+        ) : view === "month" ? (
+          <MonthView
+            appointments={appointments}
+            blocks={blocks}
+            monthDate={selectedDate}
+            currentUserEmail={currentUserEmail}
+            filter={filter}
+            onTapAppointment={setSelectedAppointment}
+            onDrillDay={(date) => {
+              setSelectedDate(date);
+              setView("today");
+            }}
+          />
         ) : view === "today" ? (
           <AgendaView
             appointments={appointments}
