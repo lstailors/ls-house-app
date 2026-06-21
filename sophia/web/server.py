@@ -29,9 +29,11 @@ from twilio.twiml.voice_response import Connect, VoiceResponse
 from web.config import settings
 from web.erp_integration import (
     create_communication_log,
+    erp_get,
     get_caller_context,
     get_sms_history,
     update_communication_log,
+    NYC,
 )
 from web.tools import execute_tool, TOOL_REGISTRY
 
@@ -535,3 +537,120 @@ async def send_sms_manual(payload: ManualSMSPayload):
         )
     )
     return {"sid": msg.sid, "status": msg.status}
+
+
+# ─── Communications API (for app.lstailors.com /sofia page) ──────────────────
+
+@app.get("/api/communications")
+async def list_communications(limit: int = 200):
+    """
+    Return all SMS and Call threads grouped by phone number.
+    Shape matches SofiaChat.tsx Conversation interface.
+    """
+    try:
+        resp = await erp_get(
+            "resource/LSH Communication Log",
+            params={
+                "fields": '["name","caller_phone","communication_type","direction","content","transcript","timestamp","customer","mode"]',
+                "order_by": "timestamp desc",
+                "limit": limit,
+            },
+        )
+        rows = resp.get("data", [])
+    except Exception as e:
+        logger.error(f"list_communications: {e}")
+        return {"data": []}
+
+    # Group by caller_phone into thread summaries
+    thread_map: dict[str, dict] = {}
+    for row in rows:
+        phone = row.get("caller_phone", "")
+        if not phone:
+            continue
+        ts = row.get("timestamp", "")
+        existing = thread_map.get(phone)
+        if not existing:
+            thread_map[phone] = {
+                "phone": phone,
+                "clientName": row.get("customer") or None,
+                "lastMessage": {
+                    "body": row.get("content") or (row.get("transcript") or "")[:120] or "(call)",
+                    "direction": row.get("direction", "Inbound").lower(),
+                    "created_at": ts,
+                },
+                "messageCount": 1,
+                "sofiaActive": True,
+                "unread": False,
+            }
+        else:
+            existing["messageCount"] += 1
+            if not existing["clientName"] and row.get("customer"):
+                existing["clientName"] = row["customer"]
+            # Keep the most recent timestamp as lastMessage
+            if ts > existing["lastMessage"].get("created_at", ""):
+                existing["lastMessage"] = {
+                    "body": row.get("content") or (row.get("transcript") or "")[:120] or "(call)",
+                    "direction": row.get("direction", "Inbound").lower(),
+                    "created_at": ts,
+                }
+
+    threads = sorted(
+        thread_map.values(),
+        key=lambda t: t["lastMessage"].get("created_at", ""),
+        reverse=True,
+    )
+    return {"data": threads}
+
+
+@app.get("/api/communications/{phone}")
+async def get_communication_thread(phone: str, limit: int = 200):
+    """
+    Return full message history for a phone number.
+    Shape matches SofiaChat.tsx Message interface.
+    """
+    from urllib.parse import unquote
+    phone = unquote(phone)
+    normalized = phone[-10:] if len(phone) >= 10 else phone
+
+    try:
+        resp = await erp_get(
+            "resource/LSH Communication Log",
+            params={
+                "filters": json.dumps([["caller_phone", "like", f"%{normalized}%"]]),
+                "fields": '["name","caller_phone","communication_type","direction","content","transcript","timestamp","customer","mode","appointment_booked"]',
+                "order_by": "timestamp asc",
+                "limit": limit,
+            },
+        )
+        rows = resp.get("data", [])
+    except Exception as e:
+        logger.error(f"get_communication_thread: {e}")
+        return {"data": []}
+
+    messages = []
+    for row in rows:
+        ctype = row.get("communication_type", "SMS")
+        direction = row.get("direction", "Inbound").lower()
+        # For calls, body is the transcript; for SMS, it's the content
+        if ctype == "Call":
+            body = row.get("transcript") or "(voice call — no transcript)"
+            sender = "Sofia (voice)"
+        else:
+            body = row.get("content") or ""
+            sender = "Sofia" if direction == "outbound" else row.get("customer") or phone
+
+        appt = row.get("appointment_booked")
+        if appt:
+            body = body + f"\n[Appointment booked: {appt}]"
+
+        messages.append({
+            "id": row["name"],
+            "client_phone": row.get("caller_phone", phone),
+            "direction": "inbound" if direction == "inbound" else "outbound",
+            "body": body,
+            "created_at": row.get("timestamp", ""),
+            "sender": sender,
+            "type": ctype,
+        })
+
+    return {"data": messages}

@@ -3,6 +3,19 @@ import { supabaseAdmin, lshAdmin } from "../lib/supabase";
 import { getAuthedUser } from "../lib/scope";
 // sendSms and alertCarl defined locally below
 
+// ── Sofia agent base URL (FastAPI on Mac Studio) ──
+const SOFIA_URL = process.env.SOFIA_URL ?? "https://sofia.lstailors.com";
+
+async function sofiaFetch(path: string): Promise<any> {
+  try {
+    const res = await fetch(`${SOFIA_URL}${path}`);
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
 // ── Constants ──
 const CARL_PHONE = "+16319260917";
 const C_MOBILE = process.env.OWNER_MOBILE ?? "+16319260917";
@@ -1379,38 +1392,8 @@ sofiaRouter.get("/conversations", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (user.role === "driver") return c.json({ data: [] });
 
-  if (!supabaseAdmin) return c.json({ data: [] });
-
-  const { data: messages, error } = await supabaseAdmin
-    .from("sms_messages")
-    .select("id, client_phone, direction, content, status, timestamp")
-    .order("timestamp", { ascending: false })
-    .limit(500);
-
-  if (error || !messages) return c.json({ data: [] });
-
-  // Group by client_phone into thread summaries
-  const threadMap = new Map<string, { phone: string; lastMessage: any; messageCount: number }>();
-  for (const msg of messages) {
-    if (!msg.client_phone) continue;
-    const existing = threadMap.get(msg.client_phone);
-    if (!existing) {
-      threadMap.set(msg.client_phone, { phone: msg.client_phone, lastMessage: msg, messageCount: 1 });
-    } else {
-      existing.messageCount++;
-      if (new Date(msg.timestamp) > new Date(existing.lastMessage.timestamp)) {
-        existing.lastMessage = msg;
-      }
-    }
-  }
-
-  const threads = Array.from(threadMap.values())
-    .map((t) => ({ phone: t.phone, lastMessage: t.lastMessage, messageCount: t.messageCount }))
-    .sort((a, b) =>
-      new Date(b.lastMessage.timestamp).getTime() - new Date(a.lastMessage.timestamp).getTime(),
-    );
-
-  return c.json({ data: threads });
+  const result = await sofiaFetch("/api/communications");
+  return c.json({ data: result?.data ?? [] });
 });
 
 // ── GET /api/sofia/conversations/:phone ── full thread
@@ -1419,18 +1402,9 @@ sofiaRouter.get("/conversations/:phone", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (user.role === "driver") return c.json({ error: { message: "Forbidden" } }, 403);
 
-  if (!supabaseAdmin) return c.json({ data: [] });
-
-  const phone = decodeURIComponent(c.req.param("phone"));
-
-  const { data: messages, error } = await supabaseAdmin
-    .from("sms_messages")
-    .select("id, client_phone, direction, content, status, timestamp")
-    .eq("client_phone", phone)
-    .order("timestamp", { ascending: true });
-
-  if (error) return c.json({ data: [] });
-  return c.json({ data: messages ?? [] });
+  const phone = encodeURIComponent(c.req.param("phone"));
+  const result = await sofiaFetch(`/api/communications/${phone}`);
+  return c.json({ data: result?.data ?? [] });
 });
 
 // ── POST /api/sofia/conversations/:phone/handoff ──
