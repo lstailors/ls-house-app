@@ -126,7 +126,7 @@ export function AppointmentDetailModal({ appointment, currentUserEmail, currentU
               <div className="flex items-center gap-1.5">
                 <span className={cn("w-2 h-2 rounded-full shrink-0", agentColors.dot)} />
                 <p className={cn("text-sm", agentColors.text)}>
-                  {appointment.agentDisplayName ?? agentEmail || "Unassigned"}
+                  {appointment.agentDisplayName ?? agentEmail ?? "Unassigned"}
                 </p>
               </div>
             </div>
