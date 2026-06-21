@@ -114,27 +114,13 @@ async def health():
 
 @app.post("/api/token")
 async def get_ephemeral_token(request: Request):
-    body = await request.json()
-    caller_phone = body.get("phone", "unknown")
-    mode = "internal" if is_staff_caller(caller_phone) else "customer"
+    # Mint a short-lived xAI session token so the browser /sofia page can
+    # connect to Grok Realtime without ever seeing the raw API key.
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
-            "https://api.openai.com/v1/realtime/sessions",
-            headers={
-                "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
-                "OpenAI-Beta": "realtime=v1",
-            },
-            json={
-                "model": "gpt-4o-realtime-preview-2024-12-17",
-                "modalities": ["audio", "text"],
-                "instructions": load_system_prompt(mode),
-                "tools": load_tools(),
-                "voice": "alloy",
-                "input_audio_format": "pcm16",
-                "output_audio_format": "pcm16",
-                "input_audio_transcription": {"model": "whisper-1"},
-                "turn_detection": {"type": "server_vad", "silence_duration_ms": 600},
-            },
+            "https://api.x.ai/v1/realtime/client_secrets",
+            headers={"Authorization": f"Bearer {settings.XAI_API_KEY}"},
+            json={"expires_after": {"seconds": 300}},
         )
     resp.raise_for_status()
     return resp.json()
@@ -276,27 +262,26 @@ async def voice_stream(
 
     try:
         async with websockets.connect(
-            "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
+            "wss://api.x.ai/v1/realtime?model=grok-voice-latest",
             additional_headers={
-                "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
-                "OpenAI-Beta": "realtime=v1",
+                "Authorization": f"Bearer {settings.XAI_API_KEY}",
             },
         ) as grok_ws:
 
+            # xAI Grok Realtime session config.
+            # audio/pcmu = G.711 µ-law 8 kHz — Twilio's native phone format,
+            # so audio passes through both directions with no resampling.
             await grok_ws.send(json.dumps({
                 "type": "session.update",
                 "session": {
-                    "modalities": ["audio", "text"],
                     "instructions": system_prompt,
                     "tools": tools,
-                    "voice": "alloy",
-                    "input_audio_format": "g711_ulaw",
-                    "output_audio_format": "g711_ulaw",
-                    "input_audio_transcription": {"model": "whisper-1"},
-                    "turn_detection": {
-                        "type": "server_vad",
-                        "silence_duration_ms": 700,
-                        "threshold": 0.5,
+                    "voice": "Eve",
+                    "turn_detection": {"type": "server_vad"},
+                    "input_audio_transcription": {"model": "grok-2-audio"},
+                    "audio": {
+                        "input": {"format": {"type": "audio/pcmu", "rate": 8000}},
+                        "output": {"format": {"type": "audio/pcmu", "rate": 8000}},
                     },
                 },
             }))
@@ -336,14 +321,19 @@ async def voice_stream(
                     msg = json.loads(raw)
                     t = msg.get("type", "")
 
-                    if t == "response.audio.delta" and stream_sid:
+                    if t == "response.output_audio.delta" and stream_sid:
                         await websocket.send_json({
                             "event": "media",
                             "streamSid": stream_sid,
                             "media": {"payload": msg.get("delta", "")},
                         })
 
-                    elif t == "response.audio_transcript.done":
+                    elif t == "input_audio_buffer.speech_started" and stream_sid:
+                        # Caller barged in — stop Sofia's current audio and cancel the response
+                        await websocket.send_json({"event": "clear", "streamSid": stream_sid})
+                        await grok_ws.send(json.dumps({"type": "response.cancel"}))
+
+                    elif t == "response.output_audio_transcript.done":
                         text = msg.get("transcript", "")
                         if text:
                             transcript_parts.append(f"Sophia: {text}")
