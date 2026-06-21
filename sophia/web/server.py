@@ -92,9 +92,44 @@ def is_staff_caller(phone: str) -> bool:
     return phone in staff
 
 
+async def check_voice_endpoint() -> None:
+    """
+    On startup, mint a throwaway xAI Realtime session token to confirm the
+    API key has the Voice endpoint enabled. Voice failures are otherwise
+    silent (the call connects but no audio plays), so surface it loudly here.
+    """
+    if not settings.XAI_API_KEY:
+        logger.error("❌ VOICE: XAI_API_KEY is not set — voice calls will be silent.")
+        return
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                "https://api.x.ai/v1/realtime/client_secrets",
+                headers={"Authorization": f"Bearer {settings.XAI_API_KEY}"},
+                json={"expires_after": {"seconds": 60}},
+            )
+        if resp.status_code == 200:
+            logger.info("✅ VOICE: xAI Grok Realtime endpoint OK — key accepted, voice is live.")
+        elif resp.status_code in (401, 403):
+            logger.error(
+                "❌ VOICE: xAI rejected the key (HTTP %s). The Voice endpoint is likely "
+                "NOT enabled for this API key. Enable it at console.x.ai → API Keys. "
+                "Response: %s",
+                resp.status_code, resp.text[:300],
+            )
+        else:
+            logger.error(
+                "❌ VOICE: unexpected response from xAI Realtime (HTTP %s): %s",
+                resp.status_code, resp.text[:300],
+            )
+    except Exception as e:
+        logger.error("❌ VOICE: could not reach xAI Realtime endpoint: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Sophia is online. ERPNext: %s", settings.ERPNEXT_URL or "not configured")
+    await check_voice_endpoint()
     yield
     logger.info("Sophia shutting down.")
 
