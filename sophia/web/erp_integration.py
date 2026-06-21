@@ -367,11 +367,19 @@ async def get_sms_history(caller_phone: str, limit: int = 10) -> list[dict]:
 # ─── Booking ──────────────────────────────────────────────────────────────────
 
 # Business hours in NYC time.
-# Each entry: (weekday 0=Mon, open_hour, open_minute, close_hour, close_minute)
 # Saturdays off July and August; first two weeks of August fully closed.
-_SLOT_DURATION_MINS = 70   # initial consultation length
-_SLOT_BUFFER_MINS   = 20   # gap between slots
-_SLOT_STEP          = _SLOT_DURATION_MINS + _SLOT_BUFFER_MINS  # 90 min blocks
+
+# Appointment type durations (minutes)
+APPT_DURATIONS: dict[str, int] = {
+    "Initial Consultation": 60,
+    "Consultation":         60,
+    "Fitting":              15,
+    "Alteration":           5,
+    "Alteration Pickup":    5,
+}
+_DEFAULT_DURATION_MINS = 60
+_SLOT_BUFFER_MINS      = 15   # buffer between appointments
+LOCATION_SEATS         = 2    # physical seats at 138 E 61st St
 
 
 def _business_hours(date: "datetime") -> Optional[tuple[int, int, int, int]]:
@@ -379,50 +387,55 @@ def _business_hours(date: "datetime") -> Optional[tuple[int, int, int, int]]:
     Return (open_h, open_m, close_h, close_m) for a given NYC date,
     or None if the shop is closed that day.
     """
-    month, day, weekday = date.month, date.day, date.weekday()  # 0=Mon
+    month, day, weekday = date.month, date.day, date.weekday()  # 0=Mon ... 6=Sun
 
-    # First two weeks of August: fully closed
+    # First two weeks of August: fully closed (annual vacation)
     if month == 8 and day <= 14:
         return None
 
-    # Sunday: closed
-    if weekday == 6:
+    # Summer (July & August): Monday–Friday 9am–5pm, NO weekends.
+    if month in (7, 8):
+        if weekday >= 5:  # Saturday or Sunday
+            return None
+        return (9, 0, 17, 0)
+
+    # Regular season (September–June): closed Sunday and Monday.
+    if weekday in (6, 0):  # Sunday, Monday
         return None
 
-    # Saturday: closed July and August
-    if weekday == 5 and month in (7, 8):
-        return None
-
-    # Saturday: 9am–4pm
+    # Saturday: 9am–3pm
     if weekday == 5:
-        return (9, 0, 16, 0)
+        return (9, 0, 15, 0)
 
-    # Monday–Friday: 9am–5:30pm
-    return (9, 0, 17, 30)
+    # Tuesday–Friday: 9am–5pm
+    return (9, 0, 17, 0)
 
 
-def _generate_slots_for_day(date: "datetime", agents: list[str]) -> list[dict]:
-    """Generate all possible slot times for a single day (no conflict check)."""
+def _generate_slots_for_day(date: "datetime", service_type: str = "Initial Consultation") -> list[dict]:
+    """Generate all possible slot start times for a single day (no conflict check).
+    Uses per-service duration. Slots are time-based, not agent-based — availability
+    is determined by LOCATION_SEATS (2 physical chairs), checked at query time.
+    """
     hours = _business_hours(date)
     if not hours:
         return []
     open_h, open_m, close_h, close_m = hours
     from datetime import timedelta
+    duration = APPT_DURATIONS.get(service_type, _DEFAULT_DURATION_MINS)
+    step = duration + _SLOT_BUFFER_MINS
     slots = []
     current = date.replace(hour=open_h, minute=open_m, second=0, microsecond=0)
     close_dt = date.replace(hour=close_h, minute=close_m, second=0, microsecond=0)
     while True:
-        end = current + timedelta(minutes=_SLOT_DURATION_MINS)
+        end = current + timedelta(minutes=duration)
         if end > close_dt:
             break
-        for agent in agents:
-            slots.append({
-                "slot_datetime": current.strftime("%Y-%m-%d %H:%M"),
-                "slot_datetime_display": current.strftime("%A, %B %-d at %-I:%M %p"),
-                "agent": agent,
-                "duration_minutes": _SLOT_DURATION_MINS,
-            })
-        current += timedelta(minutes=_SLOT_STEP)
+        slots.append({
+            "slot_datetime": current.strftime("%Y-%m-%d %H:%M"),
+            "slot_datetime_display": current.strftime("%A, %B %-d at %-I:%M %p"),
+            "duration_minutes": duration,
+        })
+        current += timedelta(minutes=step)
     return slots
 
 
@@ -461,12 +474,13 @@ async def erp_get_available_slots(
     date_from: str,
     date_to: str,
     agent_name: str = None,
+    service_type: str = "Initial Consultation",
 ) -> list[dict]:
     """
-    Generate available appointment slots by:
-    1. Building all possible slots within business hours for the date range
-    2. Fetching existing Appointments from ERPNext and removing conflicts
-    Returns list of {slot_datetime, slot_datetime_display, agent, duration_minutes}.
+    Generate available appointment slots using a 2-seat capacity model.
+    A slot is available if fewer than LOCATION_SEATS (2) appointments are
+    already booked at that time. Duration varies by service_type.
+    Returns list of {slot_datetime, slot_datetime_display, duration_minutes}.
     """
     from datetime import timedelta
 
@@ -477,28 +491,18 @@ async def erp_get_available_slots(
         logger.warning(f"Invalid date range: {date_from} – {date_to}")
         return []
 
-    # Get agents to check
-    all_agents = await erp_list_agents()
-    if agent_name:
-        # Match by display_name or name (case-insensitive partial)
-        needle = agent_name.lower()
-        all_agents = [a for a in all_agents if needle in a["display_name"].lower() or needle in a["name"].lower()]
-    agent_names = [a["name"] for a in all_agents]
-    agent_display = {a["name"]: a["display_name"] for a in all_agents}
-
-    # Generate all candidate slots
+    # Generate all candidate slots for the date range
     candidate_slots = []
     current = start
     while current <= end:
-        for slot in _generate_slots_for_day(current, agent_names):
-            slot["agent_display"] = agent_display.get(slot["agent"], slot["agent"])
+        for slot in _generate_slots_for_day(current, service_type):
             candidate_slots.append(slot)
         current += timedelta(days=1)
 
     if not candidate_slots or not settings.ERPNEXT_URL:
         return candidate_slots
 
-    # Fetch existing appointments in range to remove conflicts
+    # Fetch existing appointments in range to count seat usage
     try:
         resp = await erp_get(
             "resource/Appointment",
@@ -508,7 +512,7 @@ async def erp_get_available_slots(
                     ["scheduled_time", "<=", f"{date_to} 23:59:59"],
                     ["status", "!=", "Closed"],
                 ]),
-                "fields": '["scheduled_time","party"]',
+                "fields": '["scheduled_time"]',
                 "limit": 500,
             },
         )
@@ -517,21 +521,74 @@ async def erp_get_available_slots(
         logger.warning(f"Could not fetch existing appointments: {e}")
         booked = []
 
-    # Build a set of (agent_name, slot_time_str) that are taken
-    taken: set[tuple[str, str]] = set()
+    # Count how many appointments are at each time slot
+    from collections import Counter
+    booked_counts: Counter = Counter()
     for b in booked:
-        agent = b.get("party", "")
         ts = b.get("scheduled_time", "")[:16]  # "YYYY-MM-DD HH:MM"
-        if agent and ts:
-            taken.add((agent, ts))
+        if ts:
+            booked_counts[ts] += 1
 
+    # A slot is open if fewer than LOCATION_SEATS bookings exist at that time
     available = [
         s for s in candidate_slots
-        if (s["agent"], s["slot_datetime"]) not in taken
+        if booked_counts[s["slot_datetime"]] < LOCATION_SEATS
     ]
 
-    # Return up to 12 slots so Sofia has enough to offer choices
-    return available[:12]
+    return available[:20]
+
+
+async def check_alteration_eligibility(phone: str, customer_name: str = "") -> dict:
+    """
+    Check if a customer is eligible for alterations.
+    Policy: must have a completed Sales Invoice within the past 12 months
+    (i.e. they commissioned something with L&S in that period).
+    Returns {eligible: bool, last_order_date: str|None, customer_name: str|None}.
+    """
+    from datetime import timedelta
+    cutoff = (datetime.now(NYC) - timedelta(days=365)).strftime("%Y-%m-%d")
+
+    # Try to find customer by phone first
+    customer = await find_customer_by_phone(phone)
+    cust_name = (customer.get("customer_name") if isinstance(customer, dict) else None) or customer_name
+
+    if not cust_name:
+        return {"eligible": None, "last_order_date": None, "customer_name": None,
+                "message": "unknown"}
+
+    try:
+        resp = await erp_get(
+            "resource/Sales Invoice",
+            params={
+                "filters": json.dumps([
+                    ["customer_name", "like", f"%{cust_name.split()[0]}%"],
+                    ["posting_date", ">=", cutoff],
+                    ["docstatus", "=", 1],
+                ]),
+                "fields": '["name","customer_name","posting_date"]',
+                "order_by": "posting_date desc",
+                "limit": 1,
+            },
+        )
+        invoices = resp.get("data", [])
+        if invoices:
+            return {
+                "eligible": True,
+                "last_order_date": invoices[0]["posting_date"],
+                "customer_name": invoices[0]["customer_name"],
+                "message": "eligible",
+            }
+        else:
+            return {
+                "eligible": False,
+                "last_order_date": None,
+                "customer_name": cust_name,
+                "message": "no_recent_order",
+            }
+    except Exception as e:
+        logger.warning(f"Alteration eligibility check failed: {e}")
+        return {"eligible": None, "last_order_date": None, "customer_name": cust_name,
+                "message": "error"}
 
 
 async def erp_create_appointment(
@@ -550,14 +607,24 @@ async def erp_create_appointment(
     from datetime import timedelta
 
     # Normalise slot_datetime to "YYYY-MM-DD HH:MM:SS"
-    try:
-        if len(slot_datetime) == 16:
-            slot_datetime = slot_datetime + ":00"
-        dt = datetime.strptime(slot_datetime[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=NYC)
-    except ValueError:
+    # Handles: "2026-06-24 14:00", "2026-06-24 14:00:00", "2026-06-24 2:00 PM", "2026-06-24 11:30 AM"
+    _formats = [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d %I:%M %p",
+        "%Y-%m-%d %I:%M:%S %p",
+    ]
+    dt = None
+    for fmt in _formats:
+        try:
+            dt = datetime.strptime(slot_datetime.strip(), fmt).replace(tzinfo=NYC)
+            break
+        except ValueError:
+            continue
+    if dt is None:
         raise ValueError(f"Invalid slot_datetime: {slot_datetime!r}")
 
-    end_dt = dt + timedelta(minutes=_SLOT_DURATION_MINS)
+    end_dt = dt + timedelta(minutes=APPT_DURATIONS.get(service_type, _DEFAULT_DURATION_MINS))
     slot_str = dt.strftime("%Y-%m-%d %H:%M:%S")
     end_str  = end_dt.strftime("%Y-%m-%d %H:%M:%S")
 

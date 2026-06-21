@@ -402,21 +402,23 @@ async def get_store_info(
     now = dt.now(NYC)
     month = now.month
 
-    saturday_note = (
-        "We are closed Saturdays in July and August."
-        if month in (7, 8)
-        else "We are open Saturdays 9 AM to 4 PM."
-    )
-    august_note = (
-        " Note: we close for our annual vacation the first two weeks of August."
-        if month in (7, 8)
-        else ""
-    )
+    if month in (7, 8):
+        # Summer schedule
+        hours_text = (
+            "Our summer hours, for July and August, are Monday through Friday, "
+            "9 AM to 5 PM, and we're closed on weekends. "
+            "We also close for our annual vacation the first two weeks of August. "
+            "Everything is by appointment."
+        )
+    else:
+        # Regular season
+        hours_text = (
+            "We're open by appointment Tuesday through Friday, 9 AM to 5 PM, "
+            "and Saturday, 9 AM to 3 PM. We're closed Sundays and Mondays."
+        )
 
     info = {
-        "hours": (
-            f"Monday through Friday, 9 AM to 5:30 PM. {saturday_note} Closed Sundays.{august_note}"
-        ),
+        "hours": hours_text,
         "location": (
             "138 East 61st Street, Suite 201, New York, NY 10065 — "
             "between Park and Lexington Avenues on the Upper East Side. "
