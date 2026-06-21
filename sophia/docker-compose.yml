@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  sophia:
+    build: .
+    container_name: sophia-agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"    # FastAPI — Twilio webhooks + Grok voice bridge
+      - "8501:8501"    # Streamlit admin dashboard
+    volumes:
+      - sophia-logs:/app/logs
+      - ./web/config:/app/web/config          # Hot-reload prompts and tools
+      - ./web/server.py:/app/web/server.py    # Hot-reload — restart only, no rebuild
+      - ./web/tools.py:/app/web/tools.py
+      - ./web/erp_integration.py:/app/web/erp_integration.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  sophia-logs:
