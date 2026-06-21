@@ -13,12 +13,14 @@ from twilio.rest import Client as TwilioClient
 
 from web.config import settings
 from web.erp_integration import (
+    check_alteration_eligibility,
     erp_create_appointment,
     erp_ensure_customer,
     erp_get,
     erp_get_available_slots,
     erp_list_agents,
     erp_method,
+    erp_post,
     erp_put,
     create_communication_log,
     find_customer_by_phone,
@@ -87,34 +89,71 @@ async def list_agents(_caller: str = "", _mode: str = "customer") -> dict:
 async def get_available_slots(
     date_from: str,
     date_to: str,
+    service_type: str = "Initial Consultation",
     agent_name: str = "",
     _caller: str = "",
     _mode: str = "customer",
 ) -> dict:
-    """Fetch open appointment slots, optionally filtered by agent."""
-    slots = await erp_get_available_slots(date_from, date_to, agent_name or None)
+    """Fetch open appointment slots for a given service type and date range."""
+    slots = await erp_get_available_slots(date_from, date_to, agent_name or None, service_type)
     if not slots:
         return {
             "message": "I don't see any open slots in that range. Would you like to try a different week, or would you prefer to leave your number and have us call you back?",
             "slots": [],
         }
-    # Format for natural speech: show display name not internal agent doc name
     formatted = []
-    for s in slots[:8]:
+    for s in slots[:10]:
         formatted.append({
             "display": s.get("slot_datetime_display", s["slot_datetime"]),
             "slot_datetime": s["slot_datetime"],
-            "agent": s.get("agent_display", s["agent"]),
             "duration_minutes": s["duration_minutes"],
         })
     return {"slots": formatted}
 
 
+@tool("check_alteration_eligibility")
+async def check_alteration_eligibility_tool(
+    customer_name: str = "",
+    _caller: str = "",
+    _mode: str = "customer",
+) -> dict:
+    """
+    Check if this caller is eligible for alteration services.
+    Policy: customer must have placed an order with L&S in the past 12 months.
+    Call this before offering alteration appointments.
+    """
+    result = await check_alteration_eligibility(_caller, customer_name)
+    msg = result.get("message")
+    if msg == "eligible":
+        return {
+            "eligible": True,
+            "last_order_date": result["last_order_date"],
+            "message": f"Eligible — last order on {result['last_order_date']}.",
+        }
+    elif msg == "no_recent_order":
+        return {
+            "eligible": False,
+            "last_order_date": None,
+            "message": (
+                "This customer has no order with L&S in the past 12 months. "
+                "Per our policy as of July 1, 2026, alteration services are reserved for "
+                "active custom clients. Sofia should politely let them know and offer "
+                "an Initial Consultation instead."
+            ),
+        }
+    else:
+        # unknown or error — let staff decide, don't block
+        return {
+            "eligible": None,
+            "message": "Could not verify order history — please confirm with the team.",
+        }
+
+
 @tool("book_appointment")
 async def book_appointment(
     customer_name: str,
-    customer_phone: str,
     slot_datetime: str,
+    customer_phone: str = "",
     preferred_agent: str = "",
     customer_email: str = "",
     service_type: str = "Consultation",
@@ -141,10 +180,19 @@ async def book_appointment(
         # Auto-create Customer record if this is a new caller
         await erp_ensure_customer(customer_name, phone, customer_email)
 
-        # Human-readable date for confirmation
+        # Human-readable date for confirmation + a tap-to-add calendar link
+        from datetime import timezone
+        from urllib.parse import quote
+        cal_link = ""
         try:
             appt_dt = dt.strptime(slot_datetime[:16], "%Y-%m-%d %H:%M").replace(tzinfo=NYC)
             appt_display = appt_dt.strftime("%A, %B %-d at %-I:%M %p")
+            start_utc = appt_dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            cal_link = (
+                f"{settings.BASE_URL.rstrip('/')}/appt.ics"
+                f"?title={quote(f'{service_type} — L&S Custom Tailors')}"
+                f"&start={start_utc}&minutes=70"
+            )
         except Exception:
             appt_display = slot_datetime
 
@@ -158,7 +206,8 @@ async def book_appointment(
                     f"L&S Custom Tailors — your {service_type} is confirmed for "
                     f"{appt_display} with {tailor}. "
                     f"We're at 138 E 61st St, Suite 201, New York. "
-                    f"Questions? Reply or call (212) 752-1638."
+                    + (f"Add to calendar: {cal_link} " if cal_link else "")
+                    + f"Questions? Reply or call (212) 752-1638."
                 )
                 twilio_client.messages.create(
                     body=sms_body,
@@ -176,6 +225,42 @@ async def book_appointment(
                 logger.info(f"Booking confirmation SMS sent to {phone}")
             except Exception as sms_err:
                 logger.warning(f"SMS confirmation failed: {sms_err}")
+
+        # Send email confirmation if we have an address
+        if customer_email:
+            try:
+                email_body = (
+                    f"Dear {customer_name},<br><br>"
+                    f"Your <strong>{service_type}</strong> at L&S Custom Tailors is confirmed.<br><br>"
+                    f"<strong>Date &amp; Time:</strong> {appt_display}<br>"
+                    f"<strong>Location:</strong> 138 East 61st Street, Suite 201, New York, NY 10065<br>"
+                    f"<strong>Tailor:</strong> {tailor}<br><br>"
+                    + (f'<a href="{cal_link}" style="display:inline-block;padding:10px 18px;'
+                       f'background:#1a1a1a;color:#fff;text-decoration:none;border-radius:4px;">'
+                       f'Add to calendar</a><br><br>' if cal_link else "")
+                    + f"Please arrive 5 minutes early. If you need to reschedule, reply to this email "
+                    f"or call us at (212) 752-1638.<br><br>"
+                    f"We look forward to seeing you.<br><br>"
+                    f"Warmly,<br>"
+                    f"Sofia — L&S Custom Tailors"
+                )
+                await erp_post("resource/Communication", {
+                    "doctype": "Communication",
+                    "communication_type": "Communication",
+                    "communication_medium": "Email",
+                    "sent_or_received": "Sent",
+                    "subject": f"Appointment Confirmed — {appt_display} — L&S Custom Tailors",
+                    "content": email_body,
+                    "sender": "concierge@lstailors.com",
+                    "sender_full_name": "Sofia — L&S Custom Tailors",
+                    "recipients": customer_email,
+                    "reference_doctype": "Appointment",
+                    "reference_name": appt_name,
+                    "status": "Linked",
+                })
+                logger.info(f"Booking confirmation email sent to {customer_email}")
+            except Exception as email_err:
+                logger.warning(f"Email confirmation failed: {email_err}")
 
         # Log the booking event
         await create_communication_log(

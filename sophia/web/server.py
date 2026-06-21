@@ -145,6 +145,59 @@ async def health():
     return {"status": "ok", "agent": "sophia", "erp": bool(settings.ERPNEXT_URL)}
 
 
+# ─── Calendar (.ics) link for SMS/email confirmations ─────────────────────────
+
+@app.get("/appt.ics")
+async def appointment_ics(
+    title: str = "Appointment — L&S Custom Tailors",
+    start: str = "",
+    minutes: int = 70,
+    location: str = "138 East 61st Street, Suite 201, New York, NY 10065",
+):
+    """
+    Generate a tap-to-add calendar file so the confirmation SMS/email can carry
+    an 'Add to calendar' link. `start` is UTC, formatted YYYYMMDDTHHMMSSZ.
+    """
+    from datetime import datetime as _dt, timedelta, timezone as _tz
+
+    try:
+        dt_start = _dt.strptime(start, "%Y%m%dT%H%M%SZ").replace(tzinfo=_tz.utc)
+    except (ValueError, TypeError):
+        dt_start = datetime.now(NYC).astimezone(_tz.utc)
+    dt_end = dt_start + timedelta(minutes=minutes or 70)
+
+    def fmt(d):
+        return d.strftime("%Y%m%dT%H%M%SZ")
+
+    def esc(s: str) -> str:
+        return s.replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;")
+
+    uid = f"{fmt(dt_start)}-{abs(hash(title + start)) % 10**8}@lstailors.com"
+    ics = "\r\n".join([
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//L&S Custom Tailors//Sofia//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        "BEGIN:VEVENT",
+        f"UID:{uid}",
+        f"DTSTAMP:{fmt(datetime.now(NYC).astimezone(_tz.utc))}",
+        f"DTSTART:{fmt(dt_start)}",
+        f"DTEND:{fmt(dt_end)}",
+        f"SUMMARY:{esc(title)}",
+        f"LOCATION:{esc(location)}",
+        "DESCRIPTION:We look forward to seeing you. Questions? Call (212) 752-1638.",
+        "END:VEVENT",
+        "END:VCALENDAR",
+        "",
+    ])
+    return Response(
+        content=ics,
+        media_type="text/calendar",
+        headers={"Content-Disposition": 'attachment; filename="appointment.ics"'},
+    )
+
+
 # ─── xAI Ephemeral Token ──────────────────────────────────────────────────────
 
 @app.post("/api/token")
@@ -298,7 +351,7 @@ async def voice_stream(
     try:
         async with websockets.connect(
             "wss://api.x.ai/v1/realtime?model=grok-voice-latest",
-            additional_headers={
+            extra_headers={
                 "Authorization": f"Bearer {settings.XAI_API_KEY}",
             },
         ) as grok_ws:
@@ -311,8 +364,12 @@ async def voice_stream(
                 "session": {
                     "instructions": system_prompt,
                     "tools": tools,
-                    "voice": "Eve",
-                    "turn_detection": {"type": "server_vad"},
+                    "voice": "ara",
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "threshold": 0.5,
+                        "silence_duration_ms": 800,
+                    },
                     "input_audio_transcription": {"model": "grok-2-audio"},
                     "audio": {
                         "input": {"format": {"type": "audio/pcmu", "rate": 8000}},
