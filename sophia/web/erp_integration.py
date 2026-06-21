@@ -364,25 +364,84 @@ async def get_sms_history(caller_phone: str, limit: int = 10) -> list[dict]:
         return []
 
 
-# ─── Booking API wrappers (Session 1 endpoints) ───────────────────────────────
+# ─── Booking ──────────────────────────────────────────────────────────────────
+
+# Business hours in NYC time.
+# Each entry: (weekday 0=Mon, open_hour, open_minute, close_hour, close_minute)
+# Saturdays off July and August; first two weeks of August fully closed.
+_SLOT_DURATION_MINS = 70   # initial consultation length
+_SLOT_BUFFER_MINS   = 20   # gap between slots
+_SLOT_STEP          = _SLOT_DURATION_MINS + _SLOT_BUFFER_MINS  # 90 min blocks
+
+
+def _business_hours(date: "datetime") -> Optional[tuple[int, int, int, int]]:
+    """
+    Return (open_h, open_m, close_h, close_m) for a given NYC date,
+    or None if the shop is closed that day.
+    """
+    month, day, weekday = date.month, date.day, date.weekday()  # 0=Mon
+
+    # First two weeks of August: fully closed
+    if month == 8 and day <= 14:
+        return None
+
+    # Sunday: closed
+    if weekday == 6:
+        return None
+
+    # Saturday: closed July and August
+    if weekday == 5 and month in (7, 8):
+        return None
+
+    # Saturday: 9am–4pm
+    if weekday == 5:
+        return (9, 0, 16, 0)
+
+    # Monday–Friday: 9am–5:30pm
+    return (9, 0, 17, 30)
+
+
+def _generate_slots_for_day(date: "datetime", agents: list[str]) -> list[dict]:
+    """Generate all possible slot times for a single day (no conflict check)."""
+    hours = _business_hours(date)
+    if not hours:
+        return []
+    open_h, open_m, close_h, close_m = hours
+    from datetime import timedelta
+    slots = []
+    current = date.replace(hour=open_h, minute=open_m, second=0, microsecond=0)
+    close_dt = date.replace(hour=close_h, minute=close_m, second=0, microsecond=0)
+    while True:
+        end = current + timedelta(minutes=_SLOT_DURATION_MINS)
+        if end > close_dt:
+            break
+        for agent in agents:
+            slots.append({
+                "slot_datetime": current.strftime("%Y-%m-%d %H:%M"),
+                "slot_datetime_display": current.strftime("%A, %B %-d at %-I:%M %p"),
+                "agent": agent,
+                "duration_minutes": _SLOT_DURATION_MINS,
+            })
+        current += timedelta(minutes=_SLOT_STEP)
+    return slots
+
 
 async def erp_list_agents() -> list[dict]:
-    """
-    Fetch active booking agents from ERPNext.
-    Calls the whitelisted endpoint from Session 1.
-    Falls back to hardcoded names if ERPNext is down.
-    """
+    """Fetch active booking agents from ERPNext LSH Booking Agent doctype."""
     if not settings.ERPNEXT_URL:
         return _fallback_agents()
     try:
-        resp = await erp_method("frappe.client.get_list", params={
-            "doctype": "LSH Booking Agent",
-            "filters": json.dumps([["active", "=", 1]]),
-            "fields": '["name","agent_display_name","specialization"]',
-        })
-        agents = resp.get("message", [])
+        resp = await erp_get(
+            "resource/LSH Booking Agent",
+            params={
+                "filters": json.dumps([["active", "=", 1]]),
+                "fields": '["name","display_name"]',
+                "limit": 20,
+            },
+        )
+        agents = resp.get("data", [])
         if agents:
-            return agents
+            return [{"name": a["name"], "display_name": a["display_name"]} for a in agents]
         return _fallback_agents()
     except Exception as e:
         logger.warning(f"list_agents fallback: {e}")
@@ -391,10 +450,10 @@ async def erp_list_agents() -> list[dict]:
 
 def _fallback_agents() -> list[dict]:
     return [
-        {"name": "calogero", "agent_display_name": "Calogero"},
-        {"name": "salvatore", "agent_display_name": "Salvatore"},
-        {"name": "kelvin", "agent_display_name": "Kelvin"},
-        {"name": "christopher", "agent_display_name": "Christopher"},
+        {"name": "Calogero Cristiano", "display_name": "Calogero"},
+        {"name": "Salvatore Cristiano", "display_name": "Salvatore"},
+        {"name": "Kelvin", "display_name": "Kelvin"},
+        {"name": "Christopher Korey", "display_name": "Christopher"},
     ]
 
 
@@ -404,20 +463,75 @@ async def erp_get_available_slots(
     agent_name: str = None,
 ) -> list[dict]:
     """
-    Call the Session 1 availability resolver for open appointment slots.
-    Returns list of {slot_datetime, agent, duration_minutes}.
+    Generate available appointment slots by:
+    1. Building all possible slots within business hours for the date range
+    2. Fetching existing Appointments from ERPNext and removing conflicts
+    Returns list of {slot_datetime, slot_datetime_display, agent, duration_minutes}.
     """
-    if not settings.ERPNEXT_URL:
-        return []
+    from datetime import timedelta
+
     try:
-        params = {"date_from": date_from, "date_to": date_to}
-        if agent_name:
-            params["agent_name"] = agent_name
-        resp = await erp_method("lsh_bookings.api.get_available_slots", params=params)
-        return resp.get("message", [])
-    except Exception as e:
-        logger.warning(f"get_available_slots error: {e}")
+        start = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=NYC)
+        end   = datetime.strptime(date_to,   "%Y-%m-%d").replace(tzinfo=NYC)
+    except ValueError:
+        logger.warning(f"Invalid date range: {date_from} – {date_to}")
         return []
+
+    # Get agents to check
+    all_agents = await erp_list_agents()
+    if agent_name:
+        # Match by display_name or name (case-insensitive partial)
+        needle = agent_name.lower()
+        all_agents = [a for a in all_agents if needle in a["display_name"].lower() or needle in a["name"].lower()]
+    agent_names = [a["name"] for a in all_agents]
+    agent_display = {a["name"]: a["display_name"] for a in all_agents}
+
+    # Generate all candidate slots
+    candidate_slots = []
+    current = start
+    while current <= end:
+        for slot in _generate_slots_for_day(current, agent_names):
+            slot["agent_display"] = agent_display.get(slot["agent"], slot["agent"])
+            candidate_slots.append(slot)
+        current += timedelta(days=1)
+
+    if not candidate_slots or not settings.ERPNEXT_URL:
+        return candidate_slots
+
+    # Fetch existing appointments in range to remove conflicts
+    try:
+        resp = await erp_get(
+            "resource/Appointment",
+            params={
+                "filters": json.dumps([
+                    ["scheduled_time", ">=", f"{date_from} 00:00:00"],
+                    ["scheduled_time", "<=", f"{date_to} 23:59:59"],
+                    ["status", "!=", "Closed"],
+                ]),
+                "fields": '["scheduled_time","party"]',
+                "limit": 500,
+            },
+        )
+        booked = resp.get("data", [])
+    except Exception as e:
+        logger.warning(f"Could not fetch existing appointments: {e}")
+        booked = []
+
+    # Build a set of (agent_name, slot_time_str) that are taken
+    taken: set[tuple[str, str]] = set()
+    for b in booked:
+        agent = b.get("party", "")
+        ts = b.get("scheduled_time", "")[:16]  # "YYYY-MM-DD HH:MM"
+        if agent and ts:
+            taken.add((agent, ts))
+
+    available = [
+        s for s in candidate_slots
+        if (s["agent"], s["slot_datetime"]) not in taken
+    ]
+
+    # Return up to 12 slots so Sofia has enough to offer choices
+    return available[:12]
 
 
 async def erp_create_appointment(
@@ -430,19 +544,104 @@ async def erp_create_appointment(
     notes: str = "",
 ) -> dict:
     """
-    Book an appointment via the Session 1 create_appointment endpoint.
-    Returns the created Appointment doc name on success.
+    Create an Appointment in ERPNext and a linked Google Calendar Event.
+    Returns {appointment_name, event_name}.
     """
-    resp = await erp_method_post("lsh_bookings.api.create_appointment", {
+    from datetime import timedelta
+
+    # Normalise slot_datetime to "YYYY-MM-DD HH:MM:SS"
+    try:
+        if len(slot_datetime) == 16:
+            slot_datetime = slot_datetime + ":00"
+        dt = datetime.strptime(slot_datetime[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=NYC)
+    except ValueError:
+        raise ValueError(f"Invalid slot_datetime: {slot_datetime!r}")
+
+    end_dt = dt + timedelta(minutes=_SLOT_DURATION_MINS)
+    slot_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+    end_str  = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    # 1. Create the Appointment
+    appt_doc = {
+        "doctype": "Appointment",
+        "scheduled_time": slot_str,
+        "status": "Open",
         "customer_name": customer_name,
-        "customer_email": customer_email,
-        "customer_phone": customer_phone,
-        "agent_name": agent_name,
-        "slot_datetime": slot_datetime,
-        "service_type": service_type,
-        "notes": notes,
-    })
-    return resp.get("message", {})
+        "customer_phone_number": customer_phone,
+        "customer_email": customer_email or "noemail@lstailors.com",
+        "customer_details": f"Service: {service_type}." + (f" Notes: {notes}" if notes else ""),
+        "appointment_with": "LSH Booking Agent",
+        "party": agent_name,
+    }
+    appt_resp = await erp_post("resource/Appointment", appt_doc)
+    appt_name = (appt_resp.get("data") or appt_resp).get("name", "")
+
+    # 2. Create Google Calendar Event linked to the appointment
+    agent_display = agent_name.split()[0] if agent_name else "our team"
+    event_doc = {
+        "doctype": "Event",
+        "subject": f"L&S — {customer_name} — {service_type} with {agent_display}",
+        "starts_on": slot_str,
+        "ends_on": end_str,
+        "event_type": "Private",
+        "sync_with_google_calendar": 1,
+        "google_calendar": "L&S Appointments",
+        "description": (
+            f"Customer: {customer_name}\n"
+            f"Phone: {customer_phone}\n"
+            f"Email: {customer_email}\n"
+            f"Service: {service_type}\n"
+            f"Tailor: {agent_name}\n"
+            + (f"Notes: {notes}" if notes else "")
+        ),
+    }
+    try:
+        event_resp = await erp_post("resource/Event", event_doc)
+        event_name = (event_resp.get("data") or event_resp).get("name", "")
+        # Link event back to appointment
+        if appt_name and event_name:
+            await erp_put(f"resource/Appointment/{appt_name}", {"calendar_event": event_name})
+    except Exception as e:
+        logger.warning(f"Google Calendar event creation failed: {e}")
+        event_name = ""
+
+    logger.info(f"Appointment created: {appt_name} | Event: {event_name}")
+    return {"appointment_name": appt_name, "event_name": event_name, "name": appt_name}
+
+
+async def erp_ensure_customer(
+    customer_name: str,
+    phone: str,
+    email: str = "",
+) -> Optional[str]:
+    """
+    Look up or create an ERPNext Customer record for a new caller.
+    Returns the Customer docname.
+    """
+    if not settings.ERPNEXT_URL or not customer_name or not phone:
+        return None
+
+    # Check if already exists
+    existing = await find_customer_by_phone(phone)
+    if existing:
+        return existing
+
+    try:
+        resp = await erp_post("resource/Customer", {
+            "doctype": "Customer",
+            "customer_name": customer_name,
+            "customer_type": "Individual",
+            "customer_group": "Individual",
+            "territory": "United States",
+            "mobile_no": phone,
+            "email_id": email or "",
+        })
+        name = (resp.get("data") or resp).get("name", "")
+        logger.info(f"New Customer created: {name} ({phone})")
+        return name
+    except Exception as e:
+        logger.warning(f"Could not create Customer for {customer_name}: {e}")
+        return None
 
 
 # ─── Dashboard data helpers ───────────────────────────────────────────────────
