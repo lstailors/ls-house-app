@@ -294,26 +294,28 @@ async def voice_stream(
                 },
             }))
 
-            # Trigger Sofia's opening greeting immediately after session is set up
-            await grok_ws.send(json.dumps({
-                "type": "conversation.item.create",
-                "item": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": "[call connected]"}],
-                },
-            }))
-            await grok_ws.send(json.dumps({"type": "response.create"}))
-
             stream_sid = None
+            greeting_sent = False
 
             async def twilio_to_grok():
-                nonlocal stream_sid
+                nonlocal stream_sid, greeting_sent
                 async for raw in websocket.iter_text():
                     msg = json.loads(raw)
                     event = msg.get("event")
                     if event == "start":
                         stream_sid = msg["start"]["streamSid"]
+                        # Now we have stream_sid — safe to trigger Sofia's greeting
+                        if not greeting_sent:
+                            greeting_sent = True
+                            await grok_ws.send(json.dumps({
+                                "type": "conversation.item.create",
+                                "item": {
+                                    "type": "message",
+                                    "role": "user",
+                                    "content": [{"type": "input_text", "text": "[call connected — greet the caller]"}],
+                                },
+                            }))
+                            await grok_ws.send(json.dumps({"type": "response.create"}))
                     elif event == "media":
                         await grok_ws.send(json.dumps({
                             "type": "input_audio_buffer.append",
