@@ -119,10 +119,13 @@ async def get_ephemeral_token(request: Request):
     mode = "internal" if is_staff_caller(caller_phone) else "customer"
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
-            "https://api.x.ai/v1/realtime/sessions",
-            headers={"Authorization": f"Bearer {settings.XAI_API_KEY}"},
+            "https://api.openai.com/v1/realtime/sessions",
+            headers={
+                "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+                "OpenAI-Beta": "realtime=v1",
+            },
             json={
-                "model": "grok-2-realtime",
+                "model": "gpt-4o-realtime-preview-2024-12-17",
                 "modalities": ["audio", "text"],
                 "instructions": load_system_prompt(mode),
                 "tools": load_tools(),
@@ -159,8 +162,9 @@ async def voice_incoming(request: Request):
         )
     )
 
+    from urllib.parse import quote
     ws_base = settings.BASE_URL.replace("https://", "wss://").replace("http://", "ws://")
-    ws_url = f"{ws_base}/voice/stream?caller={caller}&mode={mode}&sid={call_sid}"
+    ws_url = f"{ws_base}/voice/stream?caller={quote(caller, safe='')}&mode={mode}&sid={call_sid}"
 
     response = VoiceResponse()
     connect = Connect()
@@ -272,8 +276,11 @@ async def voice_stream(
 
     try:
         async with websockets.connect(
-            "wss://api.x.ai/v1/realtime?model=grok-2-realtime",
-            extra_headers={"Authorization": f"Bearer {settings.XAI_API_KEY}"},
+            "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
+            additional_headers={
+                "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+                "OpenAI-Beta": "realtime=v1",
+            },
         ) as grok_ws:
 
             await grok_ws.send(json.dumps({
