@@ -294,6 +294,17 @@ async def voice_stream(
                 },
             }))
 
+            # Trigger Sofia's opening greeting immediately after session is set up
+            await grok_ws.send(json.dumps({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "[call connected]"}],
+                },
+            }))
+            await grok_ws.send(json.dumps({"type": "response.create"}))
+
             stream_sid = None
 
             async def twilio_to_grok():
@@ -475,7 +486,7 @@ async def _grok_text_response(
                 "https://api.x.ai/v1/chat/completions",
                 headers={"Authorization": f"Bearer {settings.XAI_API_KEY}"},
                 json={
-                    "model": "grok-2-latest",
+                    "model": "grok-4.3",
                     "messages": messages,
                     "tools": tools,
                     "tool_choice": "auto",
