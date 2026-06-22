@@ -727,6 +727,148 @@ async def create_follow_up(
     return {"created": True, "message": f"Follow-up noted for {customer_name}."}
 
 
+@tool("cancel_appointment")
+async def cancel_appointment(
+    appointment_name: str = "",
+    customer_phone: str = "",
+    reason: str = "",
+    _caller: str = "",
+    _mode: str = "customer",
+) -> dict:
+    """Cancel an existing appointment in ERPNext."""
+    if not settings.ERPNEXT_URL:
+        return {"error": "Scheduling system is not available right now."}
+    # If no appointment name given, look it up by phone
+    if not appointment_name:
+        phone = customer_phone or _caller
+        try:
+            resp = await erp_get(
+                "resource/Appointment",
+                params={
+                    "filters": json.dumps([
+                        ["customer_phone_number", "like", f"%{phone[-10:]}%"],
+                        ["status", "=", "Open"],
+                    ]),
+                    "fields": '["name","scheduled_time","customer_name","customer_details"]',
+                    "order_by": "scheduled_time asc",
+                    "limit": 1,
+                },
+            )
+            appts = resp.get("data", [])
+            if not appts:
+                return {"cancelled": False, "message": "I don't see any upcoming appointments to cancel. Would you like to schedule a new one?"}
+            appointment_name = appts[0]["name"]
+        except Exception as e:
+            logger.error(f"cancel_appointment lookup: {e}")
+            return {"error": "I couldn't reach the scheduling system right now."}
+    try:
+        await erp_put(f"resource/Appointment/{appointment_name}", {
+            "status": "Closed",
+            "notes": f"Cancelled by client via Sofia. Reason: {reason or 'Not specified'}.",
+        })
+        await create_communication_log(
+            communication_type="SMS" if _mode != "customer" else "Call",
+            direction="Inbound",
+            caller_phone=_caller,
+            content=f"Appointment {appointment_name} cancelled. Reason: {reason or 'Not specified'}.",
+            mode=_mode,
+        )
+        logger.info(f"Appointment {appointment_name} cancelled.")
+        return {
+            "cancelled": True,
+            "appointment": appointment_name,
+            "message": "Done — your appointment has been cancelled. We hope to see you again soon. Is there anything else I can help you with?",
+        }
+    except Exception as e:
+        logger.error(f"cancel_appointment: {e}")
+        return {"cancelled": False, "message": "I had trouble cancelling that appointment. Please call us at (212) 752-1638 and we'll sort it out right away."}
+
+
+@tool("send_payment_link")
+async def send_payment_link(
+    order_number: str = "",
+    customer_name: str = "",
+    customer_phone: str = "",
+    amount_cents: int = 0,
+    note: str = "",
+    _caller: str = "",
+    _mode: str = "customer",
+) -> dict:
+    """Create a Square checkout payment link and text it to the customer. Staff only."""
+    if _mode != "internal":
+        return {"error": "Payment links can only be sent by staff."}
+    if not settings.SQUARE_ACCESS_TOKEN:
+        return {"error": "Square is not configured."}
+    phone = customer_phone or _caller
+    if not phone:
+        return {"error": "A customer phone number is required to send a payment link."}
+    try:
+        import uuid
+        env_url = (
+            "https://connect.squareup.com"
+            if settings.SQUARE_ENVIRONMENT == "production"
+            else "https://connect.squareupsandbox.com"
+        )
+        payload: dict = {
+            "idempotency_key": str(uuid.uuid4()),
+            "quick_pay": {
+                "name": note or (f"L&S Order {order_number}" if order_number else "L&S Custom Tailors"),
+                "price_money": {
+                    "amount": amount_cents,
+                    "currency": "USD",
+                },
+                "location_id": settings.SQUARE_LOCATION_ID,
+            },
+        }
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(
+                f"{env_url}/v2/online-checkout/payment-links",
+                headers={
+                    "Authorization": f"Bearer {settings.SQUARE_ACCESS_TOKEN}",
+                    "Content-Type": "application/json",
+                    "Square-Version": "2024-01-18",
+                },
+                json=payload,
+            )
+        resp.raise_for_status()
+        link_url = resp.json().get("payment_link", {}).get("url", "")
+        if not link_url:
+            return {"error": "Square returned no link URL."}
+
+        # Text the link to the customer
+        twilio_client = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+        amount_str = f"${amount_cents / 100:.2f}" if amount_cents else ""
+        sms_body = (
+            f"L&S Custom Tailors — {f'your balance for {order_number} is {amount_str}. ' if order_number else ''}"
+            f"Secure payment link: {link_url}"
+        )
+        twilio_client.messages.create(
+            body=sms_body,
+            from_=settings.TWILIO_PHONE_NUMBER,
+            to=phone,
+        )
+        await create_communication_log(
+            communication_type="SMS",
+            direction="Outbound",
+            caller_phone=phone,
+            content=sms_body,
+            mode="internal",
+        )
+        logger.info(f"Payment link sent to {phone}: {link_url}")
+        return {
+            "sent": True,
+            "link": link_url,
+            "to": phone,
+            "message": f"Payment link sent to {customer_name or phone}.",
+        }
+    except httpx.HTTPStatusError as e:
+        logger.error(f"send_payment_link Square error: {e.response.status_code} {e.response.text[:200]}")
+        return {"error": "Square couldn't create the link. Please try from the Square dashboard."}
+    except Exception as e:
+        logger.error(f"send_payment_link: {e}")
+        return {"error": "Couldn't send the payment link right now."}
+
+
 @tool("check_alteration_ticket")
 async def check_alteration_ticket(
     customer_phone: str = "",

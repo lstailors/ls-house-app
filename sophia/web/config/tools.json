@@ -316,6 +316,63 @@
   {
     "type": "function",
     "function": {
+      "name": "cancel_appointment",
+      "description": "Cancel an existing appointment for a customer. Use when a client asks to cancel or when rescheduling (cancel first, then book new slot).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_name": {
+            "type": "string",
+            "description": "ERPNext appointment ID (e.g. ACC-APT-00042). Leave empty to look up by phone."
+          },
+          "customer_phone": {
+            "type": "string",
+            "description": "Customer phone number to find the appointment if name not known"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for cancellation"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "send_payment_link",
+      "description": "Staff only. Create a Square checkout payment link and text it to the customer. Use when staff ask to send a payment link or collect a balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "Sales order number (e.g. SAL-0042)"
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "Customer name"
+          },
+          "customer_phone": {
+            "type": "string",
+            "description": "Customer phone number to send the link to"
+          },
+          "amount_cents": {
+            "type": "integer",
+            "description": "Amount to charge in cents (e.g. 50000 = $500.00). Use 0 if not specifying an amount."
+          },
+          "note": {
+            "type": "string",
+            "description": "Description shown on the payment page (e.g. 'Deposit — Bespoke Suit')"
+          }
+        },
+        "required": ["customer_phone"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "check_alteration_ticket",
       "description": "Look up a customer's Alteration Ticket(s) by phone number or ticket number. Use when a customer asks about their alteration status, whether their garment is ready, or what they owe.",
       "parameters": {

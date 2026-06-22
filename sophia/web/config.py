@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     # Square
     SQUARE_ACCESS_TOKEN: str = ""
     SQUARE_ENVIRONMENT: str = "production"
+    SQUARE_LOCATION_ID: str = ""
 
     # Staff
     STAFF_PHONE_NUMBERS: str = ""
