@@ -1,0 +1,344 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "list_agents",
+      "description": "Get the list of available booking agents (master tailors). Call this when a customer wants to book an appointment so you can ask for their preference.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_available_slots",
+      "description": "Find open appointment slots for a given date range, optionally filtered by agent. Call this after getting the customer's preferred dates and agent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "Start of date range, ISO format YYYY-MM-DD"
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End of date range, ISO format YYYY-MM-DD"
+          },
+          "agent_name": {
+            "type": "string",
+            "description": "Optional: filter to a specific agent's availability"
+          },
+          "service_type": {
+            "type": "string",
+            "description": "Type of appointment: Initial Consultation, Fitting, Alteration, Alteration Pickup",
+            "enum": [
+              "Initial Consultation",
+              "Fitting",
+              "Alteration",
+              "Alteration Pickup"
+            ]
+          }
+        },
+        "required": [
+          "date_from",
+          "date_to"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "check_alteration_eligibility",
+      "description": "Check if a customer is eligible for alteration services. Must be called before booking any Alteration appointment. Eligibility requires a completed order with L&S in the past 12 months.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_name": {
+            "type": "string",
+            "description": "Customer full name if known"
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "book_appointment",
+      "description": "Book a confirmed appointment slot. Only call this after showing the customer available slots and getting their explicit confirmation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_name": {
+            "type": "string",
+            "description": "Customer's full name"
+          },
+          "customer_phone": {
+            "type": "string",
+            "description": "Customer's phone number"
+          },
+          "slot_datetime": {
+            "type": "string",
+            "description": "The confirmed slot datetime (ISO format or human-readable)"
+          },
+          "preferred_agent": {
+            "type": "string",
+            "description": "Agent name the customer chose (or empty for any available)"
+          },
+          "customer_email": {
+            "type": "string",
+            "description": "Customer email for confirmation (optional)"
+          },
+          "service_type": {
+            "type": "string",
+            "description": "Type of service: Consultation, Fitting, Alteration, Bespoke, Made-to-Measure"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Any special requests or notes"
+          }
+        },
+        "required": [
+          "customer_name",
+          "slot_datetime"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "check_order_status",
+      "description": "Look up the status of a customer's tailoring order. Use when they ask about their garment, fitting, or delivery.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "Order number (e.g. SAL-0042)"
+          },
+          "customer_phone": {
+            "type": "string",
+            "description": "Customer phone if order number unknown"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "check_appointment",
+      "description": "Look up a customer's existing appointment. Use when they ask about a scheduled visit or fitting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_phone": {
+            "type": "string",
+            "description": "Customer phone number"
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "Customer name as alternative"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_store_info",
+      "description": "Retrieve store information: hours, location, services, trunk shows, policies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "description": "Topic: hours, location, services, trunk_shows, policies, about"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "check_fabric_availability",
+      "description": "Answer fabric or material questions and guide the customer toward a consultation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fabric_name": {
+            "type": "string",
+            "description": "Fabric or mill name (e.g. Loro Piana, Dormeuil)"
+          },
+          "color": {
+            "type": "string",
+            "description": "Desired color or pattern"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "check_square_payment",
+      "description": "Verify payment status for an order via Square.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "Order number to check payment for"
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "Customer name as fallback"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "forward_call",
+      "description": "Transfer the current voice call to a human staff member. Use ONLY when: (1) customer explicitly asks to speak with a person, (2) situation requires immediate human judgment, (3) customer is distressed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Reason for transfer"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "staff_daily_schedule",
+      "description": "Staff only. List the appointments for a given day. Use when a staff member asks who is coming in today or on a specific date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Day to look up, ISO format YYYY-MM-DD. Leave empty for today."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "staff_overdue_orders",
+      "description": "Staff only. List Sales Orders that are past their delivery date and not yet completed. Use when a staff member asks what is overdue or late.",
+      "parameters": { "type": "object", "properties": {} }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "staff_ready_for_pickup",
+      "description": "Staff only. List garments currently marked Ready for Pickup. Use when a staff member asks what is ready or waiting for customers.",
+      "parameters": { "type": "object", "properties": {} }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "send_internal_sms",
+      "description": "Send a message to a specific staff member. Internal mode only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recipient_name": {
+            "type": "string",
+            "description": "Staff member's first name"
+          },
+          "message": {
+            "type": "string",
+            "description": "The message to send"
+          }
+        },
+        "required": [
+          "recipient_name",
+          "message"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_follow_up",
+      "description": "Create a follow-up task or reminder for the team about a customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_name": {
+            "type": "string",
+            "description": "Customer name"
+          },
+          "note": {
+            "type": "string",
+            "description": "What needs to be done"
+          },
+          "customer_phone": {
+            "type": "string",
+            "description": "Customer phone number"
+          },
+          "due_date": {
+            "type": "string",
+            "description": "When this is due"
+          },
+          "assigned_to": {
+            "type": "string",
+            "description": "Staff member to assign to"
+          }
+        },
+        "required": [
+          "customer_name",
+          "note"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "update_order_notes",
+      "description": "Update notes or status on a Sales Order. Internal staff only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "The order number"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes to add"
+          },
+          "new_status": {
+            "type": "string",
+            "description": "New status if changing"
+          }
+        },
+        "required": [
+          "order_number",
+          "notes"
+        ]
+      }
+    }
+  }
+]

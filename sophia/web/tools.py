@@ -539,6 +539,120 @@ async def forward_call(
     }
 
 
+# ─── Staff assistant query tools (internal mode) ──────────────────────────────
+
+async def _appointments_for_date(date_str: str) -> list[dict]:
+    """Open appointments on a given YYYY-MM-DD, ordered by time."""
+    resp = await erp_get(
+        "resource/Appointment",
+        params={
+            "filters": json.dumps([
+                ["scheduled_time", ">=", f"{date_str} 00:00:00"],
+                ["scheduled_time", "<=", f"{date_str} 23:59:59"],
+                ["status", "=", "Open"],
+            ]),
+            "fields": '["name","scheduled_time","customer_name","customer_phone_number","customer_details","party"]',
+            "order_by": "scheduled_time asc",
+            "limit": 100,
+        },
+    )
+    return resp.get("data", [])
+
+
+@tool("staff_daily_schedule")
+async def staff_daily_schedule(
+    date: str = "",
+    _caller: str = "",
+    _mode: str = "customer",
+) -> dict:
+    """List appointments for a given day (default today). Internal staff only."""
+    if _mode != "internal":
+        return {"error": "Staff only."}
+    from datetime import datetime as dt
+    target = date.strip() or dt.now(NYC).strftime("%Y-%m-%d")
+    try:
+        appts = await _appointments_for_date(target)
+    except Exception as e:
+        logger.error(f"staff_daily_schedule: {e}")
+        return {"error": "Couldn't reach the schedule."}
+    items = []
+    for a in appts:
+        try:
+            t = dt.strptime(a.get("scheduled_time", "")[:16], "%Y-%m-%d %H:%M").strftime("%-I:%M %p")
+        except Exception:
+            t = a.get("scheduled_time", "")
+        items.append({
+            "time": t,
+            "customer": a.get("customer_name", ""),
+            "phone": a.get("customer_phone_number", ""),
+            "tailor": (a.get("party") or "").split()[0] if a.get("party") else "",
+        })
+    return {"date": target, "count": len(items), "appointments": items}
+
+
+@tool("staff_overdue_orders")
+async def staff_overdue_orders(
+    _caller: str = "",
+    _mode: str = "customer",
+) -> dict:
+    """Sales Orders past their delivery date and not yet completed. Internal staff only."""
+    if _mode != "internal":
+        return {"error": "Staff only."}
+    from datetime import datetime as dt
+    today = dt.now(NYC).strftime("%Y-%m-%d")
+    try:
+        resp = await erp_get(
+            "resource/Sales Order",
+            params={
+                "filters": json.dumps([
+                    ["delivery_date", "<", today],
+                    ["status", "in", ["To Deliver and Bill", "To Deliver", "To Bill"]],
+                    ["docstatus", "=", 1],
+                ]),
+                "fields": '["name","customer_name","delivery_date","status","grand_total"]',
+                "order_by": "delivery_date asc",
+                "limit": 50,
+            },
+        )
+    except Exception as e:
+        logger.error(f"staff_overdue_orders: {e}")
+        return {"error": "Couldn't reach the order system."}
+    orders = resp.get("data", [])
+    return {"count": len(orders), "orders": [
+        {"order": o.get("name"), "customer": o.get("customer_name"),
+         "due": o.get("delivery_date"), "status": o.get("status")}
+        for o in orders
+    ]}
+
+
+@tool("staff_ready_for_pickup")
+async def staff_ready_for_pickup(
+    _caller: str = "",
+    _mode: str = "customer",
+) -> dict:
+    """Deliveries currently marked Ready for Pickup. Internal staff only."""
+    if _mode != "internal":
+        return {"error": "Staff only."}
+    try:
+        resp = await erp_get(
+            "resource/LSH Delivery",
+            params={
+                "filters": json.dumps([["lsh_status", "=", "Ready for Pickup"]]),
+                "fields": '["name","customer_name","customer_phone","lsh_garment_summary"]',
+                "limit": 50,
+            },
+        )
+    except Exception as e:
+        logger.error(f"staff_ready_for_pickup: {e}")
+        return {"error": "Couldn't reach the delivery system."}
+    rows = resp.get("data", [])
+    return {"count": len(rows), "deliveries": [
+        {"customer": r.get("customer_name"), "phone": r.get("customer_phone"),
+         "garments": r.get("lsh_garment_summary", "")}
+        for r in rows
+    ]}
+
+
 # ─── Internal staff tools ─────────────────────────────────────────────────────
 
 @tool("send_internal_sms")

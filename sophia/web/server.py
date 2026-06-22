@@ -36,7 +36,14 @@ from web.erp_integration import (
     update_communication_log,
     NYC,
 )
-from web.tools import execute_tool, TOOL_REGISTRY, prep_note
+from web.tools import (
+    execute_tool,
+    TOOL_REGISTRY,
+    prep_note,
+    staff_daily_schedule,
+    staff_overdue_orders,
+    staff_ready_for_pickup,
+)
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
@@ -214,13 +221,102 @@ async def reminder_scheduler() -> None:
             logger.error(f"Reminder run errored: {e}")
 
 
+def _staff_numbers() -> list[str]:
+    return [n.strip() for n in settings.STAFF_PHONE_NUMBERS.split(",") if n.strip()]
+
+
+async def compose_ops_briefing(when: str = "morning") -> str:
+    """Build the staff ops briefing text from live ERPNext data."""
+    today = datetime.now(NYC)
+    date_label = today.strftime("%A, %B %-d")
+
+    sched = await staff_daily_schedule(_mode="internal")
+    ready = await staff_ready_for_pickup(_mode="internal")
+    overdue = await staff_overdue_orders(_mode="internal")
+
+    appts = sched.get("appointments", []) if isinstance(sched, dict) else []
+    header = "☀️ L&S morning briefing" if when == "morning" else "🕐 L&S midday check-in"
+    lines = [f"{header} — {date_label}", ""]
+
+    if appts:
+        lines.append(f"Appointments today ({len(appts)}):")
+        for a in appts:
+            who = a.get("customer", "")
+            tailor = f" — {a['tailor']}" if a.get("tailor") else ""
+            lines.append(f" • {a.get('time','')} — {who}{tailor}")
+    else:
+        lines.append("No appointments scheduled today.")
+
+    ready_list = ready.get("deliveries", []) if isinstance(ready, dict) else []
+    if ready_list:
+        names = ", ".join(d.get("customer", "") for d in ready_list[:8])
+        lines.append("")
+        lines.append(f"Ready for pickup ({len(ready_list)}): {names}")
+
+    overdue_list = overdue.get("orders", []) if isinstance(overdue, dict) else []
+    if overdue_list:
+        lines.append("")
+        lines.append(f"⚠️ Overdue orders ({len(overdue_list)}):")
+        for o in overdue_list[:8]:
+            lines.append(f" • {o.get('order','')} — {o.get('customer','')} (due {o.get('due','')})")
+
+    lines.append("")
+    lines.append("Reply here to ask me anything — schedules, orders, or to send a customer a note.")
+    return "\n".join(lines)
+
+
+async def send_ops_briefing(when: str = "morning") -> None:
+    """Text the ops briefing to every staff number."""
+    numbers = _staff_numbers()
+    if not numbers:
+        logger.warning("Ops briefing: no STAFF_PHONE_NUMBERS configured.")
+        return
+    try:
+        body = await compose_ops_briefing(when)
+    except Exception as e:
+        logger.error(f"compose_ops_briefing failed: {e}")
+        return
+    for num in numbers:
+        try:
+            twilio_client.messages.create(
+                body=body, from_=settings.TWILIO_PHONE_NUMBER, to=num,
+            )
+            logger.info(f"{when} briefing sent to {num}")
+        except Exception as e:
+            logger.warning(f"Briefing SMS failed for {num}: {e}")
+
+
+async def briefing_scheduler() -> None:
+    """Send a morning briefing at 7:30 AM and a midday check-in at 1:00 PM NYC."""
+    SLOTS = [(7, 30, "morning"), (13, 0, "midday")]
+    while True:
+        now = datetime.now(NYC)
+        # Find the next upcoming slot today or tomorrow
+        candidates = []
+        for h, m, label in SLOTS:
+            t = now.replace(hour=h, minute=m, second=0, microsecond=0)
+            if t <= now:
+                t += timedelta(days=1)
+            candidates.append((t, label))
+        target, label = min(candidates, key=lambda x: x[0])
+        sleep_secs = (target - now).total_seconds()
+        logger.info(f"Next staff briefing ({label}) at {target:%Y-%m-%d %H:%M %Z} ({sleep_secs/3600:.1f}h)")
+        await asyncio.sleep(sleep_secs)
+        try:
+            await send_ops_briefing(label)
+        except Exception as e:
+            logger.error(f"Briefing run errored: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Sophia is online. ERPNext: %s", settings.ERPNEXT_URL or "not configured")
     await check_voice_endpoint()
     reminder_task = asyncio.create_task(reminder_scheduler())
+    briefing_task = asyncio.create_task(briefing_scheduler())
     yield
     reminder_task.cancel()
+    briefing_task.cancel()
     logger.info("Sophia shutting down.")
 
 
@@ -233,6 +329,16 @@ twilio_client = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_T
 @app.get("/health")
 async def health():
     return {"status": "ok", "agent": "sophia", "erp": bool(settings.ERPNEXT_URL)}
+
+
+@app.post("/api/briefing")
+async def trigger_briefing(request: Request):
+    """Compose the ops briefing now. ?send=1 also texts it to all staff."""
+    when = request.query_params.get("when", "morning")
+    text = await compose_ops_briefing(when)
+    if request.query_params.get("send") == "1":
+        await send_ops_briefing(when)
+    return {"briefing": text}
 
 
 # ─── Calendar (.ics) link for SMS/email confirmations ─────────────────────────
