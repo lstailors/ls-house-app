@@ -974,17 +974,11 @@ async def raven_webhook(request: Request):
     # Skip messages sent by Sofia herself or any bot (avoid reply loops)
     if is_bot or sender in ("concierge@lstailors.com", "Administrator"):
         return {"ok": True, "skipped": "bot or own message"}
-=======
-class RavenWebhookPayload(BaseModel):
-    text: str = ""
-    sender: str = ""
-    channel_id: str = ""
-
-
 @app.post("/api/raven-webhook")
-async def raven_webhook(payload: RavenWebhookPayload):
+async def raven_webhook(request: Request):
     """
     Receive messages sent to the Sofia bot in Raven.
+    Accepts raw JSON so we're not brittle to Raven's payload shape.
     Runs the same Grok text-completion brain used for staff SMS,
     then posts the reply back to the originating Raven channel.
     """
