@@ -72,6 +72,28 @@ async def erp_method_post(method: str, data: dict = None) -> dict:
     return resp.json()
 
 
+# ─── Raven messenger ──────────────────────────────────────────────────────────
+
+SOFIA_RAVEN_CHANNEL = "L&S Tailors-sofia-live"
+SOFIA_RAVEN_BOT_USER = "concierge@lstailors.com"
+
+
+async def post_raven_message(text: str, channel_id: str = SOFIA_RAVEN_CHANNEL) -> None:
+    """Post a message to a Raven channel as the Sofia bot. Fire-and-forget."""
+    if not settings.ERPNEXT_URL:
+        return
+    try:
+        await erp_post("resource/Raven Message", {
+            "channel_id": channel_id,
+            "text": text,
+            "message_type": "Text",
+            "is_bot_message": 1,
+            "bot": SOFIA_RAVEN_BOT_USER,
+        })
+    except Exception as e:
+        logger.debug(f"Raven post failed (non-critical): {e}")
+
+
 # ─── Customer lookup ──────────────────────────────────────────────────────────
 
 async def find_customer_by_phone(phone: str) -> Optional[str]:
@@ -243,6 +265,42 @@ async def get_caller_context(phone: str) -> dict:
 
 # ─── LSH Communication Log ────────────────────────────────────────────────────
 
+def _build_raven_summary(
+    communication_type: str,
+    direction: str,
+    caller_phone: str,
+    customer_name: Optional[str],
+    content: str,
+    transcript: str = "",
+    duration_seconds: int = 0,
+) -> str:
+    """Format a Raven notification message for a communication log entry."""
+    name_label = customer_name or "Unknown"
+    if communication_type == "Call":
+        lines = [
+            f"📞 CALL {direction} — {caller_phone}",
+            f"Customer: {name_label}",
+            f"Duration: {duration_seconds}s",
+        ]
+        if transcript:
+            lines.append(f"Transcript:\n{transcript}")
+        else:
+            lines.append("No transcript recorded.")
+        return "\n".join(lines)
+    elif communication_type == "SMS":
+        return "\n".join([
+            f"💬 SMS {direction} — {caller_phone}",
+            f"Customer: {name_label}",
+            content,
+        ])
+    else:
+        # Internal Note or anything else
+        return "\n".join([
+            f"📝 NOTE — {caller_phone}",
+            content,
+        ])
+
+
 async def create_communication_log(
     communication_type: str,        # "Call" | "SMS" | "Internal Note"
     direction: str,                  # "Inbound" | "Outbound"
@@ -297,6 +355,20 @@ async def create_communication_log(
         resp = await erp_post("resource/LSH Communication Log", doc)
         name = resp.get("data", {}).get("name") or resp.get("name")
         logger.info(f"Communication log created: {name} ({communication_type} {direction} from {caller_phone})")
+
+        # Fire Raven notification — non-blocking
+        import asyncio as _asyncio
+        raven_text = _build_raven_summary(
+            communication_type=communication_type,
+            direction=direction,
+            caller_phone=caller_phone,
+            customer_name=customer_name,
+            content=content,
+            transcript=transcript,
+            duration_seconds=duration_seconds,
+        )
+        _asyncio.create_task(post_raven_message(raven_text))
+
         return name
     except httpx.HTTPStatusError as e:
         # If doctype doesn't exist yet, log and continue gracefully

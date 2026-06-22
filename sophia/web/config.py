@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     DASHBOARD_PORT: int = 8501
     DASHBOARD_PASSWORD: str = "sophia"
 
+    # Raven messenger integration
+    RAVEN_WEBHOOK_SECRET: str = ""  # optional, for validating incoming Raven webhooks
+
     # Runtime toggle — comma-separated tool names; empty = all enabled
     ENABLED_TOOLS: str = ""
 

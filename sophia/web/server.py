@@ -35,6 +35,7 @@ from web.erp_integration import (
     get_house_app_summary,
     get_sms_history,
     send_whatsapp_via_erpnext,
+    post_raven_message,
     update_communication_log,
     NYC,
 )
@@ -931,6 +932,56 @@ async def send_sms_manual(payload: ManualSMSPayload):
         )
     )
     return {"sid": msg.sid, "status": msg.status}
+
+
+# ─── Raven Webhook (staff → Sofia bot messages) ───────────────────────────────
+
+class RavenWebhookPayload(BaseModel):
+    text: str = ""
+    sender: str = ""
+    channel_id: str = ""
+
+
+@app.post("/api/raven-webhook")
+async def raven_webhook(payload: RavenWebhookPayload):
+    """
+    Receive messages sent to the Sofia bot in Raven.
+    Runs the same Grok text-completion brain used for staff SMS,
+    then posts the reply back to the originating Raven channel.
+    """
+    text = payload.text.strip()
+    sender = payload.sender.strip()
+    channel_id = payload.channel_id.strip()
+
+    if not text:
+        return {"ok": True, "skipped": "empty message"}
+
+    logger.info(f"Raven webhook from {sender}: {text[:80]}")
+
+    # Use the staff phone number as a stand-in identifier for history lookup.
+    # Fall back to sender email if no phone is known.
+    from_number = sender  # not a real phone — history will be empty, that's fine
+
+    tool_call_log: list[dict] = []
+    try:
+        reply = await _grok_text_response(
+            user_message=text,
+            from_number=from_number,
+            mode="internal",
+            history=[],
+            tool_call_log=tool_call_log,
+        )
+    except Exception as e:
+        logger.error(f"Raven webhook Grok error: {e}")
+        reply = "Sorry, I ran into an error processing that request."
+
+    # Post the reply back to the originating Raven channel — fire-and-forget
+    if channel_id:
+        asyncio.create_task(post_raven_message(reply, channel_id=channel_id))
+    else:
+        asyncio.create_task(post_raven_message(reply))
+
+    return {"ok": True}
 
 
 # ─── Communications API (for app.lstailors.com /sofia page) ──────────────────
