@@ -959,10 +959,11 @@ async def raven_webhook(request: Request):
     text = (msg.get("text") or msg.get("content") or "").strip()
     channel_id = (msg.get("channel_id") or body.get("channel_id") or "").strip()
     sender = (msg.get("owner") or msg.get("sender") or body.get("sender") or "").strip()
+    is_bot = bool(body.get("is_bot_message") or msg.get("is_bot_message"))
 
-    # Skip messages sent by Sofia herself (avoid reply loops)
-    if sender == "concierge@lstailors.com":
-        return {"ok": True, "skipped": "own message"}
+    # Skip messages sent by Sofia herself or any bot (avoid reply loops)
+    if is_bot or sender in ("concierge@lstailors.com", "Administrator"):
+        return {"ok": True, "skipped": "bot or own message"}
 
     if not text:
         return {"ok": True, "skipped": "empty message"}
