@@ -284,13 +284,15 @@ sofiaBridgeRouter.post("/event", async (c) => {
 
   // Log every Sofia voice event to sms_messages as a system event
   if (phone) {
-    await sb.from("sms_messages").insert({
-      client_phone: normalizePhone(phone),
-      direction: "outbound",
-      content: `[Sofia Voice Event: ${event_type}] ${JSON.stringify(eventData ?? {}).slice(0, 300)}`,
-      timestamp: new Date().toISOString(),
-      metadata: { source: "sofia_voice", event_type, customer_name },
-    }).catch(() => {});
+    try {
+      await sb.from("sms_messages").insert({
+        client_phone: normalizePhone(phone),
+        direction: "outbound",
+        content: `[Sofia Voice Event: ${event_type}] ${JSON.stringify(eventData ?? {}).slice(0, 300)}`,
+        timestamp: new Date().toISOString(),
+        metadata: { source: "sofia_voice", event_type, customer_name },
+      });
+    } catch { /* non-fatal */ }
   }
 
   // Specific event handling
@@ -307,15 +309,17 @@ sofiaBridgeRouter.post("/event", async (c) => {
     if (custId) {
       const { data: dossier } = await sb.from("customer_dossiers").select("id").eq("customer_id", custId).maybeSingle();
       if (dossier) {
-        await sb.from("dossier_observations").insert({
-          dossier_id: dossier.id,
-          customer_id: custId,
-          observation_type: eventData.observation_type ?? "context",
-          content: String(eventData.note).slice(0, 500),
-          source_channel: "voice",
-          importance: eventData.importance ?? 5,
-          is_significant: (eventData.importance ?? 5) >= 7,
-        }).catch(() => {});
+        try {
+          await sb.from("dossier_observations").insert({
+            dossier_id: dossier.id,
+            customer_id: custId,
+            observation_type: eventData.observation_type ?? "context",
+            content: String(eventData.note).slice(0, 500),
+            source_channel: "voice",
+            importance: eventData.importance ?? 5,
+            is_significant: (eventData.importance ?? 5) >= 7,
+          });
+        } catch { /* non-fatal */ }
       }
     }
   }
