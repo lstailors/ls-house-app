@@ -688,6 +688,47 @@ async def send_internal_sms(
         return {"error": "Failed to send the message."}
 
 
+@tool("send_customer_sms")
+async def send_customer_sms(
+    customer_phone: str,
+    message: str,
+    customer_name: str = "",
+    _caller: str = "",
+    _mode: str = "customer",
+) -> dict:
+    """Staff-only: send a free-form SMS to any customer phone number."""
+    if _mode != "internal":
+        return {"error": "Sending customer SMS is only available to staff."}
+    if not customer_phone:
+        return {"error": "customer_phone is required."}
+    # Normalize to E.164
+    digits = "".join(c for c in customer_phone if c.isdigit())
+    if len(digits) == 10:
+        to_number = f"+1{digits}"
+    elif len(digits) == 11 and digits.startswith("1"):
+        to_number = f"+{digits}"
+    else:
+        to_number = customer_phone
+    try:
+        client = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+        msg = client.messages.create(
+            body=message,
+            from_=settings.TWILIO_PHONE_NUMBER,
+            to=to_number,
+        )
+        await create_communication_log(
+            communication_type="SMS",
+            direction="Outbound",
+            caller_phone=to_number,
+            content=message,
+            mode="internal",
+        )
+        return {"sent": True, "to": to_number, "name": customer_name, "sid": msg.sid}
+    except Exception as e:
+        logger.error(f"send_customer_sms: {e}")
+        return {"error": "Failed to send the SMS."}
+
+
 @tool("create_follow_up")
 async def create_follow_up(
     customer_name: str,
