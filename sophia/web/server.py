@@ -23,6 +23,7 @@ import websockets
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+from twilio.request_validator import RequestValidator
 from twilio.rest import Client as TwilioClient
 from twilio.twiml.messaging_response import MessagingResponse
 from twilio.twiml.voice_response import Connect, VoiceResponse
@@ -99,6 +100,19 @@ async def build_session_prompt(mode: str, caller_phone: str) -> str:
 def is_staff_caller(phone: str) -> bool:
     staff = [n.strip() for n in settings.STAFF_PHONE_NUMBERS.split(",") if n.strip()]
     return phone in staff
+
+
+def verify_twilio_signature(request: Request, form: dict[str, str]) -> bool:
+    """
+    Validate the X-Twilio-Signature header so only Twilio can post to our
+    webhooks. Bypassed when VERIFY_TWILIO_SIGNATURE is False (local curl tests).
+    """
+    if not settings.VERIFY_TWILIO_SIGNATURE:
+        return True
+    validator = RequestValidator(settings.TWILIO_AUTH_TOKEN)
+    signature = request.headers.get("X-Twilio-Signature", "")
+    url = settings.BASE_URL.rstrip("/") + request.url.path
+    return validator.validate(url, form, signature)
 
 
 async def check_voice_endpoint() -> None:
@@ -764,8 +778,16 @@ async def _grok_text_response(
     mode: str,
     history: list[dict],
     tool_call_log: list[dict],
+    channel: str = "SMS",
 ) -> str:
     system_prompt = await build_session_prompt(mode, from_number)
+    if channel == "WhatsApp":
+        system_prompt = (
+            "## CHANNEL: WhatsApp\n"
+            "You are replying over WhatsApp (not SMS). Keep the warm, concise tone. "
+            "Emoji are fine in moderation. Media and interactive buttons are not yet "
+            "available, so describe options in plain text.\n\n---\n\n"
+        ) + system_prompt
     tools = load_tools()
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -816,6 +838,87 @@ async def _grok_text_response(
         return msg.get("content", "I'm sorry, I wasn't able to process that request right now.")
 
     return "I'm handling multiple requests — please text again in just a moment."
+
+
+# ─── Twilio WhatsApp Webhooks ─────────────────────────────────────────────────
+# WhatsApp is a separate pipe from SMS (different network, separate thread) but the
+# same Sofia brain. Inbound service replies within Twilio's 24h window are free-form
+# and free — handled here. Business-initiated / outside-window template sends are W3.
+
+@app.post("/whatsapp/incoming")
+async def whatsapp_incoming(request: Request):
+    form = await request.form()
+    params = {k: str(v) for k, v in form.items()}
+
+    if not verify_twilio_signature(request, params):
+        logger.warning("Rejected WhatsApp inbound — invalid Twilio signature")
+        return Response(content="Invalid signature", status_code=403)
+
+    # Twilio sends From as "whatsapp:+1...". Strip the prefix for caller lookup/logging.
+    from_raw = params.get("From", "unknown")
+    from_number = from_raw.split(":", 1)[-1] if from_raw.startswith("whatsapp:") else from_raw
+    body = params.get("Body", "").strip()
+    mode = "internal" if is_staff_caller(from_number) else "customer"
+    logger.info(f"WhatsApp from {from_number} ({mode}): {body[:80]}")
+
+    # Log inbound to ERPNext (its own WhatsApp thread)
+    asyncio.create_task(
+        create_communication_log(
+            communication_type="WhatsApp",
+            direction="Inbound",
+            caller_phone=from_number,
+            content=body,
+            mode=mode,
+        )
+    )
+
+    history = await get_sms_history(from_number, limit=10, channel="WhatsApp")
+    tool_call_log: list[dict] = []
+
+    reply = await _grok_text_response(
+        user_message=body,
+        from_number=from_number,
+        mode=mode,
+        history=history,
+        tool_call_log=tool_call_log,
+        channel="WhatsApp",
+    )
+
+    # Log outbound reply + any tool calls
+    asyncio.create_task(
+        create_communication_log(
+            communication_type="WhatsApp",
+            direction="Outbound",
+            caller_phone=from_number,
+            content=reply,
+            mode=mode,
+            tool_calls=tool_call_log if tool_call_log else None,
+        )
+    )
+
+    # Returning TwiML on a WhatsApp inbound makes Twilio reply over WhatsApp.
+    resp = MessagingResponse()
+    resp.message(reply)
+    return Response(content=str(resp), media_type="application/xml")
+
+
+@app.post("/whatsapp/status")
+async def whatsapp_status(request: Request):
+    """Twilio delivery/read status callbacks. Logged for now; no doctype field yet."""
+    form = await request.form()
+    params = {k: str(v) for k, v in form.items()}
+
+    if not verify_twilio_signature(request, params):
+        logger.warning("Rejected WhatsApp status — invalid Twilio signature")
+        return Response(content="Invalid signature", status_code=403)
+
+    logger.info(
+        "WhatsApp status: sid=%s to=%s status=%s",
+        params.get("MessageSid", ""),
+        params.get("To", ""),
+        params.get("MessageStatus", ""),
+    )
+    return Response(status_code=200)
 
 
 # ─── Manual SMS (dashboard) ───────────────────────────────────────────────────

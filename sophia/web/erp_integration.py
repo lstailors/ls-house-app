@@ -342,9 +342,11 @@ async def update_communication_log(
         logger.error(f"Failed to update communication log {doc_name}: {e}")
 
 
-async def get_sms_history(caller_phone: str, limit: int = 10) -> list[dict]:
+async def get_sms_history(caller_phone: str, limit: int = 10, channel: str = "SMS") -> list[dict]:
     """
-    Retrieve recent SMS history for a caller from ERPNext.
+    Retrieve recent message history for a caller on a single channel from ERPNext.
+    `channel` matches communication_type ("SMS" or "WhatsApp") — each is a
+    separate thread (WhatsApp does not mirror SMS, even on the same number).
     Returns list of {direction, content} dicts, oldest first.
     """
     if not settings.ERPNEXT_URL:
@@ -355,7 +357,7 @@ async def get_sms_history(caller_phone: str, limit: int = 10) -> list[dict]:
             params={
                 "filters": json.dumps([
                     ["caller_phone", "like", f"%{caller_phone[-10:]}%"],
-                    ["communication_type", "=", "SMS"],
+                    ["communication_type", "=", channel],
                 ]),
                 "fields": '["direction","content","timestamp"]',
                 "order_by": "timestamp desc",

@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     TWILIO_AUTH_TOKEN: str
     TWILIO_PHONE_NUMBER: str
     FORWARD_TO_NUMBER: str = ""
+    # Verify the X-Twilio-Signature header on inbound webhooks. Leave True in
+    # production; set False locally to exercise endpoints with curl.
+    VERIFY_TWILIO_SIGNATURE: bool = True
 
     # ERPNext
     ERPNEXT_URL: str = ""
