@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, Plus, Clock, AlertTriangle, ListTodo, Flame, X, Wand2, Sparkles, Lightbulb, ChevronRight, ChevronDown } from "lucide-react";
+import { CheckCircle2, Plus, Clock, AlertTriangle, ListTodo, Flame, X, Wand2, Sparkles, Lightbulb, ChevronDown, List, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { SectionHeader } from "@/components/glass/SectionHeader";
@@ -11,21 +11,11 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/session";
 import { cn } from "@/lib/utils";
+import { type Todo, stripHtml, isOverdue, formatDate } from "@/lib/tasks";
+import { TaskListView } from "@/components/tasks/TaskListView";
+import { TaskBoardView } from "@/components/tasks/TaskBoardView";
 
 // ── Types ────────────────────────────────────────────────────────────────────
-
-interface Todo {
-  name: string;
-  description: string;
-  status: "Open" | "Closed" | "Cancelled";
-  priority: "High" | "Medium" | "Low";
-  date: string | null;
-  allocated_to: string | null;
-  assigned_by: string | null;
-  assigned_by_full_name: string | null;
-  reference_type: string | null;
-  reference_name: string | null;
-}
 
 interface NewTaskDefaults {
   description: string;
@@ -36,154 +26,14 @@ interface NewTaskDefaults {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function stripHtml(html: string): string {
-  return html?.replace(/<[^>]*>/g, "").trim() ?? "";
-}
-
-function isOverdue(date: string | null): boolean {
-  if (!date) return false;
-  return new Date(date) < new Date(new Date().toDateString());
-}
-
-function isDueToday(date: string | null): boolean {
-  if (!date) return false;
-  return date === new Date().toISOString().slice(0, 10);
-}
-
-function shortEmail(email: string | null): string {
-  if (!email) return "—";
-  return email.split("@")[0];
-}
-
-function formatDate(date: string | null): string {
-  if (!date) return "";
-  return new Date(date + "T00:00:00").toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-}
+// Helpers, Todo type, PriorityBadge, and TaskCard now live in @/lib/tasks and
+// @/components/tasks/*.
 
 // ── Priority badge ────────────────────────────────────────────────────────────
 
-function PriorityBadge({ priority }: { priority: Todo["priority"] }) {
-  if (priority === "High") {
-    return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full bg-signal-rose/10 text-signal-rose">
-        High
-      </span>
-    );
-  }
-  if (priority === "Medium") {
-    return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full bg-signal-amber/10 text-signal-amber">
-        Medium
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full bg-white/5 text-cream-dim">
-      Low
-    </span>
-  );
-}
 
 // ── Task card ─────────────────────────────────────────────────────────────────
 
-interface TaskCardProps {
-  todo: Todo;
-  onComplete: (id: string) => void;
-  completing: boolean;
-  onSelect: (todo: Todo) => void;
-}
-
-function TaskCard({ todo, onComplete, completing, onSelect }: TaskCardProps) {
-  const text = stripHtml(todo.description);
-  const truncated = text.length > 120 ? text.slice(0, 120) + "…" : text;
-  const overdue = isOverdue(todo.date);
-  const today = isDueToday(todo.date);
-  const isClosed = todo.status === "Closed" || todo.status === "Cancelled";
-
-  return (
-    <GlassCard
-      className={cn(
-        "p-4 border border-brass/15 rounded-xl transition-all cursor-pointer hover:border-brass/30 hover:bg-brass/5",
-        overdue && !isClosed && "border-signal-rose/30 border-l-2 border-l-signal-rose",
-        !overdue && todo.priority === "High" && !isClosed && "border-signal-rose/20 border-l-2 border-l-signal-amber",
-        isClosed && "opacity-60",
-      )}
-      onClick={() => onSelect(todo)}
-    >
-      <div className="flex items-start gap-3">
-        {/* Left: content */}
-        <div className="flex-1 min-w-0 space-y-2">
-          {/* Priority + status row */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <PriorityBadge priority={todo.priority} />
-            {isClosed ? (
-              <span className="inline-flex text-[10px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full bg-white/5 text-cream-dim">
-                {todo.status}
-              </span>
-            ) : null}
-          </div>
-
-          {/* Description */}
-          <p className={cn("text-sm leading-relaxed", isClosed ? "text-cream-dim line-through" : "text-cream")}>
-            {truncated || <span className="text-cream-dim italic">No description</span>}
-          </p>
-
-          {/* Meta row */}
-          <div className="flex items-center gap-3 flex-wrap text-[11px]">
-            {todo.date ? (
-              <span
-                className={cn(
-                  "flex items-center gap-1",
-                  overdue && !isClosed ? "text-signal-rose font-medium" : today && !isClosed ? "text-signal-amber font-medium" : "text-cream-dim",
-                )}
-              >
-                <Clock className="h-3 w-3" />
-                {overdue && !isClosed ? "Overdue · " : today && !isClosed ? "Due today · " : ""}
-                {formatDate(todo.date)}
-              </span>
-            ) : null}
-
-            {todo.allocated_to ? (
-              <span className="text-cream-dim">
-                → <span className="text-cream-muted">{shortEmail(todo.allocated_to)}</span>
-              </span>
-            ) : null}
-
-            {todo.reference_type && todo.reference_name ? (
-              <span className="text-brass-light/60 font-mono text-[10px]">
-                {todo.reference_type} · {todo.reference_name}
-              </span>
-            ) : null}
-          </div>
-        </div>
-
-        {/* Right: complete button + chevron */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          {!isClosed ? (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onComplete(todo.name); }}
-              disabled={completing}
-              title="Mark complete"
-              className={cn(
-                "shrink-0 h-8 w-8 rounded-full border border-brass/30 flex items-center justify-center",
-                "hover:bg-brass/15 hover:border-brass/60 transition-colors",
-                "text-brass-light/60 hover:text-brass-light",
-                completing && "opacity-40 cursor-not-allowed",
-              )}
-            >
-              <CheckCircle2 className="h-4 w-4" />
-            </button>
-          ) : null}
-          <ChevronRight className="h-4 w-4 text-cream-dim/40" />
-        </div>
-      </div>
-    </GlassCard>
-  );
-}
 
 // ── Task Detail Panel ─────────────────────────────────────────────────────────
 
@@ -630,6 +480,11 @@ export default function Tasks() {
   const [nlParsing, setNlParsing] = useState(false);
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
   const [dismissedSuggestions, setDismissedSuggestions] = useState<number[]>([]);
+  const [view, setView] = useState<"list" | "board">(
+    () => (localStorage.getItem("tasksView") as "list" | "board") || "list",
+  );
+  useEffect(() => { localStorage.setItem("tasksView", view); }, [view]);
+  const canManage = me?.role === "super_admin" || me?.role === "store_manager";
 
   const { data: todos = [], isLoading } = useQuery<Todo[]>({
     queryKey: ["tasks", statusFilter, assigneeFilter],
@@ -661,6 +516,15 @@ export default function Tasks() {
       qc.invalidateQueries({ queryKey: ["tasks"] });
       toast.success("Task marked complete");
     },
+    onError: (e: Error) => toast.error(e.message || "Could not update task"),
+  });
+
+  // Single patch entry point used by the card quick-actions (reschedule,
+  // reprioritize, reassign, complete/reopen) in both list and board views.
+  const patchTask = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
+      api.patch<Todo>(`/api/tasks/${id}`, body),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["tasks"] }); },
     onError: (e: Error) => toast.error(e.message || "Could not update task"),
   });
 
@@ -890,7 +754,36 @@ export default function Tasks() {
         ))}
       </div>
 
-      {/* Task list */}
+      {/* View toggle */}
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[10px] uppercase tracking-widest text-cream-dim">
+          {filtered.length} {filtered.length === 1 ? "task" : "tasks"}
+        </span>
+        <div className="inline-flex rounded-lg border border-brass/15 bg-forest-raised/30 p-0.5">
+          <button
+            type="button"
+            onClick={() => setView("list")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+              view === "list" ? "bg-brass/20 text-brass-light" : "text-cream-dim hover:text-cream-muted",
+            )}
+          >
+            <List className="h-3.5 w-3.5" /> List
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("board")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+              view === "board" ? "bg-brass/20 text-brass-light" : "text-cream-dim hover:text-cream-muted",
+            )}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" /> Board
+          </button>
+        </div>
+      </div>
+
+      {/* Task list / board */}
       {isLoading ? (
         <div className="text-cream-muted text-sm py-4">Loading…</div>
       ) : filtered.length === 0 ? (
@@ -899,18 +792,24 @@ export default function Tasks() {
           title="No tasks"
           description={statusFilter === "open" ? "All caught up — no open tasks." : "Nothing here."}
         />
+      ) : view === "board" ? (
+        <TaskBoardView
+          todos={filtered}
+          onSelect={setSelectedTask}
+          onComplete={(id) => complete.mutate(id)}
+          onPatch={(id, body) => patchTask.mutate({ id, body })}
+          completing={complete.isPending}
+          canManage={canManage}
+        />
       ) : (
-        <div className="space-y-3">
-          {filtered.map((todo) => (
-            <TaskCard
-              key={todo.name}
-              todo={todo}
-              onComplete={(id) => complete.mutate(id)}
-              completing={complete.isPending}
-              onSelect={setSelectedTask}
-            />
-          ))}
-        </div>
+        <TaskListView
+          todos={filtered}
+          onSelect={setSelectedTask}
+          onComplete={(id) => complete.mutate(id)}
+          onPatch={(id, body) => patchTask.mutate({ id, body })}
+          completing={complete.isPending}
+          canManage={canManage}
+        />
       )}
 
       {/* Task detail panel */}
