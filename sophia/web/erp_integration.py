@@ -265,6 +265,13 @@ async def get_caller_context(phone: str) -> dict:
 
 # ─── LSH Communication Log ────────────────────────────────────────────────────
 
+def _fmt_duration(seconds: int) -> str:
+    if seconds <= 0:
+        return "—"
+    m, s = divmod(seconds, 60)
+    return f"{m}m {s}s" if m else f"{s}s"
+
+
 def _build_raven_summary(
     communication_type: str,
     direction: str,
@@ -273,32 +280,67 @@ def _build_raven_summary(
     content: str,
     transcript: str = "",
     duration_seconds: int = 0,
+    mode: str = "customer",
+    tool_calls: list = None,
+    appointment_name: str = "",
+    log_name: str = "",
 ) -> str:
-    """Format a Raven notification message for a communication log entry."""
-    name_label = customer_name or "Unknown"
+    """Format an enriched Raven notification for a communication log entry."""
+    name_label = f"**{customer_name}**" if customer_name else "_Unknown caller_"
+    direction_label = "⬇️ Inbound" if direction.lower() == "inbound" else "⬆️ Outbound"
+    mode_tag = "👔 Staff" if mode == "internal" else "👤 Customer"
+    now_str = datetime.now(NYC).strftime("%-I:%M %p ET")
+
     if communication_type == "Call":
+        dur = _fmt_duration(duration_seconds)
         lines = [
-            f"📞 CALL {direction} — {caller_phone}",
-            f"Customer: {name_label}",
-            f"Duration: {duration_seconds}s",
+            f"📞 **CALL** {direction_label} · {mode_tag} · {now_str}",
+            f"👤 {name_label}  ·  📱 {caller_phone}",
+            f"⏱ Duration: {dur}",
         ]
+        if appointment_name:
+            lines.append(f"📅 Appointment: {appointment_name}")
+        if tool_calls:
+            actions = ", ".join(
+                t.get("tool") or t.get("function", {}).get("name", "?")
+                for t in tool_calls if isinstance(t, dict)
+            )
+            if actions:
+                lines.append(f"🔧 Actions taken: {actions}")
         if transcript:
-            lines.append(f"Transcript:\n{transcript}")
+            # Trim very long transcripts
+            trimmed = transcript[:1200] + ("…" if len(transcript) > 1200 else "")
+            lines.append(f"\n📝 Transcript:\n{trimmed}")
         else:
-            lines.append("No transcript recorded.")
-        return "\n".join(lines)
+            lines.append("📝 No transcript recorded.")
+        if log_name:
+            lines.append(f"_Log: {log_name}_")
+
     elif communication_type == "SMS":
-        return "\n".join([
-            f"💬 SMS {direction} — {caller_phone}",
-            f"Customer: {name_label}",
-            content,
-        ])
+        arrow = "⬇️" if direction.lower() == "inbound" else "⬆️"
+        lines = [
+            f"💬 **SMS** {arrow} · {mode_tag} · {now_str}",
+            f"👤 {name_label}  ·  📱 {caller_phone}",
+            f"{'📨' if direction.lower() == 'inbound' else '📤'} {content}",
+        ]
+        if tool_calls:
+            actions = ", ".join(
+                t.get("tool") or t.get("function", {}).get("name", "?")
+                for t in tool_calls if isinstance(t, dict)
+            )
+            if actions:
+                lines.append(f"🔧 Actions taken: {actions}")
+        if log_name:
+            lines.append(f"_Log: {log_name}_")
+
     else:
-        # Internal Note or anything else
-        return "\n".join([
-            f"📝 NOTE — {caller_phone}",
+        lines = [
+            f"📝 **NOTE** · {mode_tag} · {now_str}",
+            f"👤 {name_label}  ·  📱 {caller_phone}",
             content,
-        ])
+        ]
+
+    return "\n".join(lines)
 
 
 async def create_communication_log(
@@ -366,6 +408,10 @@ async def create_communication_log(
             content=content,
             transcript=transcript,
             duration_seconds=duration_seconds,
+            mode=mode,
+            tool_calls=tool_calls,
+            appointment_name=appointment_name,
+            log_name=name or "",
         )
         _asyncio.create_task(post_raven_message(raven_text))
 
