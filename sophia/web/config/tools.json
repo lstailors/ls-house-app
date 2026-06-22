@@ -443,5 +443,30 @@
         ]
       }
     }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "send_customer_sms",
+      "description": "Staff only: send a free-form SMS to any customer by phone number. Use this when a staff member asks you to text a customer any message — order ready, fitting reminder, follow-up, etc.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_phone": {
+            "type": "string",
+            "description": "Customer phone number (any format — will be normalized)"
+          },
+          "message": {
+            "type": "string",
+            "description": "The SMS message text to send"
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "Customer name for logging (optional)"
+          }
+        },
+        "required": ["customer_phone", "message"]
+      }
+    }
   }
 ]
