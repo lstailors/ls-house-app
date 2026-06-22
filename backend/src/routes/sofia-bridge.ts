@@ -59,7 +59,7 @@ sofiaBridgeRouter.get("/context", async (c) => {
   // Run all lookups concurrently
   const [clientRes, apptRes, dossierRes, obsRes, smsRes, ordersRes] = await Promise.all([
     sb.from("clients").select("id,first_name,last_name,phone,email,is_vip,created_at").or(`phone.eq.${phone},phone.eq.${bare},phone.eq.+1${bare}`).limit(1),
-    sb.from("appointments").select("id,calcom_booking_uid,event_type,status,start_time,end_time,assigned_tailor,client_name,notes").or(`client_phone.eq.${phone},client_phone.eq.${bare},client_phone.eq.+1${bare}`).order("start_time", { ascending: false }).limit(10),
+    sb.from("appointments").select("id,event_type,status,start_time,end_time,assigned_tailor,client_name,notes").or(`client_phone.eq.${phone},client_phone.eq.${bare},client_phone.eq.+1${bare}`).order("start_time", { ascending: false }).limit(10),
     sb.from("customer_dossiers").select("id,fit_profile,style_notes,preferences,last_significant_update").eq("customer_id", "").maybeSingle(), // will re-run with real id
     Promise.resolve({ data: [] as any[] }),
     sb.from("sms_messages").select("direction,content,timestamp").or(`client_phone.eq.${phone},client_phone.eq.${bare},client_phone.eq.+1${bare}`).order("timestamp", { ascending: false }).limit(8),
@@ -101,14 +101,14 @@ sofiaBridgeRouter.get("/context", async (c) => {
     sections.push("HOUSE APP: No matching customer record in app.lstailors.com");
   }
 
-  // ── Appointments (Cal.com + Apple Calendar) ──
+  // ── Appointments (Frappe + Google Calendar) ──
   const appts = apptRes.data ?? [];
   if (appts.length) {
     const upcoming = appts.filter((a) => a.start_time >= now).sort((a, b) => a.start_time.localeCompare(b.start_time));
     const past = appts.filter((a) => a.start_time < now);
     if (upcoming.length) {
       const lines = upcoming.map((a) => `  • ${fmtNYC(a.start_time)} — ${a.event_type} [${a.status}]${a.notes ? ` — "${a.notes}"` : ""}`);
-      sections.push("UPCOMING APPOINTMENTS (Cal.com):\n" + lines.join("\n"));
+      sections.push("UPCOMING APPOINTMENTS:\n" + lines.join("\n"));
     }
     if (past.length) {
       const lines = past.slice(0, 5).map((a) => `  • ${fmtNYC(a.start_time)} — ${a.event_type} [${a.status}]`);
