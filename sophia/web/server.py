@@ -23,7 +23,6 @@ import websockets
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from twilio.request_validator import RequestValidator
 from twilio.rest import Client as TwilioClient
 from twilio.twiml.messaging_response import MessagingResponse
 from twilio.twiml.voice_response import Connect, VoiceResponse
@@ -35,6 +34,7 @@ from web.erp_integration import (
     get_caller_context,
     get_house_app_summary,
     get_sms_history,
+    send_whatsapp_via_erpnext,
     update_communication_log,
     NYC,
 )
@@ -102,17 +102,16 @@ def is_staff_caller(phone: str) -> bool:
     return phone in staff
 
 
-def verify_twilio_signature(request: Request, form: dict[str, str]) -> bool:
+def check_bridge_key(request: Request) -> bool:
     """
-    Validate the X-Twilio-Signature header so only Twilio can post to our
-    webhooks. Bypassed when VERIFY_TWILIO_SIGNATURE is False (local curl tests).
+    Shared-secret gate for ERPNext-fed webhooks (e.g. the WhatsApp bridge). The
+    Frappe Webhook is configured to send `X-Sofia-Bridge-Key: <SOFIA_BRIDGE_KEY>`.
+    Open when SOFIA_BRIDGE_KEY is unset (dev).
     """
-    if not settings.VERIFY_TWILIO_SIGNATURE:
+    expected = settings.SOFIA_BRIDGE_KEY
+    if not expected:
         return True
-    validator = RequestValidator(settings.TWILIO_AUTH_TOKEN)
-    signature = request.headers.get("X-Twilio-Signature", "")
-    url = settings.BASE_URL.rstrip("/") + request.url.path
-    return validator.validate(url, form, signature)
+    return request.headers.get("x-sofia-bridge-key", "") == expected
 
 
 async def check_voice_endpoint() -> None:
@@ -840,85 +839,72 @@ async def _grok_text_response(
     return "I'm handling multiple requests — please text again in just a moment."
 
 
-# ─── Twilio WhatsApp Webhooks ─────────────────────────────────────────────────
-# WhatsApp is a separate pipe from SMS (different network, separate thread) but the
-# same Sofia brain. Inbound service replies within Twilio's 24h window are free-form
-# and free — handled here. Business-initiated / outside-window template sends are W3.
+# ─── WhatsApp (ERPNext / Meta Cloud API via frappe_whatsapp) ──────────────────
+# WhatsApp is Meta-direct through ERPNext: Meta → ERPNext webhook → an incoming
+# "WhatsApp Message" doc → a Frappe Webhook POSTs it here. Sofia (same Grok brain)
+# replies by creating an Outgoing "WhatsApp Message" doc, which frappe_whatsapp
+# delivers to Meta. Both sides are logged to LSH Communication Log (own WhatsApp
+# thread, separate from SMS) so they surface on the /sofia page.
 
-@app.post("/whatsapp/incoming")
-async def whatsapp_incoming(request: Request):
-    form = await request.form()
-    params = {k: str(v) for k, v in form.items()}
-
-    if not verify_twilio_signature(request, params):
-        logger.warning("Rejected WhatsApp inbound — invalid Twilio signature")
-        return Response(content="Invalid signature", status_code=403)
-
-    # Twilio sends From as "whatsapp:+1...". Strip the prefix for caller lookup/logging.
-    from_raw = params.get("From", "unknown")
-    from_number = from_raw.split(":", 1)[-1] if from_raw.startswith("whatsapp:") else from_raw
-    body = params.get("Body", "").strip()
-    mode = "internal" if is_staff_caller(from_number) else "customer"
-    logger.info(f"WhatsApp from {from_number} ({mode}): {body[:80]}")
-
-    # Log inbound to ERPNext (its own WhatsApp thread)
+async def _process_whatsapp_inbound(
+    phone: str, to_number: str, body: str, mode: str, reply_to_message_id: str
+) -> None:
+    """Generate Sofia's reply and send it back via ERPNext. Runs in the background
+    so the Frappe Webhook call returns immediately (Grok + tools can take seconds)."""
     asyncio.create_task(
         create_communication_log(
-            communication_type="WhatsApp",
-            direction="Inbound",
-            caller_phone=from_number,
-            content=body,
-            mode=mode,
+            communication_type="WhatsApp", direction="Inbound",
+            caller_phone=phone, content=body, mode=mode,
         )
     )
 
-    history = await get_sms_history(from_number, limit=10, channel="WhatsApp")
+    history = await get_sms_history(phone, limit=10, channel="WhatsApp")
     tool_call_log: list[dict] = []
-
     reply = await _grok_text_response(
-        user_message=body,
-        from_number=from_number,
-        mode=mode,
-        history=history,
-        tool_call_log=tool_call_log,
-        channel="WhatsApp",
+        user_message=body, from_number=phone, mode=mode,
+        history=history, tool_call_log=tool_call_log, channel="WhatsApp",
     )
 
-    # Log outbound reply + any tool calls
+    await send_whatsapp_via_erpnext(to=to_number, message=reply,
+                                    reply_to_message_id=reply_to_message_id)
+
     asyncio.create_task(
         create_communication_log(
-            communication_type="WhatsApp",
-            direction="Outbound",
-            caller_phone=from_number,
-            content=reply,
-            mode=mode,
+            communication_type="WhatsApp", direction="Outbound",
+            caller_phone=phone, content=reply, mode=mode,
             tool_calls=tool_call_log if tool_call_log else None,
         )
     )
 
-    # Returning TwiML on a WhatsApp inbound makes Twilio reply over WhatsApp.
-    resp = MessagingResponse()
-    resp.message(reply)
-    return Response(content=str(resp), media_type="application/xml")
 
+@app.post("/whatsapp/incoming")
+async def whatsapp_incoming(request: Request):
+    """Fed by a Frappe Webhook on incoming WhatsApp Message docs.
+    JSON body: {from, message, message_id, ...}. Acks fast; replies in background."""
+    if not check_bridge_key(request):
+        logger.warning("Rejected WhatsApp inbound — bad bridge key")
+        return Response(content='{"error":"unauthorized"}', media_type="application/json", status_code=401)
 
-@app.post("/whatsapp/status")
-async def whatsapp_status(request: Request):
-    """Twilio delivery/read status callbacks. Logged for now; no doctype field yet."""
-    form = await request.form()
-    params = {k: str(v) for k, v in form.items()}
+    try:
+        payload = await request.json()
+    except Exception:
+        return Response(content='{"error":"invalid json"}', media_type="application/json", status_code=400)
 
-    if not verify_twilio_signature(request, params):
-        logger.warning("Rejected WhatsApp status — invalid Twilio signature")
-        return Response(content="Invalid signature", status_code=403)
+    raw_from = str(payload.get("from") or "").strip()
+    body = str(payload.get("message") or "").strip()
+    if not raw_from or not body:
+        return Response(content='{"ok":true,"skipped":"empty"}', media_type="application/json")
 
-    logger.info(
-        "WhatsApp status: sid=%s to=%s status=%s",
-        params.get("MessageSid", ""),
-        params.get("To", ""),
-        params.get("MessageStatus", ""),
+    # frappe_whatsapp stores `from` as digits (no +). Normalize to +E.164 for
+    # caller lookup/logging; keep the raw form for the outgoing `to` field.
+    phone = raw_from if raw_from.startswith("+") else "+" + raw_from
+    mode = "internal" if is_staff_caller(phone) else "customer"
+    logger.info(f"WhatsApp from {phone} ({mode}): {body[:80]}")
+
+    asyncio.create_task(
+        _process_whatsapp_inbound(phone, raw_from, body, mode, str(payload.get("message_id") or ""))
     )
-    return Response(status_code=200)
+    return Response(content='{"ok":true,"queued":true}', media_type="application/json")
 
 
 # ─── Manual SMS (dashboard) ───────────────────────────────────────────────────

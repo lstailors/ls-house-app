@@ -342,6 +342,45 @@ async def update_communication_log(
         logger.error(f"Failed to update communication log {doc_name}: {e}")
 
 
+async def send_whatsapp_via_erpnext(
+    to: str,
+    message: str,
+    reply_to_message_id: str = "",
+) -> bool:
+    """
+    Send an outgoing WhatsApp message by creating a 'WhatsApp Message' doc in ERPNext.
+    The frappe_whatsapp app delivers it to Meta synchronously on insert
+    (WhatsAppMessage.before_insert -> send_outgoing). `to` may be digits or +E.164;
+    the app strips the leading '+'. Returns True on a successful create.
+    """
+    if not settings.ERPNEXT_URL:
+        logger.warning("ERPNext not configured — cannot send WhatsApp")
+        return False
+
+    doc: dict[str, Any] = {
+        "doctype": "WhatsApp Message",
+        "type": "Outgoing",
+        "to": to,
+        "message": message,
+        "content_type": "text",
+    }
+    if reply_to_message_id:
+        doc["is_reply"] = 1
+        doc["reply_to_message_id"] = reply_to_message_id
+
+    try:
+        resp = await erp_post("resource/WhatsApp Message", doc)
+        name = resp.get("data", {}).get("name") or resp.get("name")
+        logger.info(f"WhatsApp sent via ERPNext to {to} (doc {name})")
+        return True
+    except httpx.HTTPStatusError as e:
+        logger.error(f"WhatsApp send failed: {e.response.status_code} {e.response.text[:200]}")
+        return False
+    except Exception as e:
+        logger.error(f"WhatsApp send error: {e}")
+        return False
+
+
 async def get_sms_history(caller_phone: str, limit: int = 10, channel: str = "SMS") -> list[dict]:
     """
     Retrieve recent message history for a caller on a single channel from ERPNext.
