@@ -35,6 +35,7 @@ from web.erp_integration import (
     get_house_app_summary,
     get_sms_history,
     send_whatsapp_via_erpnext,
+    post_raven_message,
     update_communication_log,
     NYC,
 )
@@ -931,6 +932,68 @@ async def send_sms_manual(payload: ManualSMSPayload):
         )
     )
     return {"sid": msg.sid, "status": msg.status}
+
+
+# ─── Raven Webhook (staff → Sofia bot messages) ───────────────────────────────
+
+@app.post("/api/raven-webhook")
+async def raven_webhook(request: Request):
+    """
+    Receive messages sent to the Sofia bot in Raven.
+    Accepts raw JSON so we're not brittle to Raven's payload shape.
+    Runs the same Grok text-completion brain used for staff SMS,
+    then posts the reply back to the originating Raven channel.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": "invalid JSON"}
+
+    # Log full payload so we can see what Raven actually sends
+    logger.info(f"Raven webhook raw payload: {body}")
+
+    # Raven outgoing webhook payload shape (may vary by version):
+    # { "message": { "text": "...", "channel_id": "...", "owner": "user@..." }, ... }
+    # or flat: { "text": "...", "channel_id": "...", "sender": "..." }
+    msg = body.get("message", body)
+    text = (msg.get("text") or msg.get("content") or "").strip()
+    channel_id = (msg.get("channel_id") or body.get("channel_id") or "").strip()
+    sender = (msg.get("owner") or msg.get("sender") or body.get("sender") or "").strip()
+    is_bot = bool(body.get("is_bot_message") or msg.get("is_bot_message"))
+
+    # Skip messages sent by Sofia herself or any bot (avoid reply loops)
+    if is_bot or sender in ("concierge@lstailors.com", "Administrator"):
+        return {"ok": True, "skipped": "bot or own message"}
+
+    if not text:
+        return {"ok": True, "skipped": "empty message"}
+
+    logger.info(f"Raven webhook from {sender}: {text[:80]}")
+
+    # Use the staff phone number as a stand-in identifier for history lookup.
+    # Fall back to sender email if no phone is known.
+    from_number = sender  # not a real phone — history will be empty, that's fine
+
+    tool_call_log: list[dict] = []
+    try:
+        reply = await _grok_text_response(
+            user_message=text,
+            from_number=from_number,
+            mode="internal",
+            history=[],
+            tool_call_log=tool_call_log,
+        )
+    except Exception as e:
+        logger.error(f"Raven webhook Grok error: {e}")
+        reply = "Sorry, I ran into an error processing that request."
+
+    # Post the reply back to the originating Raven channel — fire-and-forget
+    if channel_id:
+        asyncio.create_task(post_raven_message(reply, channel_id=channel_id))
+    else:
+        asyncio.create_task(post_raven_message(reply))
+
+    return {"ok": True}
 
 
 # ─── Communications API (for app.lstailors.com /sofia page) ──────────────────
