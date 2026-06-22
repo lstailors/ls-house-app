@@ -232,6 +232,12 @@ async def get_caller_context(phone: str) -> dict:
     sections.append(f"CURRENT DATE/TIME (New York): {now_str}")
 
     memory_block = "\n\n".join(sections)
+
+    # Append unified house app context (dossier, Cal.com appts, Geelus orders, SMS history)
+    house_ctx = await get_house_app_context(phone)
+    if house_ctx:
+        memory_block = memory_block + "\n\n" + house_ctx
+
     return {"customer_name": customer_name, "memory_block": memory_block}
 
 
@@ -709,6 +715,70 @@ async def erp_ensure_customer(
     except Exception as e:
         logger.warning(f"Could not create Customer for {customer_name}: {e}")
         return None
+
+
+# ─── House app bridge ─────────────────────────────────────────────────────────
+
+def _bridge_headers() -> dict:
+    headers = {"Content-Type": "application/json"}
+    if settings.SOFIA_BRIDGE_KEY:
+        headers["x-sofia-bridge-key"] = settings.SOFIA_BRIDGE_KEY
+    return headers
+
+
+async def get_house_app_context(phone: str) -> str:
+    """
+    Fetch unified customer context from the house app bridge.
+    Returns a formatted text block to inject into the caller memory, or "" on failure.
+    """
+    if not settings.HOUSE_APP_URL or not phone:
+        return ""
+    try:
+        url = f"{settings.HOUSE_APP_URL.rstrip('/')}/api/sofia-bridge/context"
+        async with httpx.AsyncClient(timeout=8) as client:
+            resp = await client.get(url, headers=_bridge_headers(), params={"phone": phone})
+        if resp.status_code != 200:
+            logger.warning(f"House app context {resp.status_code} for {phone}")
+            return ""
+        data = resp.json().get("data", {})
+        return data.get("context_block", "")
+    except Exception as e:
+        logger.warning(f"House app context fetch failed: {e}")
+        return ""
+
+
+async def get_house_app_summary() -> str:
+    """
+    Fetch the ops summary from the house app bridge (appointments, alterations, deliveries, SMS).
+    Returns formatted text block or "" on failure.
+    """
+    if not settings.HOUSE_APP_URL:
+        return ""
+    try:
+        url = f"{settings.HOUSE_APP_URL.rstrip('/')}/api/sofia-bridge/summary"
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url, headers=_bridge_headers())
+        if resp.status_code != 200:
+            logger.warning(f"House app summary {resp.status_code}")
+            return ""
+        data = resp.json().get("data", {})
+        return data.get("summary_text", "")
+    except Exception as e:
+        logger.warning(f"House app summary fetch failed: {e}")
+        return ""
+
+
+async def post_house_app_event(event_type: str, phone: str, customer_name: str = "", data: dict = None) -> None:
+    """Fire-and-forget event to the house app so it stays in sync with voice actions."""
+    if not settings.HOUSE_APP_URL:
+        return
+    try:
+        url = f"{settings.HOUSE_APP_URL.rstrip('/')}/api/sofia-bridge/event"
+        payload = {"event_type": event_type, "phone": phone, "customer_name": customer_name, "data": data or {}}
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(url, headers=_bridge_headers(), json=payload)
+    except Exception as e:
+        logger.debug(f"House app event post failed (non-critical): {e}")
 
 
 # ─── Dashboard data helpers ───────────────────────────────────────────────────

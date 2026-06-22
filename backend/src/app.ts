@@ -42,6 +42,7 @@ import { payInfoRouter } from "./routes/pay-info";
 import { yzRouter } from "./routes/yz";
 import { helpdeskRouter } from "./routes/helpdesk";
 import { appointmentsRouter } from "./routes/appointments";
+import { sofiaBridgeRouter } from "./routes/sofia-bridge";
 
 const app = new Hono();
 
@@ -107,6 +108,7 @@ app.route("/api/admin", adminRouter);
 app.route("/api/dashboard", dashboardRouter);
 app.route("/api/maestro", maestroRouter);
 app.route("/api/sofia", sofiaRouter);
+app.route("/api/sofia-bridge", sofiaBridgeRouter);
 app.route("/api/agents", agentsRouter);
 app.route("/api/espresso", espressoRouter);
 app.route("/api/tasks", tasksRouter);

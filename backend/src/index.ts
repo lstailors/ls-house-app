@@ -87,6 +87,8 @@ import { yzRouter } from "./routes/yz";
 app.route("/api/yz", yzRouter);
 import { helpdeskRouter } from "./routes/helpdesk";
 app.route("/api/helpdesk", helpdeskRouter);
+import { sofiaBridgeRouter } from "./routes/sofia-bridge";
+app.route("/api/sofia-bridge", sofiaBridgeRouter);
 
 const port = Number(process.env.PORT) || 3000;
 

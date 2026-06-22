@@ -32,6 +32,7 @@ from web.erp_integration import (
     create_communication_log,
     erp_get,
     get_caller_context,
+    get_house_app_summary,
     get_sms_history,
     update_communication_log,
     NYC,
@@ -259,6 +260,12 @@ async def compose_ops_briefing(when: str = "morning") -> str:
         lines.append(f"⚠️ Overdue orders ({len(overdue_list)}):")
         for o in overdue_list[:8]:
             lines.append(f" • {o.get('order','')} — {o.get('customer','')} (due {o.get('due','')})")
+
+    # House app ops summary (Supabase appointments, Geelus alterations, deliveries, unanswered SMS)
+    house_summary = await get_house_app_summary()
+    if house_summary:
+        lines.append("")
+        lines.append(house_summary)
 
     lines.append("")
     lines.append("Reply here to ask me anything — schedules, orders, or to send a customer a note.")

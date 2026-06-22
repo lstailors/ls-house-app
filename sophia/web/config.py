@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     SQUARE_ENVIRONMENT: str = "production"
     SQUARE_LOCATION_ID: str = ""
 
+    # House app bridge (app.lstailors.com backend)
+    HOUSE_APP_URL: str = "https://app.lstailors.com"
+    SOFIA_BRIDGE_KEY: str = ""
+
     # Staff
     STAFF_PHONE_NUMBERS: str = ""
     STAFF_DIRECTORY: str = "{}"
