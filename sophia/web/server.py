@@ -936,22 +936,33 @@ async def send_sms_manual(payload: ManualSMSPayload):
 
 # ─── Raven Webhook (staff → Sofia bot messages) ───────────────────────────────
 
-class RavenWebhookPayload(BaseModel):
-    text: str = ""
-    sender: str = ""
-    channel_id: str = ""
-
-
 @app.post("/api/raven-webhook")
-async def raven_webhook(payload: RavenWebhookPayload):
+async def raven_webhook(request: Request):
     """
     Receive messages sent to the Sofia bot in Raven.
+    Accepts raw JSON so we're not brittle to Raven's payload shape.
     Runs the same Grok text-completion brain used for staff SMS,
     then posts the reply back to the originating Raven channel.
     """
-    text = payload.text.strip()
-    sender = payload.sender.strip()
-    channel_id = payload.channel_id.strip()
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "error": "invalid JSON"}
+
+    # Log full payload so we can see what Raven actually sends
+    logger.info(f"Raven webhook raw payload: {body}")
+
+    # Raven outgoing webhook payload shape (may vary by version):
+    # { "message": { "text": "...", "channel_id": "...", "owner": "user@..." }, ... }
+    # or flat: { "text": "...", "channel_id": "...", "sender": "..." }
+    msg = body.get("message", body)
+    text = (msg.get("text") or msg.get("content") or "").strip()
+    channel_id = (msg.get("channel_id") or body.get("channel_id") or "").strip()
+    sender = (msg.get("owner") or msg.get("sender") or body.get("sender") or "").strip()
+
+    # Skip messages sent by Sofia herself (avoid reply loops)
+    if sender == "concierge@lstailors.com":
+        return {"ok": True, "skipped": "own message"}
 
     if not text:
         return {"ok": True, "skipped": "empty message"}
