@@ -316,6 +316,52 @@
   {
     "type": "function",
     "function": {
+      "name": "check_alteration_ticket",
+      "description": "Look up a customer's Alteration Ticket(s) by phone number or ticket number. Use when a customer asks about their alteration status, whether their garment is ready, or what they owe.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_phone": {
+            "type": "string",
+            "description": "Customer phone number to look up their tickets"
+          },
+          "ticket_name": {
+            "type": "string",
+            "description": "Specific ticket number (e.g. ALT-0042) if known"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_todo",
+      "description": "Staff only. Create a task or reminder in ERPNext assigned to the team. Use when a staff member asks Sofia to remember something, create a task, or set a reminder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short task title"
+          },
+          "description": {
+            "type": "string",
+            "description": "Additional details or notes"
+          },
+          "priority": {
+            "type": "string",
+            "description": "Priority: Low, Medium, or High",
+            "enum": ["Low", "Medium", "High"]
+          }
+        },
+        "required": ["title"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "update_order_notes",
       "description": "Update notes or status on a Sales Order. Internal staff only.",
       "parameters": {

@@ -727,6 +727,105 @@ async def create_follow_up(
     return {"created": True, "message": f"Follow-up noted for {customer_name}."}
 
 
+@tool("check_alteration_ticket")
+async def check_alteration_ticket(
+    customer_phone: str = "",
+    ticket_name: str = "",
+    _caller: str = "",
+    _mode: str = "customer",
+) -> dict:
+    """Look up Alteration Ticket(s) by phone number or ticket name."""
+    phone = customer_phone or _caller
+    try:
+        if ticket_name:
+            resp = await erp_get(f"resource/Alteration Ticket/{ticket_name}")
+            t = (resp.get("data") or resp)
+            if not t or not t.get("name"):
+                return {"message": "I couldn't find that ticket. Could you read me the number again?"}
+            due = t.get("due_date", "")
+            try:
+                from datetime import datetime as dt
+                due = dt.strptime(due, "%Y-%m-%d").strftime("%B %-d")
+            except Exception:
+                pass
+            total = float(t.get("ticket_total") or 0)
+            return {
+                "ticket": t.get("name"),
+                "status": t.get("workflow_state"),
+                "due": due,
+                "total": total,
+                "payment_status": t.get("payment_status", ""),
+                "message": (
+                    f"Ticket {t.get('name')} is currently {t.get('workflow_state')}, "
+                    f"ready by {due}. Total ${total:.2f} ({t.get('payment_status') or 'Unpaid'})."
+                ),
+            }
+        elif phone:
+            customer = await find_customer_by_phone(phone)
+            if not customer:
+                return {"message": "I couldn't find an account with that phone number. Do you have your ticket number?"}
+            resp = await erp_get(
+                "resource/Alteration Ticket",
+                params={
+                    "filters": json.dumps([["customer", "=", customer]]),
+                    "fields": '["name","workflow_state","due_date","ticket_total","payment_status"]',
+                    "order_by": "creation desc",
+                    "limit": 5,
+                },
+            )
+            tickets = resp.get("data", [])
+            if not tickets:
+                return {"message": "I don't see any alteration tickets on your account. Would you like to schedule an alteration appointment?"}
+            lines = []
+            for t in tickets:
+                try:
+                    from datetime import datetime as dt
+                    due = dt.strptime(t.get("due_date", ""), "%Y-%m-%d").strftime("%b %-d")
+                except Exception:
+                    due = t.get("due_date", "")
+                total = float(t.get("ticket_total") or 0)
+                lines.append(f"{t['name']} (${total:.2f}, {t['workflow_state']}, {t.get('payment_status','Unpaid')}, due {due})")
+            summary = (
+                f"You have one ticket: {lines[0]}." if len(lines) == 1
+                else f"You have {len(lines)} recent tickets: {'; '.join(lines)}."
+            )
+            return {"tickets": tickets, "message": summary + " Anything I can help with?"}
+        else:
+            return {"message": "Please provide your phone number or ticket number."}
+    except Exception as e:
+        logger.error(f"check_alteration_ticket: {e}")
+        return {"error": "I couldn't reach our ticket system right now. Please call the store or try again shortly."}
+
+
+@tool("create_todo")
+async def create_todo(
+    title: str,
+    description: str = "",
+    priority: str = "Medium",
+    _caller: str = "",
+    _mode: str = "customer",
+) -> dict:
+    """Create a todo/task in ERPNext assigned to the team. Internal staff only."""
+    if _mode != "internal":
+        return {"error": "Todo creation is for staff only."}
+    if not settings.ERPNEXT_URL:
+        return {"error": "ERPNext is not configured."}
+    try:
+        resp = await erp_post("resource/ToDo", {
+            "doctype": "ToDo",
+            "description": title + (f"\n\n{description}" if description else ""),
+            "priority": priority,
+            "allocated_to": "carl@lstailors.com",
+            "custom_lsh_agent": "Sofia",
+        })
+        name = (resp.get("data") or resp).get("name", "")
+        logger.info(f"Todo created: {name} — {title}")
+        return {"created": True, "todo": name, "message": f"Done — I've created a task: \"{title}\"."}
+    except Exception as e:
+        logger.error(f"create_todo: {e}")
+        return {"error": "I wasn't able to create that task. Please add it manually in ERPNext."}
+
+
 @tool("update_order_notes")
 async def update_order_notes(
     order_number: str,
