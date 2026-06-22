@@ -770,6 +770,12 @@ async def sms_incoming(request: Request):
         )
     )
 
+    # Human-like typing delay: ~50 chars/sec, capped 2–6s
+    import random
+    typing_delay = max(2.0, min(6.0, len(reply) / 50))
+    typing_delay += random.uniform(0.5, 1.5)
+    await asyncio.sleep(typing_delay)
+
     resp = MessagingResponse()
     resp.message(reply)
     return Response(content=str(resp), media_type="application/xml")
@@ -939,6 +945,7 @@ async def send_sms_manual(payload: ManualSMSPayload):
 
 # ─── Raven Webhook (staff → Sofia bot messages) ───────────────────────────────
 
+<<<<<<< HEAD
 @app.post("/api/raven-webhook")
 async def raven_webhook(request: Request):
     """
@@ -967,6 +974,24 @@ async def raven_webhook(request: Request):
     # Skip messages sent by Sofia herself or any bot (avoid reply loops)
     if is_bot or sender in ("concierge@lstailors.com", "Administrator"):
         return {"ok": True, "skipped": "bot or own message"}
+=======
+class RavenWebhookPayload(BaseModel):
+    text: str = ""
+    sender: str = ""
+    channel_id: str = ""
+
+
+@app.post("/api/raven-webhook")
+async def raven_webhook(payload: RavenWebhookPayload):
+    """
+    Receive messages sent to the Sofia bot in Raven.
+    Runs the same Grok text-completion brain used for staff SMS,
+    then posts the reply back to the originating Raven channel.
+    """
+    text = payload.text.strip()
+    sender = payload.sender.strip()
+    channel_id = payload.channel_id.strip()
+>>>>>>> 0c4ddca (feat: integrate Raven messenger for Sofia activity notifications and staff bot)
 
     if not text:
         return {"ok": True, "skipped": "empty message"}
