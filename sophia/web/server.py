@@ -945,7 +945,6 @@ async def send_sms_manual(payload: ManualSMSPayload):
 
 # ─── Raven Webhook (staff → Sofia bot messages) ───────────────────────────────
 
-<<<<<<< HEAD
 @app.post("/api/raven-webhook")
 async def raven_webhook(request: Request):
     """
@@ -974,6 +973,7 @@ async def raven_webhook(request: Request):
     # Skip messages sent by Sofia herself or any bot (avoid reply loops)
     if is_bot or sender in ("concierge@lstailors.com", "Administrator"):
         return {"ok": True, "skipped": "bot or own message"}
+<<<<<<< HEAD
 @app.post("/api/raven-webhook")
 async def raven_webhook(request: Request):
     """
