@@ -1,7 +1,14 @@
 import { Hono } from "hono";
-import { supabaseAdmin, lshAdmin } from "../lib/supabase";
 import { getAuthedUser } from "../lib/scope";
 import { erpList, erpCreate } from "../lib/erp";
+import {
+  listCallLogs,
+  getCallLog,
+  listPlaudCaptures,
+  getPlaudCapture,
+  listSmsMessagesFiltered,
+  insertAgentBrief,
+} from "../lib/erpnext/agents";
 
 // ── Log communication to ERPNext Customer timeline ────────────────────────
 export async function logErpCommunication(opts: {
@@ -46,32 +53,15 @@ export async function matchCustomerByPhone(phone: string): Promise<{ name: strin
 commsRouter.get("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ data: null });
 
   const limit = Number(c.req.query("limit") ?? "100");
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  const [callsRes, recordingsRes, smsRes] = await Promise.all([
-    supabaseAdmin
-      .from("unifi_call_logs")
-      .select("id, time, from, to, from_caller_name, direction, duration, status, transcript_raw, transcript_whisper, recording, sensitivity_flag, matched_customer_id, vm_data")
-      .order("time", { ascending: false })
-      .limit(limit),
-    supabaseAdmin
-      .from("plaud_captures")
-      .select("id, recorded_at, duration_seconds, detected_customer_names, summary_raw, transcript_raw, capture_type, detected_type, status, detected_action_items, extracted_action_items, maestro_notes")
-      .order("recorded_at", { ascending: false })
-      .limit(50),
-    supabaseAdmin
-      .from("sms_messages")
-      .select("id, client_phone, client_id, direction, content, timestamp, metadata")
-      .order("timestamp", { ascending: false })
-      .limit(limit),
+  const [calls, recordings, sms] = await Promise.all([
+    listCallLogs({ limit }),
+    listPlaudCaptures({ limit: 50 }),
+    listSmsMessagesFiltered({ limit }),
   ]);
-
-  const calls = (callsRes.data ?? []) as any[];
-  const recordings = (recordingsRes.data ?? []) as any[];
-  const sms = (smsRes.data ?? []) as any[];
 
   // Group SMS by phone number (threads)
   type SmsThread = { phone: string; messages: any[]; lastMessage: any; unread: number };
@@ -91,8 +81,8 @@ commsRouter.get("/", async (c) => {
 
   // Build unified timeline
   const timeline: any[] = [
-    ...calls.map(call => ({ type: "call", ts: call.time, data: call })),
-    ...recordings.map(r => ({ type: "recording", ts: r.recorded_at, data: r })),
+    ...calls.map((call: any) => ({ type: "call", ts: call.time, data: { ...call, id: call.name } })),
+    ...recordings.map((r: any) => ({ type: "recording", ts: r.recorded_at, data: { ...r, id: r.name } })),
     ...smsThreads.map(t => ({ type: "sms_thread", ts: t.lastMessage.timestamp, data: t })),
   ].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
 
@@ -126,15 +116,9 @@ commsRouter.get("/", async (c) => {
   // Latest daily brief from lsh.agent_briefs
   let dailyBrief = null;
   try {
-    if (supabaseAdmin) {
-      const { data: briefRows } = await lshAdmin
-        .from("agent_briefs")
-        .select("title, body, created_at")
-        .eq("source", "comms-daily")
-        .order("created_at", { ascending: false })
-        .limit(1);
-      dailyBrief = briefRows?.[0] ?? null;
-    }
+    const { listAgentBriefsFiltered } = await import("../lib/erpnext/agents");
+    const briefRows = await listAgentBriefsFiltered({ source: "comms-daily", limit: 1 });
+    dailyBrief = briefRows[0] ? { title: briefRows[0].title, body: briefRows[0].body, created_at: briefRows[0].creation } : null;
   } catch { /* non-fatal */ }
 
   return c.json({
@@ -166,32 +150,25 @@ commsRouter.get("/", async (c) => {
 commsRouter.get("/thread/:phone", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ data: [] });
   const phone = decodeURIComponent(c.req.param("phone"));
-  const { data } = await supabaseAdmin.from("sms_messages")
-    .select("*").eq("client_phone", phone)
-    .order("timestamp", { ascending: true }).limit(200);
+  const data = await listSmsMessagesFiltered({ phone, limit: 200, ascending: true });
   const customer = await matchCustomerByPhone(phone);
   return c.json({ data: { messages: data ?? [], customer } });
 });
 
-// ── GET /api/comms/calls/:id — single call ─────────────────────────────────
 commsRouter.get("/calls/:id", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ data: null });
-  const { data } = await supabaseAdmin.from("unifi_call_logs").select("*").eq("id", c.req.param("id")).single();
+  const data = await getCallLog(c.req.param("id"));
   const customer = data ? await matchCustomerByPhone(data.from) : null;
-  return c.json({ data: { ...data, customer } });
+  return c.json({ data: data ? { ...data, id: data.name, customer } : null });
 });
 
-// ── GET /api/comms/recordings/:id — single recording ──────────────────────
 commsRouter.get("/recordings/:id", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ data: null });
-  const { data } = await supabaseAdmin.from("plaud_captures").select("*").eq("id", c.req.param("id")).single();
-  return c.json({ data });
+  const data = await getPlaudCapture(c.req.param("id"));
+  return c.json({ data: data ? { ...data, id: data.name } : null });
 });
 
 // ── POST /api/comms/brief/:phone — Grok brief for customer ─────────────────
@@ -199,17 +176,13 @@ commsRouter.post("/brief/:phone", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   const phone = decodeURIComponent(c.req.param("phone"));
-  if (!supabaseAdmin) return c.json({ data: { brief: "Supabase not available" } });
 
-  const [smsRes, callsRes] = await Promise.all([
-    supabaseAdmin.from("sms_messages").select("direction, content, timestamp").eq("client_phone", phone).order("timestamp", { ascending: true }).limit(30),
-    supabaseAdmin.from("unifi_call_logs").select("time, direction, duration, transcript_raw, transcript_whisper, from_caller_name, status").or(`from.eq.${phone},to.eq.${phone}`).order("time", { ascending: false }).limit(10),
+  const [sms, calls] = await Promise.all([
+    listSmsMessagesFiltered({ phone, limit: 30, ascending: true }),
+    listCallLogs({ phone, limit: 10 }),
   ]);
 
   const customer = await matchCustomerByPhone(phone);
-  const sms = smsRes.data ?? [];
-  const calls = callsRes.data ?? [];
-
   const apiKey = process.env.XAI_API_KEY;
   if (!apiKey) return c.json({ data: { brief: "AI not configured" } });
 
@@ -264,14 +237,8 @@ Be specific. Use actual names, dates, amounts from the transcripts. If a 10-minu
 commsRouter.post("/brief/recording/:id", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ data: { brief: "Supabase not available" } });
 
-  const { data: rec } = await supabaseAdmin
-    .from("plaud_captures")
-    .select("id, recorded_at, duration_seconds, summary_raw, transcript_raw, transcript_whisper, detected_customer_names, capture_type, detected_type, detected_action_items, extracted_action_items, maestro_notes")
-    .eq("id", c.req.param("id"))
-    .single();
-
+  const rec = await getPlaudCapture(c.req.param("id"));
   if (!rec) return c.json({ error: { message: "Recording not found" } }, 404);
 
   const apiKey = process.env.XAI_API_KEY;
@@ -340,30 +307,16 @@ Extract everything concrete. Use actual names, amounts, dates from the transcrip
 // ── GET /api/comms/daily-brief/trigger — Sofia scans all day's comms ───────
 // Called by Vercel cron at end of day. Generates full intelligence brief.
 commsRouter.get("/daily-brief/trigger", async (c) => {
-  if (!supabaseAdmin) return c.json({ error: { message: "Unavailable" } }, 503);
-
   const todayStr = new Date().toISOString().slice(0, 10);
   const nycDate = new Date().toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "long", month: "long", day: "numeric" });
 
-  // Fetch all of today's comms
-  const [callsRes, smsRes, recordingsRes] = await Promise.all([
-    supabaseAdmin.from("unifi_call_logs")
-      .select("time, from, to, from_caller_name, direction, duration, status, transcript_raw, transcript_whisper")
-      .gte("time", `${todayStr}T00:00:00`)
-      .order("time", { ascending: true }).limit(200),
-    supabaseAdmin.from("sms_messages")
-      .select("client_phone, direction, content, timestamp")
-      .gte("timestamp", `${todayStr}T00:00:00`)
-      .order("timestamp", { ascending: true }).limit(200),
-    supabaseAdmin.from("plaud_captures")
-      .select("recorded_at, duration_seconds, summary_raw, transcript_raw, detected_customer_names, capture_type")
-      .gte("recorded_at", `${todayStr}T00:00:00`)
-      .order("recorded_at", { ascending: true }).limit(20),
+  const [calls, sms, recordings] = await Promise.all([
+    listCallLogs({ since: `${todayStr}T00:00:00`, limit: 200, orderBy: "time asc" }),
+    listSmsMessagesFiltered({ limit: 200 }),
+    listPlaudCaptures({ since: `${todayStr}T00:00:00`, limit: 20 }),
   ]);
 
-  const calls = (callsRes.data ?? []) as any[];
-  const sms = (smsRes.data ?? []) as any[];
-  const recordings = (recordingsRes.data ?? []) as any[];
+  const smsToday = sms.filter((m: any) => String(m.timestamp ?? "").startsWith(todayStr));
 
   const apiKey = process.env.XAI_API_KEY;
   if (!apiKey) return c.json({ error: { message: "XAI_API_KEY not set" } }, 503);
@@ -374,7 +327,7 @@ commsRouter.get("/daily-brief/trigger", async (c) => {
     : "  No calls today";
 
   const smsByPhone = new Map<string, string[]>();
-  for (const m of sms) {
+  for (const m of smsToday) {
     const arr = smsByPhone.get(m.client_phone) ?? [];
     arr.push(`[${m.direction}] ${m.content?.slice(0, 100)}`);
     smsByPhone.set(m.client_phone, arr);
@@ -445,18 +398,18 @@ Be specific — use names, amounts, dates. Extract every commitment and action i
   const grokData = await res.json() as any;
   const brief = grokData?.choices?.[0]?.message?.content?.trim() ?? "Unable to generate brief.";
 
-  // Save to lsh.agent_briefs
-  if (lshAdmin) {
-    try {
-      await lshAdmin.from("agent_briefs").insert({
-        type: "daily_brief", title: `Comms Daily Brief — ${todayStr}`, body: brief,
-        severity: "info", source: "comms-daily",
-        metadata: { date: todayStr, calls: calls.length, sms: sms.length, recordings: recordings.length },
-      });
-    } catch (e: any) {
-      console.error("[comms/daily-brief] save:", e.message);
-    }
+  try {
+    await insertAgentBrief({
+      type: "daily_brief",
+      title: `Comms Daily Brief — ${todayStr}`,
+      body: brief,
+      severity: "info",
+      source: "comms-daily",
+      metadata: JSON.stringify({ date: todayStr, calls: calls.length, sms: smsToday.length, recordings: recordings.length }),
+    });
+  } catch (e: any) {
+    console.error("[comms/daily-brief] save:", e.message);
   }
 
-  return c.json({ data: { brief, date: todayStr, stats: { calls: calls.length, sms: sms.length, recordings: recordings.length } } });
+  return c.json({ data: { brief, date: todayStr, stats: { calls: calls.length, sms: smsToday.length, recordings: recordings.length } } });
 });

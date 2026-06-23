@@ -12,8 +12,6 @@ export interface AuthedUser {
   name: string;
   role: UserRole;
   locationId: string | null;          // alias for locationCode (kept for callers)
-  supabaseProfileId: string | null;   // kept for compatibility — set to email
-  supabaseLocationId: string | null;  // kept for compatibility — set to locationCode
   locationCode: string | null;        // 'NYC' | 'HOU' | etc.
   canViewAllLocations: boolean;
 }
@@ -92,8 +90,6 @@ export async function getAuthedUser(c: Context): Promise<AuthedUser | null> {
       name: payload.name ?? email,
       role,
       locationId: locationCode,
-      supabaseProfileId: email,
-      supabaseLocationId: locationCode,
       locationCode,
       canViewAllLocations: role === "super_admin",
     };
@@ -108,8 +104,6 @@ export async function getAuthedUser(c: Context): Promise<AuthedUser | null> {
     name: enrichment.fullName ?? payload.name ?? email,
     role: enrichment.role,
     locationId: enrichment.locationCode,
-    supabaseProfileId: email,
-    supabaseLocationId: enrichment.locationCode,
     locationCode: enrichment.locationCode,
     canViewAllLocations: enrichment.canViewAllLocations,
   };
@@ -117,7 +111,8 @@ export async function getAuthedUser(c: Context): Promise<AuthedUser | null> {
 
 // ─── Location filter resolvers ────────────────────────────────────────────────
 
-export function resolveSupabaseLocationId(
+/** Super-admin may pass ?locationId= override; store roles use their locationCode. */
+export function resolveScopedLocationId(
   user: AuthedUser,
   override?: string | null,
 ): string | null {
@@ -125,7 +120,7 @@ export function resolveSupabaseLocationId(
     if (!override || override === "all" || override === "") return null;
     return override;
   }
-  return user.supabaseLocationId;
+  return user.locationCode;
 }
 
 export function resolveLocationCode(
@@ -133,7 +128,7 @@ export function resolveLocationCode(
   override?: string | null,
 ): string | null {
   if (user.role === "super_admin" || user.canViewAllLocations) {
-    return null;
+    return override && override !== "all" ? override : null;
   }
   return user.locationCode;
 }
@@ -143,7 +138,7 @@ export function resolveLocationFilter(
   user: AuthedUser,
   override?: string | null,
 ): string | null {
-  return resolveSupabaseLocationId(user, override);
+  return resolveScopedLocationId(user, override);
 }
 
 // ─── Role predicates ──────────────────────────────────────────────────────────
@@ -173,7 +168,7 @@ export function canReadAlteration(
   if (user.role === "super_admin" || user.canViewAllLocations) return true;
   if (user.role === "driver") return false;
   const rowLoc = row.location_id ?? row.locationId;
-  return rowLoc === user.supabaseLocationId;
+  return rowLoc === user.locationCode;
 }
 
 export function canReadCustomOrder(
@@ -183,7 +178,7 @@ export function canReadCustomOrder(
   if (user.role === "super_admin" || user.canViewAllLocations) return true;
   if (user.role === "driver") return false;
   const rowLoc = row.location_id ?? row.locationId;
-  if (rowLoc !== user.supabaseLocationId) return false;
+  if (rowLoc !== user.locationCode) return false;
   if (user.role === "salesperson") {
     const createdBy = row.created_by ?? row.createdById;
     return createdBy === user.id;
@@ -204,7 +199,7 @@ export function canReadDelivery(
 ): boolean {
   if (user.role === "super_admin" || user.canViewAllLocations) return true;
   if (user.role === "driver") return (row.driver_id ?? row.driverId) === user.id;
-  return (row.location_id ?? row.locationId) === user.supabaseLocationId;
+  return (row.location_id ?? row.locationId) === user.locationCode;
 }
 
 export function canWriteDelivery(
@@ -213,7 +208,7 @@ export function canWriteDelivery(
 ): boolean {
   if (user.role === "super_admin") return true;
   if (user.role === "driver") return (row.driver_id ?? row.driverId) === user.id;
-  if (user.role === "store_manager") return (row.location_id ?? row.locationId) === user.supabaseLocationId;
+  if (user.role === "store_manager") return (row.location_id ?? row.locationId) === user.locationCode;
   return false;
 }
 
@@ -233,7 +228,7 @@ export function canReadCommunication(
 ): boolean {
   if (user.role === "super_admin" || user.canViewAllLocations) return true;
   if (user.role === "driver") return false;
-  return (row.location_id ?? row.locationId) === user.supabaseLocationId;
+  return (row.location_id ?? row.locationId) === user.locationCode;
 }
 
 export function canReadFinancialRow(
@@ -242,5 +237,5 @@ export function canReadFinancialRow(
 ): boolean {
   if (!canSeeFinancials(user.role)) return false;
   if (user.role === "super_admin" || user.canViewAllLocations) return true;
-  return (row.location_id ?? row.locationId) === user.supabaseLocationId;
+  return (row.location_id ?? row.locationId) === user.locationCode;
 }

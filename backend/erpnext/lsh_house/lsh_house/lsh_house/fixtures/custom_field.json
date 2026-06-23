@@ -1,0 +1,205 @@
+[
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_lst_division",
+  "dt": "Customer",
+  "fieldname": "custom_lst_division",
+  "label": "LST Division",
+  "fieldtype": "Data",
+  "insert_after": "customer_group"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_vip_tier",
+  "dt": "Customer",
+  "fieldname": "custom_vip_tier",
+  "label": "VIP Tier",
+  "fieldtype": "Data",
+  "insert_after": "custom_lst_division",
+  "default": "Standard"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_status",
+  "dt": "Customer",
+  "fieldname": "custom_status",
+  "label": "LST Status",
+  "fieldtype": "Data",
+  "insert_after": "custom_vip_tier",
+  "default": "Active"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_client_notes",
+  "dt": "Customer",
+  "fieldname": "custom_client_notes",
+  "label": "Client Notes",
+  "fieldtype": "Text",
+  "insert_after": "custom_status"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_style_preferences",
+  "dt": "Customer",
+  "fieldname": "custom_style_preferences",
+  "label": "Style Preferences",
+  "fieldtype": "Text",
+  "insert_after": "custom_client_notes"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_fit_notes",
+  "dt": "Customer",
+  "fieldname": "custom_fit_notes",
+  "label": "Fit Notes",
+  "fieldtype": "Text",
+  "insert_after": "custom_style_preferences"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_company",
+  "dt": "Customer",
+  "fieldname": "custom_company",
+  "label": "Company Name",
+  "fieldtype": "Data",
+  "insert_after": "custom_fit_notes"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_title_role",
+  "dt": "Customer",
+  "fieldname": "custom_title_role",
+  "label": "Title / Role",
+  "fieldtype": "Data",
+  "insert_after": "custom_company"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_source_channel",
+  "dt": "Customer",
+  "fieldname": "custom_source_channel",
+  "label": "Source Channel",
+  "fieldtype": "Data",
+  "insert_after": "custom_title_role"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_birthday",
+  "dt": "Customer",
+  "fieldname": "custom_birthday",
+  "label": "Birthday",
+  "fieldtype": "Date",
+  "insert_after": "custom_source_channel"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_anniversary",
+  "dt": "Customer",
+  "fieldname": "custom_anniversary",
+  "label": "Anniversary",
+  "fieldtype": "Date",
+  "insert_after": "custom_birthday"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_communication_pref",
+  "dt": "Customer",
+  "fieldname": "custom_communication_pref",
+  "label": "Communication Pref",
+  "fieldtype": "Data",
+  "insert_after": "custom_anniversary"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_preferred_contact",
+  "dt": "Customer",
+  "fieldname": "custom_preferred_contact",
+  "label": "Preferred Contact",
+  "fieldtype": "Data",
+  "insert_after": "custom_communication_pref",
+  "default": "email"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_sms_opted_out",
+  "dt": "Customer",
+  "fieldname": "custom_sms_opted_out",
+  "label": "SMS Opted Out",
+  "fieldtype": "Check",
+  "insert_after": "custom_preferred_contact"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_payment_preference",
+  "dt": "Customer",
+  "fieldname": "custom_payment_preference",
+  "label": "Payment Preference",
+  "fieldtype": "Data",
+  "insert_after": "custom_sms_opted_out"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_credit_terms",
+  "dt": "Customer",
+  "fieldname": "custom_credit_terms",
+  "label": "Credit Terms",
+  "fieldtype": "Data",
+  "insert_after": "custom_payment_preference"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_referral_code",
+  "dt": "Customer",
+  "fieldname": "custom_referral_code",
+  "label": "Referral Code",
+  "fieldtype": "Data",
+  "insert_after": "custom_credit_terms"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_referral_credits",
+  "dt": "Customer",
+  "fieldname": "custom_referral_credits",
+  "label": "Referral Credits",
+  "fieldtype": "Currency",
+  "insert_after": "custom_referral_code"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "Customer-custom_casa_tier",
+  "dt": "Customer",
+  "fieldname": "custom_casa_tier",
+  "label": "Casa Tier",
+  "fieldtype": "Data",
+  "insert_after": "custom_referral_credits"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "LSH House",
+  "name": "User-lst_location",
+  "dt": "User",
+  "fieldname": "lst_location",
+  "label": "LST Location",
+  "fieldtype": "Data",
+  "insert_after": "email"
+ }
+]

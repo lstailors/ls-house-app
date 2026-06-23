@@ -1,0 +1,136 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-01-01 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "customer",
+  "customer_name",
+  "origin_location",
+  "status",
+  "order_total",
+  "deposit_amount",
+  "special_instructions",
+  "sales_rep",
+  "garment_type",
+  "source_channel",
+  "yz_order_number",
+  "erp_sales_order",
+  "garments"
+ ],
+ "fields": [
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "customer_name",
+   "fieldtype": "Data",
+   "label": "Customer Name",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "origin_location",
+   "fieldtype": "Data",
+   "label": "Origin Location",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Submitted\nConsultation\nOrdered\nPattern\nCutting\nSewing\nFirst Fitting\nAlterations\nSecond Fitting\nFinal QC\nIn Transit\nArrived\nComplete\nDelivered\nCancelled",
+   "default": "Submitted",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "order_total",
+   "fieldtype": "Currency",
+   "label": "Order Total"
+  },
+  {
+   "fieldname": "deposit_amount",
+   "fieldtype": "Currency",
+   "label": "Deposit Amount"
+  },
+  {
+   "fieldname": "special_instructions",
+   "fieldtype": "Text",
+   "label": "Special Instructions"
+  },
+  {
+   "fieldname": "sales_rep",
+   "fieldtype": "Data",
+   "label": "Sales Rep"
+  },
+  {
+   "fieldname": "garment_type",
+   "fieldtype": "Data",
+   "label": "Garment Type"
+  },
+  {
+   "fieldname": "source_channel",
+   "fieldtype": "Data",
+   "label": "Source Channel"
+  },
+  {
+   "fieldname": "yz_order_number",
+   "fieldtype": "Data",
+   "label": "YZ Order Number"
+  },
+  {
+   "fieldname": "erp_sales_order",
+   "fieldtype": "Link",
+   "label": "ERP Sales Order",
+   "options": "Sales Order"
+  },
+  {
+   "fieldname": "garments",
+   "fieldtype": "Table",
+   "label": "Garments",
+   "options": "LSH Custom Order Garment"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-01-01 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "LSH House",
+ "name": "LSH Custom Order",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "share": 1
+  },
+  {
+   "role": "LST Super Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "share": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

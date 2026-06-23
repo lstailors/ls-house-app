@@ -1,48 +1,36 @@
 import { Hono } from "hono";
-import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser, canSeeFinancials } from "../lib/scope";
 import { erpList } from "../lib/erp";
+import { listApprovalQueue, listBrainEntriesFiltered } from "../lib/erpnext/agents";
 
 export const notificationsRouter = new Hono();
-
-// Unified notification feed — approvals, tasks, brain flags, briefs.
-// Sorted by urgency: critical → high → normal, then recency.
 
 notificationsRouter.get("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ notifications: [], unread: 0 });
 
   const notifications: any[] = [];
 
-  // ── Approval queue — pending items ─────────────────────────
   try {
-    const { data: approvals } = await supabaseAdmin
-      .from("approval_queue")
-      .select("id, title, summary, category, created_at, status")
-      .in("status", ["pending", "awaiting_second"])
-      .order("created_at", { ascending: false })
-      .limit(15);
-
-    for (const a of approvals ?? []) {
+    const approvals = await listApprovalQueue({ status: ["pending", "awaiting_second"], limit: 15 });
+    for (const a of approvals) {
       const isCritical =
         a.title?.toUpperCase().includes("CRITICAL") ||
         a.summary?.toUpperCase().includes("CRITICAL");
       notifications.push({
-        id: `approval-${a.id}`,
+        id: `approval-${a.name}`,
         kind: "approval",
         priority: isCritical ? "critical" : "high",
         title: a.title ?? "Pending Approval",
         body: a.summary ?? null,
         category: a.category ?? null,
-        ts: a.created_at,
-        href: `/mission-control?tab=approvals&id=${a.id}`,
+        ts: a.creation,
+        href: `/mission-control?tab=approvals&id=${a.name}`,
         read: false,
       });
     }
   } catch {}
 
-  // ── Open todos from ERPNext — overdue + high priority ───────
   try {
     const erpBase = process.env.ERPNEXT_BASE_URL ?? "https://erp.lstailors.com";
     const erpAuth = `token ${process.env.ERPNEXT_API_KEY ?? ""}:${process.env.ERPNEXT_API_SECRET ?? ""}`;
@@ -71,54 +59,43 @@ notificationsRouter.get("/", async (c) => {
     }
   } catch {}
 
-  // ── Brain entries — flags and anomalies ───────────────────
   try {
-    const { data: flags } = await supabaseAdmin
-      .from("brain_entries")
-      .select("id, summary, entry_type, agent_slug, created_at, detail")
-      .in("entry_type", ["flag", "anomaly", "alert", "decision", "escalation"])
-      .order("created_at", { ascending: false })
-      .limit(8);
-
-    for (const f of flags ?? []) {
+    const flags = await listBrainEntriesFiltered({
+      entryTypes: ["flag", "anomaly", "alert", "decision", "escalation"],
+      limit: 8,
+    });
+    for (const f of flags) {
       notifications.push({
-        id: `brain-${f.id}`,
+        id: `brain-${f.name}`,
         kind: "intelligence",
         priority: f.entry_type === "flag" || f.entry_type === "alert" ? "high" : "normal",
         title: f.summary,
         body: f.detail ?? null,
         meta: `${f.agent_slug} · ${f.entry_type}`,
-        ts: f.created_at,
-        href: `/comms?flag=${f.id}`,
+        ts: f.creation,
+        href: `/comms?flag=${f.name}`,
         read: false,
       });
     }
   } catch {}
 
-  // ── Recent Maestro briefs ─────────────────────────────────
   try {
-    const { data: briefs } = await supabaseAdmin
-      .from("approval_queue")
-      .select("id, title, summary, created_at")
-      .ilike("category", "%brief%")
-      .order("created_at", { ascending: false })
-      .limit(3);
-
-    for (const b of briefs ?? []) {
+    const briefs = await listApprovalQueue({ limit: 3 });
+    const briefItems = briefs.filter((b: any) => String(b.category ?? "").toLowerCase().includes("brief"));
+    for (const b of briefItems) {
       notifications.push({
-        id: `brief-${b.id}`,
+        id: `brief-${b.name}`,
         kind: "brief",
         priority: "normal",
         title: b.title ?? "Maestro Brief",
         body: b.summary?.slice(0, 120) + (b.summary?.length > 120 ? "…" : ""),
-        ts: b.created_at,
-        href: `/mission-control?tab=brief&id=${b.id}`,
+        ts: b.creation,
+        href: `/mission-control?tab=brief&id=${b.name}`,
         read: false,
       });
     }
   } catch {}
 
-  // ── ERPNext ToDos — overdue + high priority ───────────────
   try {
     const today = new Date().toISOString().slice(0, 10);
     const todoFilters: unknown[] = [["status", "=", "Open"]];
@@ -148,7 +125,6 @@ notificationsRouter.get("/", async (c) => {
     }
   } catch {}
 
-  // ── Ready-to-deliver orders ───────────────────────────────
   if (canSeeFinancials(user.role)) {
     try {
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19);
@@ -173,34 +149,31 @@ notificationsRouter.get("/", async (c) => {
     } catch {}
   }
 
-  // ── Overdue invoices ──────────────────────────────────────
   if (canSeeFinancials(user.role)) {
     try {
       const today = new Date().toISOString().slice(0, 10);
-      const { data: invoices } = await supabaseAdmin
-        .from("erp_sales_invoices")
-        .select("id, erp_name, erp_customer, end_customer, outstanding_amount, due_date")
-        .lt("due_date", today)
-        .gt("outstanding_amount", 0)
-        .order("due_date", { ascending: true })
-        .limit(5);
+      const invoices = await erpList<any>("Sales Invoice", {
+        filters: [["docstatus", "=", 1], ["due_date", "<", today], ["outstanding_amount", ">", 0]],
+        fields: ["name", "customer_name", "outstanding_amount", "due_date"],
+        order_by: "due_date asc",
+        limit: 5,
+      }).catch(() => [] as any[]);
 
-      for (const i of invoices ?? []) {
+      for (const i of invoices) {
         notifications.push({
-          id: `inv-${i.id}`,
+          id: `inv-${i.name}`,
           kind: "invoice",
           priority: "high",
-          title: `Overdue Invoice — ${i.erp_name}`,
-          body: `${i.end_customer ?? i.erp_customer} · $${Number(i.outstanding_amount).toLocaleString()} outstanding`,
+          title: `Overdue Invoice — ${i.name}`,
+          body: `${i.customer_name} · $${Number(i.outstanding_amount).toLocaleString()} outstanding`,
           ts: i.due_date,
-          href: `/invoices?id=${i.erp_name}`,
+          href: `/invoices?id=${i.name}`,
           read: false,
         });
       }
     } catch {}
   }
 
-  // ── Escalated helpdesk tickets ───────────────────────────────
   try {
     const hdFilters: unknown[] = [["status", "not in", ["Closed", "Resolved"]]];
     if (user.role !== "super_admin" && user.role !== "store_manager") {
@@ -233,7 +206,6 @@ notificationsRouter.get("/", async (c) => {
     }
   } catch {}
 
-  // Sort: critical first, then high, then normal; within tier sort by recency
   const priority = (p: string) => (p === "critical" ? 0 : p === "high" ? 1 : 2);
   notifications.sort((a, b) => {
     const pd = priority(a.priority) - priority(b.priority);
@@ -242,6 +214,5 @@ notificationsRouter.get("/", async (c) => {
   });
 
   const unread = notifications.filter((n) => !n.read).length;
-
   return c.json({ data: { notifications: notifications.slice(0, 40), unread } });
 });

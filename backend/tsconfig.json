@@ -28,7 +28,6 @@
     "noPropertyAccessFromIndexSignature": false
   },
   "exclude": [
-    "src/scripts/migrate-deliveries-to-erp.ts",
     "scripts/migrate-deliveries-to-erp.ts"
   ]
 }

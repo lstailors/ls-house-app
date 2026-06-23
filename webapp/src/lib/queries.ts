@@ -1,5 +1,5 @@
 // Centralized data hooks. Every page reads through here so a future swap to
-// Supabase client is a one-file change.
+// Data layer: ERPNext via backend API routes.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";

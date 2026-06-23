@@ -1,78 +1,63 @@
 import { Hono } from "hono";
-import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser } from "../lib/scope";
+import { erpList } from "../lib/erp";
+import { getCustomersByIds } from "../lib/erpnext/customers";
 
 export const communicationsRouter = new Hono();
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
 
 function serializeCustomer(row: any) {
   if (!row) return undefined;
   return {
-    id: row.id,
-    name: row.full_name,
-    phone: row.phone,
-    email: row.email,
-    locationId: row.division,
+    id: row.name,
+    name: row.customer_name,
+    phone: row.mobile_no,
+    email: row.email_id,
+    locationId: row.custom_lst_division,
     createdById: null,
-    dossier: { vip: row.vip_tier !== "Standard", preferences: row.style_preferences || null },
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    dossier: { vip: row.custom_vip_tier !== "Standard", preferences: row.custom_style_preferences || null },
+    createdAt: row.creation,
+    updatedAt: row.modified,
   };
 }
 
 async function fetchCustomerMap(ids: string[]): Promise<Map<string, any>> {
-  if (!ids.length || !supabaseAdmin) return new Map();
-  const { data } = await supabaseAdmin
-    .from("customers")
-    .select("id,full_name,phone,email,division,vip_tier,style_preferences,created_at,updated_at")
-    .in("id", ids);
-  return new Map((data ?? []).map((r: any) => [r.id, r]));
+  return getCustomersByIds(ids);
 }
 
 function serializeCommunication(row: any, customerRow?: any) {
   return {
-    id: row.id,
-    customerId: row.customer_id,
+    id: row.name,
+    customerId: row.reference_name,
     customer: customerRow ? serializeCustomer(customerRow) : undefined,
     locationId: null,
-    channel: row.channel ?? "sms",
-    direction: row.direction ?? "inbound",
-    transcript: row.call_transcript ?? null,
-    body: row.body_text ?? row.call_summary ?? null,
-    createdAt: row.comm_date ?? row.created_at,
+    channel: row.communication_medium?.toLowerCase() ?? "sms",
+    direction: row.sent_or_received === "Sent" ? "outbound" : "inbound",
+    transcript: null,
+    body: row.content ?? row.subject ?? null,
+    createdAt: row.communication_date ?? row.creation,
   };
 }
-
-// ─── Routes ───────────────────────────────────────────────────────────────────
 
 communicationsRouter.get("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (user.role === "driver") return c.json({ data: [] });
-  if (!supabaseAdmin) return c.json({ data: [] });
 
   const customerId = c.req.query("customerId");
+  const filters: unknown[] = [["reference_doctype", "=", "Customer"]];
+  if (customerId) filters.push(["reference_name", "=", customerId]);
 
-  let q = supabaseAdmin
-    .from("customer_communications")
-    .select("*")
-    .order("comm_date", { ascending: false })
-    .limit(200);
+  const rows = await erpList<any>("Communication", {
+    filters,
+    fields: ["name", "reference_name", "communication_medium", "sent_or_received", "content", "subject", "communication_date", "creation"],
+    order_by: "communication_date desc",
+    limit: 200,
+  }).catch(() => []);
 
-  if (customerId) q = q.eq("customer_id", customerId);
-
-  const { data, error } = await q;
-  if (error) {
-    console.error("communications list error:", error);
-    return c.json({ data: [] });
-  }
-  const rows = data ?? [];
-
-  const customerIds = [...new Set(rows.map((r: any) => r.customer_id).filter(Boolean))] as string[];
+  const customerIds = [...new Set(rows.map((r: any) => r.reference_name).filter(Boolean))] as string[];
   const customerMap = await fetchCustomerMap(customerIds);
 
   return c.json({
-    data: rows.map((r: any) => serializeCommunication(r, customerMap.get(r.customer_id))),
+    data: rows.map((r: any) => serializeCommunication(r, customerMap.get(r.reference_name))),
   });
 });

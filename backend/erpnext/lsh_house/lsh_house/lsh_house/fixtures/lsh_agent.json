@@ -1,0 +1,74 @@
+[
+ {
+  "doctype": "LSH Agent",
+  "slug": "maestro",
+  "agent_name": "Maestro",
+  "role": "Orchestrator",
+  "status": "offline",
+  "model": "claude-sonnet-4",
+  "platform": "Hermes \u00b7 Mac Studio",
+  "color": "brass",
+  "icon": "Crown",
+  "enabled": 1
+ },
+ {
+  "doctype": "LSH Agent",
+  "slug": "sofia",
+  "agent_name": "Sofia",
+  "role": "Client Concierge",
+  "status": "offline",
+  "model": "grok-3",
+  "platform": "n8n Cloud \u00b7 Twilio",
+  "color": "emerald",
+  "icon": "Phone",
+  "enabled": 1
+ },
+ {
+  "doctype": "LSH Agent",
+  "slug": "mia",
+  "agent_name": "Mia",
+  "role": "Scheduling & Dossiers",
+  "status": "offline",
+  "model": "claude-haiku-3-5",
+  "platform": "Mac Studio \u00b7 Cal.com",
+  "color": "blue",
+  "icon": "Calendar",
+  "enabled": 1
+ },
+ {
+  "doctype": "LSH Agent",
+  "slug": "rocco",
+  "agent_name": "Rocco",
+  "role": "Production & Delivery",
+  "status": "offline",
+  "model": "claude-sonnet-4",
+  "platform": "Mac Studio \u00b7 MTMPro \u00b7 ERPNext",
+  "color": "amber",
+  "icon": "Factory",
+  "enabled": 1
+ },
+ {
+  "doctype": "LSH Agent",
+  "slug": "melena",
+  "agent_name": "Melena",
+  "role": "Accounting & Books",
+  "status": "offline",
+  "model": "claude-sonnet-4",
+  "platform": "Mac Studio \u00b7 ERPNext \u00b7 Square",
+  "color": "rose",
+  "icon": "DollarSign",
+  "enabled": 1
+ },
+ {
+  "doctype": "LSH Agent",
+  "slug": "filo",
+  "agent_name": "Filo",
+  "role": "Ingestion & Intelligence",
+  "status": "offline",
+  "model": "llama3:8b (local)",
+  "platform": "Mac Studio \u00b7 Ollama \u00b7 IMAP",
+  "color": "purple",
+  "icon": "Brain",
+  "enabled": 1
+ }
+]

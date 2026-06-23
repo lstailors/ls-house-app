@@ -2,9 +2,11 @@
 
 | Script | Purpose |
 |---|---|
-| `verify-production-config.ts` | Pre-deploy check: env vars, ERPNext, Supabase buckets/tables/edge functions |
-| `migrate-deliveries-to-erp.ts` | One-off migration Supabase deliveries → ERPNext (requires both creds) |
+| `verify-erpnext-setup.ts` | Verify all `lsh_house` DocTypes exist (`bun run verify:erpnext`) |
+| `seed-erpnext-lsh.ts` | Seed baseline LSH Location + Agent rows (`bun run seed:erpnext`) |
 
-Run with `bun run verify:production` from `backend/`.
+Run from `backend/` with ERPNext credentials loaded.
 
-**Removed (June 2026):** `seed.ts` and `verify-scope.ts` referenced deleted Prisma/auth modules and were non-functional after the ERPNext auth migration.
+**Prerequisite:** `bench install-app lsh_house` on the Frappe site — see `backend/erpnext/INSTALL.md`.
+
+Historical one-off migration (requires legacy Supabase creds): `backend/scripts/migrate-deliveries-to-erp.ts`

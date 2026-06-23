@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
-import { supabaseAdmin } from "../lib/supabase";
+import { insertSmsMessage, listSmsMessagesFiltered, findSmsByTwilioSid } from "../lib/erpnext/agents";
 
 export const ravenRouter = new Hono();
 
@@ -371,187 +371,112 @@ ravenRouter.get("/channels/list", async (c) => {
 // ────────────────────────────────────────────────────────────────────────────
 ravenRouter.get("/sofia-poll", async (c) => {
   try {
-    const sb = supabaseAdmin;
-
-    // 1. Fetch last 20 messages from the DM channel (desc = newest first)
     const msgs = await fetchRavenMessages(SOFIA_DM_CHANNEL, 20);
     if (!msgs.length) return c.json({ data: { ok: true, processed: 0, reason: "no_messages" } });
-
-    // msgs is newest-first from Raven; reverse to get chronological order
     const chronological = [...msgs].reverse();
-
-    // 2. Find Carl messages that don't have a Sofia reply immediately after them
-    const toProcess: any[] = [];
-    for (let i = 0; i < chronological.length; i++) {
-      const msg = chronological[i];
-      if (msg.owner !== CARL_EMAIL) continue;
-      // Check if the next message is from Sofia
-      const next = chronological[i + 1];
-      if (next && next.owner === SOFIA_EMAIL) continue; // already replied
-      // Check Supabase: has this message already been processed?
-      if (sb) {
-        const { data: existing } = await sb
-          .from("sms_messages")
-          .select("id")
-          .eq("twilio_sid", `raven_${msg.name}`)
-          .limit(1);
-        if (existing && existing.length > 0) continue; // already handled
-      }
-      toProcess.push(msg);
-    }
-
-    if (!toProcess.length) return c.json({ data: { ok: true, processed: 0, reason: "no_new_messages" } });
-
-    // 3. Process each unhandled Carl message
-    let processed = 0;
-    for (const msg of toProcess) {
-      const messageText = String(msg.text ?? "").trim();
-      if (!messageText) continue;
-
-      // Log inbound to sms_messages
-      if (sb) {
-        try {
-          await sb.from("sms_messages").insert({
-            twilio_sid: `raven_${msg.name}`,
-            client_phone: CARL_EMAIL,
-            direction: "inbound",
-            content: messageText,
-            timestamp: new Date(msg.creation ?? Date.now()).toISOString(),
-            metadata: { channel: "raven_dm", raven_channel_id: SOFIA_DM_CHANNEL, raven_msg_id: msg.name },
-          });
-        } catch {}
-      }
-
-      // Build conversation history from sms_messages for context
-      const historyMsgs: { role: string; content: string }[] = [];
-      if (sb) {
-        const { data: hist } = await sb
-          .from("sms_messages")
-          .select("direction, content")
-          .eq("client_phone", CARL_EMAIL)
-          .not("twilio_sid", "eq", `raven_${msg.name}`)
-          .order("timestamp", { ascending: false })
-          .limit(10);
-        if (hist) {
-          hist.reverse().forEach((h: any) => {
-            historyMsgs.push({
-              role: h.direction === "inbound" ? "user" : "assistant",
-              content: String(h.content),
-            });
-          });
-        }
-      }
-
-      // Add current message
-      historyMsgs.push({ role: "user", content: messageText });
-
-      // Call Grok
-      const reply = await callGrokStaff(historyMsgs);
-
-      // Post reply to Raven DM channel
-      const postResult = await postRavenMessage(SOFIA_DM_CHANNEL, reply);
-
-      // Log outbound to sms_messages
-      if (sb) {
-        try {
-          await sb.from("sms_messages").insert({
-            twilio_sid: postResult.name ? `raven_out_${postResult.name}` : null,
-            client_phone: CARL_EMAIL,
-            direction: "outbound",
-            content: reply,
-            timestamp: new Date().toISOString(),
-            metadata: { channel: "raven_dm", raven_channel_id: SOFIA_DM_CHANNEL, in_reply_to: msg.name, raven_ok: postResult.ok },
-          });
-        } catch {}
-      }
-
-      processed++;
-    }
-
-    return c.json({ data: { ok: true, processed } });
-  } catch (e: any) {
-    console.error("[raven/sofia-poll] error:", e.message);
-    return c.json({ data: { ok: false, error: e.message } }, 500);
-  }
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// POST /api/raven/sofia-webhook
-// Webhook variant of the poll — same logic, accepts a push from external caller.
-// No auth required (internal use).
-// ────────────────────────────────────────────────────────────────────────────
-ravenRouter.post("/sofia-webhook", async (c) => {
-  // Delegate to the same poll logic by making an internal call
-  // (reuse by just running the poll inline)
-  try {
-    const sb = supabaseAdmin;
-    const msgs = await fetchRavenMessages(SOFIA_DM_CHANNEL, 20);
-    if (!msgs.length) return c.json({ data: { ok: true, processed: 0 } });
-
-    const chronological = [...msgs].reverse();
-    const toProcess: any[] = [];
+    const toProcess = [];
     for (let i = 0; i < chronological.length; i++) {
       const msg = chronological[i];
       if (msg.owner !== CARL_EMAIL) continue;
       const next = chronological[i + 1];
       if (next && next.owner === SOFIA_EMAIL) continue;
-      if (sb) {
-        const { data: existing } = await sb
-          .from("sms_messages")
-          .select("id")
-          .eq("twilio_sid", `raven_${msg.name}`)
-          .limit(1);
-        if (existing && existing.length > 0) continue;
-      }
+      const existing = await findSmsByTwilioSid(`raven_${msg.name}`);
+      if (existing) continue;
       toProcess.push(msg);
     }
-
+    if (!toProcess.length) return c.json({ data: { ok: true, processed: 0, reason: "no_new_messages" } });
     let processed = 0;
     for (const msg of toProcess) {
       const messageText = String(msg.text ?? "").trim();
       if (!messageText) continue;
-      if (sb) {
-        try {
-          await sb.from("sms_messages").insert({
-            twilio_sid: `raven_${msg.name}`,
-            client_phone: CARL_EMAIL,
-            direction: "inbound",
-            content: messageText,
-            timestamp: new Date(msg.creation ?? Date.now()).toISOString(),
-            metadata: { channel: "raven_dm", raven_channel_id: SOFIA_DM_CHANNEL, raven_msg_id: msg.name },
-          });
-        } catch {}
-      }
-      const historyMsgs: { role: string; content: string }[] = [];
-      if (sb) {
-        const { data: hist } = await sb
-          .from("sms_messages")
-          .select("direction, content")
-          .eq("client_phone", CARL_EMAIL)
-          .not("twilio_sid", "eq", `raven_${msg.name}`)
-          .order("timestamp", { ascending: false })
-          .limit(10);
-        if (hist) hist.reverse().forEach((h: any) => historyMsgs.push({ role: h.direction === "inbound" ? "user" : "assistant", content: String(h.content) }));
-      }
+      try {
+        await insertSmsMessage({
+          twilio_sid: `raven_${msg.name}`,
+          client_phone: CARL_EMAIL,
+          direction: "inbound",
+          content: messageText,
+          timestamp: new Date(msg.creation ?? Date.now()).toISOString(),
+          metadata: JSON.stringify({ channel: "raven_dm", raven_channel_id: SOFIA_DM_CHANNEL, raven_msg_id: msg.name }),
+        });
+      } catch {}
+      const hist = await listSmsMessagesFiltered({ phone: CARL_EMAIL, limit: 10 });
+      const historyMsgs = hist.filter((h) => h.twilio_sid !== `raven_${msg.name}`).reverse().map((h) => ({
+        role: h.direction === "inbound" ? "user" : "assistant",
+        content: String(h.content),
+      }));
       historyMsgs.push({ role: "user", content: messageText });
       const reply = await callGrokStaff(historyMsgs);
       const postResult = await postRavenMessage(SOFIA_DM_CHANNEL, reply);
-      if (sb) {
-        try {
-          await sb.from("sms_messages").insert({
-            twilio_sid: postResult.name ? `raven_out_${postResult.name}` : null,
-            client_phone: CARL_EMAIL,
-            direction: "outbound",
-            content: reply,
-            timestamp: new Date().toISOString(),
-            metadata: { channel: "raven_dm", raven_channel_id: SOFIA_DM_CHANNEL, in_reply_to: msg.name, raven_ok: postResult.ok },
-          });
-        } catch {}
-      }
+      try {
+        await insertSmsMessage({
+          twilio_sid: postResult.name ? `raven_out_${postResult.name}` : null,
+          client_phone: CARL_EMAIL,
+          direction: "outbound",
+          content: reply,
+          timestamp: new Date().toISOString(),
+          metadata: JSON.stringify({ channel: "raven_dm", raven_channel_id: SOFIA_DM_CHANNEL, in_reply_to: msg.name, raven_ok: postResult.ok }),
+        });
+      } catch {}
       processed++;
     }
     return c.json({ data: { ok: true, processed } });
-  } catch (e: any) {
+  } catch (e) {
+    console.error("[raven/sofia-poll] error:", e.message);
+    return c.json({ data: { ok: false, error: e.message } }, 500);
+  }
+});
+
+ravenRouter.post("/sofia-webhook", async (c) => {
+  try {
+    const msgs = await fetchRavenMessages(SOFIA_DM_CHANNEL, 20);
+    if (!msgs.length) return c.json({ data: { ok: true, processed: 0 } });
+    const chronological = [...msgs].reverse();
+    const toProcess = [];
+    for (let i = 0; i < chronological.length; i++) {
+      const msg = chronological[i];
+      if (msg.owner !== CARL_EMAIL) continue;
+      const next = chronological[i + 1];
+      if (next && next.owner === SOFIA_EMAIL) continue;
+      const existing = await findSmsByTwilioSid(`raven_${msg.name}`);
+      if (existing) continue;
+      toProcess.push(msg);
+    }
+    let processed = 0;
+    for (const msg of toProcess) {
+      const messageText = String(msg.text ?? "").trim();
+      if (!messageText) continue;
+      try {
+        await insertSmsMessage({
+          twilio_sid: `raven_${msg.name}`,
+          client_phone: CARL_EMAIL,
+          direction: "inbound",
+          content: messageText,
+          timestamp: new Date(msg.creation ?? Date.now()).toISOString(),
+          metadata: JSON.stringify({ channel: "raven_dm", raven_channel_id: SOFIA_DM_CHANNEL, raven_msg_id: msg.name }),
+        });
+      } catch {}
+      const hist = await listSmsMessagesFiltered({ phone: CARL_EMAIL, limit: 10 });
+      const historyMsgs = hist.filter((h) => h.twilio_sid !== `raven_${msg.name}`).reverse().map((h) => ({
+        role: h.direction === "inbound" ? "user" : "assistant",
+        content: String(h.content),
+      }));
+      historyMsgs.push({ role: "user", content: messageText });
+      const reply = await callGrokStaff(historyMsgs);
+      const postResult = await postRavenMessage(SOFIA_DM_CHANNEL, reply);
+      try {
+        await insertSmsMessage({
+          twilio_sid: postResult.name ? `raven_out_${postResult.name}` : null,
+          client_phone: CARL_EMAIL,
+          direction: "outbound",
+          content: reply,
+          timestamp: new Date().toISOString(),
+          metadata: JSON.stringify({ channel: "raven_dm", raven_channel_id: SOFIA_DM_CHANNEL, in_reply_to: msg.name, raven_ok: postResult.ok }),
+        });
+      } catch {}
+      processed++;
+    }
+    return c.json({ data: { ok: true, processed } });
+  } catch (e) {
     console.error("[raven/sofia-webhook] error:", e.message);
     return c.json({ data: { ok: false, error: e.message } }, 500);
   }

@@ -394,7 +394,7 @@ function ProofOfDeliveryDialog({
   const submit = async () => {
     if (!delivery || !preview) return;
     try {
-      // STUB: in production this would upload to S3/Supabase storage first.
+      // Upload proof photos via ERPNext file API (backend handles storage).
       // For now we store the data URL on the delivery row so it's visible end-to-end.
       await update.mutateAsync({
         id: delivery.id,

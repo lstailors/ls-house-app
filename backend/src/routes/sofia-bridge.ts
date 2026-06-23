@@ -5,14 +5,17 @@
  */
 
 import { Hono } from "hono";
-import { supabaseAdmin } from "../lib/supabase";
 import { erpList } from "../lib/erp";
+import { findCustomerByPhone } from "../lib/erpnext/customers";
+import { storeList, storeFindOne, storeInsert } from "../lib/erpnext/store";
+import { DT } from "../lib/erpnext/doctypes";
+import { listSmsMessagesFiltered, insertSmsMessage } from "../lib/erpnext/agents";
 
 export const sofiaBridgeRouter = new Hono();
 
 function authGuard(key: string | null): boolean {
   const expected = process.env.SOFIA_BRIDGE_KEY;
-  if (!expected) return true; // not configured = open (dev)
+  if (!expected) return true;
   return key === expected;
 }
 
@@ -41,8 +44,32 @@ function normalizePhone(p: string): string {
   return `+${digits}`;
 }
 
-// ── GET /api/sofia-bridge/context?phone=+12125551234 ────────────────────────
-// Returns a rich text block Sofia can inject into the caller memory section.
+function mapClient(row: any) {
+  return {
+    id: row.name,
+    first_name: row.first_name ?? row.customer_name?.split(" ")[0] ?? "",
+    last_name: row.last_name ?? row.customer_name?.split(" ").slice(1).join(" ") ?? "",
+    phone: row.mobile_no,
+    email: row.email_id,
+    is_vip: row.custom_vip_tier && row.custom_vip_tier !== "Standard",
+    created_at: row.creation,
+  };
+}
+
+async function findClientByPhone(phone: string, bare: string) {
+  let row = await findCustomerByPhone(phone);
+  if (!row) row = await findCustomerByPhone(`+1${bare}`);
+  if (!row) {
+    const rows = await erpList<any>("Customer", {
+      filters: [["mobile_no", "like", `%${bare.slice(-10)}%`]],
+      fields: ["name", "customer_name", "first_name", "last_name", "mobile_no", "email_id", "custom_vip_tier", "creation"],
+      limit: 1,
+    });
+    row = rows[0] ?? null;
+  }
+  return row ? mapClient(row) : null;
+}
+
 sofiaBridgeRouter.get("/context", async (c) => {
   const key = c.req.header("x-sofia-bridge-key") ?? c.req.query("key") ?? null;
   if (!authGuard(key)) return c.json({ error: "Unauthorized" }, 401);
@@ -51,49 +78,42 @@ sofiaBridgeRouter.get("/context", async (c) => {
   const phone = normalizePhone(rawPhone);
   if (!phone) return c.json({ error: "phone required" }, 400);
 
-  const sb = supabaseAdmin;
-  if (!sb) return c.json({ error: "Supabase unavailable" }, 503);
-
   const bare = phone.replace(/^\+1/, "");
+  const client = await findClientByPhone(phone, bare);
 
-  // Run all lookups concurrently
-  const [clientRes, apptRes, dossierRes, obsRes, smsRes, ordersRes] = await Promise.all([
-    sb.from("clients").select("id,first_name,last_name,phone,email,is_vip,created_at").or(`phone.eq.${phone},phone.eq.${bare},phone.eq.+1${bare}`).limit(1),
-    sb.from("appointments").select("id,event_type,status,start_time,end_time,assigned_tailor,client_name,notes").or(`client_phone.eq.${phone},client_phone.eq.${bare},client_phone.eq.+1${bare}`).order("start_time", { ascending: false }).limit(10),
-    sb.from("customer_dossiers").select("id,fit_profile,style_notes,preferences,last_significant_update").eq("customer_id", "").maybeSingle(), // will re-run with real id
-    Promise.resolve({ data: [] as any[] }),
-    sb.from("sms_messages").select("direction,content,timestamp").or(`client_phone.eq.${phone},client_phone.eq.${bare},client_phone.eq.+1${bare}`).order("timestamp", { ascending: false }).limit(8),
-    sb.from("geelus_transactions").select("geelus_transaction_id,total,customer_facing_stage,due_date,line_items").not("customer_facing_stage", "in", '("collected","completed","cancelled")').order("updated_at", { ascending: false }).limit(5),
+  const [appts, sms, ordersRes] = await Promise.all([
+    storeList<any>(DT.APPOINTMENT, {
+      filters: [["client_phone", "in", [phone, bare, `+1${bare}`]]],
+      fields: ["name", "event_type", "status", "start_time", "end_time", "assigned_tailor", "client_name", "notes"],
+      orderBy: "start_time desc",
+      limit: 10,
+    }),
+    listSmsMessagesFiltered({ phone, limit: 8 }),
+    client
+      ? storeList<any>(DT.GEELUS_TRANSACTION, {
+          filters: [["customer", "=", client.id], ["customer_facing_stage", "not in", ["collected", "completed", "cancelled"]]],
+          fields: ["name", "geelus_transaction_id", "total", "customer_facing_stage", "due_date", "line_items"],
+          orderBy: "modified desc",
+          limit: 5,
+        })
+      : Promise.resolve([]),
   ]);
 
-  const client = clientRes.data?.[0] ?? null;
-
-  // Fetch dossier + observations with real customer id
   let dossier: any = null;
   let observations: any[] = [];
   if (client?.id) {
-    const [dosRes, obsRes2] = await Promise.all([
-      sb.from("customer_dossiers").select("id,fit_profile,style_notes,preferences,last_significant_update").eq("customer_id", client.id).maybeSingle(),
-      sb.from("dossier_observations").select("observation_type,content,importance,created_at").eq("customer_id", client.id).order("importance", { ascending: false }).order("created_at", { ascending: false }).limit(15),
-    ]);
-    dossier = dosRes.data ?? null;
-    observations = obsRes2.data ?? [];
-
-    // Also filter geelus orders to this customer
-    const { data: custOrders } = await sb
-      .from("geelus_transactions")
-      .select("geelus_transaction_id,total,customer_facing_stage,due_date,line_items")
-      .eq("customer_id", client.id)
-      .not("customer_facing_stage", "in", '("collected","completed","cancelled")')
-      .order("updated_at", { ascending: false })
-      .limit(5);
-    if (custOrders?.length) (ordersRes as any).data = custOrders;
+    dossier = await storeFindOne(DT.CUSTOMER_DOSSIER, "customer", client.id);
+    observations = await storeList<any>(DT.DOSSIER_OBSERVATION, {
+      filters: [["customer", "=", client.id]],
+      fields: ["observation_type", "content", "importance", "creation"],
+      orderBy: "importance desc",
+      limit: 15,
+    });
   }
 
   const sections: string[] = [];
   const now = new Date().toISOString();
 
-  // ── Identity ──
   if (client) {
     const vip = client.is_vip ? " [VIP]" : "";
     sections.push(`HOUSE APP CUSTOMER: ${client.first_name} ${client.last_name}${vip} | ${client.email ?? ""} | Member since ${new Date(client.created_at).getFullYear()}`);
@@ -101,32 +121,24 @@ sofiaBridgeRouter.get("/context", async (c) => {
     sections.push("HOUSE APP: No matching customer record in app.lstailors.com");
   }
 
-  // ── Appointments (Frappe + Google Calendar) ──
-  const appts = apptRes.data ?? [];
   if (appts.length) {
     const upcoming = appts.filter((a) => a.start_time >= now).sort((a, b) => a.start_time.localeCompare(b.start_time));
     const past = appts.filter((a) => a.start_time < now);
     if (upcoming.length) {
-      const lines = upcoming.map((a) => `  • ${fmtNYC(a.start_time)} — ${a.event_type} [${a.status}]${a.notes ? ` — "${a.notes}"` : ""}`);
-      sections.push("UPCOMING APPOINTMENTS:\n" + lines.join("\n"));
+      sections.push("UPCOMING APPOINTMENTS:\n" + upcoming.map((a) => `  • ${fmtNYC(a.start_time)} — ${a.event_type} [${a.status}]${a.notes ? ` — "${a.notes}"` : ""}`).join("\n"));
     }
     if (past.length) {
-      const lines = past.slice(0, 5).map((a) => `  • ${fmtNYC(a.start_time)} — ${a.event_type} [${a.status}]`);
-      sections.push("PAST APPOINTMENTS:\n" + lines.join("\n"));
+      sections.push("PAST APPOINTMENTS:\n" + past.slice(0, 5).map((a) => `  • ${fmtNYC(a.start_time)} — ${a.event_type} [${a.status}]`).join("\n"));
     }
   }
 
-  // ── Geelus Orders ──
-  const orders = (ordersRes as any).data ?? [];
-  if (orders.length) {
-    const lines = orders.map((o: any) => {
+  if (ordersRes.length) {
+    sections.push("ACTIVE GEELUS ORDERS:\n" + ordersRes.map((o: any) => {
       const items = Array.isArray(o.line_items) ? o.line_items.map((i: any) => i.description ?? i.item_name ?? "").filter(Boolean).join(", ") : "";
-      return `  • ${o.geelus_transaction_id} | Stage: ${o.customer_facing_stage} | Due: ${o.due_date ?? "TBD"} | $${Number(o.total ?? 0).toFixed(0)}${items ? ` | ${items}` : ""}`;
-    });
-    sections.push("ACTIVE GEELUS ORDERS:\n" + lines.join("\n"));
+      return `  • ${o.geelus_transaction_id ?? o.name} | Stage: ${o.customer_facing_stage} | Due: ${o.due_date ?? "TBD"} | $${Number(o.total ?? 0).toFixed(0)}${items ? ` | ${items}` : ""}`;
+    }).join("\n"));
   }
 
-  // ── Dossier ──
   if (dossier) {
     const parts: string[] = [];
     if (dossier.fit_profile) parts.push(`Fit: ${dossier.fit_profile}`);
@@ -136,129 +148,79 @@ sofiaBridgeRouter.get("/context", async (c) => {
   }
 
   if (observations.length) {
-    const lines = observations.map((o) => `  [${o.observation_type}] ${o.content}`);
-    sections.push("DOSSIER OBSERVATIONS:\n" + lines.join("\n"));
+    sections.push("DOSSIER OBSERVATIONS:\n" + observations.map((o) => `  [${o.observation_type}] ${o.content}`).join("\n"));
   }
 
-  // ── Recent SMS history ──
-  const sms = (smsRes.data ?? []).reverse(); // oldest first
-  if (sms.length) {
-    const lines = sms.map((m: any) => `  ${m.direction === "inbound" ? "CLIENT" : "SOFIA"}: ${String(m.content ?? "").slice(0, 120)}`);
-    sections.push("RECENT SMS THREAD (oldest first):\n" + lines.join("\n"));
+  const smsSorted = [...sms].reverse();
+  if (smsSorted.length) {
+    sections.push("RECENT SMS THREAD (oldest first):\n" + smsSorted.map((m: any) => `  ${m.direction === "inbound" ? "CLIENT" : "SOFIA"}: ${String(m.content ?? "").slice(0, 120)}`).join("\n"));
   }
 
-  const text = sections.join("\n\n");
-  return c.json({ data: { phone, customer: client ? { id: client.id, name: `${client.first_name} ${client.last_name}`, is_vip: client.is_vip } : null, context_block: text } });
+  return c.json({ data: { phone, customer: client ? { id: client.id, name: `${client.first_name} ${client.last_name}`, is_vip: client.is_vip } : null, context_block: sections.join("\n\n") } });
 });
 
-// ── GET /api/sofia-bridge/summary ───────────────────────────────────────────
-// Returns a structured ops snapshot for briefings and staff queries.
 sofiaBridgeRouter.get("/summary", async (c) => {
   const key = c.req.header("x-sofia-bridge-key") ?? c.req.query("key") ?? null;
   if (!authGuard(key)) return c.json({ error: "Unauthorized" }, 401);
 
-  const sb = supabaseAdmin;
   const today = new Date().toISOString().slice(0, 10);
   const now = new Date().toISOString();
 
-  // ── Supabase: appointments today ──
-  const apptsTodayProm = sb
-    ? sb.from("appointments").select("id,event_type,status,start_time,client_name,client_phone,assigned_tailor")
-        .gte("start_time", `${today}T00:00:00Z`)
-        .lte("start_time", `${today}T23:59:59Z`)
-        .in("status", ["confirmed", "pending"])
-        .order("start_time", { ascending: true })
-    : Promise.resolve({ data: [] as any[] });
-
-  // ── Supabase: unanswered SMS ──
-  const smsProm = sb
-    ? sb.from("sms_messages").select("client_phone,direction,timestamp").order("timestamp", { ascending: false }).limit(200)
-    : Promise.resolve({ data: [] as any[] });
-
-  // ── ERPNext: alteration board ──
-  const altOpenProm = erpList<{ name: string; workflow_state: string; customer_name: string; due_date: string }>("Alteration Ticket", {
-    filters: [["workflow_state", "in", ["Received", "In Progress"]]],
-    fields: ["name", "workflow_state", "customer_name", "due_date"],
-    limit: 50,
-  }).catch(() => []);
-
-  const altReadyProm = erpList<{ name: string; customer_name: string }>("Alteration Ticket", {
-    filters: [["workflow_state", "=", "Ready"]],
-    fields: ["name", "customer_name"],
-    limit: 50,
-  }).catch(() => []);
-
-  const altOverdueProm = erpList<{ name: string; customer_name: string; due_date: string }>("Alteration Ticket", {
-    filters: [["workflow_state", "in", ["Received", "In Progress"]], ["due_date", "<", today]],
-    fields: ["name", "customer_name", "due_date"],
-    limit: 20,
-  }).catch(() => []);
-
-  // ── ERPNext: deliveries ──
-  const deliveriesProm = erpList<{ name: string; customer_name: string; lsh_status: string }>("LSH Delivery", {
-    filters: [["lsh_status", "in", ["Queued", "Out for Delivery", "Ready for Pickup"]]],
-    fields: ["name", "customer_name", "lsh_status"],
-    limit: 30,
-  }).catch(() => []);
-
   const [apptsToday, smsData, altOpen, altReady, altOverdue, deliveries] = await Promise.all([
-    apptsTodayProm, smsProm, altOpenProm, altReadyProm, altOverdueProm, deliveriesProm,
+    storeList<any>(DT.APPOINTMENT, {
+      filters: [["start_time", ">=", `${today}T00:00:00Z`], ["start_time", "<=", `${today}T23:59:59Z`], ["status", "in", ["confirmed", "pending"]]],
+      fields: ["name", "event_type", "status", "start_time", "client_name", "client_phone", "assigned_tailor"],
+      orderBy: "start_time asc",
+      limit: 50,
+    }),
+    listSmsMessagesFiltered({ limit: 200 }),
+    erpList<any>("Alteration Ticket", { filters: [["workflow_state", "in", ["Received", "In Progress"]]], fields: ["name", "workflow_state", "customer_name", "due_date"], limit: 50 }).catch(() => []),
+    erpList<any>("Alteration Ticket", { filters: [["workflow_state", "=", "Ready"]], fields: ["name", "customer_name"], limit: 50 }).catch(() => []),
+    erpList<any>("Alteration Ticket", { filters: [["workflow_state", "in", ["Received", "In Progress"]], ["due_date", "<", today]], fields: ["name", "customer_name", "due_date"], limit: 20 }).catch(() => []),
+    erpList<any>("LSH Delivery", { filters: [["lsh_status", "in", ["Queued", "Out for Delivery", "Ready for Pickup"]]], fields: ["name", "customer_name", "lsh_status"], limit: 30 }).catch(() => []),
   ]);
 
-  // Count unanswered SMS threads
   const lastByPhone = new Map<string, string>();
-  for (const m of (smsData as any).data ?? []) {
+  for (const m of smsData) {
     if (!lastByPhone.has(m.client_phone)) lastByPhone.set(m.client_phone, m.direction);
   }
   const unansweredSms = Array.from(lastByPhone.values()).filter((d) => d === "inbound").length;
 
-  // ── Build text summary ──
   const lines: string[] = [];
-
-  // Appointments today
-  const todayAppts = (apptsToday as any).data ?? [];
-  if (todayAppts.length) {
-    lines.push(`APPOINTMENTS TODAY (${todayAppts.length}):`);
-    for (const a of todayAppts) {
-      lines.push(`  ${fmtNYC(a.start_time)} — ${a.client_name ?? "Unknown"} — ${a.event_type}${a.assigned_tailor ? ` w/ ${a.assigned_tailor}` : ""}`);
-    }
+  if (apptsToday.length) {
+    lines.push(`APPOINTMENTS TODAY (${apptsToday.length}):`);
+    for (const a of apptsToday) lines.push(`  ${fmtNYC(a.start_time)} — ${a.client_name ?? "Unknown"} — ${a.event_type}${a.assigned_tailor ? ` w/ ${a.assigned_tailor}` : ""}`);
   } else {
     lines.push("APPOINTMENTS TODAY: None scheduled.");
   }
 
-  // Alteration board
   if (altReady.length) {
     lines.push(`\nALTERATIONS READY FOR PICKUP (${altReady.length}):`);
-    for (const t of altReady.slice(0, 8)) lines.push(`  ${t.name} — ${(t as any).customer_name}`);
+    for (const t of altReady.slice(0, 8)) lines.push(`  ${t.name} — ${t.customer_name}`);
   }
   if (altOverdue.length) {
     lines.push(`\nOVERDUE ALTERATIONS (${altOverdue.length}):`);
-    for (const t of altOverdue.slice(0, 8)) lines.push(`  ${t.name} — ${(t as any).customer_name} (due ${(t as any).due_date})`);
+    for (const t of altOverdue.slice(0, 8)) lines.push(`  ${t.name} — ${t.customer_name} (due ${t.due_date})`);
   }
   if (altOpen.length) {
-    lines.push(`\nALTERATIONS IN PROGRESS: ${altOpen.length} tickets (${altOpen.filter(t => (t as any).workflow_state === "Received").length} received, ${altOpen.filter(t => (t as any).workflow_state === "In Progress").length} in progress)`);
+    lines.push(`\nALTERATIONS IN PROGRESS: ${altOpen.length} tickets`);
   }
 
-  // Deliveries
-  const readyForPickup = deliveries.filter((d) => (d as any).lsh_status === "Ready for Pickup");
-  const outForDelivery = deliveries.filter((d) => (d as any).lsh_status === "Out for Delivery");
-  const queued = deliveries.filter((d) => (d as any).lsh_status === "Queued");
+  const readyForPickup = deliveries.filter((d) => d.lsh_status === "Ready for Pickup");
+  const outForDelivery = deliveries.filter((d) => d.lsh_status === "Out for Delivery");
+  const queued = deliveries.filter((d) => d.lsh_status === "Queued");
   if (readyForPickup.length) {
     lines.push(`\nREADY FOR PICKUP — DELIVERIES (${readyForPickup.length}):`);
-    for (const d of readyForPickup.slice(0, 8)) lines.push(`  ${d.name} — ${(d as any).customer_name}`);
+    for (const d of readyForPickup.slice(0, 8)) lines.push(`  ${d.name} — ${d.customer_name}`);
   }
   if (outForDelivery.length) lines.push(`\nOUT FOR DELIVERY: ${outForDelivery.length} deliveries`);
   if (queued.length) lines.push(`QUEUED FOR DELIVERY: ${queued.length} deliveries`);
-
-  // SMS
-  if (unansweredSms > 0) {
-    lines.push(`\nUNANSWERED SMS THREADS: ${unansweredSms} client threads awaiting reply`);
-  }
+  if (unansweredSms > 0) lines.push(`\nUNANSWERED SMS THREADS: ${unansweredSms} client threads awaiting reply`);
 
   return c.json({
     data: {
       as_of: now,
-      appointments_today: todayAppts.length,
+      appointments_today: apptsToday.length,
       alterations: { open: altOpen.length, ready: altReady.length, overdue: altOverdue.length },
       deliveries: { ready_for_pickup: readyForPickup.length, out_for_delivery: outForDelivery.length, queued: queued.length },
       unanswered_sms: unansweredSms,
@@ -267,57 +229,43 @@ sofiaBridgeRouter.get("/summary", async (c) => {
   });
 });
 
-// ── POST /api/sofia-bridge/event ────────────────────────────────────────────
-// Sofia voice posts events here so the house app stays in sync.
-// e.g. new appointment booked via voice, cancellation, customer note
 sofiaBridgeRouter.post("/event", async (c) => {
   const key = c.req.header("x-sofia-bridge-key") ?? null;
   if (!authGuard(key)) return c.json({ error: "Unauthorized" }, 401);
-
-  const sb = supabaseAdmin;
-  if (!sb) return c.json({ error: "Supabase unavailable" }, 503);
 
   let body: any;
   try { body = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
 
   const { event_type, phone, customer_name, data: eventData } = body;
 
-  // Log every Sofia voice event to sms_messages as a system event
   if (phone) {
     try {
-      await sb.from("sms_messages").insert({
+      await insertSmsMessage({
         client_phone: normalizePhone(phone),
         direction: "outbound",
         content: `[Sofia Voice Event: ${event_type}] ${JSON.stringify(eventData ?? {}).slice(0, 300)}`,
         timestamp: new Date().toISOString(),
-        metadata: { source: "sofia_voice", event_type, customer_name },
+        metadata: JSON.stringify({ source: "sofia_voice", event_type, customer_name }),
       });
     } catch { /* non-fatal */ }
   }
 
-  // Specific event handling
-  if (event_type === "appointment_booked" && eventData?.appointment_name) {
-    // Could sync to appointments table in future
-  }
-
   if (event_type === "customer_note" && phone && eventData?.note) {
-    // Find customer and add dossier observation
     const norm = normalizePhone(phone);
     const bare = norm.replace(/^\+1/, "");
-    const { data: clients } = await sb.from("clients").select("id").or(`phone.eq.${norm},phone.eq.${bare},phone.eq.+1${bare}`).limit(1);
-    const custId = clients?.[0]?.id;
-    if (custId) {
-      const { data: dossier } = await sb.from("customer_dossiers").select("id").eq("customer_id", custId).maybeSingle();
+    const client = await findClientByPhone(norm, bare);
+    if (client?.id) {
+      const dossier = await storeFindOne(DT.CUSTOMER_DOSSIER, "customer", client.id);
       if (dossier) {
         try {
-          await sb.from("dossier_observations").insert({
-            dossier_id: dossier.id,
-            customer_id: custId,
+          await storeInsert(DT.DOSSIER_OBSERVATION, {
+            dossier: (dossier as any).name,
+            customer: client.id,
             observation_type: eventData.observation_type ?? "context",
             content: String(eventData.note).slice(0, 500),
             source_channel: "voice",
             importance: eventData.importance ?? 5,
-            is_significant: (eventData.importance ?? 5) >= 7,
+            is_significant: (eventData.importance ?? 5) >= 7 ? 1 : 0,
           });
         } catch { /* non-fatal */ }
       }
