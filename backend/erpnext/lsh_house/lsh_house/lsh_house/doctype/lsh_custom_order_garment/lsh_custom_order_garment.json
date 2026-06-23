@@ -1,0 +1,51 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-01-01 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "garment_type",
+  "construction",
+  "garment_status",
+  "price"
+ ],
+ "fields": [
+  {
+   "fieldname": "garment_type",
+   "fieldtype": "Data",
+   "label": "Garment Type",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "construction",
+   "fieldtype": "Data",
+   "label": "Construction"
+  },
+  {
+   "fieldname": "garment_status",
+   "fieldtype": "Data",
+   "label": "Status",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "price",
+   "fieldtype": "Currency",
+   "label": "Price"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-01-01 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "LSH House",
+ "name": "LSH Custom Order Garment",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "istable": 1
+}

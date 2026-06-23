@@ -1,8 +1,24 @@
 # LSH ERPNext DocTypes
 
-L&S House uses ERPNext as the **single source of truth**. Install these custom DocTypes on your Frappe site before deploying the migrated app.
+## Install on ERPNext
+
+**Before deploying the app**, install the bundled Frappe app:
+
+```bash
+bench --site YOUR_SITE install-app lsh_house
+```
+
+Full instructions: **[INSTALL.md](./INSTALL.md)**
+
+Run verification from the backend:
+
+```bash
+bun run src/scripts/verify-erpnext-setup.ts
+bun run src/scripts/seed-erpnext-lsh.ts
+```
 
 DocType names are defined in `backend/src/lib/erpnext/doctypes.ts`.
+Generated JSON lives in `backend/erpnext/lsh_house/`.
 
 ## Core business (Phase 2)
 

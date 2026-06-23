@@ -1,0 +1,169 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:slug",
+ "creation": "2026-01-01 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "slug",
+  "agent_name",
+  "role",
+  "description",
+  "status",
+  "model",
+  "platform",
+  "color",
+  "icon",
+  "current_task",
+  "current_task_since",
+  "last_action_at",
+  "last_action_summary",
+  "last_heartbeat_at",
+  "health_score",
+  "settings",
+  "stats",
+  "enabled"
+ ],
+ "fields": [
+  {
+   "fieldname": "slug",
+   "fieldtype": "Data",
+   "label": "Slug",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "agent_name",
+   "fieldtype": "Data",
+   "label": "Name",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "role",
+   "fieldtype": "Data",
+   "label": "Role",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "active\nidle\nerror\noffline\npaused",
+   "default": "offline",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "label": "Model"
+  },
+  {
+   "fieldname": "platform",
+   "fieldtype": "Data",
+   "label": "Platform"
+  },
+  {
+   "fieldname": "color",
+   "fieldtype": "Data",
+   "label": "Color",
+   "default": "brass"
+  },
+  {
+   "fieldname": "icon",
+   "fieldtype": "Data",
+   "label": "Icon",
+   "default": "Bot"
+  },
+  {
+   "fieldname": "current_task",
+   "fieldtype": "Small Text",
+   "label": "Current Task"
+  },
+  {
+   "fieldname": "current_task_since",
+   "fieldtype": "Datetime",
+   "label": "Current Task Since"
+  },
+  {
+   "fieldname": "last_action_at",
+   "fieldtype": "Datetime",
+   "label": "Last Action At"
+  },
+  {
+   "fieldname": "last_action_summary",
+   "fieldtype": "Small Text",
+   "label": "Last Action Summary"
+  },
+  {
+   "fieldname": "last_heartbeat_at",
+   "fieldtype": "Datetime",
+   "label": "Last Heartbeat At"
+  },
+  {
+   "fieldname": "health_score",
+   "fieldtype": "Int",
+   "label": "Health Score",
+   "default": "100"
+  },
+  {
+   "fieldname": "settings",
+   "fieldtype": "Long Text",
+   "label": "Settings JSON"
+  },
+  {
+   "fieldname": "stats",
+   "fieldtype": "Long Text",
+   "label": "Stats JSON"
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "default": "1"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-01-01 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "LSH House",
+ "name": "LSH Agent",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "share": 1
+  },
+  {
+   "role": "LST Super Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "share": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "naming_rule": "By fieldname"
+}

@@ -1,0 +1,20 @@
+[
+ {
+  "doctype": "LSH Location",
+  "location_code": "NYC",
+  "location_name": "New York",
+  "short_name": "NYC",
+  "is_active": 1,
+  "sort_order": 1,
+  "timezone": "America/New_York"
+ },
+ {
+  "doctype": "LSH Location",
+  "location_code": "HOU",
+  "location_name": "Houston",
+  "short_name": "HOU",
+  "is_active": 1,
+  "sort_order": 2,
+  "timezone": "America/Chicago"
+ }
+]

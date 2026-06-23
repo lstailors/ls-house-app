@@ -1,0 +1,117 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-01-01 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "external_id",
+  "time",
+  "from",
+  "from_caller_name",
+  "to",
+  "direction",
+  "duration",
+  "status",
+  "transcript_raw",
+  "transcript_whisper",
+  "recording"
+ ],
+ "fields": [
+  {
+   "fieldname": "external_id",
+   "fieldtype": "Data",
+   "label": "External ID",
+   "unique": 1
+  },
+  {
+   "fieldname": "time",
+   "fieldtype": "Datetime",
+   "label": "Time",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "from",
+   "fieldtype": "Data",
+   "label": "From",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "from_caller_name",
+   "fieldtype": "Data",
+   "label": "From Caller Name"
+  },
+  {
+   "fieldname": "to",
+   "fieldtype": "Data",
+   "label": "To"
+  },
+  {
+   "fieldname": "direction",
+   "fieldtype": "Data",
+   "label": "Direction"
+  },
+  {
+   "fieldname": "duration",
+   "fieldtype": "Int",
+   "label": "Duration"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Data",
+   "label": "Status",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "transcript_raw",
+   "fieldtype": "Long Text",
+   "label": "Transcript Raw"
+  },
+  {
+   "fieldname": "transcript_whisper",
+   "fieldtype": "Long Text",
+   "label": "Transcript Summary"
+  },
+  {
+   "fieldname": "recording",
+   "fieldtype": "Data",
+   "label": "Recording URL"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-01-01 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "LSH House",
+ "name": "LSH Call Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "share": 1
+  },
+  {
+   "role": "LST Super Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "share": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
