@@ -198,28 +198,18 @@ async def book_appointment(
         # Auto-create Customer record if this is a new caller
         await erp_ensure_customer(customer_name, phone, customer_email)
 
-        # Human-readable date + calendar links (Apple .ics + Google one-tap)
+        # Human-readable date + single smart calendar link
         from datetime import timezone
         from urllib.parse import quote
-        apple_cal_link = ""
-        google_cal_link = ""
+        cal_link = ""
         try:
             appt_dt = dt.strptime(slot_datetime[:16], "%Y-%m-%d %H:%M").replace(tzinfo=NYC)
             appt_display = appt_dt.strftime("%A, %B %-d at %-I:%M %p")
             start_utc = appt_dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            end_utc = (appt_dt.astimezone(timezone.utc) + timedelta(minutes=70)).strftime("%Y%m%dT%H%M%SZ")
             event_title = quote(f"{service_type} — L&S Custom Tailors")
-            location = quote("138 East 61st Street, Suite 201, New York, NY 10065")
-            apple_cal_link = (
-                f"{settings.BASE_URL.rstrip('/')}/appt.ics"
+            cal_link = (
+                f"{settings.BASE_URL.rstrip('/')}/cal"
                 f"?title={event_title}&start={start_utc}&minutes=70"
-            )
-            google_cal_link = (
-                f"https://calendar.google.com/calendar/render?action=TEMPLATE"
-                f"&text={event_title}"
-                f"&dates={start_utc}/{end_utc}"
-                f"&location={location}"
-                f"&details={quote('L&S Custom Tailors · 138 E 61st St, Suite 201, New York · Questions? Call (212) 752-1638')}"
             )
         except Exception:
             appt_display = slot_datetime
@@ -230,19 +220,12 @@ async def book_appointment(
         if phone and phone != "unknown":
             try:
                 twilio_client = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-                cal_lines = ""
-                if google_cal_link and apple_cal_link:
-                    cal_lines = f"\nAdd to calendar:\nGoogle: {google_cal_link}\nApple: {apple_cal_link}"
-                elif google_cal_link:
-                    cal_lines = f"\nAdd to calendar: {google_cal_link}"
-                elif apple_cal_link:
-                    cal_lines = f"\nAdd to calendar: {apple_cal_link}"
                 sms_body = (
                     f"L&S Custom Tailors — your {service_type} is confirmed for "
                     f"{appt_display} with {tailor}. "
                     f"We're at 138 E 61st St, Suite 201, New York. "
                     + prep_note(service_type)
-                    + cal_lines
+                    + (f"\nAdd to calendar: {cal_link}" if cal_link else "")
                     + f"\nQuestions? Reply or call (212) 752-1638."
                 )
                 twilio_client.messages.create(
