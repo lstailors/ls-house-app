@@ -96,7 +96,7 @@ dashboardRouter.get("/kpis", async (c) => {
 
   // LSH Delivery for deliveriesDue
   const deliveryFilters: any[] = [["lsh_status", "in", ["Queued", "Out for Delivery"]]];
-  if (locCode) deliveryFilters.push(["origin_location", "=", locCode]);
+  if (locCode) deliveryFilters.push(["lsh_origin_location", "=", locCode]);
 
   // Today's intake from ERPNext SOs
   const todayFilters: any[] = [["docstatus", "=", 1], ["transaction_date", "=", todayDate]];
