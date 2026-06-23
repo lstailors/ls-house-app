@@ -1,7 +1,8 @@
 import { Hono } from "hono";
-import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser, canSeeFinancials } from "../lib/scope";
 import { erpList } from "../lib/erp";
+import { listFabrics } from "../lib/erpnext/reference";
+import { listBrainEntriesFiltered, listSmsMessagesFiltered } from "../lib/erpnext/agents";
 
 export const searchRouter = new Hono();
 
@@ -202,16 +203,18 @@ searchRouter.get("/", async (c) => {
   // ── Supabase: secondary sources (keep as-is) ──────────────
   const like2 = `%${q}%`;
 
-  // Fabrics
+  // Fabrics — ERPNext LSH Fabric Pricing
   try {
-    const { data: fabrics } = await supabaseAdmin
-      ?.from("fabrics")
-      .select("id, fabric_name, fabric_number, mill_brand")
-      .or(`fabric_name.ilike.${like2},fabric_number.ilike.${like2},mill_brand.ilike.${like2}`)
-      .limit(4) ?? { data: [] };
+    const allFabrics = await listFabrics(true);
+    const qLower = q.toLowerCase();
+    const fabrics = allFabrics.filter((f: any) =>
+      String(f.fabric_name ?? "").toLowerCase().includes(qLower) ||
+      String(f.mill ?? "").toLowerCase().includes(qLower) ||
+      String(f.name ?? "").toLowerCase().includes(qLower)
+    ).slice(0, 4);
 
-    for (const f of fabrics ?? []) {
-      results.push({ type: "fabric", id: f.id, title: f.fabric_name, subtitle: f.mill_brand ?? null, meta: f.fabric_number ? `#${f.fabric_number}` : null, href: `/reference/fabrics` });
+    for (const f of fabrics) {
+      results.push({ type: "fabric", id: f.name, title: f.fabric_name, subtitle: f.mill ?? null, meta: f.name ? `#${f.name}` : null, href: `/reference/fabrics` });
     }
   } catch {}
 
@@ -232,29 +235,16 @@ searchRouter.get("/", async (c) => {
 
   // Brain / Intelligence
   try {
-    const { data: notes } = await supabaseAdmin
-      ?.from("brain_entries")
-      .select("id, summary, entry_type, agent_slug, created_at")
-      .ilike("summary", like2)
-      .order("created_at", { ascending: false })
-      .limit(3) ?? { data: [] };
-
-    for (const n of notes ?? []) {
-      results.push({ type: "intelligence", id: n.id, title: n.summary, subtitle: `${n.agent_slug} · ${n.entry_type}`, meta: n.created_at ? new Date(n.created_at).toLocaleDateString() : null, href: `/comms` });
+    const notes = await listBrainEntriesFiltered({ summaryLike: q, limit: 3 });
+    for (const n of notes) {
+      results.push({ type: "intelligence", id: n.name, title: n.summary, subtitle: `${n.agent_slug} · ${n.entry_type}`, meta: n.creation ? new Date(n.creation).toLocaleDateString() : null, href: `/comms` });
     }
   } catch {}
 
-  // SMS
   try {
-    const { data: sms } = await supabaseAdmin
-      ?.from("sms_messages")
-      .select("id, content, client_phone, direction, timestamp")
-      .ilike("content", like2)
-      .order("timestamp", { ascending: false })
-      .limit(3) ?? { data: [] };
-
-    for (const s of sms ?? []) {
-      results.push({ type: "sms", id: s.id, title: s.content?.slice(0, 80) + (s.content?.length > 80 ? "…" : ""), subtitle: s.client_phone, meta: s.direction, href: `/sofia` });
+    const sms = await listSmsMessagesFiltered({ contentLike: q, limit: 3 });
+    for (const s of sms) {
+      results.push({ type: "sms", id: s.name, title: s.content?.slice(0, 80) + (s.content?.length > 80 ? "…" : ""), subtitle: s.client_phone, meta: s.direction, href: `/sofia` });
     }
   } catch {}
 

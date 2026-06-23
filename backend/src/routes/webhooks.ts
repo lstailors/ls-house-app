@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { supabaseAdmin } from "../lib/supabase";
 import { logErpCommunication, matchCustomerByPhone } from "./comms";
+import { insertCallLog, updateCallLog, insertSmsMessage } from "../lib/erpnext/agents";
 
 export const webhooksRouter = new Hono();
 
@@ -43,7 +43,6 @@ webhooksRouter.post("/unifi", async (c) => {
 
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ ok: false, error: "Invalid JSON" }, 400);
-  if (!supabaseAdmin) return c.json({ ok: true });
 
   const type = c.req.query("type") ?? "transcript"; // transcript | voicemail | missed | failed
   const { callId, transcript, summary, recordingUrl, callerPhone, callerName, duration, rawText } = parseUnifiPayload(body);
@@ -59,14 +58,14 @@ webhooksRouter.post("/unifi", async (c) => {
 
   // ── Save/update in unifi_call_logs ──────────────────────────────────────
   if (callId) {
-    await supabaseAdmin.from("unifi_call_logs").update({
+    await updateCallLog(callId, {
       transcript_raw: transcript,
       transcript_whisper: summary,
       recording: recordingUrl,
       status: type === "transcript" ? "accepted" : status,
-    }).eq("id", callId).then(() => {});
+    }).catch(() => {});
   } else {
-    await supabaseAdmin.from("unifi_call_logs").insert({
+    await insertCallLog({
       time: new Date().toISOString(),
       from: callerPhone ?? "unknown",
       from_caller_name: callerName ?? null,
@@ -77,7 +76,7 @@ webhooksRouter.post("/unifi", async (c) => {
       transcript_raw: transcript,
       transcript_whisper: summary,
       recording: recordingUrl,
-    }).then(() => {});
+    }).catch(() => {});
   }
 
   // ── Log to ERPNext Customer Communication ───────────────────────────────
@@ -115,15 +114,15 @@ webhooksRouter.post("/unifi", async (c) => {
     const fromPhone = callerPhone ?? body.from ?? body.sender ?? null;
     const messageBody = body.message ?? body.body ?? body.text ?? transcript ?? rawText ?? null;
 
-    if (fromPhone && messageBody && supabaseAdmin) {
-      await supabaseAdmin.from("sms_messages").insert({
+    if (fromPhone && messageBody) {
+      await insertSmsMessage({
         client_phone: fromPhone,
         direction: "inbound",
         body: messageBody,
         content: messageBody,
         timestamp: new Date().toISOString(),
-        metadata: { source: "unifi", raw: body },
-      }).then(() => {});
+        metadata: JSON.stringify({ source: "unifi", raw: body }),
+      }).catch(() => {});
 
       // Log to ERPNext customer timeline
       const customer = await matchCustomerByPhone(fromPhone).catch(() => null);

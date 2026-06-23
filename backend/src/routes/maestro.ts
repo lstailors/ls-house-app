@@ -1,8 +1,20 @@
 import { Hono } from "hono";
-import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser } from "../lib/scope";
 import { erpList } from "../lib/erp";
 import type { ApprovalCategory } from "../types";
+import {
+  insertAgentBrief,
+  listAgentBriefsFiltered,
+  listApprovalQueue,
+  getApprovalItem,
+  updateApprovalItem,
+  insertApprovalDecision,
+  insertAgentEvents,
+  insertAgentCosts,
+  updateAgent,
+} from "../lib/erpnext/agents";
+import { storeList } from "../lib/erpnext/store";
+import { DT } from "../lib/erpnext/doctypes";
 
 export const maestroRouter = new Hono();
 
@@ -117,27 +129,22 @@ maestroRouter.post("/brief", async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: { message: "Invalid JSON" } }, 400);
 
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
-
   const title = typeof body.date === "string"
     ? `Maestro Brief — ${body.date}`
     : "Maestro Daily Brief";
   const briefText = typeof body.brief === "string" ? body.brief : JSON.stringify(body);
 
-  const { error } = await (supabaseAdmin as any)
-    .schema("lsh")
-    .from("agent_briefs")
-    .insert({
+  try {
+    await insertAgentBrief({
       type: "daily_brief",
       title,
       body: briefText,
       severity: "info",
       source: "maestro",
-      metadata: body,
+      metadata: JSON.stringify(body),
     });
-
-  if (error) {
-    console.error("[maestro/brief] insert error:", error.message);
+  } catch (e: any) {
+    console.error("[maestro/brief] insert error:", e.message);
     return c.json({ error: { message: "Failed to store brief" } }, 500);
   }
 
@@ -153,26 +160,34 @@ maestroRouter.get("/brief/trigger", async (_c) => {
     const period = nycHour < 12 ? "Morning" : nycHour < 16 ? "Midday" : "Afternoon";
 
     // ── Gather live data in parallel ──────────────────────────────────────
-    const sb = supabaseAdmin;
     const [overdueInvoices, openApprovals, openTasks, altKpis, appointments] = await Promise.all([
       erpList<any>("Sales Invoice", {
         filters: [["docstatus","=",1],["outstanding_amount",">",0],["due_date","<",todayStr]],
         fields: ["name","customer_name","outstanding_amount","due_date"],
         limit: 10,
       }).catch(() => []),
-      sb ? sb.from("approval_queue").select("id,title,priority,category").in("status",["pending","awaiting_second"]).order("created_at",{ascending:false}).limit(20) : Promise.resolve({ data: [] }),
-      sb ? (sb as any).schema("lsh").from("agent_tasks").select("id,title,priority,status,due_at").in("status",["pending","active"]).limit(10) : Promise.resolve({ data: [] }),
+      listApprovalQueue({ status: ["pending", "awaiting_second"], limit: 20 }),
+      storeList<any>(DT.AGENT_TASK, {
+        filters: [["status", "in", ["pending", "active", "in_progress"]]],
+        fields: ["name", "title", "priority", "status", "due_at"],
+        limit: 10,
+      }),
       erpList<any>("Alteration Ticket", {
         filters: [["workflow_state","in",["Received","In Progress"]]],
         fields: ["name","workflow_state","due_date","is_rush"],
         limit: 200,
       }).catch(() => []),
-      sb ? sb.from("appointments").select("event_type,start_time").gte("start_time",`${todayStr}T00:00:00Z`).lte("start_time",`${todayStr}T23:59:59Z`).order("start_time").limit(5) : Promise.resolve({ data: [] }),
+      storeList<any>(DT.APPOINTMENT, {
+        filters: [["start_time", ">=", `${todayStr}T00:00:00Z`], ["start_time", "<=", `${todayStr}T23:59:59Z`]],
+        fields: ["name", "event_type", "start_time"],
+        orderBy: "start_time asc",
+        limit: 5,
+      }),
     ]);
 
-    const approvals = (openApprovals.data ?? []) as any[];
-    const tasks = (openTasks.data ?? []) as any[];
-    const appts = (appointments.data ?? []) as any[];
+    const approvals = openApprovals as any[];
+    const tasks = openTasks as any[];
+    const appts = appointments as any[];
 
     const overdueAlt = altKpis.filter((t:any) => t.due_date && t.due_date < todayStr).length;
     const rushAlt = altKpis.filter((t:any) => t.is_rush).length;
@@ -205,17 +220,17 @@ maestroRouter.get("/brief/trigger", async (_c) => {
     }
     if (!briefText) briefText = `${period} Brief:\n${dataBlock}\n— Maestro`;
 
-    // ── Save to lsh.agent_briefs ──────────────────────────────────────────
-    if (sb) {
-      const { error } = await (sb as any).schema("lsh").from("agent_briefs").insert({
+    try {
+      await insertAgentBrief({
         type: "daily_brief",
         title: `Maestro Brief — ${todayStr}`,
         body: briefText,
         severity: "info",
         source: "maestro",
-        metadata: { date: todayStr, period, generated_at: now.toISOString() },
+        metadata: JSON.stringify({ date: todayStr, period, generated_at: now.toISOString() }),
       });
-      if (error) console.error("[maestro/brief/trigger] save error:", error.message);
+    } catch (e: any) {
+      console.error("[maestro/brief/trigger] save error:", e.message);
     }
 
     return _c.json({ data: { ok: true, period, brief: briefText } });
@@ -232,22 +247,16 @@ maestroRouter.get("/brief", async (c) => {
   if (user.role === "driver" || user.role === "salesperson")
     return c.json({ error: { message: "Forbidden" } }, 403);
 
-  if (!supabaseAdmin) return c.json({ data: null });
+  const briefs = await listAgentBriefsFiltered({ source: "maestro", type: "daily_brief", limit: 1 });
+  const row = briefs[0];
+  if (!row) return c.json({ data: null });
 
-  const { data: row, error } = await (supabaseAdmin as any)
-    .schema("lsh")
-    .from("agent_briefs")
-    .select("id, title, body, metadata, created_at")
-    .eq("source", "maestro")
-    .eq("type", "daily_brief")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
-
-  if (error || !row) return c.json({ data: null });
-
-  // metadata is the full payload; merge with top-level fields the frontend expects
-  const meta = row.metadata ?? {};
+  let meta: any = {};
+  try {
+    meta = typeof row.metadata === "string" ? JSON.parse(row.metadata) : (row.metadata ?? {});
+  } catch {
+    meta = {};
+  }
   let signals = Array.isArray(meta.signals) ? meta.signals : [];
   // Strip financial signals for store_manager (super_admin sees all)
   if (user.role === "store_manager") {
@@ -256,12 +265,12 @@ maestroRouter.get("/brief", async (c) => {
 
   return c.json({
     data: {
-      id: row.id,
+      id: row.name,
       brief: row.body,
       date: meta.date ?? null,
       signals,
       anomalies: Array.isArray(meta.anomalies) ? meta.anomalies : [],
-      receivedAt: row.created_at,
+      receivedAt: row.creation,
     },
   });
 });
@@ -273,27 +282,18 @@ maestroRouter.get("/approvals", async (c) => {
   if (user.role === "driver" || user.role === "salesperson")
     return c.json({ error: { message: "Forbidden" } }, 403);
 
-  if (!supabaseAdmin) return c.json({ data: [] });
-
-  const { data, error } = await supabaseAdmin
-    .from("approval_queue")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(100);
-
-  if (error) return c.json({ data: [] });
+  const data = await listApprovalQueue({ limit: 100 });
 
   const FINANCIAL: ApprovalCategory[] = ["financial"];
-  const filtered = (data ?? []).filter((item: any) => {
+  const filtered = data.filter((item: any) => {
     if (FINANCIAL.includes(item.category) && user.role !== "super_admin" && user.role !== "store_manager") return false;
     return true;
   });
 
-  return c.json({ data: filtered });
+  return c.json({ data: filtered.map((r: any) => ({ ...r, id: r.name, created_at: r.creation })) });
 });
 
 // ── POST /api/maestro/approvals/:id/approve ──
-// Audit destination: public.approval_decisions (Supabase service role)
 maestroRouter.post("/approvals/:id/approve", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
@@ -301,15 +301,8 @@ maestroRouter.post("/approvals/:id/approve", async (c) => {
     return c.json({ error: { message: "Forbidden" } }, 403);
 
   const queueItemId = c.req.param("id");
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
-
-  const { data: item, error: fetchErr } = await supabaseAdmin
-    .from("approval_queue")
-    .select("*")
-    .eq("id", queueItemId)
-    .single();
-
-  if (fetchErr || !item) return c.json({ error: { message: "Not found" } }, 404);
+  const item = await getApprovalItem(queueItemId);
+  if (!item) return c.json({ error: { message: "Not found" } }, 404);
   if (item.status !== "pending" && item.status !== "awaiting_second")
     return c.json({ error: { message: `Item is already ${item.status}` } }, 409);
   if (item.status === "shadow_review")
@@ -325,21 +318,17 @@ maestroRouter.post("/approvals/:id/approve", async (c) => {
   }
   await handler(item);
 
-  const { error: updateErr } = await supabaseAdmin
-    .from("approval_queue")
-    .update({ status: "approved" })
-    .eq("id", queueItemId);
-
-  if (updateErr) return c.json({ error: { message: "Failed to update status" } }, 500);
-
-  // Audit log → public.approval_decisions
-  // approval_decision enum: approved | denied | revised
-  await supabaseAdmin.from("approval_decisions").insert({
-    approval_id: queueItemId,
-    decided_by_name: user.name,
-    decided_by_email: user.email,
-    decision: "approved",
-  });
+  try {
+    await updateApprovalItem(queueItemId, { status: "approved" });
+    await insertApprovalDecision({
+      approval_id: queueItemId,
+      decided_by_name: user.name,
+      decided_by_email: user.email,
+      decision: "approved",
+    });
+  } catch {
+    return c.json({ error: { message: "Failed to update status" } }, 500);
+  }
 
   return c.json({ data: { ok: true, action: actionKey } });
 });
@@ -355,24 +344,15 @@ maestroRouter.post("/approvals/:id/deny", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const notes = typeof body?.notes === "string" ? body.notes : undefined;
 
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
-
-  const { data: item, error: fetchErr } = await supabaseAdmin
-    .from("approval_queue")
-    .select("id, status, category")
-    .eq("id", queueItemId)
-    .single();
-
-  if (fetchErr || !item) return c.json({ error: { message: "Not found" } }, 404);
+  const item = await getApprovalItem(queueItemId);
+  if (!item) return c.json({ error: { message: "Not found" } }, 404);
   if (item.status === "shadow_review")
     return c.json({ error: { message: "Shadow review items are observation-only" } }, 403);
   if (item.category === "financial" && user.role !== "super_admin" && user.role !== "store_manager")
     return c.json({ error: { message: "Forbidden" } }, 403);
 
-  await supabaseAdmin.from("approval_queue").update({ status: "denied" }).eq("id", queueItemId);
-
-  // Audit log → public.approval_decisions
-  await supabaseAdmin.from("approval_decisions").insert({
+  await updateApprovalItem(queueItemId, { status: "denied" });
+  await insertApprovalDecision({
     approval_id: queueItemId,
     decided_by_name: user.name,
     decided_by_email: user.email,
@@ -395,11 +375,6 @@ maestroRouter.post("/events", async (c) => {
 
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: { message: "Invalid JSON" } }, 400);
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
-
-  const lshAdmin = (supabaseAdmin as any).schema("lsh");
-
-  // Support single event or array
   const events = Array.isArray(body) ? body : [body];
   const rows = events.map((ev: any) => ({
     agent_slug: ev.agent_slug ?? ev.agent ?? "maestro",
@@ -407,14 +382,15 @@ maestroRouter.post("/events", async (c) => {
     title: ev.title ?? ev.summary ?? ev.message ?? ev.event_type ?? "event",
     body: ev.body ?? ev.summary ?? ev.message ?? null,
     severity: ev.severity ?? "info",
-    metadata: ev.metadata ?? {},
+    metadata: typeof ev.metadata === "object" ? JSON.stringify(ev.metadata) : (ev.metadata ?? "{}"),
     tenant_id: ev.tenant_id ?? null,
   }));
 
-  const { error } = await lshAdmin.from("agent_events").insert(rows);
-  if (error) {
-    console.error("[maestro/events] insert error:", error.message);
-    return c.json({ error: { message: error.message } }, 500);
+  try {
+    await insertAgentEvents(rows);
+  } catch (e: any) {
+    console.error("[maestro/events] insert error:", e.message);
+    return c.json({ error: { message: e.message } }, 500);
   }
 
   return c.json({ data: { ok: true, count: rows.length } });
@@ -431,10 +407,6 @@ maestroRouter.post("/costs", async (c) => {
 
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: { message: "Invalid JSON" } }, 400);
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
-
-  const lshAdmin = (supabaseAdmin as any).schema("lsh");
-
   const records = Array.isArray(body) ? body : [body];
   const rows = records.map((r: any) => ({
     agent_slug: r.agent_slug ?? r.agent ?? "maestro",
@@ -447,20 +419,16 @@ maestroRouter.post("/costs", async (c) => {
     tenant_id: r.tenant_id ?? null,
   }));
 
-  const { error } = await lshAdmin.from("agent_costs").insert(rows);
-  if (error) {
-    console.error("[maestro/costs] insert error:", error.message);
-    return c.json({ error: { message: error.message } }, 500);
+  try {
+    await insertAgentCosts(rows);
+  } catch (e: any) {
+    console.error("[maestro/costs] insert error:", e.message);
+    return c.json({ error: { message: e.message } }, 500);
   }
 
-  // Also update agent last_action_at + last_action_summary
   for (const row of rows) {
     if (row.agent_slug) {
-      await lshAdmin
-        .from("agents")
-        .update({ last_action_at: new Date().toISOString() })
-        .eq("slug", row.agent_slug)
-        .catch(() => {});
+      await updateAgent(row.agent_slug, { last_action_at: new Date().toISOString() }).catch(() => {});
     }
   }
 
@@ -478,9 +446,6 @@ maestroRouter.post("/heartbeat", async (c) => {
 
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: { message: "Invalid JSON" } }, 400);
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
-
-  const lshAdmin = (supabaseAdmin as any).schema("lsh");
   const slug = body.agent_slug ?? body.agent;
   if (!slug) return c.json({ error: { message: "agent_slug required" } }, 400);
 
@@ -493,8 +458,11 @@ maestroRouter.post("/heartbeat", async (c) => {
   if (body.health_score !== undefined) update.health_score = Math.min(100, Math.max(0, parseInt(body.health_score)));
   if (body.last_action_summary !== undefined) update.last_action_summary = body.last_action_summary;
 
-  const { error } = await lshAdmin.from("agents").update(update).eq("slug", slug);
-  if (error) return c.json({ error: { message: error.message } }, 500);
+  try {
+    await updateAgent(slug, update);
+  } catch (e: any) {
+    return c.json({ error: { message: e.message } }, 500);
+  }
 
   return c.json({ data: { ok: true, slug } });
 });
@@ -509,9 +477,6 @@ maestroRouter.post("/audit", async (c) => {
 
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: { message: "Invalid JSON" } }, 400);
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
-
-  const lshAdmin = (supabaseAdmin as any).schema("lsh");
   const entries = Array.isArray(body) ? body : [body];
 
   const rows = entries.map((e: any) => ({
@@ -527,12 +492,12 @@ maestroRouter.post("/audit", async (c) => {
     linked_customer_id: e.linked_customer_id ?? null,
     linked_order_id: e.linked_order_id ?? null,
     severity: e.severity ?? "info",
-    metadata: e.metadata ?? {},
+    metadata: typeof e.metadata === "object" ? JSON.stringify(e.metadata) : (e.metadata ?? "{}"),
     tenant_id: e.tenant_id ?? null,
   }));
 
-  const { error } = await lshAdmin.from("audit_log").insert(rows);
-  if (error) return c.json({ error: { message: error.message } }, 500);
+  const { insertAuditLog } = await import("../lib/erpnext/agents");
+  await insertAuditLog(rows);
 
   return c.json({ data: { ok: true, count: rows.length } });
 });

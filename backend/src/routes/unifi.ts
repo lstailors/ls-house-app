@@ -1,7 +1,7 @@
 // UniFi Cloud API routes — calls, recordings, cameras
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
-import { supabaseAdmin } from "../lib/supabase";
+import { upsertCallLog, listCallLogs } from "../lib/erpnext/agents";
 import {
   checkUnifiConnection,
   getTalkCallLogs,
@@ -89,25 +89,17 @@ unifiRouter.post("/sync", async (c) => {
     const user = await getAuthedUser(c);
     if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   }
-  if (!supabaseAdmin) return c.json({ error: { message: "Supabase unavailable" } }, 503);
-
   try {
-    // Get last synced call time
-    const { data: lastRow } = await supabaseAdmin
-      .from("unifi_call_logs")
-      .select("time")
-      .order("time", { ascending: false })
-      .limit(1)
-      .single();
+    const lastRows = await listCallLogs({ limit: 1, orderBy: "time desc" });
+    const lastRow = lastRows[0];
 
     const since = lastRow?.time
-      ? new Date(new Date(lastRow.time).getTime() - 60_000).toISOString() // 1min overlap
-      : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // default: last 24h
+      ? new Date(new Date(lastRow.time).getTime() - 60_000).toISOString()
+      : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
     const calls = await getTalkCallLogs({ limit: 200, start: since });
     if (!calls.length) return c.json({ data: { synced: 0 } });
 
-    // Upsert each call (external_id prevents duplicates)
     let synced = 0;
     for (const call of calls) {
       const row = {
@@ -124,11 +116,10 @@ unifiRouter.post("/sync", async (c) => {
         recording: call.recordingUrl ?? call.recording_url ?? null,
       };
 
-      const { error } = await supabaseAdmin
-        .from("unifi_call_logs")
-        .upsert(row, { onConflict: "external_id", ignoreDuplicates: true });
-
-      if (!error) synced++;
+      try {
+        await upsertCallLog(row, "external_id");
+        synced++;
+      } catch { /* skip duplicate */ }
     }
 
     return c.json({ data: { synced, total: calls.length } });

@@ -1,5 +1,17 @@
 import { Hono } from "hono";
-import { supabaseAdmin, lshAdmin } from "../lib/supabase";
+import { erpList } from "../lib/erp";
+import { DT } from "../lib/erpnext/doctypes";
+import { storeInsert, storeList, storeFindOne, storeSearch, storeUpdate } from "../lib/erpnext/store";
+import {
+  insertSmsMessage,
+  listSmsMessagesFiltered,
+  insertBrainEntry,
+  listBrainEntriesFiltered,
+  listPendingEmailDrafts,
+  getPendingEmailDraft,
+  insertAgentBrief,
+} from "../lib/erpnext/agents";
+import { findCustomerByPhone } from "../lib/erpnext/customers";
 import { getAuthedUser } from "../lib/scope";
 // sendSms and alertCarl defined locally below
 
@@ -154,11 +166,75 @@ function normalizePhone(p: string): string {
   return `+${digits}`;
 }
 
-// ── Supabase insert helper ──
-async function sbInsert(table: string, row: Record<string, unknown>): Promise<void> {
-  if (!supabaseAdmin) return;
-  const { error } = await supabaseAdmin.from(table).insert(row);
-  if (error) console.error("sbInsert error:", table, error.message);
+
+function mapClientRow(row) {
+  return {
+    id: row.name,
+    first_name: row.first_name ?? String(row.customer_name ?? "").split(" ")[0] ?? "",
+    last_name: row.last_name ?? String(row.customer_name ?? "").split(" ").slice(1).join(" ") ?? "",
+    phone: row.mobile_no,
+    email: row.email_id,
+    is_vip: row.custom_vip_tier && row.custom_vip_tier !== "Standard",
+    created_at: row.creation,
+  };
+}
+
+async function lookupClients(q, field) {
+  if (field === "phone" || field === "any") {
+    const norm = normalizePhone(q);
+    const row = await findCustomerByPhone(norm);
+    if (row) return [mapClientRow(row)];
+  }
+  if (field === "name" || field === "any") {
+    const rows = await erpList("Customer", {
+      filters: [["customer_name", "like", `%${q}%`]],
+      fields: ["name", "customer_name", "first_name", "last_name", "mobile_no", "email_id", "custom_vip_tier", "creation"],
+      limit: 3,
+    });
+    if (rows.length) return rows.map(mapClientRow);
+  }
+  if (field === "email" || field === "any") {
+    const rows = await erpList("Customer", {
+      filters: [["email_id", "like", `%${q}%`]],
+      fields: ["name", "customer_name", "first_name", "last_name", "mobile_no", "email_id", "custom_vip_tier", "creation"],
+      limit: 3,
+    });
+    if (rows.length) return rows.map(mapClientRow);
+  }
+  return [];
+}
+
+async function lookupClientByPhone(phone) {
+  const norm = normalizePhone(phone);
+  let row = await findCustomerByPhone(norm);
+  if (!row) row = await findCustomerByPhone(phone);
+  if (!row) {
+    const bare = norm.replace(/^\+1/, "");
+    const rows = await erpList("Customer", {
+      filters: [["mobile_no", "like", `%${bare}`]],
+      fields: ["name", "customer_name", "first_name", "last_name", "mobile_no", "email_id", "custom_vip_tier", "creation"],
+      limit: 1,
+    });
+    row = rows[0] ?? null;
+  }
+  return row ? mapClientRow(row) : null;
+}
+
+const SB_TABLE_DT = {
+  customer_meetings: DT.CUSTOMER_MEETING,
+  c_escalations: DT.ESCALATION,
+  dossier_observations: DT.DOSSIER_OBSERVATION,
+  order_requests: DT.ORDER_REQUEST,
+  ls_tasks: DT.LS_TASK,
+  ls_task_items: DT.LS_TASK_ITEM,
+  conversation_handoffs: DT.CONVERSATION_HANDOFF,
+  sofia2_activity_log: DT.SOFIA_ACTIVITY_LOG,
+};
+
+async function sbInsert(table, row) {
+  const dt = SB_TABLE_DT[table];
+  if (!dt) { console.error("sbInsert unknown table:", table); return; }
+  try { await storeInsert(dt, row); } catch (e) { console.error("sbInsert error:", table, e.message); }
 }
 
 // ── Substitute merge tags ──
@@ -190,17 +266,12 @@ async function callEmailHandler(
 
 // ── Resolve short draft ID ──
 async function resolveDraftId(prefix: string): Promise<string | null> {
-  if (!supabaseAdmin) return null;
   const p = prefix.replace(/-/g, "").toLowerCase();
   if (p.length >= 32) return prefix;
-  const { data } = await supabaseAdmin
-    .from("pending_email_drafts")
-    .select("id")
-    .eq("status", "pending")
-    .order("created_at", { ascending: false })
-    .limit(50);
-  for (const r of data ?? []) {
-    if (String((r as any).id).replace(/-/g, "").toLowerCase().startsWith(p)) return String((r as any).id);
+  const rows = await listPendingEmailDrafts({ status: "pending", limit: 50 });
+  for (const r of rows) {
+    const id = String(r.name ?? "");
+    if (id.replace(/-/g, "").toLowerCase().startsWith(p)) return id;
   }
   return null;
 }
@@ -254,40 +325,21 @@ async function executeTool(
   customer: Record<string, unknown> | null,
   isAssistant: boolean
 ): Promise<string> {
-  const sb = supabaseAdmin;
-  if (!sb) return JSON.stringify({ error: "Supabase unavailable" });
+  if (!(process.env.ERPNEXT_BASE_URL && process.env.ERPNEXT_API_KEY)) return JSON.stringify({ error: "ERPNext unavailable" });
 
   try {
     switch (name) {
       case "lookup_customer": {
         const q = String(args.query ?? "");
         const field = String(args.field ?? "any");
-        let rows: unknown[] = [];
-        if (field === "phone" || field === "any") {
-          const { data } = await sb
-            .from("clients")
-            .select("*")
-            .or(`phone.eq.${q},phone.eq.+${q.replace(/\D/g, "")}`)
-            .limit(3);
-          rows = data ?? [];
-        }
-        if (!rows.length && (field === "name" || field === "any")) {
-          const { data } = await sb.from("clients").select("*").ilike("last_name", `%${q}%`).limit(3);
-          rows = data ?? [];
-        }
-        if (!rows.length && (field === "email" || field === "any")) {
-          const { data } = await sb.from("clients").select("*").ilike("email", `%${q}%`).limit(3);
-          rows = data ?? [];
-        }
+        const rows = await lookupClients(q, field);
         return JSON.stringify(rows.length ? rows : { not_found: true, query: q });
       }
       case "check_order_status": {
-        const { data } = await sb
-          .from("mfg_orders")
-          .select("*")
-          .eq("customer_id", String(args.customer_id))
-          .in("status", ["pending", "cutting", "sewing", "finishing", "QC"])
-          .limit(5);
+        const data = await storeList(DT.MFG_ORDER, {
+          filters: [["customer", "=", String(args.customer_id)], ["status", "in", ["pending", "cutting", "sewing", "finishing", "QC"]]],
+          limit: 5,
+        });
         return JSON.stringify(data ?? []);
       }
       case "get_fitting_history": {
@@ -300,27 +352,24 @@ async function executeTool(
           "id, calcom_booking_uid, event_type, status, start_time, end_time, assigned_tailor, client_name, client_phone, dossier_link, location, notes";
         let rows: any[] = [];
         if (custId) {
-          const { data } = await sb
-            .from("appointments")
-            .select(apptSelect)
-            .eq("customer_id", custId)
-            .order("start_time", { ascending: false })
-            .limit(limit);
-          rows = data ?? [];
+          rows = await storeList(DT.APPOINTMENT, {
+            filters: [["customer", "=", custId]],
+            orderBy: "start_time desc",
+            limit,
+          });
         }
         if (!rows.length) {
           const phoneToSearch = argPhone || callerPhone;
           if (phoneToSearch) {
             const bare = phoneToSearch.replace(/^\+1/, "");
-            const { data } = await sb
-              .from("appointments")
-              .select(apptSelect)
-              .or(`client_phone.eq.${phoneToSearch},client_phone.eq.${bare},client_phone.eq.+1${bare}`)
-              .order("start_time", { ascending: false })
-              .limit(limit);
-            rows = data ?? [];
+            rows = await storeList(DT.APPOINTMENT, {
+              filters: [["client_phone", "in", [phoneToSearch, bare, `+1${bare}`]]],
+              orderBy: "start_time desc",
+              limit,
+            });
           }
         }
+        rows = rows.map((r) => ({ ...r, id: r.name }));
         const upcoming = rows
           .filter((r: any) => r.start_time && r.start_time >= nowIso)
           .sort((a: any, b: any) => a.start_time.localeCompare(b.start_time));
@@ -378,25 +427,11 @@ async function executeTool(
         endDate.setDate(endDate.getDate() + days);
         const endUtc = endDate.toISOString();
         const statusFilter = String(args.status ?? "confirmed_or_pending");
-        let q = sb
-          .from("appointments")
-          .select(
-            "id, calcom_booking_uid, event_type, status, start_time, customer_id, client_name, client_phone, assigned_tailor, dossier_link"
-          )
-          .gte("start_time", startUtc)
-          .lt("start_time", endUtc)
-          .order("start_time", { ascending: true });
-        if (statusFilter === "all") {
-          // no status filter
-        } else if (statusFilter === "confirmed") {
-          q = q.eq("status", "confirmed");
-        } else if (statusFilter === "cancelled") {
-          q = q.eq("status", "cancelled");
-        } else {
-          q = q.in("status", ["confirmed", "pending"]);
-        }
-        const { data, error } = await q;
-        if (error) return JSON.stringify({ error: error.message });
+        const apptFilters = [["start_time", ">=", startUtc], ["start_time", "<", endUtc]];
+        if (statusFilter === "confirmed") apptFilters.push(["status", "=", "confirmed"]);
+        else if (statusFilter === "cancelled") apptFilters.push(["status", "=", "cancelled"]);
+        else if (statusFilter !== "all") apptFilters.push(["status", "in", ["confirmed", "pending"]]);
+        const data = await storeList(DT.APPOINTMENT, { filters: apptFilters, orderBy: "start_time asc", limit: 100 });
         const out = (data ?? []).map((r: any) => ({
           appointment_id: r.id,
           booking_uid: r.calcom_booking_uid,
@@ -424,12 +459,7 @@ async function executeTool(
         return JSON.stringify({ message: "Tues-Fri 8:30am-5:30pm, Sat 8:30am-4pm, closed Sun-Mon" });
       }
       case "search_kb": {
-        const { data } = await sb
-          .from("brain_entries")
-          .select("summary,detail,entry_type")
-          .eq("agent_slug", "sofia")
-          .ilike("summary", `%${String(args.query)}%`)
-          .limit(Number(args.top_k ?? 5));
+        const data = await listBrainEntriesFiltered({ agentSlug: "sofia", summaryLike: String(args.query), limit: Number(args.top_k ?? 5) });
         return JSON.stringify(data ?? []);
       }
       case "get_available_slots": {
@@ -472,30 +502,15 @@ async function executeTool(
         return JSON.stringify({ event_type: evKey, event_type_id: eventTypeId, slots: flat, booking_link: "https://lstailors.com/book" });
       }
       case "recent_interactions": {
-        const { data } = await sb
-          .from("sms_messages")
-          .select("direction,content,timestamp")
-          .eq("client_phone", from)
-          .order("timestamp", { ascending: false })
-          .limit(Number(args.limit ?? 10));
+        const data = await listSmsMessagesFiltered({ phone: from, limit: Number(args.limit ?? 10) });
         return JSON.stringify(data ?? []);
       }
       case "check_invoice_status": {
-        const { data } = await sb
-          .from("invoices")
-          .select("*")
-          .eq("customer_id", String(args.customer_id))
-          .order("created_at", { ascending: false })
-          .limit(3);
+        const data = await erpList("Sales Invoice", { filters: [["customer", "=", String(args.customer_id)]], order_by: "creation desc", limit: 3 });
         return JSON.stringify(data ?? []);
       }
       case "check_payment_status": {
-        const { data } = await sb
-          .from("payment_requests")
-          .select("*")
-          .eq("customer_id", String(args.customer_id))
-          .order("created_at", { ascending: false })
-          .limit(3);
+        const data = await storeList(DT.PAYMENT_REQUEST, { filters: [["customer", "=", String(args.customer_id)]], orderBy: "creation desc", limit: 3 });
         return JSON.stringify(data ?? []);
       }
       case "take_message": {
@@ -526,11 +541,7 @@ async function executeTool(
       }
       case "add_dossier_observation": {
         const custId = String(args.customer_id);
-        const { data: dossier } = await sb
-          .from("customer_dossiers")
-          .select("id")
-          .eq("customer_id", custId)
-          .single();
+        const dossier = await storeFindOne(DT.CUSTOMER_DOSSIER, "customer", custId);
         if (!dossier) return JSON.stringify({ error: "No dossier found for customer" });
         const isSignificant =
           Number(args.importance ?? 5) >= 5 ||
@@ -544,20 +555,13 @@ async function executeTool(
           importance: Number(args.importance ?? 5),
           is_significant: isSignificant,
         });
-        if (isSignificant) {
-          await sb
-            .from("customer_dossiers")
-            .update({ last_significant_update: new Date().toISOString(), updated_at: new Date().toISOString() })
-            .eq("customer_id", custId);
+        if (isSignificant && dossier?.name) {
+          await storeUpdate(DT.CUSTOMER_DOSSIER, dossier.name, { last_significant_update: new Date().toISOString() });
         }
         return JSON.stringify({ ok: true, recorded: true, significant: isSignificant });
       }
       case "get_dossier": {
-        const { data } = await sb
-          .from("customer_dossiers")
-          .select("*")
-          .eq("customer_id", String(args.customer_id))
-          .single();
+        const data = await storeFindOne(DT.CUSTOMER_DOSSIER, "customer", String(args.customer_id));
         if (!data) return JSON.stringify({ error: "No dossier found" });
         return JSON.stringify(data);
       }
@@ -625,11 +629,7 @@ async function executeTool(
         let custId: string | null = null;
         let custName = "";
         if (args.customer_id) {
-          const { data } = await sb
-            .from("clients")
-            .select("id,first_name,last_name,phone")
-            .eq("id", String(args.customer_id))
-            .single();
+          const data = await storeFindOne<any>("Customer", "name", String(args.customer_id));
           if (data) {
             toPhone = String((data as any).phone ?? "");
             custId = String((data as any).id);
@@ -642,7 +642,7 @@ async function executeTool(
         const result = await twilioSend(toPhone, smsBody);
         if (!result.ok) return JSON.stringify({ error: "Twilio send failed", detail: result.error, status: result.status });
         try {
-          await sb.from("sms_messages").insert({
+          await insertSmsMessage({
             twilio_sid: result.sid ?? null,
             client_phone: toPhone,
             client_id: custId,
@@ -660,18 +660,14 @@ async function executeTool(
         const tplKey = String(args.template_key ?? "");
         if (!tplKey) return JSON.stringify({ error: "template_key required" });
         const merge = args.merge_values && typeof args.merge_values === "object" ? (args.merge_values as Record<string, unknown>) : {};
-        const { data: tplRow } = await sb.from("sofia_mms_active").select("*").eq("template_key", tplKey).single();
+        const tplRow = await storeFindOne(DT.MMS_TEMPLATE, "template_key", tplKey);
         if (!tplRow) return JSON.stringify({ error: `Template not found: ${tplKey}` });
         const tpl = tplRow as any;
         let toPhone = "";
         let custId: string | null = null;
         let custName = "";
         if (args.customer_id) {
-          const { data } = await sb
-            .from("clients")
-            .select("id,first_name,last_name,phone")
-            .eq("id", String(args.customer_id))
-            .single();
+          const data = await storeFindOne<any>("Customer", "name", String(args.customer_id));
           if (data) {
             toPhone = String((data as any).phone ?? "");
             custId = String((data as any).id);
@@ -698,7 +694,7 @@ async function executeTool(
         const result = await twilioSend(toPhone, smsBody, mediaUrl);
         if (!result.ok) return JSON.stringify({ error: "Twilio MMS send failed", detail: result.error, status: result.status });
         try {
-          await sb.from("sms_messages").insert({
+          await insertSmsMessage({
             twilio_sid: result.sid ?? null,
             client_phone: toPhone,
             client_id: custId,
@@ -713,23 +709,19 @@ async function executeTool(
       }
       case "list_pending_drafts": {
         if (!isAssistant) return JSON.stringify({ error: "Assistant mode only" });
-        let q = sb
-          .from("pending_email_drafts")
-          .select("id,inbox,from_address,from_name,subject,importance,importance_reason,created_at")
-          .eq("status", "pending")
-          .order("importance", { ascending: false })
-          .order("created_at", { ascending: false })
-          .limit(Number(args.limit ?? 10));
-        if (args.inbox) q = q.eq("inbox", `${String(args.inbox)}@lstailors.com`);
-        const { data } = await q;
-        const rows = (data ?? []).map((r: any) => ({
-          id8: String(r.id).replace(/-/g, "").slice(0, 8),
+        const drafts = await listPendingEmailDrafts({
+          status: "pending",
+          inbox: args.inbox ? `${String(args.inbox)}@lstailors.com` : undefined,
+          limit: Number(args.limit ?? 10),
+        });
+        const rows = (drafts ?? []).map((r: any) => ({
+          id8: String(r.name).replace(/-/g, "").slice(0, 8),
           inbox: r.inbox,
           from: r.from_name ? `${r.from_name} <${r.from_address}>` : r.from_address,
           subject: r.subject,
           importance: r.importance,
           why: r.importance_reason,
-          age_min: Math.floor((Date.now() - new Date(r.created_at).getTime()) / 60000),
+          age_min: Math.floor((Date.now() - new Date(r.creation).getTime()) / 60000),
         }));
         return JSON.stringify({ count: rows.length, drafts: rows });
       }
@@ -737,7 +729,7 @@ async function executeTool(
         if (!isAssistant) return JSON.stringify({ error: "Assistant mode only" });
         const id = await resolveDraftId(String(args.draft_id ?? ""));
         if (!id) return JSON.stringify({ error: "Draft not found" });
-        const { data } = await sb.from("pending_email_drafts").select("*").eq("id", id).single();
+        const data = await getPendingEmailDraft(id);
         if (!data) return JSON.stringify({ error: "Draft not found" });
         return JSON.stringify({
           id8: String((data as any).id).replace(/-/g, "").slice(0, 8),
@@ -755,12 +747,7 @@ async function executeTool(
         if (!isAssistant) return JSON.stringify({ error: "Assistant mode only" });
         const qStr = `%${String(args.query ?? "")}%`;
         const lim = Number(args.limit ?? 10);
-        const { data } = await sb
-          .from("email_messages_log")
-          .select("id,inbox,direction,from_address,from_name,subject,snippet,received_at,thread_id")
-          .or(`subject.ilike.${qStr},from_address.ilike.${qStr},from_name.ilike.${qStr},snippet.ilike.${qStr}`)
-          .order("received_at", { ascending: false })
-          .limit(lim);
+        const data = await storeSearch(DT.EMAIL_MESSAGE_LOG, "subject", String(args.query ?? ""), { limit: lim });
         return JSON.stringify({ count: (data ?? []).length, results: data ?? [] });
       }
       case "approve_email_draft": {
@@ -787,15 +774,12 @@ async function executeTool(
       case "lookup_orders": {
         const custId = String(args.customer_id ?? "");
         if (!custId) return JSON.stringify({ error: "customer_id required" });
-        const { data: oData, error: oErr } = await sb
-          .from("geelus_transactions")
-          .select("geelus_transaction_id,total,customer_facing_stage,due_date,line_items,division,updated_at")
-          .eq("customer_id", custId)
-          .not("customer_facing_stage", "in", '("collected","completed","cancelled")')
-          .order("updated_at", { ascending: false })
-          .limit(10);
-        if (oErr) return JSON.stringify({ error: oErr.message });
-        return JSON.stringify({ count: (oData ?? []).length, orders: oData ?? [] });
+        const oData = await storeList(DT.GEELUS_TRANSACTION, {
+          filters: [["customer", "=", custId], ["customer_facing_stage", "not in", ["collected", "completed", "cancelled"]]],
+          orderBy: "modified desc",
+          limit: 10,
+        });
+        return JSON.stringify({ count: oData.length, orders: oData });
       }
       case "submit_order_request": {
         const custId = String(args.customer_id ?? "");
@@ -803,12 +787,8 @@ async function executeTool(
         const requestType = String(args.request_type ?? "other");
         const details = String(args.details ?? "");
         if (!custId || !details) return JSON.stringify({ error: "customer_id and details required" });
-        const { data: rqRow, error: rqErr } = await sb
-          .from("order_requests")
-          .insert({ customer_id: custId, transaction_id: transactionId, request_type: requestType, details, status: "pending", source_phone: from })
-          .select("id")
-          .single();
-        if (rqErr) return JSON.stringify({ error: rqErr.message });
+        const rqRow = await storeInsert(DT.ORDER_REQUEST, { customer: custId, transaction_id: transactionId, request_type: requestType, details, status: "pending", source_phone: from });
+        if (!rqRow) return JSON.stringify({ error: "insert failed" });
         const rqCustName = customer ? `${(customer as any).first_name} ${(customer as any).last_name}` : from;
         await postToRaven(`:clipboard: *Order Request* — ${rqCustName}\nType: *${requestType}*\nDetails: ${details}${transactionId ? `\nOrder: \`${transactionId}\`` : ""}`);
         return JSON.stringify({ ok: true, request_id: (rqRow as any)?.id });
@@ -846,9 +826,7 @@ async function executeTool(
         const title = String(args.title ?? "");
         if (!title) return JSON.stringify({ error: "title required" });
         const staffName = STAFF_PHONES_MAP[from.replace(/\D/g, "")] ?? null;
-        const { data: tsk, error: tskErr } = await sb
-          .from("ls_tasks")
-          .insert({
+        const tsk = await storeInsert(DT.LS_TASK, {
             task_type: taskType,
             status: "open",
             priority: String(args.priority ?? "normal"),
@@ -859,10 +837,8 @@ async function executeTool(
             location_name: args.location_name ? String(args.location_name) : null,
             location_address: args.location_address ? String(args.location_address) : null,
             notes: args.notes ? String(args.notes) : null,
-          })
-          .select("id, task_no, title")
-          .single();
-        if (tskErr || !tsk) return JSON.stringify({ error: tskErr?.message ?? "insert failed" });
+          });
+        if (!tsk) return JSON.stringify({ error: "insert failed" });
         const items = Array.isArray(args.items)
           ? (args.items as { description: string; quantity?: number; unit?: string; preferred_vendor?: string }[])
           : [];
@@ -876,7 +852,7 @@ async function executeTool(
             sort_order: i,
             completed: false,
           }));
-          await sb.from("ls_task_items").insert(itemRows);
+          for (const item of itemRows) await storeInsert(DT.LS_TASK_ITEM, { ...item, task: (tsk as any).name });
         }
         return JSON.stringify({ ok: true, task_no: (tsk as any).task_no, task_id: (tsk as any).id, title: (tsk as any).title, items_added: items.length });
       }
@@ -977,8 +953,7 @@ async function executeTool(
 
 // ── Full Sofia processMessage brain ──
 async function processMessage(from: string, body: string, messageSid: string = ""): Promise<void> {
-  const sb = supabaseAdmin;
-  if (!sb) return;
+
 
   try {
     if (["STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT"].includes(body.toUpperCase())) return;
@@ -999,7 +974,7 @@ async function processMessage(from: string, body: string, messageSid: string = "
         const replyTwilio = async (text: string) => { await twilioSend(from, text); };
         if (!id) { await replyTwilio(`No pending draft matching ${id8}`); return; }
         try {
-          await sb.from("sms_messages").insert({
+          await insertSmsMessage({
             twilio_sid: messageSid || null,
             client_phone: from,
             direction: "inbound",
@@ -1027,24 +1002,19 @@ async function processMessage(from: string, body: string, messageSid: string = "
     let isEscalationReply = false;
     let escalationId: string | null = null;
     if (isAssistant) {
-      const { data: esc } = await sb
-        .from("c_escalations")
-        .select("id,client_question,source_channel,source_phone,created_at")
-        .eq("status", "pending")
-        .order("created_at", { ascending: false })
-        .limit(1);
+      const esc = await storeList(DT.ESCALATION, { filters: [["status", "=", "pending"]], orderBy: "creation desc", limit: 1 });
       if (esc?.length) {
-        const age = Date.now() - new Date(String((esc[0] as any).created_at)).getTime();
+        const age = Date.now() - new Date(String(esc[0].creation)).getTime();
         if (age < 90_000) {
           isEscalationReply = true;
-          escalationId = String((esc[0] as any).id);
+          escalationId = String(esc[0].name);
         }
       }
     }
 
     // ── Log inbound ──
     try {
-      await sb.from("sms_messages").insert({
+      await insertSmsMessage({
         twilio_sid: messageSid || null,
         client_phone: from,
         direction: "inbound",
@@ -1059,13 +1029,7 @@ async function processMessage(from: string, body: string, messageSid: string = "
     // ── Look up customer ──
     let customer: Record<string, unknown> | null = null;
     try {
-      const phone = from.replace(/\D/g, "");
-      const { data: d1 } = await sb.from("clients").select("*").eq("phone", from).limit(1);
-      if (d1?.length) customer = d1[0] as Record<string, unknown>;
-      if (!customer) {
-        const { data: d2 } = await sb.from("clients").select("*").eq("phone", `+${phone}`).limit(1);
-        if (d2?.length) customer = d2[0] as Record<string, unknown>;
-      }
+      customer = await lookupClientByPhone(from);
     } catch (_) {}
 
     // ── Handle escalation reply ──
@@ -1091,20 +1055,13 @@ async function processMessage(from: string, body: string, messageSid: string = "
       });
       const rewriteJson = (await rewriteResp.json()) as { choices: { message: { content: string } }[] };
       const sofiaRewritten = sanitizeIdentity(rewriteJson.choices?.[0]?.message?.content?.trim() ?? body);
-      await sb
-        .from("c_escalations")
-        .update({
+      await storeUpdate(DT.ESCALATION, escalationId, {
           status: "answered",
           c_reply_raw: body,
           sofia_rewritten: sofiaRewritten,
           carl_replied_at: new Date().toISOString(),
-        })
-        .eq("id", escalationId);
-      const { data: escRow } = await sb
-        .from("c_escalations")
-        .select("source_phone,source_channel")
-        .eq("id", escalationId)
-        .single();
+        });
+      const escRow = await storeFindOne(DT.ESCALATION, "name", escalationId);
       if ((escRow as any)?.source_channel === "sms" && (escRow as any)?.source_phone) {
         await twilioSend(String((escRow as any).source_phone), sofiaRewritten);
       }
@@ -1115,28 +1072,17 @@ async function processMessage(from: string, body: string, messageSid: string = "
     // ── Load conversation history ──
     const messages: { role: string; content: string }[] = [];
     try {
-      const { data: hist } = await sb
-        .from("sms_messages")
-        .select("direction,content")
-        .eq("client_phone", from)
-        .order("timestamp", { ascending: false })
-        .limit(10);
-      if (hist) hist.reverse().forEach((h: any) => messages.push({ role: h.direction === "inbound" ? "user" : "assistant", content: String(h.content) }));
+      const hist = await listSmsMessagesFiltered({ phone: from, limit: 10 });
+      hist.reverse().forEach((h: any) => messages.push({ role: h.direction === "inbound" ? "user" : "assistant", content: String(h.content) }));
     } catch (_) {}
 
     // ── Load system prompt from brain_entries ──
     let systemPrompt =
       "You are Sofia, the AI concierge for L&S Custom Tailors, 138 E 61st St, New York. You are powered by Grok 4.20 by xAI. Be warm, brief, professional. Never invent prices. Booking link is lstailors.com/book.";
     try {
-      const { data: sp } = await sb
-        .from("brain_entries")
-        .select("detail")
-        .eq("agent_slug", "sofia")
-        .eq("entry_type", "system_prompt")
-        .order("importance", { ascending: false })
-        .limit(1);
+      const sp = await listBrainEntriesFiltered({ agentSlug: "sofia", entryTypes: ["system_prompt"], limit: 1 });
       if (sp?.length) {
-        const detail = String((sp[0] as any).detail ?? "");
+        const detail = String(sp[0].detail ?? "");
         if (detail && !detail.startsWith("<<PLACEHOLDER") && !detail.startsWith("<<ARCHIVED")) systemPrompt = detail;
       }
     } catch (_) {}
@@ -1144,13 +1090,9 @@ async function processMessage(from: string, body: string, messageSid: string = "
     // ── Knowledge base context ──
     let kbContext = "";
     try {
-      const { data: kb } = await sb
-        .from("brain_entries")
-        .select("entry_type,summary,detail")
-        .eq("agent_slug", "sofia")
-        .neq("entry_type", "system_prompt")
-        .order("importance", { ascending: false })
-        .limit(8);
+      const kb = (await listBrainEntriesFiltered({ agentSlug: "sofia", limit: 20 }))
+        .filter((e) => e.entry_type !== "system_prompt")
+        .slice(0, 8);
       if (kb?.length) {
         kbContext = kb
           .map((k: any) => `[${k.entry_type}] ${k.summary}: ${String(k.detail ?? "").substring(0, 300)}`)
@@ -1360,7 +1302,7 @@ IMPORTANT: get_fitting_history auto-searches by the caller's inbound phone as fa
 
     // ── Log outbound ──
     try {
-      await sb.from("sms_messages").insert({
+      await insertSmsMessage({
         client_phone: from,
         client_id: customer ? String((customer as any).id) : null,
         direction: "outbound",
@@ -1416,7 +1358,7 @@ sofiaRouter.post("/conversations/:phone/handoff", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (user.role === "driver") return c.json({ error: { message: "Forbidden" } }, 403);
 
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
+  
 
   const phone = decodeURIComponent(c.req.param("phone"));
   const body = await c.req.json().catch(() => ({}));
@@ -1424,30 +1366,19 @@ sofiaRouter.post("/conversations/:phone/handoff", async (c) => {
 
   // Best-effort: find which agent was last active on this phone
   let agentName = "sofia";
-  const { data: actRow } = await supabaseAdmin
-    .from("sofia2_activity_log")
-    .select("agent_name")
-    .eq("client_phone", phone)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
-  if (actRow?.agent_name) agentName = actRow.agent_name;
-
-  // Write handoff to lsh.conversation_handoffs
-  const { error: insertErr } = await (supabaseAdmin as any)
-    .schema("lsh")
-    .from("conversation_handoffs")
-    .insert({
+  const actRows = await storeList(DT.SOFIA_ACTIVITY_LOG, { filters: [["client_phone", "=", phone]], orderBy: "creation desc", limit: 1 });
+  if (actRows[0]?.agent_name) agentName = actRows[0].agent_name;
+  try {
+    await storeInsert(DT.CONVERSATION_HANDOFF, {
       handoff_type: "human_takeover",
       client_phone: phone,
-      taken_over_by: user.id,   // Better Auth UUID
+      taken_over_by: user.id,
       decision: "human_takeover",
       note: notes ?? null,
-      previous_sofia_state: { agent_name: agentName },
+      previous_sofia_state: JSON.stringify({ agent_name: agentName }),
     });
-
-  if (insertErr) {
-    console.error("[sofia/handoff] insert error:", insertErr.message);
+  } catch (e) {
+    console.error("[sofia/handoff] insert error:", e.message);
     return c.json({ error: { message: "Failed to log handoff" } }, 500);
   }
 
@@ -1458,13 +1389,9 @@ sofiaRouter.post("/conversations/:phone/handoff", async (c) => {
 sofiaRouter.get("/threads", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ data: [] });
+  
 
-  const { data } = await supabaseAdmin
-    .from("sms_messages")
-    .select("id, client_id, client_phone, direction, content, timestamp")
-    .order("timestamp", { ascending: false })
-    .limit(500);
+  const data = await listSmsMessagesFiltered({ limit: 500 });
 
   const seen = new Set<string>();
   const threads = (data ?? []).filter((r: any) => {
@@ -1487,15 +1414,10 @@ sofiaRouter.get("/threads", async (c) => {
 sofiaRouter.get("/thread/:phone", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ data: [] });
+  
 
   const phone = decodeURIComponent(c.req.param("phone"));
-  const { data } = await supabaseAdmin
-    .from("sms_messages")
-    .select("id, client_id, client_phone, direction, content, media_urls, timestamp")
-    .eq("client_phone", phone)
-    .order("timestamp", { ascending: true })
-    .limit(300);
+  const data = await listSmsMessagesFiltered({ phone, limit: 300, ascending: true });
 
   return c.json({ data: (data ?? []).map((r: any) => ({
     id: r.id,
@@ -1530,8 +1452,8 @@ sofiaRouter.post("/send", async (c) => {
   const twilioData: any = await twilioRes.json();
   if (!twilioRes.ok) return c.json({ error: { message: twilioData.message ?? "Twilio error" } }, 502);
 
-  if (supabaseAdmin) {
-    await supabaseAdmin.from("sms_messages").insert({
+  try {
+    await insertSmsMessage({
       client_phone: to,
       client_id: client_id ?? null,
       direction: "outbound",
@@ -1540,7 +1462,7 @@ sofiaRouter.post("/send", async (c) => {
       timestamp: new Date().toISOString(),
       twilio_sid: twilioData.sid,
     });
-  }
+  } catch {}
 
   return c.json({ data: { ok: true, sid: twilioData.sid } });
 });
@@ -1553,16 +1475,10 @@ sofiaRouter.get("/voice-approvals", async (c) => {
   if (user.role === "driver" || user.role === "salesperson")
     return c.json({ error: { message: "Forbidden" } }, 403);
 
-  if (!supabaseAdmin) return c.json({ data: [] });
+  
 
-  const { data, error } = await supabaseAdmin
-    .from("voice_approval_requests")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(50);
-
-  if (error) return c.json({ data: [] });
-  return c.json({ data: data ?? [] });
+  const data = await storeList(DT.VOICE_APPROVAL_REQUEST, { orderBy: "creation desc", limit: 50 });
+  return c.json({ data: data.map((r) => ({ ...r, id: r.name, created_at: r.creation })) });
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1599,39 +1515,30 @@ sofiaRouter.post("/sms", async (c) => {
 sofiaRouter.get("/tasks", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ data: [] });
+  
 
   const status = c.req.query("status");
   const assignedTo = c.req.query("assigned_to");
 
-  let query = supabaseAdmin
-    .from("tasks")
-    .select("id, title, description, project, section, assigned_to, assigned_agent, priority, status, is_completed, completed_at, due_date, due_datetime, labels, client_id, created_at, updated_at")
-    .order("created_at", { ascending: false })
-    .limit(100);
-
-  if (status) query = query.eq("status", status);
-  if (assignedTo) query = query.eq("assigned_to", assignedTo);
-
-  const { data, error } = await query;
-  if (error) return c.json({ error: { message: error.message } }, 500);
-  return c.json({ data: data ?? [] });
+  const filters = [];
+  if (status) filters.push(["status", "=", status]);
+  if (assignedTo) filters.push(["assigned_to", "=", assignedTo]);
+  const data = await storeList(DT.TASK, { filters, orderBy: "creation desc", limit: 100 });
+  return c.json({ data: data.map((r) => ({ ...r, id: r.name, created_at: r.creation, updated_at: r.modified })) });
 });
 
 // POST /api/sofia/tasks
 sofiaRouter.post("/tasks", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
+  
 
   const body = await c.req.json().catch(() => ({}));
   const { title, description, project, section, assigned_to, assigned_agent, priority, due_date, due_datetime, labels, client_id } = body;
 
   if (!title) return c.json({ error: { message: "title is required" } }, 400);
 
-  const { data, error } = await supabaseAdmin
-    .from("tasks")
-    .insert({
+  const data = await storeInsert(DT.TASK, {
       title,
       description: description ?? null,
       project: project ?? "General",
@@ -1642,15 +1549,12 @@ sofiaRouter.post("/tasks", async (c) => {
       status: "open",
       due_date: due_date ?? null,
       due_datetime: due_datetime ?? null,
-      labels: labels ?? [],
+      labels: JSON.stringify(labels ?? []),
       client_id: client_id ?? null,
       created_by: user.email ?? "concierge",
-    })
-    .select()
-    .single();
-
-  if (error) return c.json({ error: { message: error.message } }, 500);
-  return c.json({ data }, 201);
+    });
+  if (!data) return c.json({ error: { message: "insert failed" } }, 500);
+  return c.json({ data: { ...data, id: (data as any).name } }, 201);
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1698,7 +1602,6 @@ async function postRavenDm(text: string): Promise<void> {
 }
 
 async function runBriefing(): Promise<{ ok: boolean; briefing?: string; error?: string }> {
-  const sb = supabaseAdmin;
   const XAI_KEY = process.env.XAI_API_KEY ?? "";
   const ownerPhone = process.env.OWNER_MOBILE ?? "+16319260917";
 
@@ -1743,69 +1646,44 @@ async function runBriefing(): Promise<{ ok: boolean; briefing?: string; error?: 
     }
   } catch {}
 
-  // ── Supabase: Open alteration tickets ──
-  if (sb) {
-    try {
-      const { data: tickets } = await sb
-        .from("alteration_tickets")
-        .select("name,status,due_date,customer_name")
-        .not("status", "in", '("Delivered","Cancelled")')
-        .order("due_date", { ascending: true })
-        .limit(30);
-      if (tickets?.length) {
-        const overdue = tickets.filter((t: any) => t.due_date && t.due_date < todayStr);
-        const dueToday = tickets.filter((t: any) => t.due_date === todayStr);
-        sections.push(`ALTERATION TICKETS open: ${tickets.length} total${dueToday.length ? `, ${dueToday.length} due TODAY` : ""}${overdue.length ? `, ${overdue.length} OVERDUE` : ""}`);
-      }
-    } catch {}
-  }
+  try {
+    const tickets = await erpList("Alteration Ticket", {
+      filters: [["workflow_state", "not in", ["Delivered", "Cancelled"]]],
+      fields: ["name", "workflow_state", "due_date", "customer_name"],
+      order_by: "due_date asc",
+      limit: 30,
+    });
+    if (tickets.length) {
+      const overdue = tickets.filter((t: any) => t.due_date && t.due_date < todayStr);
+      const dueToday = tickets.filter((t: any) => t.due_date === todayStr);
+      sections.push(`ALTERATION TICKETS open: ${tickets.length} total${dueToday.length ? `, ${dueToday.length} due TODAY` : ""}${overdue.length ? `, ${overdue.length} OVERDUE` : ""}`);
+    }
+  } catch {}
 
-  // ── Supabase: Open tasks ──
-  if (sb) {
-    try {
-      const { data: openTasks } = await sb
-        .from("tasks")
-        .select("title, priority, due_date, assigned_to")
-        .or("status.eq.open,is_completed.eq.false")
-        .order("priority", { ascending: false })
-        .limit(10);
-      if (openTasks?.length) {
-        sections.push(`OPEN TASKS (${openTasks.length}): ${openTasks.slice(0, 4).map((t: any) => `"${t.title}"${t.assigned_to ? ` → ${t.assigned_to}` : ""}`).join("; ")}${openTasks.length > 4 ? `… +${openTasks.length - 4} more` : ""}`);
-      }
-    } catch {}
-  }
+  try {
+    const openTasks = await storeList(DT.TASK, { filters: [["status", "=", "open"]], orderBy: "priority desc", limit: 10 });
+    if (openTasks.length) {
+      sections.push(`OPEN TASKS (${openTasks.length}): ${openTasks.slice(0, 4).map((t: any) => `"${t.title}"${t.assigned_to ? ` → ${t.assigned_to}` : ""}`).join("; ")}${openTasks.length > 4 ? `… +${openTasks.length - 4} more` : ""}`);
+    }
+  } catch {}
 
-  // ── Supabase: Unresponded SMS (last 24h) ──
-  if (sb) {
-    try {
-      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const { data: unread } = await sb
-        .from("sms_messages")
-        .select("client_phone, content, timestamp")
-        .eq("direction", "inbound")
-        .in("status", ["received", "pending"])
-        .gte("timestamp", since)
-        .order("timestamp", { ascending: false })
-        .limit(20);
-      if (unread?.length) {
-        const uniquePhones = new Set((unread as any[]).map((m: any) => m.client_phone));
-        sections.push(`UNRESPONDED SMS: ${unread.length} messages from ${uniquePhones.size} clients in last 24h`);
-      }
-    } catch {}
-  }
+  try {
+    const unread = await listSmsMessagesFiltered({ limit: 50 });
+    const inbound = unread.filter((m) => m.direction === "inbound");
+    if (inbound.length) {
+      const uniquePhones = new Set(inbound.map((m) => m.client_phone));
+      sections.push(`UNRESPONDED SMS: ${inbound.length} messages from ${uniquePhones.size} clients`);
+    }
+  } catch {}
 
-  // ── Supabase: Today's appointments ──
-  if (sb) {
-    try {
+  try {
       const startUtc = new Date(`${todayStr}T00:00:00-04:00`).toISOString();
       const endUtc = new Date(`${todayStr}T23:59:59-04:00`).toISOString();
-      const { data: appts } = await sb
-        .from("appointments")
-        .select("event_type, client_name, start_time")
-        .gte("start_time", startUtc)
-        .lte("start_time", endUtc)
-        .in("status", ["confirmed", "pending"])
-        .order("start_time", { ascending: true });
+      const appts = await storeList(DT.APPOINTMENT, {
+        filters: [["start_time", ">=", startUtc], ["start_time", "<=", endUtc], ["status", "in", ["confirmed", "pending"]]],
+        orderBy: "start_time asc",
+        limit: 20,
+      });
       if (appts?.length) {
         const fmtTime = (t: string) =>
           new Intl.DateTimeFormat("en-US", {
@@ -1882,29 +1760,25 @@ End with: — Sofia`,
   } catch {}
 
   // ── Save to lsh.agent_briefs → powers Daily Espresso card on dashboard ──
-  if (lshAdmin) {
-    try {
+  try {
       const nycHour = parseInt(new Date().toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }));
       const period = nycHour < 12 ? "Morning" : nycHour < 15 ? "Midday" : "Afternoon";
       const nycTime = new Date().toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
-      const { error } = await lshAdmin.from("agent_briefs").insert({
+      await insertAgentBrief({
         type: "brief",
         title: `${period} Brief — ${nycTime}`,
         body: briefing,
         severity: "info",
         source: "maestro",
-        metadata: { channel: "daily_briefing", generated_at: new Date().toISOString() },
+        metadata: JSON.stringify({ channel: "daily_briefing", generated_at: new Date().toISOString() }),
       });
-      if (error) console.error("[sofia/briefing] agent_briefs save error:", error.message);
     } catch (e: any) {
       console.error("[sofia/briefing] agent_briefs save:", e.message);
     }
-  }
 
   // ── Log to sms_messages ──
-  if (sb) {
-    try {
-      await sb.from("sms_messages").insert({
+  try {
+      await insertSmsMessage({
         client_phone: ownerPhone,
         direction: "outbound",
         content: briefing,
@@ -1933,7 +1807,7 @@ sofiaRouter.get("/briefing/trigger", async (_c) => {
 sofiaRouter.patch("/tasks/:id", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
+  
 
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => ({}));
@@ -1956,13 +1830,7 @@ sofiaRouter.patch("/tasks/:id", async (c) => {
   if (title !== undefined) updates.title = title;
   if (description !== undefined) updates.description = description;
 
-  const { data, error } = await supabaseAdmin
-    .from("tasks")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) return c.json({ error: { message: error.message } }, 500);
-  return c.json({ data });
+  const data = await storeUpdate(DT.TASK, id, updates);
+  if (!data) return c.json({ error: { message: "update failed" } }, 500);
+  return c.json({ data: { ...data, id: (data as any).name } });
 });

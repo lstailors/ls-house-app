@@ -3,8 +3,10 @@
 
 import { Hono } from "hono";
 import { canSeeFinancials, getAuthedUser, resolveLocationCode } from "../lib/scope";
-import { supabaseAdmin } from "../lib/supabase";
 import { erpList } from "../lib/erp";
+import { listSmsMessagesFiltered } from "../lib/erpnext/agents";
+import { listLocations } from "../lib/erpnext/locations";
+import { DT } from "../lib/erpnext/doctypes";
 
 export const dashboardRouter = new Hono();
 
@@ -21,9 +23,6 @@ function toAppStatus(dbStatus: string): string {
 dashboardRouter.get("/kpis", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!supabaseAdmin) {
-    return c.json({ data: { revenue: 0, ordersByStage: {}, deliveriesDue: 0, openAlterations: 0, customInProduction: 0, depositsPending: 0, todayIntakeCount: 0, myDeliveriesToday: 0, myDeliveriesCompletedToday: 0 } });
-  }
 
   const locCode = resolveLocationCode(user, c.req.query("locationId"));
 
@@ -40,22 +39,19 @@ dashboardRouter.get("/kpis", async (c) => {
   if (user.role === "driver") {
     const driverIds = [user.id];
     if (user.supabaseProfileId && user.supabaseProfileId !== user.id) driverIds.push(user.supabaseProfileId);
-    const driverFilter = driverIds.length === 2
-      ? `courier_user_id.eq.${driverIds[0]},courier_user_id.eq.${driverIds[1]}`
-      : `courier_user_id.eq.${driverIds[0]}`;
+    const driverFilter: unknown[] = [["lsh_courier_user_id", "in", driverIds]];
 
-    const [todayRes, completedRes] = await Promise.all([
-      supabaseAdmin.from("deliveries")
-        .select("*", { count: "exact", head: true })
-        .or(driverFilter)
-        .eq("scheduled_date", todayDate)
-        .not("status", "in", '("Delivered","delivered","Picked Up","Cancelled","Stale","failed","Failed")'),
-      supabaseAdmin.from("deliveries")
-        .select("*", { count: "exact", head: true })
-        .or(driverFilter)
-        .in("status", ["Delivered", "delivered", "Picked Up"])
-        .gte("delivered_at", startOfDay.toISOString())
-        .lte("delivered_at", endOfDay.toISOString()),
+    const [todayDeliveries, completedDeliveries] = await Promise.all([
+      erpList("LSH Delivery", {
+        filters: [...driverFilter, ["lsh_scheduled_date", "=", todayDate], ["lsh_status", "not in", ["Delivered", "Cancelled", "Failed"]]],
+        fields: ["name"],
+        limit: 500,
+      }).catch(() => []),
+      erpList("LSH Delivery", {
+        filters: [...driverFilter, ["lsh_status", "in", ["Delivered", "Picked Up"]], ["lsh_delivered_at", ">=", startOfDay.toISOString()], ["lsh_delivered_at", "<=", endOfDay.toISOString()]],
+        fields: ["name"],
+        limit: 500,
+      }).catch(() => []),
     ]);
 
     return c.json({
@@ -67,8 +63,8 @@ dashboardRouter.get("/kpis", async (c) => {
         customInProduction: 0,
         depositsPending: 0,
         todayIntakeCount: 0,
-        myDeliveriesToday: todayRes.count ?? 0,
-        myDeliveriesCompletedToday: completedRes.count ?? 0,
+        myDeliveriesToday: todayDeliveries.length,
+        myDeliveriesCompletedToday: completedDeliveries.length,
       },
     });
   }
@@ -143,36 +139,26 @@ dashboardRouter.get("/kpis", async (c) => {
 
   const customInProduction = ordersByStage["in_production"] ?? 0;
 
-  // garmentsProd / garmentsByStage — keep from Supabase as before
-  const garmentsProdRes = supabaseAdmin
-    ? await supabaseAdmin
-        .from("garments")
-        .select("status")
-        .in("status", ["Ordered", "Pattern Draft", "Cutting", "Sewing", "Basting", "First Fitting", "Alterations", "Second Fitting"])
-        .limit(500)
-    : { data: [] };
-
-  const garmentRows = (garmentsProdRes as any).data ?? [];
+  const garmentRows = await erpList<any>(DT.CUSTOM_ORDER_GARMENT, {
+    filters: [["garment_status", "in", ["Ordered", "Pattern Draft", "Cutting", "Sewing", "Basting", "First Fitting", "Alterations", "Second Fitting"]]],
+    fields: ["name", "garment_status"],
+    limit: 500,
+  }).catch(() => []);
   const garmentsProd = garmentRows.length;
   const garmentsByStage: Record<string, number> = {};
   for (const g of garmentRows) {
-    garmentsByStage[g.status] = (garmentsByStage[g.status] ?? 0) + 1;
+    garmentsByStage[g.garment_status] = (garmentsByStage[g.garment_status] ?? 0) + 1;
   }
 
-  // Low-activity locations for super_admin (using ERPNext SOs from last 7 days)
   let lowActivityLocations: any[] | undefined;
-  if (user.role === "super_admin" && supabaseAdmin) {
-    const { data: locs } = await supabaseAdmin
-      .from("locations")
-      .select("code,name,id,active")
-      .eq("active", true);
-
-    if (locs) {
+  if (user.role === "super_admin") {
+    const locs = await listLocations({ activeOnly: true });
+    if (locs.length) {
       const weekAgoStr = weekAgo.toISOString().slice(0, 10);
       const locCounts = await Promise.all(
         locs.map(async (loc: any) => {
-          if (!loc.code) return { loc, count: 0 };
-          const companyLike = loc.code === "HOU" ? "%TX%" : "%NY%";
+          if (!loc.location_code) return { loc, count: 0 };
+          const companyLike = loc.location_code === "HOU" ? "%TX%" : "%NY%";
           const rows = await erpList("Sales Order", {
             filters: [["docstatus", "=", 1], ["transaction_date", ">=", weekAgoStr], ["company", "like", companyLike]],
             fields: ["name"],
@@ -183,7 +169,7 @@ dashboardRouter.get("/kpis", async (c) => {
       );
       lowActivityLocations = locCounts
         .filter((x) => x.count < 2)
-        .map((x) => ({ locationId: x.loc.id, locationName: x.loc.name, locationCode: x.loc.code, orders7d: x.count }));
+        .map((x) => ({ locationId: x.loc.location_code, locationName: x.loc.location_name, locationCode: x.loc.location_code, orders7d: x.count }));
     }
   }
 
@@ -218,22 +204,15 @@ dashboardRouter.get("/kpis", async (c) => {
     ready: altReady,
   };
 
-  // Unanswered SMS threads
   let unansweredSms = 0;
-  if (supabaseAdmin) {
-    const { data: recentSms } = await supabaseAdmin
-      .from("sms_messages")
-      .select("client_phone, direction, timestamp")
-      .order("timestamp", { ascending: false })
-      .limit(200);
-    if (recentSms) {
-      const lastByPhone = new Map<string, string>();
-      for (const msg of recentSms) {
-        if (!lastByPhone.has(msg.client_phone)) lastByPhone.set(msg.client_phone, msg.direction);
-      }
-      unansweredSms = Array.from(lastByPhone.values()).filter((d) => d === "inbound").length;
+  try {
+    const recentSms = await listSmsMessagesFiltered({ limit: 200 });
+    const lastByPhone = new Map<string, string>();
+    for (const msg of recentSms) {
+      if (!lastByPhone.has(msg.client_phone)) lastByPhone.set(msg.client_phone, msg.direction);
     }
-  }
+    unansweredSms = Array.from(lastByPhone.values()).filter((d) => d === "inbound").length;
+  } catch {}
 
   // revenueMTD: paid invoices this month (custom) + alteration revenue MTD
   const customRevenueMTD = canSeeFinancials(user.role)
@@ -402,32 +381,28 @@ dashboardRouter.get("/financials", async (c) => {
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 10);
 
-  // ── Sales by rep from Supabase orders ────────────────────────────────────
   let salesByRep: Array<{ name: string; orders: number; revenue: number }> = [];
-  if (supabaseAdmin) {
-    let repQ = supabaseAdmin.from("orders").select("sales_rep_id, order_total, created_at");
-    if (locCode) repQ = repQ.eq("origin_location", locCode);
-    const { data: repOrders } = await repQ.limit(2000);
-    if (repOrders?.length) {
+  try {
+    const repOrders = await erpList<any>("Sales Order", {
+      filters: soFilters,
+      fields: ["name", "grand_total", "sales_team"],
+      limit: 2000,
+    }).catch(() => []);
+    if (repOrders.length) {
       const repMap = new Map<string, { orders: number; revenue: number }>();
       for (const o of repOrders) {
-        const id = o.sales_rep_id ?? "unknown";
-        const e = repMap.get(id) ?? { orders: 0, revenue: 0 };
+        const rep = (o.sales_team?.[0]?.sales_person as string | undefined) ?? "Unassigned";
+        const e = repMap.get(rep) ?? { orders: 0, revenue: 0 };
         e.orders += 1;
-        e.revenue += Number(o.order_total ?? 0);
-        repMap.set(id, e);
+        e.revenue += Number(o.grand_total ?? 0);
+        repMap.set(rep, e);
       }
-      const repIds = [...repMap.keys()].filter(id => id !== "unknown");
-      const { data: profiles } = repIds.length
-        ? await supabaseAdmin.from("profiles").select("id, full_name").in("id", repIds)
-        : { data: [] };
-      const nameById = new Map((profiles ?? []).map((p: any) => [p.id, p.full_name ?? "Unknown"]));
       salesByRep = [...repMap.entries()]
-        .map(([id, d]) => ({ name: nameById.get(id) ?? (id === "unknown" ? "Unassigned" : id.slice(0, 8)), orders: d.orders, revenue: d.revenue }))
+        .map(([name, d]) => ({ name, orders: d.orders, revenue: d.revenue }))
         .sort((a, b) => b.revenue - a.revenue)
         .slice(0, 8);
     }
-  }
+  } catch {}
 
   const cogs = revenue * 0.42;
   const grossProfit = revenue * 0.58;

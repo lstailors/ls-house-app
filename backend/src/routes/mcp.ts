@@ -4,7 +4,7 @@
 import { Hono } from "hono";
 import { erpList, erpGet, erpUpdate } from "../lib/erp";
 import { sendSms } from "../lib/twilio";
-import { supabaseAdmin } from "../lib/supabase";
+import { insertSmsMessage, listSmsMessagesFiltered } from "../lib/erpnext/agents";
 import {
   suggestDeliveryStatus,
   summarizeDeliveryTimeline,
@@ -126,49 +126,35 @@ mcpRouter.post("/sms", async (c) => {
   const sid = await sendSms(to, message);
   if (!sid) return c.json({ error: "SMS failed — check Twilio config" }, 502);
 
-  // Log to Supabase if available
-  if (supabaseAdmin) {
-    await supabaseAdmin.from("sms_messages").insert({
-      client_phone: to, direction: "outbound", body: message,
-      sent_by: "claude-mcp", timestamp: new Date().toISOString(),
-    });
-  }
+  await insertSmsMessage({
+    client_phone: to,
+    direction: "outbound",
+    body: message,
+    content: message,
+    sent_by: "claude-mcp",
+    timestamp: new Date().toISOString(),
+  }).catch(() => {});
 
   return c.json({ data: { sid, to, message } });
 });
 
-// GET /api/mcp/threads — all SMS conversation threads
 mcpRouter.get("/threads", async (c) => {
-  if (!supabaseAdmin) return c.json({ data: [] });
-  const { data: messages } = await supabaseAdmin
-    .from("sms_messages")
-    .select("client_phone, body, direction, timestamp")
-    .order("timestamp", { ascending: false })
-    .limit(200);
-
+  const messages = await listSmsMessagesFiltered({ limit: 200 });
   const threadMap = new Map<string, any>();
-  for (const msg of messages ?? []) {
+  for (const msg of messages) {
     if (!threadMap.has(msg.client_phone)) {
       threadMap.set(msg.client_phone, { phone: msg.client_phone, lastMessage: msg, count: 1 });
     } else {
       threadMap.get(msg.client_phone).count++;
     }
   }
-
   return c.json({ data: Array.from(threadMap.values()) });
 });
 
-// GET /api/mcp/threads/:phone — messages for one phone number
 mcpRouter.get("/threads/:phone", async (c) => {
-  if (!supabaseAdmin) return c.json({ data: [] });
   const phone = decodeURIComponent(c.req.param("phone"));
-  const { data: messages } = await supabaseAdmin
-    .from("sms_messages")
-    .select("*")
-    .eq("client_phone", phone)
-    .order("timestamp", { ascending: true })
-    .limit(100);
-  return c.json({ data: messages ?? [] });
+  const messages = await listSmsMessagesFiltered({ phone, limit: 100, ascending: true });
+  return c.json({ data: messages });
 });
 
 // ── Customers ─────────────────────────────────────────────────────────────────

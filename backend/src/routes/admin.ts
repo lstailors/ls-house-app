@@ -2,8 +2,8 @@
 
 import { Hono } from "hono";
 import { canAccessSuperAdminPortal, getAuthedUser } from "../lib/scope";
-import { supabaseAdmin, lshAdmin } from "../lib/supabase";
 import { erpList, erpGet, erpUpdate } from "../lib/erp";
+import { listLocations, createLocation, updateLocation } from "../lib/erpnext/locations";
 
 export const adminRouter = new Hono();
 
@@ -132,57 +132,53 @@ adminRouter.post("/users/:id/password", (c) => {
 adminRouter.post("/locations", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   if (!body.name || !body.code) return c.json({ error: { message: "name and code required" } }, 400);
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
-  const { data, error } = await supabaseAdmin
-    .from("locations")
-    .insert({ name: body.name, code: body.code.toUpperCase(), address: body.address ?? null, erpnext_company: body.erpnextCompany ?? null, active: true })
-    .select().single();
-  if (error) return c.json({ error: { message: error.message } }, 400);
-  return c.json({ data });
+  try {
+    const data = await createLocation({
+      code: body.code.toUpperCase(),
+      name: body.name,
+      address: body.address ?? null,
+      erpnextCompanyOrBranch: body.erpnextCompany ?? null,
+      isActive: true,
+    });
+    return c.json({ data: serializeLocation({ code: data.location_code, name: data.location_name, address: data.address, erpnext_company: data.erpnext_company, active: data.is_active !== 0, created_at: data.creation, updated_at: data.modified }) });
+  } catch (e: any) {
+    return c.json({ error: { message: e.message } }, 400);
+  }
 });
 
 adminRouter.patch("/locations/:id", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => ({}));
-  if (!supabaseAdmin) return c.json({ error: { message: "Service unavailable" } }, 503);
-  const update: any = {};
-  if (body.name !== undefined) update.name = body.name;
-  if (body.isActive !== undefined) update.active = body.isActive;
-  if (body.address !== undefined) update.address = body.address;
-  const { data, error } = await supabaseAdmin.from("locations").update(update).eq("code", id).select().single();
-  if (error) return c.json({ error: { message: error.message } }, 400);
-  return c.json({ data });
+  try {
+    const data = await updateLocation(id, {
+      name: body.name,
+      isActive: body.isActive,
+      address: body.address,
+    });
+    return c.json({ data: serializeLocation({ code: data.location_code, name: data.location_name, address: data.address, erpnext_company: data.erpnext_company, active: data.is_active !== 0, created_at: data.creation, updated_at: data.modified }) });
+  } catch (e: any) {
+    return c.json({ error: { message: e.message } }, 400);
+  }
 });
 
 adminRouter.get("/overview", async (c) => {
-  if (!supabaseAdmin || !lshAdmin) {
-    return c.json({ data: { totalUsers: 0, totalLocations: 0, totalCustomers: 0, totalCustomOrders: 0, totalAlterations: 0, totalDeliveries: 0 } });
-  }
-
-  const [
-    usersRes,
-    locationsRes,
-    customersRes,
-    customOrdersRes,
-    alterationsRes,
-    deliveriesRes,
-  ] = await Promise.all([
-    supabaseAdmin.from("profiles").select("*", { count: "exact", head: true }),
-    supabaseAdmin.from("locations").select("*", { count: "exact", head: true }).eq("active", true),
-    supabaseAdmin.from("customers").select("*", { count: "exact", head: true }),
-    lshAdmin.from("custom_orders").select("*", { count: "exact", head: true }),
-    lshAdmin.from("alterations").select("*", { count: "exact", head: true }),
-    lshAdmin.from("deliveries").select("*", { count: "exact", head: true }),
+  const [users, locations, customers, customOrders, alterations, deliveries] = await Promise.all([
+    erpList<any>("User", { filters: [["enabled", "=", 1], ["user_type", "=", "System User"]], fields: ["name"], limit: 500 }).catch(() => []),
+    listLocations({ activeOnly: true }),
+    erpList<any>("Customer", { filters: [["disabled", "=", 0]], fields: ["name"], limit: 5000 }).catch(() => []),
+    erpList<any>("LSH Custom Order", { fields: ["name"], limit: 5000 }).catch(() => []),
+    erpList<any>("Alteration Ticket", { fields: ["name"], limit: 5000 }).catch(() => []),
+    erpList<any>("LSH Delivery", { fields: ["name"], limit: 5000 }).catch(() => []),
   ]);
 
   return c.json({
     data: {
-      totalUsers: usersRes.count ?? 0,
-      totalLocations: locationsRes.count ?? 0,
-      totalCustomers: customersRes.count ?? 0,
-      totalCustomOrders: customOrdersRes.count ?? 0,
-      totalAlterations: alterationsRes.count ?? 0,
-      totalDeliveries: deliveriesRes.count ?? 0,
+      totalUsers: users.length,
+      totalLocations: locations.length,
+      totalCustomers: customers.length,
+      totalCustomOrders: customOrders.length,
+      totalAlterations: alterations.length,
+      totalDeliveries: deliveries.length,
     },
   });
 });
