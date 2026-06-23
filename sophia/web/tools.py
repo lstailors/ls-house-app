@@ -254,6 +254,7 @@ async def book_appointment(
                     mode="system",
                     appointment_name=appt_name,
                 )
+                # Second message: calendar link on its own so iOS/Android renders it as a tap
                 if cal_link:
                     import asyncio as _aio
                     await _aio.sleep(1.5)
