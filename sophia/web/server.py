@@ -395,7 +395,7 @@ async def appointment_ics(
         "VERSION:2.0",
         "PRODID:-//L&S Custom Tailors//Sofia//EN",
         "CALSCALE:GREGORIAN",
-        "METHOD:PUBLISH",
+        "METHOD:PUBLISH",  # PUBLISH = single event add, not a subscription
         "BEGIN:VEVENT",
         f"UID:{uid}",
         f"DTSTAMP:{fmt(datetime.now(NYC).astimezone(_tz.utc))}",
@@ -404,6 +404,8 @@ async def appointment_ics(
         f"SUMMARY:{esc(title)}",
         f"LOCATION:{esc(location)}",
         "DESCRIPTION:We look forward to seeing you. Questions? Call (212) 752-1638.",
+        "STATUS:CONFIRMED",
+        "TRANSP:OPAQUE",
         "END:VEVENT",
         "END:VCALENDAR",
         "",
@@ -411,6 +413,7 @@ async def appointment_ics(
     return Response(
         content=ics,
         media_type="text/calendar",
+        # attachment triggers a save/import dialog — iOS opens it as a one-time event add
         headers={"Content-Disposition": 'attachment; filename="appointment.ics"'},
     )
 
