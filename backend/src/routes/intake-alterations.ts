@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { supabaseAdmin } from '../lib/supabase';
 import { getAuthedUser } from '../lib/scope';
+import { uploadFile, erpFileAbsoluteUrl } from '../lib/erpnext/files';
 import { erpList, erpPdf } from '../lib/erp';
 import { sendSms } from '../lib/twilio';
 
@@ -724,7 +724,7 @@ intakeAlterationsRouter.get('/customers/:id', async (c) => {
   }
 });
 
-// POST /photos — upload garment photo to Supabase storage
+// POST /photos — upload garment photo to ERPNext File
 intakeAlterationsRouter.post('/photos', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
@@ -732,25 +732,33 @@ intakeAlterationsRouter.post('/photos', async (c) => {
   const formData = await c.req.formData();
   const file = formData.get('file') as File | null;
   const path = formData.get('path') as string | null;
+  const ticketName = formData.get('ticketName') as string | null;
 
   if (!file || !path) return c.json({ error: 'file and path required' }, 400);
 
-  if (!supabaseAdmin) return c.json({ error: 'Storage unavailable' }, 503);
+  try {
+    const buffer = new Uint8Array(await file.arrayBuffer());
+    const filename = path.split('/').pop() ?? file.name ?? 'photo.jpg';
+    const { fileUrl, fileId } = await uploadFile({
+      file: buffer,
+      filename,
+      contentType: file.type || 'image/jpeg',
+      doctype: ticketName ? 'Alteration Ticket' : undefined,
+      docname: ticketName ?? undefined,
+      isPrivate: false,
+    });
 
-  const arrayBuffer = await file.arrayBuffer();
-  const buffer = new Uint8Array(arrayBuffer);
-
-  const { data, error } = await supabaseAdmin.storage
-    .from('garment-photos')
-    .upload(path, buffer, { contentType: file.type, upsert: false });
-
-  if (error) return c.json({ error: error.message }, 500);
-
-  const { data: urlData } = supabaseAdmin.storage
-    .from('garment-photos')
-    .getPublicUrl(data.path);
-
-  return c.json({ data: { url: urlData.publicUrl, path: data.path } });
+    return c.json({
+      data: {
+        url: erpFileAbsoluteUrl(fileUrl),
+        path,
+        fileId,
+      },
+    });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Upload failed';
+    return c.json({ error: message }, 500);
+  }
 });
 
 // PATCH /customers/:id — update phone, email, address, notes in ERPNext

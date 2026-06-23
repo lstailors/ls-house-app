@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/lib/supabaseClient";
+import { api } from "@/lib/api";
 
 type Stage =
   | "idle"
@@ -47,13 +47,13 @@ export function ChargeTerminalButton({
 }: ChargeTerminalButtonProps) {
   const [stage, setStage] = useState<Stage>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cleanup = () => {
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
+    if (pollRef.current !== null) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
     }
     if (timeoutRef.current !== null) {
       clearTimeout(timeoutRef.current);
@@ -63,41 +63,30 @@ export function ChargeTerminalButton({
 
   useEffect(() => () => cleanup(), []);
 
-  const subscribeToCheckout = (checkoutId: string) => {
-    const channel = supabase
-      .channel(`terminal-checkout-${checkoutId}`)
-      .on(
-        // @ts-ignore — postgres_changes is a valid event type
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "square_sync_log",
-          filter: `square_id=eq.${checkoutId}`,
-        },
-        (payload: { new: { status: string; phase: string } }) => {
-          const { status, phase } = payload.new ?? {};
-          if (
-            status === "completed" ||
-            (phase === "webhook" && status === "completed")
-          ) {
-            cleanup();
-            setStage("completed");
-            onSuccess();
-          } else if (status === "failed" || status === "cancelled") {
-            cleanup();
-            const msg = "Terminal payment failed or was cancelled";
-            setStage("error");
-            setErrorMsg(msg);
-            onError(msg);
-          }
+  const pollCheckoutStatus = (checkoutId: string) => {
+    pollRef.current = setInterval(async () => {
+      try {
+        const result = await api.get<{ checkout_id: string; status: string }>(
+          `/api/square/terminal-checkout/${checkoutId}`,
+        );
+        const status = result.status?.toUpperCase() ?? "";
+
+        if (status === "COMPLETED") {
+          cleanup();
+          setStage("completed");
+          onSuccess();
+        } else if (status === "CANCELED" || status === "CANCELLED" || status === "FAILED") {
+          cleanup();
+          const msg = "Terminal payment failed or was cancelled";
+          setStage("error");
+          setErrorMsg(msg);
+          onError(msg);
         }
-      )
-      .subscribe();
+      } catch {
+        // Keep polling until timeout
+      }
+    }, 2000);
 
-    channelRef.current = channel;
-
-    // 3-minute timeout
     timeoutRef.current = setTimeout(() => {
       cleanup();
       const msg = "Terminal timed out — please retry";
@@ -121,35 +110,34 @@ export function ChargeTerminalButton({
       return;
     }
 
-    let checkoutId: string;
     try {
-      const { data, error } = await supabase.functions.invoke(
-        "square-terminal-checkout",
-        {
-          body: {
-            invoice_id: invoiceId,
-            amount_cents: amountCents,
-            device_id: terminalDeviceId,
-          },
-        }
-      );
+      const res = await api.raw("/api/square/terminal-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoice_id: invoiceId,
+          amount_cents: amountCents,
+          device_id: terminalDeviceId,
+        }),
+      });
 
-      if (error) throw error;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error ?? "Failed to reach terminal");
+      }
       if (!data?.checkout_id) {
         throw new Error(data?.error ?? "No checkout ID returned");
       }
-      checkoutId = data.checkout_id as string;
+
+      setStage("waiting");
+      pollCheckoutStatus(data.checkout_id as string);
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "Failed to reach terminal";
       setStage("error");
       setErrorMsg(msg);
       onError(msg);
-      return;
     }
-
-    setStage("waiting");
-    subscribeToCheckout(checkoutId);
   };
 
   const reset = () => {

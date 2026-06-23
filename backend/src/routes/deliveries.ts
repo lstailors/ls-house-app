@@ -32,8 +32,8 @@ function erpToIso(s: string | null | undefined): string | null {
   // Space-separated ERPNext format → ISO UTC
   return s.replace(" ", "T") + "Z";
 }
-import { supabaseAdmin } from "../lib/supabase";
 import { getAuthedUser, resolveLocationCode } from "../lib/scope";
+import { uploadFile, erpFileAbsoluteUrl } from "../lib/erpnext/files";
 import { sendSms } from "../lib/twilio";
 
 // ── Timeline helper ───────────────────────────────────────────────────────────
@@ -719,21 +719,21 @@ deliveriesRouter.patch("/:id/pod", async (c) => {
     incomingUrls.push(body.photoUrl);
   }
 
-  // Option B: legacy base64 upload (backend handles the upload)
-  if (incomingUrls.length === 0 && body.photoBase64 && supabaseAdmin) {
+  // Option B: legacy base64 upload (backend handles the upload via ERPNext)
+  if (incomingUrls.length === 0 && body.photoBase64) {
     try {
       const buf = Buffer.from(body.photoBase64, "base64");
       const ext = body.photoMimeType === "image/png" ? "png" : "jpg";
-      const storagePath = `${id}/${Date.now()}.${ext}`;
-      const { error: upErr } = await supabaseAdmin.storage
-        .from("delivery-photos")
-        .upload(storagePath, buf, { contentType: body.photoMimeType ?? "image/jpeg", upsert: false });
-      if (!upErr) {
-        const { data: pub } = supabaseAdmin.storage
-          .from("delivery-photos")
-          .getPublicUrl(storagePath);
-        if (pub?.publicUrl) incomingUrls.push(pub.publicUrl);
-      }
+      const filename = `${id}/${Date.now()}.${ext}`;
+      const { fileUrl } = await uploadFile({
+        file: buf,
+        filename,
+        contentType: body.photoMimeType ?? "image/jpeg",
+        doctype: "LSH Delivery",
+        docname: id,
+        isPrivate: false,
+      });
+      incomingUrls.push(erpFileAbsoluteUrl(fileUrl));
     } catch (e) {
       console.warn("POD photo upload failed:", e);
     }

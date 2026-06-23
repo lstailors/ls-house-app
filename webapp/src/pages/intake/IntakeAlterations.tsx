@@ -9,7 +9,6 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { supabase } from '@/lib/supabaseClient'
 import { useMe } from '@/lib/session'
 import { CustomerEditSheet } from '@/components/pos/CustomerEditSheet'
 import { SaveCartControls } from '@/components/alterations/SaveCartControls'
@@ -692,16 +691,20 @@ function GarmentPhotoCapture({ garmentId, ticketRef, photos, onChange }: Garment
   const [uploading, setUploading] = useState<Record<string, number>>({})
 
   const uploadPhoto = async (file: File): Promise<string | null> => {
-    // Upload directly from browser to Supabase — bypasses Vercel's 4.5MB body limit
     const ext = file.name.split('.').pop() ?? 'jpg'
     const path = `intake/${ticketRef}/${garmentId}/${Date.now()}.${ext}`
     try {
-      const { data, error } = await supabase.storage
-        .from('garment-photos')
-        .upload(path, file, { contentType: file.type, upsert: false })
-      if (error || !data) return null
-      const { data: urlData } = supabase.storage.from('garment-photos').getPublicUrl(data.path)
-      return urlData.publicUrl
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('path', path)
+      if (ticketRef && !ticketRef.startsWith('temp-')) {
+        formData.append('doctype', 'Alteration Ticket')
+        formData.append('docname', ticketRef)
+      }
+      const res = await api.raw('/api/files/upload', { method: 'POST', body: formData })
+      if (!res.ok) return null
+      const json = await res.json()
+      return json.data?.url ?? null
     } catch {
       return null
     }

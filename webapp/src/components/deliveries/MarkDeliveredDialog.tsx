@@ -23,8 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { api } from "@/lib/api";
 import { useMarkDelivered } from "@/lib/queries";
-import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/lib/utils";
 import type { Delivery } from "@/lib/types";
 
@@ -44,6 +44,26 @@ const POD_METHODS = [
 
 const REQUIRES_PHOTO = new Set(["Photo Only", "Signature + Photo"]);
 const REQUIRES_SIG = new Set(["Signature", "Signature + Photo"]);
+
+async function uploadDeliveryFile(
+  file: File | Blob,
+  filename: string,
+  deliveryId: string,
+  contentType: string,
+): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file, filename);
+  formData.append("doctype", "LSH Delivery");
+  formData.append("docname", deliveryId);
+  const res = await api.raw("/api/files/upload", { method: "POST", body: formData });
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json?.error?.message || json?.error || "Upload failed");
+  }
+  const json = await res.json();
+  if (!json.data?.url) throw new Error("Upload failed — no URL returned");
+  return json.data.url as string;
+}
 
 interface GpsCoords { latitude: number; longitude: number; accuracy: number }
 
@@ -159,30 +179,28 @@ export function MarkDeliveredDialog({ delivery, onClose }: Props) {
     try {
       const id = delivery.id;
       const now = Date.now();
-      const BUCKET = "delivery-photos";
 
-      // Upload photos → collect public URLs
       const photoUrls: string[] = [];
       for (let i = 0; i < photos.length; i++) {
-        const path = `${id}/photo_${i + 1}_${now}.jpg`;
-        const { error } = await supabase.storage.from(BUCKET).upload(path, photos[i], { contentType: "image/jpeg", upsert: true });
-        if (error) throw new Error(`Photo upload failed: ${error.message}`);
-        const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
-        if (pub?.publicUrl) photoUrls.push(pub.publicUrl);
+        const url = await uploadDeliveryFile(
+          photos[i],
+          `photo_${i + 1}_${now}.jpg`,
+          id,
+          "image/jpeg",
+        );
+        photoUrls.push(url);
       }
 
-      // Upload signature → get public URL
       let signatureImageUrl: string | undefined;
       if (needsSig && sigPadRef.current && !sigPadRef.current.isEmpty()) {
         const dataUrl = sigPadRef.current.getCanvas().toDataURL("image/png");
         const blob = await (await fetch(dataUrl)).blob();
-        const sigFile = new File([blob], `signature_${now}.png`, { type: "image/png" });
-        const sigPath = `${id}/signature_${now}.png`;
-        const { error } = await supabase.storage.from(BUCKET).upload(sigPath, sigFile, { contentType: "image/png", upsert: true });
-        if (!error) {
-          const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(sigPath);
-          signatureImageUrl = pub?.publicUrl ?? undefined;
-        }
+        signatureImageUrl = await uploadDeliveryFile(
+          blob,
+          `signature_${now}.png`,
+          id,
+          "image/png",
+        );
       }
 
       await markDelivered.mutateAsync({
