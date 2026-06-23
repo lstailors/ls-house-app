@@ -1016,6 +1016,7 @@ async def raven_webhook(request: Request):
     if is_bot or sender in ("concierge@lstailors.com", "Administrator"):
         return {"ok": True, "skipped": "bot or own message"}
 <<<<<<< HEAD
+<<<<<<< HEAD
 @app.post("/api/raven-webhook")
 async def raven_webhook(request: Request):
     """
