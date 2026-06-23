@@ -254,7 +254,7 @@ deliveriesRouter.get("/search-context", async (c) => {
         ["docstatus", "!=", 2],
         ["customer_name", "like", `%${q}%`],
       ],
-      fields: ["name", "customer", "customer_name", "status", "delivery_method"],
+      fields: ["name", "customer", "customer_name", "workflow_state", "delivery_method"],
       limit: 5,
       order_by: "creation desc",
     }),
@@ -303,7 +303,7 @@ deliveriesRouter.get("/search-context", async (c) => {
         type: "alteration",
         id: a.name,
         label: `${a.customer_name} — ${a.name}`,
-        sublabel: `Alteration · ${a.status ?? ""}`,
+        sublabel: `Alteration · ${a.workflow_state ?? ""}`,
         customer: a.customer,
         customerName: a.customer_name,
         orderRef: null,
@@ -465,7 +465,6 @@ deliveriesRouter.post("/from-order", async (c) => {
   if (isHandDeliver) {
     erpDoc.lsh_delivered_at = now;
     erpDoc.lsh_dispatched_at = now;
-    erpDoc.lsh_pod_method = "In Person";
   }
 
   const doc = await erpCreate<any>("LSH Delivery", erpDoc);
