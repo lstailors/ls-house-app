@@ -225,7 +225,6 @@ async def book_appointment(
                     f"{appt_display} with {tailor}. "
                     f"We're at 138 E 61st St, Suite 201, New York. "
                     + prep_note(service_type)
-                    + (f"\nAdd to calendar: {cal_link}" if cal_link else "")
                     + f"\nQuestions? Reply or call (212) 752-1638."
                 )
                 twilio_client.messages.create(
@@ -241,6 +240,15 @@ async def book_appointment(
                     mode="system",
                     appointment_name=appt_name,
                 )
+                # Second message: calendar link on its own so iOS/Android renders it as a tap
+                if cal_link:
+                    import asyncio as _aio
+                    await _aio.sleep(1.5)
+                    twilio_client.messages.create(
+                        body=f"📅 Add to calendar: {cal_link}",
+                        from_=settings.TWILIO_PHONE_NUMBER,
+                        to=phone,
+                    )
                 logger.info(f"Booking confirmation SMS sent to {phone}")
             except Exception as sms_err:
                 logger.warning(f"SMS confirmation failed: {sms_err}")
