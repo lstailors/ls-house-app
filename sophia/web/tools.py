@@ -195,13 +195,12 @@ async def book_appointment(
         )
         appt_name = result.get("appointment_name") or result.get("name", "")
 
-        # Auto-create Customer record if this is a new caller
-        await erp_ensure_customer(customer_name, phone, customer_email)
-
-        # Human-readable date + single smart calendar link
+        # ── Build display strings (always succeeds) ───────────────────────────
         from datetime import timezone
         from urllib.parse import quote
         cal_link = ""
+        appt_display = slot_datetime
+        tailor = preferred_agent.split()[0] if preferred_agent else "one of our master tailors"
         try:
             appt_dt = dt.strptime(slot_datetime[:16], "%Y-%m-%d %H:%M").replace(tzinfo=NYC)
             appt_display = appt_dt.strftime("%A, %B %-d at %-I:%M %p")
@@ -212,12 +211,27 @@ async def book_appointment(
                 f"?title={event_title}&start={start_utc}&minutes=70"
             )
         except Exception:
-            appt_display = slot_datetime
+            pass
 
-        tailor = preferred_agent.split()[0] if preferred_agent else "one of our master tailors"
+        # ── Success response — built before any secondary operations ──────────
+        success_response = {
+            "booked": True,
+            "appointment": appt_name,
+            "message": (
+                f"You are all set, {customer_name}. Your {service_type} is confirmed for "
+                f"{appt_display} with {tailor}. I've sent a confirmation to your phone. "
+                f"We look forward to seeing you at 138 East 61st Street, Suite 201."
+            ),
+        }
 
-        # Send SMS confirmation to the customer
-        if phone and phone != "unknown":
+        # ── Secondary operations — none of these can affect the return value ──
+        try:
+            await erp_ensure_customer(customer_name, phone, customer_email)
+        except Exception as e:
+            logger.warning(f"erp_ensure_customer failed: {e}")
+
+        # SMS confirmation (only for real phone numbers, not email addresses)
+        if phone and phone != "unknown" and "@" not in phone:
             try:
                 twilio_client = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
                 sms_body = (
@@ -253,7 +267,7 @@ async def book_appointment(
             except Exception as sms_err:
                 logger.warning(f"SMS confirmation failed: {sms_err}")
 
-        # Send email confirmation if we have an address
+        # Email confirmation
         if customer_email:
             try:
                 email_body = (
@@ -290,25 +304,20 @@ async def book_appointment(
             except Exception as email_err:
                 logger.warning(f"Email confirmation failed: {email_err}")
 
-        # Log the booking event
-        await create_communication_log(
-            communication_type="Call",
-            direction="Inbound",
-            caller_phone=phone,
-            content=f"Appointment booked: {service_type} on {appt_display} with {tailor}",
-            mode=_mode,
-            appointment_name=appt_name,
-        )
+        # Communication log
+        try:
+            await create_communication_log(
+                communication_type="Call",
+                direction="Inbound",
+                caller_phone=phone,
+                content=f"Appointment booked: {service_type} on {appt_display} with {tailor}",
+                mode=_mode,
+                appointment_name=appt_name,
+            )
+        except Exception as e:
+            logger.warning(f"Communication log failed: {e}")
 
-        return {
-            "booked": True,
-            "appointment": appt_name,
-            "message": (
-                f"You are all set, {customer_name}. Your {service_type} is confirmed for "
-                f"{appt_display} with {tailor}. I've sent a confirmation to your phone. "
-                f"We look forward to seeing you at 138 East 61st Street, Suite 201."
-            ),
-        }
+        return success_response
     except httpx.HTTPStatusError as e:
         logger.error(f"book_appointment ERPNext error: {e.response.status_code} {e.response.text[:300]}")
         return {
