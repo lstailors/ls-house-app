@@ -9,6 +9,7 @@
     "studio": "cloud-studio --port 3001 --hostname 0.0.0.0",
     "seed": "bun run src/scripts/seed.ts",
     "verify:erpnext-main": "bun run src/scripts/verify-erpnext-main-doctypes.ts",
+    "verify:erpnext-fields": "bun run src/scripts/verify-erpnext-main-fields.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
