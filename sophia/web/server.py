@@ -362,6 +362,48 @@ async def trigger_briefing(request: Request):
     return {"briefing": text}
 
 
+# ─── Smart calendar redirect ──────────────────────────────────────────────────
+# /cal?start=...&title=...&minutes=...
+# iOS (Apple Calendar) → serves .ics directly → "Add to Calendar" dialog
+# Android / everything else → redirects to Google Calendar one-tap URL
+
+@app.get("/cal")
+async def calendar_smart_redirect(
+    request: Request,
+    title: str = "Appointment — L&S Custom Tailors",
+    start: str = "",
+    minutes: int = 70,
+    location: str = "138 East 61st Street, Suite 201, New York, NY 10065",
+):
+    from urllib.parse import quote
+    from datetime import timezone as _tz
+    from fastapi.responses import RedirectResponse
+
+    ua = request.headers.get("user-agent", "").lower()
+    is_apple = any(k in ua for k in ("iphone", "ipad", "macintosh", "darwin", "apple"))
+
+    if is_apple:
+        # Serve .ics — iOS pops "Add to Calendar" natively
+        params = f"?title={quote(title)}&start={start}&minutes={minutes}"
+        return RedirectResponse(url=f"/appt.ics{params}", status_code=302)
+    else:
+        # Google Calendar one-tap
+        try:
+            dt_start = datetime.strptime(start, "%Y%m%dT%H%M%SZ").replace(tzinfo=_tz.utc)
+            dt_end = dt_start + timedelta(minutes=minutes or 70)
+            fmt = lambda d: d.strftime("%Y%m%dT%H%M%SZ")
+            google_url = (
+                f"https://calendar.google.com/calendar/render?action=TEMPLATE"
+                f"&text={quote(title)}"
+                f"&dates={fmt(dt_start)}/{fmt(dt_end)}"
+                f"&location={quote(location)}"
+                f"&details={quote('L&S Custom Tailors · 138 E 61st St, Suite 201, New York · Questions? Call (212) 752-1638')}"
+            )
+        except Exception:
+            google_url = "https://calendar.google.com"
+        return RedirectResponse(url=google_url, status_code=302)
+
+
 # ─── Calendar (.ics) link for SMS/email confirmations ─────────────────────────
 
 @app.get("/appt.ics")
@@ -770,6 +812,12 @@ async def sms_incoming(request: Request):
         )
     )
 
+    # Human-like typing delay: ~50 chars/sec, capped 2–6s
+    import random
+    typing_delay = max(2.0, min(6.0, len(reply) / 50))
+    typing_delay += random.uniform(0.5, 1.5)
+    await asyncio.sleep(typing_delay)
+
     resp = MessagingResponse()
     resp.message(reply)
     return Response(content=str(resp), media_type="application/xml")
@@ -967,6 +1015,19 @@ async def raven_webhook(request: Request):
     # Skip messages sent by Sofia herself or any bot (avoid reply loops)
     if is_bot or sender in ("concierge@lstailors.com", "Administrator"):
         return {"ok": True, "skipped": "bot or own message"}
+<<<<<<< HEAD
+@app.post("/api/raven-webhook")
+async def raven_webhook(request: Request):
+    """
+    Receive messages sent to the Sofia bot in Raven.
+    Accepts raw JSON so we're not brittle to Raven's payload shape.
+    Runs the same Grok text-completion brain used for staff SMS,
+    then posts the reply back to the originating Raven channel.
+    """
+    text = payload.text.strip()
+    sender = payload.sender.strip()
+    channel_id = payload.channel_id.strip()
+>>>>>>> 0c4ddca (feat: integrate Raven messenger for Sofia activity notifications and staff bot)
 
     if not text:
         return {"ok": True, "skipped": "empty message"}
