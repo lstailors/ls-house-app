@@ -38,7 +38,6 @@ dashboardRouter.get("/kpis", async (c) => {
   // ── Driver path ──────────────────────────────────────────────────────────────
   if (user.role === "driver") {
     const driverIds = [user.id];
-    if (user.supabaseProfileId && user.supabaseProfileId !== user.id) driverIds.push(user.supabaseProfileId);
     const driverFilter: unknown[] = [["lsh_courier_user_id", "in", driverIds]];
 
     const [todayDeliveries, completedDeliveries] = await Promise.all([

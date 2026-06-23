@@ -70,7 +70,6 @@ squareRouter.post("/terminal-checkout", async (c) => {
     invoice_id?: string;
     amount_cents?: number;
     device_id?: string;
-    supabase_invoice_row_id?: string;
   } | null;
 
   const { invoice_id, amount_cents, device_id } = body ?? {};

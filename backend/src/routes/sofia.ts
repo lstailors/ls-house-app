@@ -12,6 +12,7 @@ import {
   insertAgentBrief,
 } from "../lib/erpnext/agents";
 import { findCustomerByPhone } from "../lib/erpnext/customers";
+import { approveEmailDraft, discardEmailDraft } from "../lib/erpnext/email-drafts";
 import { getAuthedUser } from "../lib/scope";
 // sendSms and alertCarl defined locally below
 
@@ -243,25 +244,27 @@ function substituteMerge(str: string, vars: Record<string, unknown>): string {
   return str.replace(/\{\{(\w+)\}\}/g, (m, k) => (vars[k] != null ? String(vars[k]) : m));
 }
 
-// ── Email handler via Supabase edge function ──
+// ── Email draft actions (ERPNext Communication + LSH Pending Email Draft) ──
 async function callEmailHandler(
   action: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
 ): Promise<{ status: number; data: any }> {
-  const SUPABASE_URL = process.env.SUPABASE_URL ?? "";
-  const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-  const r = await fetch(`${SUPABASE_URL}/functions/v1/sofia-email-handler?action=${action}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  let data: any = null;
-  try {
-    data = await r.json();
-  } catch {
-    data = null;
+  const draftId = String(payload.draft_id ?? "");
+  if (!draftId) return { status: 400, data: { ok: false, error: "draft_id required" } };
+
+  if (action === "approve") {
+    const result = await approveEmailDraft(draftId);
+    return { status: result.ok ? 200 : 422, data: result };
   }
-  return { status: r.status, data };
+  if (action === "edit") {
+    const result = await approveEmailDraft(draftId, String(payload.new_body ?? ""));
+    return { status: result.ok ? 200 : 422, data: result };
+  }
+  if (action === "discard") {
+    const result = await discardEmailDraft(draftId);
+    return { status: result.ok ? 200 : 422, data: result };
+  }
+  return { status: 400, data: { ok: false, error: `Unknown action: ${action}` } };
 }
 
 // ── Resolve short draft ID ──
@@ -1677,28 +1680,27 @@ async function runBriefing(): Promise<{ ok: boolean; briefing?: string; error?: 
   } catch {}
 
   try {
-      const startUtc = new Date(`${todayStr}T00:00:00-04:00`).toISOString();
-      const endUtc = new Date(`${todayStr}T23:59:59-04:00`).toISOString();
-      const appts = await storeList(DT.APPOINTMENT, {
-        filters: [["start_time", ">=", startUtc], ["start_time", "<=", endUtc], ["status", "in", ["confirmed", "pending"]]],
-        orderBy: "start_time asc",
-        limit: 20,
-      });
-      if (appts?.length) {
-        const fmtTime = (t: string) =>
-          new Intl.DateTimeFormat("en-US", {
-            timeZone: "America/New_York",
-            hour: "numeric",
-            minute: "2-digit",
-            hour12: true,
-          }).format(new Date(t));
-        sections.push(`TODAY'S APPOINTMENTS (${appts.length}): ${appts.map((a: any) => `${fmtTime(a.start_time)} ${a.event_type} – ${a.client_name ?? "?"}`).join("; ")}`);
-      }
-    } catch {}
-  }
+    const startUtc = new Date(`${todayStr}T00:00:00-04:00`).toISOString();
+    const endUtc = new Date(`${todayStr}T23:59:59-04:00`).toISOString();
+    const appts = await storeList(DT.APPOINTMENT, {
+      filters: [["start_time", ">=", startUtc], ["start_time", "<=", endUtc], ["status", "in", ["confirmed", "pending"]]],
+      orderBy: "start_time asc",
+      limit: 20,
+    });
+    if (appts?.length) {
+      const fmtTime = (t: string) =>
+        new Intl.DateTimeFormat("en-US", {
+          timeZone: "America/New_York",
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true,
+        }).format(new Date(t));
+      sections.push(`TODAY'S APPOINTMENTS (${appts.length}): ${appts.map((a: any) => `${fmtTime(a.start_time)} ${a.event_type} – ${a.client_name ?? "?"}`).join("; ")}`);
+    }
+  } catch {}
 
   if (!sections.length) {
-    sections.push("No urgent items found across ERPNext and Supabase.");
+    sections.push("No urgent items found across ERPNext.");
   }
 
   const dataBlock = sections.join("\n");
@@ -1778,15 +1780,14 @@ End with: — Sofia`,
 
   // ── Log to sms_messages ──
   try {
-      await insertSmsMessage({
-        client_phone: ownerPhone,
-        direction: "outbound",
-        content: briefing,
-        timestamp: new Date().toISOString(),
-        metadata: { channel: "daily_briefing", generated_at: new Date().toISOString() },
-      });
-    } catch {}
-  }
+    await insertSmsMessage({
+      client_phone: ownerPhone,
+      direction: "outbound",
+      content: briefing,
+      timestamp: new Date().toISOString(),
+      metadata: { channel: "daily_briefing", generated_at: new Date().toISOString() },
+    });
+  } catch {}
 
   return { ok: true, briefing };
 }
