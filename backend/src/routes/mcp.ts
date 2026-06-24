@@ -371,6 +371,36 @@ mcpRouter.get("/deliveries/daily-ops-summary", async (c) => {
   }
 });
 
+// ── Ping ─────────────────────────────────────────────────────────────────────
+
+mcpRouter.get("/ping", async (c) => {
+  return c.json({ ok: true, ts: new Date().toISOString() });
+});
+
+// ── ERP REST passthrough ──────────────────────────────────────────────────────
+// Proxy GET /api/erp-rest/resource/:doctype[/:name] → ERPNext REST API
+// Lets Maestro query any DocType without needing a dedicated endpoint.
+
+mcpRouter.get("/erp-rest/resource/:doctype", async (c) => {
+  const { base, key, secret } = erpCreds();
+  const doctype = c.req.param("doctype");
+  const qs = new URLSearchParams(c.req.query()).toString();
+  const url = `${base}/api/resource/${encodeURIComponent(doctype)}${qs ? "?" + qs : ""}`;
+  const res = await fetch(url, { headers: { Authorization: `token ${key}:${secret}`, Accept: "application/json" } });
+  const data = await res.json();
+  return c.json(data, res.status as any);
+});
+
+mcpRouter.get("/erp-rest/resource/:doctype/:name", async (c) => {
+  const { base, key, secret } = erpCreds();
+  const doctype = c.req.param("doctype");
+  const name = c.req.param("name");
+  const url = `${base}/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`;
+  const res = await fetch(url, { headers: { Authorization: `token ${key}:${secret}`, Accept: "application/json" } });
+  const data = await res.json();
+  return c.json(data, res.status as any);
+});
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function erpCreds() {
