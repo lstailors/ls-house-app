@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshEmailMessageLog(frappe.model.document.Document):
+class LSHEmailMessageLog(frappe.model.document.Document):
 	pass

@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshAgentTask(frappe.model.document.Document):
+class LSHAgentTask(frappe.model.document.Document):
 	pass

@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshLocation(frappe.model.document.Document):
+class LSHLocation(frappe.model.document.Document):
 	pass

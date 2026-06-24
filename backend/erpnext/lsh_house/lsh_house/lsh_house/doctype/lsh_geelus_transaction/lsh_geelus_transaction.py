@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshGeelusTransaction(frappe.model.document.Document):
+class LSHGeelusTransaction(frappe.model.document.Document):
 	pass

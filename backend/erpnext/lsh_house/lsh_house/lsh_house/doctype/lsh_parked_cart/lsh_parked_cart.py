@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshParkedCart(frappe.model.document.Document):
+class LSHParkedCart(frappe.model.document.Document):
 	pass

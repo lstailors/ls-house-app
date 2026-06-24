@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshMmsTemplate(frappe.model.document.Document):
+class LSHMmsTemplate(frappe.model.document.Document):
 	pass

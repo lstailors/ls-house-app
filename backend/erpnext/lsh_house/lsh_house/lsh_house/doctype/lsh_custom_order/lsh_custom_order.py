@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshCustomOrder(frappe.model.document.Document):
+class LSHCustomOrder(frappe.model.document.Document):
 	pass

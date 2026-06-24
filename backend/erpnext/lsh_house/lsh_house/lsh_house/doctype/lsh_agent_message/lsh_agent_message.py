@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshAgentMessage(frappe.model.document.Document):
+class LSHAgentMessage(frappe.model.document.Document):
 	pass

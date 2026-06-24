@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshSofiaActivityLog(frappe.model.document.Document):
+class LSHSofiaActivityLog(frappe.model.document.Document):
 	pass

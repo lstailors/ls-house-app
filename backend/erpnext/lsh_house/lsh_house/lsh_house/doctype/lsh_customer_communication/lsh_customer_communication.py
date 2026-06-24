@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshCustomerCommunication(frappe.model.document.Document):
+class LSHCustomerCommunication(frappe.model.document.Document):
 	pass

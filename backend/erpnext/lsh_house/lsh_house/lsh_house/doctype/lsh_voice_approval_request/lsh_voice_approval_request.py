@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshVoiceApprovalRequest(frappe.model.document.Document):
+class LSHVoiceApprovalRequest(frappe.model.document.Document):
 	pass

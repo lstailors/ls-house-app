@@ -21,7 +21,7 @@ export const mcpRouter = new Hono();
 // ── Auth middleware ──────────────────────────────────────────────────────────
 
 mcpRouter.use("*", async (c, next) => {
-  const secret = process.env.LST_MCP_SECRET;
+  const secret = process.env.LST_MCP_SECRET?.trim();
   if (!secret) return c.json({ error: "MCP not configured" }, 503);
   const key = c.req.header("X-MCP-Key");
   if (key !== secret) return c.json({ error: "Forbidden" }, 403);
@@ -369,6 +369,50 @@ mcpRouter.get("/deliveries/daily-ops-summary", async (c) => {
   } catch (err: any) {
     return c.json({ error: err?.message ?? "AI call failed" }, 502);
   }
+});
+
+// ── Ping ─────────────────────────────────────────────────────────────────────
+
+mcpRouter.get("/ping", async (c) => {
+  return c.json({ ok: true, ts: new Date().toISOString() });
+});
+
+// ── ERP REST passthrough ──────────────────────────────────────────────────────
+// Proxy GET /api/erp-rest/resource/:doctype[/:name] → ERPNext REST API
+// Lets Maestro query any DocType without needing a dedicated endpoint.
+
+mcpRouter.get("/erp-rest/resource/:doctype", async (c) => {
+  const { base, key, secret } = erpCreds();
+  const doctype = c.req.param("doctype");
+  const qs = new URLSearchParams(c.req.query()).toString();
+  const url = `${base}/api/resource/${encodeURIComponent(doctype)}${qs ? "?" + qs : ""}`;
+  const res = await fetch(url, { headers: { Authorization: `token ${key}:${secret}`, Accept: "application/json" } });
+  const data = await res.json();
+  return c.json(data, res.status as any);
+});
+
+mcpRouter.get("/erp-rest/resource/:doctype/:name", async (c) => {
+  const { base, key, secret } = erpCreds();
+  const doctype = c.req.param("doctype");
+  const name = c.req.param("name");
+  const url = `${base}/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`;
+  const res = await fetch(url, { headers: { Authorization: `token ${key}:${secret}`, Accept: "application/json" } });
+  const data = await res.json();
+  return c.json(data, res.status as any);
+});
+
+mcpRouter.post("/erp-rest/resource/:doctype", async (c) => {
+  const { base, key, secret } = erpCreds();
+  const doctype = c.req.param("doctype");
+  const body = await c.req.json();
+  const url = `${base}/api/resource/${encodeURIComponent(doctype)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `token ${key}:${secret}`, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  return c.json(data, res.status as any);
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
