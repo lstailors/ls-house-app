@@ -31,6 +31,13 @@ def first_name(full_name):
     return name.split()[0] if name else "there"
 
 
+def get_twilio_auth_token(settings):
+    try:
+        return cstr(settings.get_password("twilio_auth_token"))
+    except Exception:
+        return cstr(settings.twilio_auth_token)
+
+
 def _log_sms_message(
     *,
     phone,
@@ -130,7 +137,7 @@ def send_and_log(
             )
 
         account_sid = cstr(settings.twilio_account_sid).strip()
-        auth_token = cstr(settings.twilio_auth_token)
+        auth_token = get_twilio_auth_token(settings)
 
         if not account_sid or not auth_token or not from_number:
             return _log_failed_message(
@@ -246,6 +253,18 @@ def send_customer_sms(
         "status": status,
         "error_message": sms_message.get("error_message"),
     }
+
+
+@frappe.whitelist()
+def sofia_reply(phone, message, customer=None, reference_doctype=None, reference_name=None):
+    return send_and_log(
+        phone=phone,
+        message=message,
+        customer=customer,
+        reference_doctype=reference_doctype,
+        reference_name=reference_name,
+        context_tag="sofia_reply",
+    )
 
 
 def already_notified(reference_doctype, reference_name, context_tag):

@@ -1,1 +1,2 @@
 lsh_house.patches.v1_0.set_lsh_sms_auth_token_password
+lsh_house.patches.v1_0.add_lsh_sms_signature_bypass_flag
