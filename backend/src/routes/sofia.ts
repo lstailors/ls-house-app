@@ -1782,21 +1782,45 @@ sofiaRouter.post("/sms", async (c) => {
       }
     }
 
-    // Respond to Twilio immediately (5s timeout) then process async via waitUntil
-    const task = processMessage(from, body, messageSid).catch((e) =>
-      console.error("[sofia/sms] error:", e)
-    );
-    // Use Vercel/Cloudflare waitUntil if available, otherwise fire-and-forget
-    const ctx = (c.executionCtx as any) ?? (globalThis as any).__waitUntilCtx;
-    if (ctx?.waitUntil) {
-      ctx.waitUntil(task);
-    }
-    // task runs in background regardless — response goes back to Twilio now
+    // Fire-and-forget to /api/sofia/process — a separate Edge invocation that
+    // runs processMessage without being bound to Twilio's 5s webhook timeout.
+    const baseUrl = new URL(c.req.url).origin;
+    const processSecret = process.env.SOFIA_PROCESS_SECRET ?? "sofia-process-internal";
+    fetch(`${baseUrl}/api/sofia/process`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-sofia-process-secret": processSecret,
+      },
+      body: JSON.stringify({ from, body, messageSid }),
+    }).catch((e) => console.error("[sofia/sms] dispatch error:", e));
+
   } catch (err: any) {
     console.error("[sofia/sms] parse error:", err?.message ?? err);
   }
 
   return emptyTwiml(c);
+});
+
+// POST /api/sofia/process — internal endpoint called by /sms to run processMessage
+// async without being subject to Twilio's 5s webhook timeout
+sofiaRouter.post("/process", async (c) => {
+  const secret = process.env.SOFIA_PROCESS_SECRET ?? "sofia-process-internal";
+  const provided = c.req.header("x-sofia-process-secret") ?? "";
+  if (provided !== secret) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+  try {
+    const { from, body, messageSid } = await c.req.json();
+    if (!from || !body) return c.json({ ok: false, error: "missing fields" }, 400);
+    await processMessage(from, body, messageSid ?? "").catch((e) =>
+      console.error("[sofia/process] error:", e)
+    );
+    return c.json({ ok: true });
+  } catch (err: any) {
+    console.error("[sofia/process] parse error:", err?.message ?? err);
+    return c.json({ ok: false, error: err?.message ?? "unknown" }, 500);
+  }
 });
 
 // ────────────────────────────────────────────────────────────────────────────
