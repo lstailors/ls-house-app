@@ -206,6 +206,48 @@ def send_and_log(
             return None
 
 
+@frappe.whitelist()
+def send_customer_sms(
+    phone,
+    message,
+    customer=None,
+    reference_doctype=None,
+    reference_name=None,
+    context_tag="sofia",
+    client_name=None,
+):
+    sms_message = send_and_log(
+        phone=phone,
+        message=message,
+        customer=customer,
+        reference_doctype=reference_doctype,
+        reference_name=reference_name,
+        context_tag=context_tag or "sofia",
+        client_name=client_name,
+    )
+
+    if not sms_message:
+        return {
+            "ok": False,
+            "status": "not_sent",
+            "error_message": "SMS was not sent. Check LSH SMS Settings and server logs.",
+        }
+
+    status = sms_message.get("status")
+    return {
+        "ok": status != "failed",
+        "name": sms_message.name,
+        "client_phone": sms_message.get("client_phone"),
+        "customer": sms_message.get("customer"),
+        "reference_doctype": sms_message.get("reference_doctype"),
+        "reference_name": sms_message.get("reference_name"),
+        "context_tag": sms_message.get("context_tag"),
+        "twilio_sid": sms_message.get("twilio_sid"),
+        "status": status,
+        "error_message": sms_message.get("error_message"),
+    }
+
+
 def already_notified(reference_doctype, reference_name, context_tag):
     return (
         frappe.db.exists(
