@@ -1782,10 +1782,19 @@ sofiaRouter.post("/sms", async (c) => {
       }
     }
 
-    // Node runtime (not Edge) — await fully, function stays alive until done
-    await processMessage(from, body, messageSid).catch((e: any) =>
-      console.error("[sofia/sms] processMessage error:", e?.message ?? e)
+    // Grok call + 8-20s human-like delay + Twilio/ERP send run far longer than
+    // Twilio's webhook timeout. Reply with TwiML immediately and finish processing
+    // in the background via the execution context's waitUntil, which keeps the
+    // invocation alive after the response is sent.
+    const task = processMessage(from, body, messageSid).catch((e: any) =>
+      console.error("[sofia/sms] processMessage error:", e?.message ?? e),
     );
+    try {
+      c.executionCtx.waitUntil(task);
+    } catch {
+      // No execution context (e.g. local Bun dev) — await inline as a fallback.
+      await task;
+    }
 
   } catch (err: any) {
     console.error("[sofia/sms] parse error:", err?.message ?? err);
