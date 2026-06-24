@@ -8,13 +8,18 @@
  "field_order": [
   "client_phone",
   "client_name",
+  "customer",
   "direction",
   "content",
   "body",
   "sender",
   "timestamp",
   "twilio_sid",
-  "status"
+  "status",
+  "reference_doctype",
+  "reference_name",
+  "context_tag",
+  "error_message"
  ],
  "fields": [
   {
@@ -27,6 +32,12 @@
    "fieldname": "client_name",
    "fieldtype": "Data",
    "label": "Client Name"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer"
   },
   {
    "fieldname": "direction",
@@ -65,6 +76,28 @@
    "fieldname": "status",
    "fieldtype": "Data",
    "label": "Status"
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Link",
+   "label": "Reference DocType",
+   "options": "DocType"
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Reference Name",
+   "options": "reference_doctype"
+  },
+  {
+   "fieldname": "context_tag",
+   "fieldtype": "Data",
+   "label": "Context Tag"
+  },
+  {
+   "fieldname": "error_message",
+   "fieldtype": "Small Text",
+   "label": "Error Message"
   }
  ],
  "index_web_pages_for_search": 1,
