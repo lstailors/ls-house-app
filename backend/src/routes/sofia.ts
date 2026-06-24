@@ -5,6 +5,8 @@ import { storeInsert, storeList, storeFindOne, storeSearch, storeUpdate } from "
 import {
   insertSmsMessage,
   listSmsMessagesFiltered,
+  findSmsByTwilioSid,
+  listCallLogs,
   insertBrainEntry,
   listBrainEntriesFiltered,
   listPendingEmailDrafts,
@@ -15,19 +17,6 @@ import { findCustomerByPhone } from "../lib/erpnext/customers";
 import { approveEmailDraft, discardEmailDraft } from "../lib/erpnext/email-drafts";
 import { getAuthedUser } from "../lib/scope";
 // sendSms and alertCarl defined locally below
-
-// ── Sofia agent base URL (FastAPI on Mac Studio) ──
-const SOFIA_URL = process.env.SOFIA_URL ?? "https://sofia.lstailors.com";
-
-async function sofiaFetch(path: string): Promise<any> {
-  try {
-    const res = await fetch(`${SOFIA_URL}${path}`);
-    if (!res.ok) return null;
-    return res.json();
-  } catch {
-    return null;
-  }
-}
 
 // ── Constants ──
 const CARL_PHONE = "+16319260917";
@@ -55,7 +44,6 @@ const CAL_EVENT_TYPES: Record<string, number> = {
 };
 
 const DOSSIER_BASE = process.env.DOSSIER_BASE ?? "https://dossier.lstailors.com";
-const N8N_WH = process.env.N8N_WEBHOOK_BASE ?? "https://lstailors.app.n8n.cloud/webhook";
 const RENDERER_BASE = process.env.RENDERER_BASE ?? "https://studio.tail342936.ts.net:10000/render";
 
 const GROK_IDENTITY =
@@ -210,6 +198,70 @@ function normalizePhone(p: string): string {
   return `+${digits}`;
 }
 
+const EMPTY_TWIML = `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`;
+
+function emptyTwiml(c: any) {
+  c.header("Content-Type", "text/xml");
+  return c.body(EMPTY_TWIML);
+}
+
+function firstHeaderValue(value: string | null | undefined): string {
+  return String(value ?? "").split(",", 1)[0]!.trim();
+}
+
+async function computeTwilioSignature(authToken: string, url: string, params: URLSearchParams): Promise<string> {
+  const sorted = Array.from(params.entries()).sort(([left], [right]) => left.localeCompare(right));
+  const base = sorted.reduce((acc, [key, value]) => acc + key + value, url);
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(authToken),
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(base));
+  const bytes = Array.from(new Uint8Array(signature));
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function safeSignatureCompare(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return diff === 0;
+}
+
+function possibleTwilioWebhookUrls(c: any): string[] {
+  const urls = [c.req.url];
+  const forwardedProto = firstHeaderValue(c.req.header("x-forwarded-proto"));
+  const forwardedHost = firstHeaderValue(c.req.header("x-forwarded-host") ?? c.req.header("host"));
+
+  if (forwardedProto && forwardedHost) {
+    const current = new URL(c.req.url);
+    urls.push(`${forwardedProto}://${forwardedHost}${current.pathname}${current.search}`);
+  }
+
+  return Array.from(new Set(urls));
+}
+
+async function isValidTwilioWebhook(c: any, params: URLSearchParams): Promise<boolean> {
+  if (process.env.SOFIA_SKIP_TWILIO_SIGNATURE === "1") return true;
+
+  const authToken = process.env.TWILIO_AUTH_TOKEN ?? "";
+  const signature = c.req.header("x-twilio-signature") ?? "";
+  if (!authToken || !signature) return false;
+
+  for (const url of possibleTwilioWebhookUrls(c)) {
+    const expected = await computeTwilioSignature(authToken, url, params);
+    if (safeSignatureCompare(signature, expected)) return true;
+  }
+
+  return false;
+}
+
 
 function mapClientRow(row) {
   return {
@@ -235,6 +287,192 @@ function customerDisplayName(customer: Record<string, unknown> | null | undefine
   const last = String(customer?.last_name ?? "").trim();
   const fullName = `${first} ${last}`.trim();
   return fullName || null;
+}
+
+function phoneDigits(phone: unknown): string {
+  return String(phone ?? "").replace(/\D/g, "");
+}
+
+function phoneLast10(phone: unknown): string {
+  return phoneDigits(phone).slice(-10);
+}
+
+function samePhone(a: unknown, b: unknown): boolean {
+  const left = phoneLast10(a);
+  const right = phoneLast10(b);
+  return Boolean(left && right && left === right);
+}
+
+function messageTimestamp(row: any): string {
+  return String(row?.timestamp ?? row?.time ?? row?.creation ?? row?.modified ?? new Date().toISOString());
+}
+
+function mapSmsThreadMessage(row: any) {
+  const createdAt = messageTimestamp(row);
+  return {
+    id: String(row.name ?? row.twilio_sid ?? createdAt),
+    source: "sms",
+    client_phone: String(row.client_phone ?? ""),
+    client_id: row.customer ?? row.client_id ?? null,
+    clientName: row.client_name ?? null,
+    direction: row.direction === "outbound" ? "outbound" : "inbound",
+    body: String(row.body ?? row.content ?? ""),
+    content: String(row.content ?? row.body ?? ""),
+    sender: row.sender ?? null,
+    twilio_sid: row.twilio_sid ?? null,
+    status: row.status ?? null,
+    reference_doctype: row.reference_doctype ?? null,
+    reference_name: row.reference_name ?? null,
+    context_tag: row.context_tag ?? null,
+    created_at: createdAt,
+    timestamp: createdAt,
+  };
+}
+
+function mapCallThreadMessage(row: any) {
+  const createdAt = messageTimestamp(row);
+  const summary = String(row.transcript_whisper ?? row.transcript_raw ?? "").trim();
+  const status = row.status ? ` (${row.status})` : "";
+  const duration = Number(row.duration ?? 0) > 0 ? ` - ${row.duration}s` : "";
+  const body = summary || `Voice call${status}${duration}`;
+  return {
+    id: String(row.name ?? row.external_id ?? createdAt),
+    source: "call",
+    client_phone: String(row.from ?? ""),
+    client_id: null,
+    clientName: row.from_caller_name ?? null,
+    direction: String(row.direction ?? "inbound").toLowerCase().includes("out") ? "outbound" : "inbound",
+    body,
+    content: body,
+    sender: row.from ?? null,
+    status: row.status ?? null,
+    recording: row.recording ?? null,
+    created_at: createdAt,
+    timestamp: createdAt,
+  };
+}
+
+async function loadLocalSofiaMessages(opts: { phone?: string; limit?: number; ascending?: boolean } = {}) {
+  const limit = opts.limit ?? 500;
+  const smsRows = await listSmsMessagesFiltered({
+    phone: opts.phone,
+    limit,
+    ascending: opts.ascending,
+  });
+  const callRows = await listCallLogs({ limit, orderBy: opts.ascending ? "time asc" : "time desc" });
+  const filteredCalls = opts.phone ? callRows.filter((row: any) => samePhone(row.from, opts.phone)) : callRows;
+  const messages = [
+    ...(smsRows ?? []).map(mapSmsThreadMessage),
+    ...(filteredCalls ?? []).map(mapCallThreadMessage),
+  ].filter((message) => opts.phone ? samePhone(message.client_phone, opts.phone) : Boolean(message.client_phone));
+
+  messages.sort((a, b) => {
+    const delta = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    return opts.ascending ? delta : -delta;
+  });
+
+  return messages.slice(0, limit);
+}
+
+async function buildLocalSofiaConversations() {
+  const messages = await loadLocalSofiaMessages({ limit: 500 });
+  const threads = new Map<string, any>();
+
+  for (const message of messages) {
+    const key = phoneLast10(message.client_phone) || message.client_phone;
+    if (!key) continue;
+
+    const existing = threads.get(key);
+    const displayPhone = message.client_phone || existing?.phone;
+    const clientName = message.clientName ?? existing?.clientName ?? null;
+    const messageTime = new Date(message.created_at).getTime();
+    const existingTime = existing ? new Date(existing.lastMessage.created_at).getTime() : -Infinity;
+    const unread = Boolean(existing?.unread) || message.direction === "inbound";
+
+    if (!existing || messageTime >= existingTime) {
+      threads.set(key, {
+        phone: displayPhone,
+        clientName,
+        lastMessage: {
+          body: message.body,
+          direction: message.direction,
+          created_at: message.created_at,
+          timestamp: message.timestamp,
+        },
+        messageCount: (existing?.messageCount ?? 0) + 1,
+        sofiaActive: true,
+        unread,
+        customer: message.client_id ?? existing?.customer ?? null,
+        reference_doctype: message.reference_doctype ?? existing?.reference_doctype ?? null,
+        reference_name: message.reference_name ?? existing?.reference_name ?? null,
+        context_tag: message.context_tag ?? existing?.context_tag ?? null,
+      });
+    } else {
+      existing.messageCount += 1;
+      existing.clientName = existing.clientName ?? clientName;
+      existing.unread = unread;
+    }
+  }
+
+  return Array.from(threads.values()).sort(
+    (a, b) => new Date(b.lastMessage.created_at).getTime() - new Date(a.lastMessage.created_at).getTime(),
+  );
+}
+
+function formatTicketSummary(ticket: any): string {
+  const parts = [
+    ticket.name ? `Ticket ${ticket.name}` : "Alteration ticket",
+    ticket.customer_name ? `for ${ticket.customer_name}` : null,
+    ticket.workflow_state ? `is ${ticket.workflow_state}` : null,
+    ticket.due_date ? `due ${ticket.due_date}` : null,
+    ticket.grand_total ? `total $${ticket.grand_total}` : null,
+  ].filter(Boolean);
+  return parts.join(" ");
+}
+
+async function getAlterationTicketsForPhone(phone: string) {
+  const normalized = normalizePhone(phone);
+  const last10 = phoneLast10(normalized);
+  if (!last10) return [];
+
+  const rows = await erpList<any>("Alteration Ticket", {
+    fields: [
+      "name",
+      "customer",
+      "customer_name",
+      "customer_phone",
+      "workflow_state",
+      "due_date",
+      "grand_total",
+      "modified",
+      "creation",
+    ],
+    order_by: "modified desc",
+    limit: 25,
+  });
+
+  return (rows ?? []).filter((ticket: any) => samePhone(ticket.customer_phone, normalized)).slice(0, 10);
+}
+
+async function getAlterationTicketByName(ticketName: string) {
+  const name = String(ticketName ?? "").trim();
+  if (!name) return null;
+  const rows = await erpList<any>("Alteration Ticket", {
+    filters: [["name", "=", name]],
+    fields: [
+      "name",
+      "customer",
+      "customer_name",
+      "customer_phone",
+      "workflow_state",
+      "due_date",
+      "grand_total",
+      "modified",
+      "creation",
+    ],
+    limit: 1,
+  });
+  return rows[0] ?? null;
 }
 
 async function lookupClients(q, field) {
@@ -851,28 +1089,21 @@ async function executeTool(
       }
       case "get_customer_tickets":
       case "get_ticket_status": {
-        const phoneArg =
-          args.phone
-            ? normalizePhone(String(args.phone))
-            : name === "get_customer_tickets" && !isAssistant
-            ? normalizePhone(from)
-            : "";
-        const toolArgs: Record<string, unknown> =
-          name === "get_customer_tickets"
-            ? { phone: phoneArg }
-            : { ticket_name: String(args.ticket_name ?? "") };
         try {
-          const r = await fetch(`${N8N_WH}/sofia-erpnext-tools`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tool_name: name, args: toolArgs }),
-          });
-          let data: any = null;
-          try {
-            data = await r.json();
-          } catch {}
-          if (r.status >= 300 || !data) return JSON.stringify({ error: "ERPNext tool failed", status: r.status, body: data });
-          return JSON.stringify({ text: String(data.text ?? "") });
+          if (name === "get_customer_tickets") {
+            const phoneArg = args.phone ? normalizePhone(String(args.phone)) : !isAssistant ? normalizePhone(from) : "";
+            if (!phoneArg) return JSON.stringify({ error: "phone required" });
+
+            const tickets = await getAlterationTicketsForPhone(phoneArg);
+            const text = tickets.length
+              ? tickets.map(formatTicketSummary).join("\n")
+              : "No recent alteration tickets found for that phone number.";
+            return JSON.stringify({ text, tickets });
+          }
+
+          const ticket = await getAlterationTicketByName(String(args.ticket_name ?? ""));
+          if (!ticket) return JSON.stringify({ text: "No alteration ticket found with that name.", ticket: null });
+          return JSON.stringify({ text: formatTicketSummary(ticket), ticket });
         } catch (e) {
           return JSON.stringify({ error: String((e as Error).message) });
         }
@@ -1413,8 +1644,8 @@ sofiaRouter.get("/conversations", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (user.role === "driver") return c.json({ data: [] });
 
-  const result = await sofiaFetch("/api/communications");
-  return c.json({ data: result?.data ?? [] });
+  const data = await buildLocalSofiaConversations();
+  return c.json({ data });
 });
 
 // ── GET /api/sofia/conversations/:phone ── full thread
@@ -1423,9 +1654,9 @@ sofiaRouter.get("/conversations/:phone", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (user.role === "driver") return c.json({ error: { message: "Forbidden" } }, 403);
 
-  const phone = encodeURIComponent(c.req.param("phone"));
-  const result = await sofiaFetch(`/api/communications/${phone}`);
-  return c.json({ data: result?.data ?? [] });
+  const phone = decodeURIComponent(c.req.param("phone"));
+  const data = await loadLocalSofiaMessages({ phone, limit: 300, ascending: true });
+  return c.json({ data });
 });
 
 // ── POST /api/sofia/conversations/:phone/handoff ──
@@ -1470,23 +1701,8 @@ sofiaRouter.get("/threads", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   
 
-  const data = await listSmsMessagesFiltered({ limit: 500 });
-
-  const seen = new Set<string>();
-  const threads = (data ?? []).filter((r: any) => {
-    if (!r.client_phone || seen.has(r.client_phone)) return false;
-    seen.add(r.client_phone);
-    return true;
-  }).map((r: any) => ({
-    id: r.id,
-    client_phone: r.client_phone,
-    client_id: r.client_id ?? null,
-    direction: r.direction,
-    body: r.content,
-    created_at: r.timestamp,
-  }));
-
-  return c.json({ data: threads });
+  const data = await buildLocalSofiaConversations();
+  return c.json({ data });
 });
 
 // ── GET /api/sofia/thread/:phone ── full conversation
@@ -1496,17 +1712,8 @@ sofiaRouter.get("/thread/:phone", async (c) => {
   
 
   const phone = decodeURIComponent(c.req.param("phone"));
-  const data = await listSmsMessagesFiltered({ phone, limit: 300, ascending: true });
-
-  return c.json({ data: (data ?? []).map((r: any) => ({
-    id: r.id,
-    client_phone: r.client_phone,
-    client_id: r.client_id ?? null,
-    direction: r.direction,
-    body: r.content,
-    media_urls: r.media_urls ?? [],
-    created_at: r.timestamp,
-  })) });
+  const data = await loadLocalSofiaMessages({ phone, limit: 300, ascending: true });
+  return c.json({ data });
 });
 
 // ── POST /api/sofia/send ── send customer SMS via ERPNext logging helper
@@ -1547,19 +1754,32 @@ sofiaRouter.get("/voice-approvals", async (c) => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// POST /api/sofia/sms  — Twilio webhook (NO auth required)
+// POST /api/sofia/sms  — Twilio webhook (signature validated)
 // ────────────────────────────────────────────────────────────────────────────
 sofiaRouter.post("/sms", async (c) => {
   try {
     const formText = await c.req.text();
     const params = new URLSearchParams(formText);
+
+    if (!(await isValidTwilioWebhook(c, params))) {
+      console.error("[sofia/sms] rejected invalid Twilio signature");
+      return emptyTwiml(c);
+    }
+
     const from = params.get("From") ?? params.get("from") ?? "";
     const body = (params.get("Body") ?? params.get("body") ?? "").trim();
     const messageSid = params.get("MessageSid") ?? params.get("SmsSid") ?? params.get("messageSid") ?? "";
 
     if (!from || !body) {
-      c.header("Content-Type", "text/xml");
-      return c.body(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
+      return emptyTwiml(c);
+    }
+
+    if (messageSid) {
+      const existing = await findSmsByTwilioSid(messageSid).catch(() => null);
+      if (existing) {
+        console.info(`[sofia/sms] duplicate Twilio MessageSid ignored: ${messageSid}`);
+        return emptyTwiml(c);
+      }
     }
 
     // Process synchronously — Vercel serverless kills background tasks after response
@@ -1568,8 +1788,7 @@ sofiaRouter.post("/sms", async (c) => {
     console.error("[sofia/sms] parse error:", err?.message ?? err);
   }
 
-  c.header("Content-Type", "text/xml");
-  return c.body(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
+  return emptyTwiml(c);
 });
 
 // ────────────────────────────────────────────────────────────────────────────

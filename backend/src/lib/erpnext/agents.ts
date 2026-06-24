@@ -209,6 +209,21 @@ export async function listCallLogs(opts: {
   if (opts.phone) filters.push(["from", "=", opts.phone]);
   return erpList<any>(DT.CALL_LOG, {
     filters,
+    fields: [
+      "name",
+      "external_id",
+      "time",
+      "from",
+      "from_caller_name",
+      "to",
+      "direction",
+      "duration",
+      "status",
+      "transcript_raw",
+      "transcript_whisper",
+      "recording",
+      "creation",
+    ],
     order_by: opts.orderBy ?? "time desc",
     limit: opts.limit ?? 100,
   });
@@ -272,6 +287,24 @@ export async function listSmsMessagesFiltered(opts: {
   if (opts.twilioSid) filters.push(["twilio_sid", "=", opts.twilioSid]);
   return erpList<any>(DT.SMS_MESSAGE, {
     filters,
+    fields: [
+      "name",
+      "client_phone",
+      "client_name",
+      "customer",
+      "direction",
+      "content",
+      "body",
+      "sender",
+      "timestamp",
+      "twilio_sid",
+      "status",
+      "reference_doctype",
+      "reference_name",
+      "context_tag",
+      "creation",
+      "modified",
+    ],
     order_by: opts.ascending ? "timestamp asc" : "timestamp desc",
     limit: opts.limit ?? 100,
   });

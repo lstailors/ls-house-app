@@ -14,7 +14,7 @@ const LOCATIONS = [
 
 const AGENTS = [
   { slug: "maestro", agent_name: "Maestro", role: "Orchestrator", description: "Chief of staff. Routes tasks, surfaces decisions.", model: "claude-sonnet-4", platform: "Hermes · Mac Studio", color: "brass", icon: "Crown", status: "offline", enabled: 1 },
-  { slug: "sofia", agent_name: "Sofia", role: "Client Concierge", description: "All client SMS and voice.", model: "grok-3", platform: "n8n Cloud · Twilio", color: "emerald", icon: "Phone", status: "offline", enabled: 1 },
+  { slug: "sofia", agent_name: "Sofia", role: "Client Concierge", description: "All client SMS and voice.", model: "grok-3", platform: "House App · Twilio", color: "emerald", icon: "Phone", status: "offline", enabled: 1 },
   { slug: "mia", agent_name: "Mia", role: "Scheduling & Dossiers", description: "Calendar and client prep.", model: "claude-haiku-3-5", platform: "Mac Studio · Cal.com", color: "blue", icon: "Calendar", status: "offline", enabled: 1 },
   { slug: "rocco", agent_name: "Rocco", role: "Production & Delivery", description: "Floor to delivery pipeline.", model: "claude-sonnet-4", platform: "Mac Studio · MTMPro · ERPNext", color: "amber", icon: "Factory", status: "offline", enabled: 1 },
   { slug: "melena", agent_name: "Melena", role: "Accounting & Books", description: "Billing and reconciliation.", model: "claude-sonnet-4", platform: "Mac Studio · ERPNext · Square", color: "rose", icon: "DollarSign", status: "offline", enabled: 1 },
