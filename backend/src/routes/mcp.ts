@@ -401,6 +401,20 @@ mcpRouter.get("/erp-rest/resource/:doctype/:name", async (c) => {
   return c.json(data, res.status as any);
 });
 
+mcpRouter.post("/erp-rest/resource/:doctype", async (c) => {
+  const { base, key, secret } = erpCreds();
+  const doctype = c.req.param("doctype");
+  const body = await c.req.json();
+  const url = `${base}/api/resource/${encodeURIComponent(doctype)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `token ${key}:${secret}`, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  return c.json(data, res.status as any);
+});
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function erpCreds() {
