@@ -10,3 +10,13 @@ fixtures = [
     {"dt": "LSH Agent", "filters": []},
     {"dt": "LSH Location", "filters": []},
 ]
+
+doc_events = {
+    "Alteration Ticket": {
+        "on_update": "lsh_house.notifications.alteration.on_alteration_update",
+    },
+    "LSH Delivery": {
+        "on_update": "lsh_house.notifications.delivery.on_delivery_update",
+        "on_update_after_submit": "lsh_house.notifications.delivery.on_delivery_update",
+    },
+}

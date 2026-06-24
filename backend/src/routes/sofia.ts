@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { erpList } from "../lib/erp";
+import { erpList, erpRunMethod } from "../lib/erp";
 import { DT } from "../lib/erpnext/doctypes";
 import { storeInsert, storeList, storeFindOne, storeSearch, storeUpdate } from "../lib/erpnext/store";
 import {
@@ -141,6 +141,49 @@ async function sendSms(to: string, body: string): Promise<string | null> {
   return result.ok ? (result.sid ?? null) : null;
 }
 
+async function sendCustomerSmsViaErp(args: {
+  to: string;
+  body: string;
+  customer?: string | null;
+  reference_doctype?: string | null;
+  reference_name?: string | null;
+  context_tag?: string | null;
+  client_name?: string | null;
+}): Promise<{ ok: boolean; sid?: string | null; status?: string | null; error?: string | null; message_name?: string | null }> {
+  let result: any = null;
+  try {
+    result = await erpRunMethod("lsh_house.sms.send_customer_sms", {
+      phone: args.to,
+      message: args.body,
+      customer: args.customer ?? null,
+      reference_doctype: args.reference_doctype ?? null,
+      reference_name: args.reference_name ?? null,
+      context_tag: args.context_tag ?? "sofia",
+      client_name: args.client_name ?? null,
+    });
+  } catch (error: any) {
+    return {
+      ok: false,
+      error: error?.message ?? "ERPNext SMS method failed",
+    };
+  }
+
+  if (!result) {
+    return {
+      ok: false,
+      error: "ERPNext SMS method unavailable",
+    };
+  }
+
+  return {
+    ok: Boolean(result?.ok),
+    sid: result?.twilio_sid ?? null,
+    status: result?.status ?? null,
+    error: result?.error_message ?? null,
+    message_name: result?.name ?? null,
+  };
+}
+
 // ── Raven post helper (replaces Slack) ──
 async function postToRaven(text: string): Promise<void> {
   const webhookUrl = process.env.RAVEN_WEBHOOK_URL;
@@ -178,6 +221,20 @@ function mapClientRow(row) {
     is_vip: row.custom_vip_tier && row.custom_vip_tier !== "Standard",
     created_at: row.creation,
   };
+}
+
+function customerLink(customer: Record<string, unknown> | null | undefined): string | null {
+  const value = customer?.name ?? customer?.id;
+  return value ? String(value) : null;
+}
+
+function customerDisplayName(customer: Record<string, unknown> | null | undefined): string | null {
+  const explicit = customer?.customer_name;
+  if (explicit) return String(explicit);
+  const first = String(customer?.first_name ?? "").trim();
+  const last = String(customer?.last_name ?? "").trim();
+  const fullName = `${first} ${last}`.trim();
+  return fullName || null;
 }
 
 async function lookupClients(q, field) {
@@ -634,29 +691,25 @@ async function executeTool(
         if (args.customer_id) {
           const data = await storeFindOne<any>("Customer", "name", String(args.customer_id));
           if (data) {
-            toPhone = String((data as any).phone ?? "");
-            custId = String((data as any).id);
-            custName = `${(data as any).first_name ?? ""} ${(data as any).last_name ?? ""}`.trim();
+            toPhone = String((data as any).phone ?? (data as any).mobile_no ?? "");
+            custId = String((data as any).name ?? (data as any).id ?? args.customer_id);
+            custName = String((data as any).customer_name ?? "").trim()
+              || `${(data as any).first_name ?? ""} ${(data as any).last_name ?? ""}`.trim();
           }
         }
         if (!toPhone && args.to_phone) toPhone = normalizePhone(String(args.to_phone));
         if (!toPhone) return JSON.stringify({ error: "Could not resolve recipient phone. Need customer_id or to_phone." });
         toPhone = normalizePhone(toPhone);
-        const result = await twilioSend(toPhone, smsBody);
-        if (!result.ok) return JSON.stringify({ error: "Twilio send failed", detail: result.error, status: result.status });
-        try {
-          await insertSmsMessage({
-            twilio_sid: result.sid ?? null,
-            client_phone: toPhone,
-            client_id: custId,
-            direction: "outbound",
-            content: smsBody,
-            timestamp: new Date().toISOString(),
-            metadata: { mode: "ASSISTANT_SMS", sent_by: "sofia_on_behalf_of_carl", triggered_by: from },
-          });
-        } catch (_) {}
+        const result = await sendCustomerSmsViaErp({
+          to: toPhone,
+          body: smsBody,
+          customer: custId,
+          context_tag: "sofia",
+          client_name: custName || null,
+        });
+        if (!result.ok) return JSON.stringify({ error: "ERPNext SMS send failed", detail: result.error, status: result.status });
         await postToRaven(`:white_check_mark: *Sofia sent SMS* to ${custName || toPhone}\n> ${smsBody}\nsid: \`${result.sid}\``);
-        return JSON.stringify({ ok: true, sent: true, twilio_sid: result.sid, sent_to: toPhone, recipient_name: custName || null });
+        return JSON.stringify({ ok: true, sent: true, twilio_sid: result.sid, message_name: result.message_name, sent_to: toPhone, recipient_name: custName || null });
       }
       case "send_mms_card": {
         if (!isAssistant) return JSON.stringify({ error: "Assistant mode only" });
@@ -1066,7 +1119,15 @@ async function processMessage(from: string, body: string, messageSid: string = "
         });
       const escRow = await storeFindOne(DT.ESCALATION, "name", escalationId);
       if ((escRow as any)?.source_channel === "sms" && (escRow as any)?.source_phone) {
-        await twilioSend(String((escRow as any).source_phone), sofiaRewritten);
+        const smsResult = await sendCustomerSmsViaErp({
+          to: String((escRow as any).source_phone),
+          body: sofiaRewritten,
+          customer: (escRow as any)?.customer ? String((escRow as any).customer) : null,
+          reference_doctype: DT.ESCALATION,
+          reference_name: escalationId,
+          context_tag: "sofia",
+        });
+        if (!smsResult.ok) console.error("ERPNext SMS error:", smsResult.error);
       }
       await postToRaven(`OK *Escalation answered*\nCarl: _${body}_\nSofia sent: ${sofiaRewritten}`);
       return;
@@ -1293,26 +1354,41 @@ IMPORTANT: get_fitting_history auto-searches by the caller's inbound phone as fa
     }
 
     // ── Human-like delay (8-20 seconds) before sending ──
+    let outboundHandledByErp = false;
     if (!body.startsWith("__TEST__")) {
       const delayMs = Math.floor(Math.random() * 12000) + 8000;
       await new Promise((resolve) => setTimeout(resolve, delayMs));
       try {
-        await twilioSend(from, finalText);
+        if (isStaff || isAssistant) {
+          await twilioSend(from, finalText);
+        } else {
+          outboundHandledByErp = true;
+          const smsResult = await sendCustomerSmsViaErp({
+            to: from,
+            body: finalText,
+            customer: customerLink(customer),
+            context_tag: "sofia",
+            client_name: customerDisplayName(customer),
+          });
+          if (!smsResult.ok) console.error("ERPNext SMS error:", smsResult.error);
+        }
       } catch (e) {
-        console.error("Twilio error:", e);
+        console.error("SMS error:", e);
       }
     }
 
     // ── Log outbound ──
-    try {
-      await insertSmsMessage({
-        client_phone: from,
-        client_id: customer ? String((customer as any).id) : null,
-        direction: "outbound",
-        content: finalText,
-        metadata: { mode, rounds: currentMessages.length },
-      });
-    } catch (_) {}
+    if (!outboundHandledByErp) {
+      try {
+        await insertSmsMessage({
+          client_phone: from,
+          client_id: customer ? String((customer as any).id) : null,
+          direction: "outbound",
+          content: finalText,
+          metadata: { mode, rounds: currentMessages.length },
+        });
+      } catch (_) {}
+    }
 
     // ── Notify via Raven ──
     try {
@@ -1433,41 +1509,27 @@ sofiaRouter.get("/thread/:phone", async (c) => {
   })) });
 });
 
-// ── POST /api/sofia/send ── send SMS via Twilio
+// ── POST /api/sofia/send ── send customer SMS via ERPNext logging helper
 sofiaRouter.post("/send", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
   const body = await c.req.json().catch(() => ({}));
-  const { to, message, client_id } = body;
+  const { to, message, client_id, reference_doctype, reference_name, context_tag, client_name } = body;
   if (!to || !message) return c.json({ error: { message: "to and message required" } }, 400);
 
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  if (!accountSid || !authToken) return c.json({ error: { message: "Twilio not configured" } }, 500);
+  const result = await sendCustomerSmsViaErp({
+    to: String(to),
+    body: String(message),
+    customer: client_id ? String(client_id) : null,
+    reference_doctype: reference_doctype ? String(reference_doctype) : null,
+    reference_name: reference_name ? String(reference_name) : null,
+    context_tag: context_tag ? String(context_tag) : "sofia",
+    client_name: client_name ? String(client_name) : null,
+  });
+  if (!result.ok) return c.json({ error: { message: result.error ?? "ERPNext SMS send failed" } }, 502);
 
-  const params = new URLSearchParams({ To: to, From: "+12123084431", Body: message });
-  const auth = btoa(`${accountSid}:${authToken}`);
-  const twilioRes = await fetch(
-    `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-    { method: "POST", headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" }, body: params }
-  );
-  const twilioData: any = await twilioRes.json();
-  if (!twilioRes.ok) return c.json({ error: { message: twilioData.message ?? "Twilio error" } }, 502);
-
-  try {
-    await insertSmsMessage({
-      client_phone: to,
-      client_id: client_id ?? null,
-      direction: "outbound",
-      content: message,
-      status: "sent",
-      timestamp: new Date().toISOString(),
-      twilio_sid: twilioData.sid,
-    });
-  } catch {}
-
-  return c.json({ data: { ok: true, sid: twilioData.sid } });
+  return c.json({ data: { ok: true, sid: result.sid, message_name: result.message_name } });
 });
 
 // ── GET /api/sofia/voice-approvals ──
