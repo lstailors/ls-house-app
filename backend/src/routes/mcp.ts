@@ -21,7 +21,7 @@ export const mcpRouter = new Hono();
 // ── Auth middleware ──────────────────────────────────────────────────────────
 
 mcpRouter.use("*", async (c, next) => {
-  const secret = process.env.LST_MCP_SECRET;
+  const secret = process.env.LST_MCP_SECRET?.trim();
   if (!secret) return c.json({ error: "MCP not configured" }, 503);
   const key = c.req.header("X-MCP-Key");
   if (key !== secret) return c.json({ error: "Forbidden" }, 403);
