@@ -6,7 +6,7 @@ TypeScript/Bun MCP server for ERPNext tools, folded into the monorepo.
 
 ```bash
 LST_BACKEND_URL=https://app.lstailors.com \
-LST_MCP_SECRET=... \
+MCP_SHARED_SECRET=... \
 bun run start
 ```
 
@@ -27,4 +27,4 @@ The sidecar calls the app-hosted `/api/mcp/*` endpoints, so ERPNext credentials 
 - `ERPNEXT_API_KEY`
 - `ERPNEXT_API_SECRET`
 - optional `ERPNEXT_SESSION_TOKEN`
-- `LST_MCP_SECRET`
+- `MCP_SHARED_SECRET` (or legacy `LST_MCP_SECRET`)

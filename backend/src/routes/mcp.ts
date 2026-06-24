@@ -1,4 +1,4 @@
-// MCP router — authenticated via X-MCP-Key header (LST_MCP_SECRET env var).
+// MCP router — authenticated via X-MCP-Key header (MCP_SHARED_SECRET/LST_MCP_SECRET env var).
 // All tools Claude needs to operate the L&S stack from chat.
 
 import { Hono } from "hono";
@@ -42,7 +42,7 @@ export const mcpRouter = new Hono();
 // ── Auth middleware ──────────────────────────────────────────────────────────
 
 mcpRouter.use("*", async (c, next) => {
-  const secret = process.env.LST_MCP_SECRET;
+  const secret = process.env.MCP_SHARED_SECRET ?? process.env.LST_MCP_SECRET;
   const key = c.req.header("X-MCP-Key");
   if (secret && key === secret) {
     await next();

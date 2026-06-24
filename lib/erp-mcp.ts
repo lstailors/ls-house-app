@@ -1,4 +1,4 @@
-const MCP_SECRET = process.env.LST_MCP_SECRET ?? "";
+const MCP_SECRET = process.env.MCP_SHARED_SECRET ?? process.env.LST_MCP_SECRET ?? "";
 
 type McpTool =
   | "erp_list"

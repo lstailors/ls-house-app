@@ -6,7 +6,7 @@
  * /api/mcp ERP tool surface. It can be deployed beside the web app or run as a
  * stdio MCP process with:
  *
- *   LST_BACKEND_URL=https://app.lstailors.com LST_MCP_SECRET=... bun run start
+ *   LST_BACKEND_URL=https://app.lstailors.com MCP_SHARED_SECRET=... bun run start
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -14,10 +14,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 const BASE = (process.env.LST_BACKEND_URL ?? process.env.BACKEND_URL ?? "https://app.lstailors.com").replace(/\/+$/, "");
-const SECRET = process.env.LST_MCP_SECRET ?? "";
+const SECRET = process.env.MCP_SHARED_SECRET ?? process.env.LST_MCP_SECRET ?? "";
 
 if (!SECRET) {
-  process.stderr.write("[erp-mcp] WARNING: LST_MCP_SECRET is not set\n");
+  process.stderr.write("[erp-mcp] WARNING: MCP_SHARED_SECRET/LST_MCP_SECRET is not set\n");
 }
 
 const ErpFilter = z.array(z.unknown()).min(3);

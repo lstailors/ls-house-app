@@ -7,6 +7,71 @@
 - Monorepo sidecar added: `apps/erp-mcp/server.ts`.
 - Because the MCP server is TypeScript/Bun, it does not need a Python/FastAPI sidecar.
 
+## 49 LSH-family DocType inventory
+
+ERPNext connectivity was confirmed externally as `Administrator`. The live inventory is 49 LSH-family DocTypes total:
+
+- 36 in the `LSH House` module.
+- 9 related DocTypes in the `LS House` module.
+- 2 related DocTypes in `CRM`.
+- 2 related DocTypes in `Custom`.
+
+The REST client and MCP tool layer are module-agnostic: `/api/resource/{DocType}` works for all 49.
+
+| Module | DocType | App mapping | Current app view? |
+| --- | --- | --- | --- |
+| LSH House | `LSH Location` | admin locations, scoped dashboards, branch filters | Yes |
+| LSH House | `LSH Fabric Pricing` | fabric pricing reference, custom-order intake | Yes |
+| LSH House | `LSH Style Library` | style library reference, POS style chips | Yes |
+| LSH House | `LSH Parked Cart` | alteration intake saved carts | Yes |
+| LSH House | `LSH Customer Dossier` | customer detail, Sofia context, customer preferences | Yes |
+| LSH House | `LSH Custom Order` | custom orders list/detail/intake | Yes |
+| LSH House | `LSH Custom Order Garment` | custom-order garment specs | Yes |
+| LSH House | `LSH Approval Queue` | Mission Control approvals | Yes |
+| LSH House | `LSH Approval Decision` | Mission Control approval history/audit | Partial |
+| LSH House | `LSH Agent Brief` | Mission Control brief feed | Yes |
+| LSH House | `LSH Agent` | Mission Control agents, appointments agent selection | Yes |
+| LSH House | `LSH Agent Task` | Mission Control tasks | Yes |
+| LSH House | `LSH Agent Event` | Mission Control live feed/notifications | Yes |
+| LSH House | `LSH Agent Cost` | Mission Control costs | Yes |
+| LSH House | `LSH Audit Log` | Mission Control audit log | Yes |
+| LSH House | `LSH Call Log` | Comms dashboard/Sofia context | Yes |
+| LSH House | `LSH Brain Entry` | Sofia/Raven knowledge context | No dedicated view |
+| LSH House | `LSH Pending Email Draft` | Sofia email-draft actions | No dedicated view |
+| LSH House | `LSH Escalation` | Sofia/Mission Control escalations | Partial |
+| LSH House | `LSH Cron Job` | Mission Control cron controls | Yes |
+| LSH House | `LSH Agent Message` | Agent detail messages/Raven-style thread | Yes |
+| LSH House | `LSH Plaud Capture` | voice/capture ingestion | No dedicated view |
+| LSH House | `LSH MMS Template` | Sofia outbound media templates | No dedicated view |
+| LSH House | `LSH Email Message Log` | Sofia email history/search | Partial |
+| LSH House | `LSH Order Request` | Sofia order-request workflow | Partial |
+| LSH House | `LSH Task` | Tasks, Sofia client tasks | Yes |
+| LSH House | `LSH Task Item` | Sofia task itemization | Partial |
+| LSH House | `LSH Customer Meeting` | Sofia/customer meeting context | Partial |
+| LSH House | `LSH Conversation Handoff` | Sofia handoff workflow | Yes |
+| LSH House | `LSH Sofia Activity Log` | Sofia activity history | Partial |
+| LSH House | `LSH Voice Approval Request` | Sofia voice approvals | Yes |
+| LSH House | `LSH Customer Communication` | customer communications/timeline | Yes |
+| LSH House | `LSH Dossier Observation` | customer dossier/Sofia observations | Partial |
+| LSH House | `LSH Mfg Order` | factory/MTM production context | Partial |
+| LSH House | `LSH Payment Request` | invoice/payment-link context | Partial |
+| LSH House | `LSH Geelus Transaction` | Sofia legacy order lookup | Partial |
+| LS House | `LSH Appointment` | appointments calendar, booking modal, staff schedule | Yes |
+| LS House | `LSH Appointment Type` | appointment type selector/config | Yes |
+| LS House | `LSH Delivery` | deliveries list/detail/tracking/POD | Yes |
+| LS House | `LSH Delivery Timeline` | delivery detail, AI delivery summaries | Yes |
+| LS House | `LSH Delivery Photo` | proof-of-delivery attachments | Partial |
+| LS House | `LSH Notification` | global notification panel/feed | Yes |
+| LS House | `LSH Notification Recipient` | notification delivery/read state | Partial |
+| LS House | `LSH SMS Message` | Sofia SMS, Comms, MCP SMS threads | Yes |
+| LS House | `LSH SMS Settings` | SMS sender/settings config | No dedicated view |
+| CRM | `Communication Log` | CRM/Sofia communication history | Partial |
+| CRM | `Sophia Tool Call` | Sophia/Sofia tool-call tracing | No dedicated view |
+| Custom | `Compliance Document` | compliance document tracking | No current view |
+| Custom | `DocuSeal Template` | document signing template management | No current view |
+
+DocTypes with no dedicated current view: `LSH Brain Entry`, `LSH Pending Email Draft`, `LSH Plaud Capture`, `LSH MMS Template`, `LSH SMS Settings`, `Sophia Tool Call`, `Compliance Document`, `DocuSeal Template`.
+
 ## Data-display to DocType map
 
 | App area | Files audited | Data displayed | ERPNext source |

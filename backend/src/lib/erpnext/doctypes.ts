@@ -44,3 +44,71 @@ export const DT = {
   EMPLOYEE: "Employee",
   FILE: "File",
 } as const;
+
+export const LSH_HOUSE_DOCTYPES = [
+  "LSH Location",
+  "LSH Fabric Pricing",
+  "LSH Style Library",
+  "LSH Parked Cart",
+  "LSH Customer Dossier",
+  "LSH Custom Order",
+  "LSH Custom Order Garment",
+  "LSH Approval Queue",
+  "LSH Approval Decision",
+  "LSH Agent Brief",
+  "LSH Agent",
+  "LSH Agent Task",
+  "LSH Agent Event",
+  "LSH Agent Cost",
+  "LSH Audit Log",
+  "LSH Call Log",
+  "LSH Brain Entry",
+  "LSH Pending Email Draft",
+  "LSH Escalation",
+  "LSH Cron Job",
+  "LSH Agent Message",
+  "LSH Plaud Capture",
+  "LSH MMS Template",
+  "LSH Email Message Log",
+  "LSH Order Request",
+  "LSH Task",
+  "LSH Task Item",
+  "LSH Customer Meeting",
+  "LSH Conversation Handoff",
+  "LSH Sofia Activity Log",
+  "LSH Voice Approval Request",
+  "LSH Customer Communication",
+  "LSH Dossier Observation",
+  "LSH Mfg Order",
+  "LSH Payment Request",
+  "LSH Geelus Transaction",
+] as const;
+
+export const LS_HOUSE_CROSS_MODULE_DOCTYPES = [
+  "LSH Appointment",
+  "LSH Appointment Type",
+  "LSH Delivery",
+  "LSH Delivery Timeline",
+  "LSH Delivery Photo",
+  "LSH Notification",
+  "LSH Notification Recipient",
+  "LSH SMS Message",
+  "LSH SMS Settings",
+] as const;
+
+export const CRM_CROSS_MODULE_DOCTYPES = [
+  "Communication Log",
+  "Sophia Tool Call",
+] as const;
+
+export const CUSTOM_CROSS_MODULE_DOCTYPES = [
+  "Compliance Document",
+  "DocuSeal Template",
+] as const;
+
+export const LSH_DOCTYPE_INVENTORY = {
+  "LSH House": LSH_HOUSE_DOCTYPES,
+  "LS House": LS_HOUSE_CROSS_MODULE_DOCTYPES,
+  CRM: CRM_CROSS_MODULE_DOCTYPES,
+  Custom: CUSTOM_CROSS_MODULE_DOCTYPES,
+} as const;

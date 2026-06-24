@@ -8,7 +8,7 @@
  *
  * Env vars required (set in .env or your shell):
  *   LST_BACKEND_URL   — https://app.lstailors.com
- *   LST_MCP_SECRET    — shared secret (set same value in Vercel as LST_MCP_SECRET)
+ *   MCP_SHARED_SECRET — shared secret (or legacy LST_MCP_SECRET)
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -16,10 +16,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 const BASE  = process.env.LST_BACKEND_URL ?? "https://app.lstailors.com";
-const SECRET = process.env.LST_MCP_SECRET ?? "";
+const SECRET = process.env.MCP_SHARED_SECRET ?? process.env.LST_MCP_SECRET ?? "";
 
 if (!SECRET) {
-  process.stderr.write("[lst-mcp] WARNING: LST_MCP_SECRET is not set\n");
+  process.stderr.write("[lst-mcp] WARNING: MCP_SHARED_SECRET/LST_MCP_SECRET is not set\n");
 }
 
 // ── HTTP helper ───────────────────────────────────────────────────────────────

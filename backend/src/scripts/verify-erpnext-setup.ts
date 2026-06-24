@@ -7,9 +7,11 @@
  * BLOCKER: run only after `bench install-app lsh_house` on production.
  */
 import "../load-env";
-import { DT } from "../lib/erpnext/doctypes";
+import { LSH_DOCTYPE_INVENTORY } from "../lib/erpnext/doctypes";
 
-const REQUIRED = Object.values(DT).filter((d) => !["Customer", "Address", "Employee", "File"].includes(d));
+const REQUIRED = Object.entries(LSH_DOCTYPE_INVENTORY).flatMap(([module, doctypes]) =>
+  doctypes.map((doctype) => ({ module, doctype })),
+);
 
 function creds() {
   return {
@@ -48,14 +50,14 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Checking ${REQUIRED.length} LSH DocTypes on ${base}\n`);
+  console.log(`Checking ${REQUIRED.length} LSH-family DocTypes on ${base}\n`);
 
   let pass = 0;
   let fail = 0;
-  for (const dt of REQUIRED) {
-    const r = await checkDocType(dt);
+  for (const { module, doctype } of REQUIRED) {
+    const r = await checkDocType(doctype);
     const icon = r.ok ? "✓" : "✗";
-    console.log(`  ${icon} ${dt}${r.ok ? "" : ` — ${r.note}`}`);
+    console.log(`  ${icon} [${module}] ${doctype}${r.ok ? "" : ` — ${r.note}`}`);
     if (r.ok) pass++;
     else fail++;
   }
@@ -65,7 +67,7 @@ async function main() {
     console.log("\nInstall the lsh_house Frappe app — see backend/erpnext/INSTALL.md");
     process.exit(1);
   }
-  console.log("\n✅ All LSH DocTypes present.");
+  console.log("\n✅ All LSH-family DocTypes present.");
 }
 
 main();
