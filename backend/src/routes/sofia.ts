@@ -1782,8 +1782,16 @@ sofiaRouter.post("/sms", async (c) => {
       }
     }
 
-    // Process synchronously — Vercel serverless kills background tasks after response
-    await processMessage(from, body, messageSid).catch((e) => console.error("[sofia/sms] error:", e));
+    // Respond to Twilio immediately (5s timeout) then process async via waitUntil
+    const task = processMessage(from, body, messageSid).catch((e) =>
+      console.error("[sofia/sms] error:", e)
+    );
+    // Use Vercel/Cloudflare waitUntil if available, otherwise fire-and-forget
+    const ctx = (c.executionCtx as any) ?? (globalThis as any).__waitUntilCtx;
+    if (ctx?.waitUntil) {
+      ctx.waitUntil(task);
+    }
+    // task runs in background regardless — response goes back to Twilio now
   } catch (err: any) {
     console.error("[sofia/sms] parse error:", err?.message ?? err);
   }
