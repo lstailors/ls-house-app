@@ -329,6 +329,81 @@ export const TakeDepositInput = z.object({
   amount: z.number().min(0),
 });
 
+// ─── Generic ERPNext REST/MCP contracts ───────────────────────────────────
+
+export const ErpFilter = z.array(z.unknown()).min(3);
+export type ErpFilter = z.infer<typeof ErpFilter>;
+
+export const ErpListRequest = z.object({
+  doctype: z.string().min(1),
+  filters: z.array(ErpFilter).optional(),
+  fields: z.array(z.string()).optional(),
+  limit: z.number().int().min(1).max(1000).optional(),
+  limit_page_length: z.number().int().min(1).max(1000).optional(),
+  limit_start: z.number().int().min(0).optional(),
+  order_by: z.string().optional(),
+});
+export type ErpListRequest = z.infer<typeof ErpListRequest>;
+
+export const ErpGetRequest = z.object({
+  doctype: z.string().min(1),
+  name: z.string().min(1),
+});
+export type ErpGetRequest = z.infer<typeof ErpGetRequest>;
+
+export const ErpCreateRequest = z.object({
+  doctype: z.string().min(1),
+  doc: z.record(z.string(), z.unknown()),
+});
+export type ErpCreateRequest = z.infer<typeof ErpCreateRequest>;
+
+export const ErpUpdateRequest = ErpCreateRequest.extend({
+  name: z.string().min(1),
+});
+export type ErpUpdateRequest = z.infer<typeof ErpUpdateRequest>;
+
+export const ErpCountRequest = z.object({
+  doctype: z.string().min(1),
+  filters: z.array(ErpFilter).optional(),
+});
+export type ErpCountRequest = z.infer<typeof ErpCountRequest>;
+
+export const ErpDoctypeFieldsRequest = z.object({
+  doctype: z.string().min(1),
+});
+export type ErpDoctypeFieldsRequest = z.infer<typeof ErpDoctypeFieldsRequest>;
+
+export const ErpRunMethodRequest = z.object({
+  method: z.string().min(1),
+  params: z.record(z.string(), z.unknown()).optional(),
+});
+export type ErpRunMethodRequest = z.infer<typeof ErpRunMethodRequest>;
+
+export const ErpDoctypeField = z.object({
+  fieldname: z.string(),
+  label: z.string().optional(),
+  fieldtype: z.string(),
+  options: z.string().optional(),
+  reqd: z.union([z.literal(0), z.literal(1)]).optional(),
+  read_only: z.union([z.literal(0), z.literal(1)]).optional(),
+  hidden: z.union([z.literal(0), z.literal(1)]).optional(),
+  default: z.unknown().optional(),
+  description: z.string().optional(),
+  depends_on: z.string().optional(),
+  mandatory_depends_on: z.string().optional(),
+});
+export type ErpDoctypeField = z.infer<typeof ErpDoctypeField>;
+
+export const ErpDoctypeSchema = z.object({
+  name: z.string(),
+  doctype: z.string(),
+  module: z.string().optional(),
+  fields: z.array(ErpDoctypeField),
+  permissions: z.array(z.unknown()).optional(),
+  raw: z.unknown().optional(),
+});
+export type ErpDoctypeSchema = z.infer<typeof ErpDoctypeSchema>;
+
 // ─── Aggregate KPI shapes (dashboard) ───────────────────────────────────
 
 export const DashboardKpis = z.object({

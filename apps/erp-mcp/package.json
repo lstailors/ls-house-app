@@ -1,0 +1,16 @@
+{
+  "name": "@ls-house/erp-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "erp-mcp": "./server.ts"
+  },
+  "scripts": {
+    "start": "bun run server.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "4.1.11"
+  }
+}

@@ -32,6 +32,7 @@ import { calendarRouter } from "./routes/calendar";
 import { espressoRouter } from "./routes/espresso";
 import { mcpRouter } from "./routes/mcp";
 import { tasksRouter } from "./routes/tasks";
+import { erpRestRouter } from "./routes/erp-rest";
 
 const app = new Hono();
 
@@ -85,6 +86,7 @@ app.route("/api/calendar", calendarRouter);
 app.route("/api/espresso", espressoRouter);
 app.route("/api/mcp", mcpRouter);
 app.route("/api/tasks", tasksRouter);
+app.route("/api/erp-rest", erpRestRouter);
 app.route("/api/files", filesRouter);
 app.route("/api/square", squareRouter);
 import { outreachRouter } from "./routes/outreach";

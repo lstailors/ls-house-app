@@ -1,6 +1,11 @@
 {
   "private": true,
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "backend",
+    "webapp"
+  ],
   "dependencies": {
     "@hono/node-server": "1.12.0",
     "@hono/zod-validator": "^0.8.0",

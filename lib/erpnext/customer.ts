@@ -3,33 +3,7 @@
 // Customer + Address are two separate ERPNext doctypes with different field
 // names (address_line1, pincode) and a Dynamic Link. Write them as two calls.
 
-const ERP_URL = process.env.ERP_URL ?? "https://erp.lstailors.com";
-const ERP_KEY = process.env.ERP_API_KEY!;
-const ERP_SECRET = process.env.ERP_API_SECRET!;
-
-const authHeaders = {
-  Authorization: `token ${ERP_KEY}:${ERP_SECRET}`,
-  "Content-Type": "application/json",
-  Accept: "application/json",
-};
-
-async function erpFetch<T = any>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${ERP_URL}${path}`, { ...init, headers: authHeaders });
-  const text = await res.text();
-  let body: any = {};
-  try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text }; }
-  if (!res.ok) {
-    let msg = body?.exception || body?.message || `ERPNext ${res.status}`;
-    try {
-      const sm = body?._server_messages ? JSON.parse(body._server_messages) : [];
-      if (sm.length) msg = JSON.parse(sm[0])?.message ?? msg;
-    } catch {}
-    const err = new Error(typeof msg === "string" ? msg : JSON.stringify(msg)) as Error & { status?: number };
-    err.status = res.status;
-    throw err;
-  }
-  return body.data as T;
-}
+import { erpCreate, erpList, erpUpdate } from "../erp-rest";
 
 export interface CustomerInput {
   name?: string;
@@ -63,13 +37,14 @@ function hasAddress(a?: CustomerInput["address"]) {
 }
 
 async function findCustomerAddress(customerName: string): Promise<string | null> {
-  const filters = encodeURIComponent(JSON.stringify([
-    ["Dynamic Link", "link_doctype", "=", "Customer"],
-    ["Dynamic Link", "link_name", "=", customerName],
-  ]));
-  const rows = await erpFetch<Array<{ name: string }>>(
-    `/api/resource/Address?filters=${filters}&fields=["name"]&limit_page_length=1`
-  );
+  const rows = await erpList<{ name: string }>("Address", {
+    filters: [
+      ["Dynamic Link", "link_doctype", "=", "Customer"],
+      ["Dynamic Link", "link_name", "=", customerName],
+    ],
+    fields: ["name"],
+    limit: 1,
+  });
   return rows?.[0]?.name ?? null;
 }
 
@@ -87,20 +62,21 @@ async function upsertAddress(customerName: string, a: NonNullable<CustomerInput[
   };
   const existing = await findCustomerAddress(customerName);
   if (existing) {
-    await erpFetch(`/api/resource/Address/${encodeURIComponent(existing)}`, { method: "PUT", body: JSON.stringify(payload) });
+    await erpUpdate("Address", existing, payload);
   } else {
-    await erpFetch(`/api/resource/Address`, { method: "POST", body: JSON.stringify(payload) });
+    await erpCreate("Address", payload);
   }
 }
 
 export async function upsertCustomerWithAddress(c: CustomerInput) {
   let customerName = c.name;
   if (customerName) {
-    await erpFetch(`/api/resource/Customer/${encodeURIComponent(customerName)}`, { method: "PUT", body: JSON.stringify(customerPayload(c)) });
+    await erpUpdate("Customer", customerName, customerPayload(c));
   } else {
-    const created = await erpFetch<{ name: string }>(`/api/resource/Customer`, { method: "POST", body: JSON.stringify(customerPayload(c)) });
-    customerName = created.name;
+    const created = await erpCreate<{ name: string }>("Customer", customerPayload(c));
+    customerName = created?.name;
   }
+  if (!customerName) throw new Error("ERPNext did not return a customer name");
   if (hasAddress(c.address)) { await upsertAddress(customerName!, c.address!); }
   return { name: customerName! };
 }

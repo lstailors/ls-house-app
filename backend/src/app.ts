@@ -43,6 +43,7 @@ import { yzRouter } from "./routes/yz";
 import { helpdeskRouter } from "./routes/helpdesk";
 import { appointmentsRouter } from "./routes/appointments";
 import { sofiaBridgeRouter } from "./routes/sofia-bridge";
+import { erpRestRouter } from "./routes/erp-rest";
 
 const app = new Hono();
 
@@ -129,5 +130,6 @@ app.route("/api/pay-info", payInfoRouter);
 app.route("/api/yz", yzRouter);
 app.route("/api/helpdesk", helpdeskRouter);
 app.route("/api/appointments", appointmentsRouter);
+app.route("/api/erp-rest", erpRestRouter);
 
 export default app;

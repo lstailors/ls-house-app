@@ -2,9 +2,30 @@
 // All tools Claude needs to operate the L&S stack from chat.
 
 import { Hono } from "hono";
-import { erpList, erpGet, erpUpdate } from "../lib/erp";
+import { zValidator } from "@hono/zod-validator";
+import {
+  erpCount,
+  erpCreate,
+  erpDoctypeFields,
+  erpGet,
+  erpList,
+  erpPing,
+  erpRunMethod,
+  erpUpdate,
+  ErpRestError,
+} from "../lib/erp";
+import { getAuthedUser } from "../lib/scope";
 import { sendSms } from "../lib/twilio";
 import { insertSmsMessage, listSmsMessagesFiltered } from "../lib/erpnext/agents";
+import {
+  ErpCountRequest,
+  ErpCreateRequest,
+  ErpDoctypeFieldsRequest,
+  ErpGetRequest,
+  ErpListRequest,
+  ErpRunMethodRequest,
+  ErpUpdateRequest,
+} from "../types";
 import {
   suggestDeliveryStatus,
   summarizeDeliveryTimeline,
@@ -22,10 +43,109 @@ export const mcpRouter = new Hono();
 
 mcpRouter.use("*", async (c, next) => {
   const secret = process.env.LST_MCP_SECRET;
-  if (!secret) return c.json({ error: "MCP not configured" }, 503);
   const key = c.req.header("X-MCP-Key");
-  if (key !== secret) return c.json({ error: "Forbidden" }, 403);
-  await next();
+  if (secret && key === secret) {
+    await next();
+    return;
+  }
+
+  const pathname = new URL(c.req.url).pathname;
+  const isInternalErpTool =
+    pathname.includes("/api/mcp/erp/") || pathname.endsWith("/api/mcp/ping");
+
+  if (isInternalErpTool) {
+    const user = await getAuthedUser(c);
+    if (user) {
+      await next();
+      return;
+    }
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  if (!secret) return c.json({ error: "MCP not configured" }, 503);
+  return c.json({ error: "Forbidden" }, 403);
+});
+
+function mcpError(c: any, err: unknown) {
+  const status = err instanceof ErpRestError ? err.status : 500;
+  const message = err instanceof Error ? err.message : "ERPNext MCP request failed";
+  return c.json({ error: message }, status);
+}
+
+// ── Generic ERPNext MCP tool surface ─────────────────────────────────────────
+
+mcpRouter.get("/ping", async (c) => {
+  try {
+    return c.json({ data: await erpPing() });
+  } catch (err) {
+    return mcpError(c, err);
+  }
+});
+
+mcpRouter.post("/erp/list", zValidator("json", ErpListRequest), async (c) => {
+  const body = (c.req as any).valid("json") as ErpListRequest;
+  try {
+    const data = await erpList(body.doctype, body);
+    return c.json({ data });
+  } catch (err) {
+    return mcpError(c, err);
+  }
+});
+
+mcpRouter.post("/erp/get", zValidator("json", ErpGetRequest), async (c) => {
+  const { doctype, name } = (c.req as any).valid("json") as ErpGetRequest;
+  try {
+    const data = await erpGet(doctype, name);
+    if (!data) return c.json({ error: "Not found" }, 404);
+    return c.json({ data });
+  } catch (err) {
+    return mcpError(c, err);
+  }
+});
+
+mcpRouter.post("/erp/create", zValidator("json", ErpCreateRequest), async (c) => {
+  const { doctype, doc } = (c.req as any).valid("json") as ErpCreateRequest;
+  try {
+    return c.json({ data: await erpCreate(doctype, doc) }, 201);
+  } catch (err) {
+    return mcpError(c, err);
+  }
+});
+
+mcpRouter.post("/erp/update", zValidator("json", ErpUpdateRequest), async (c) => {
+  const { doctype, name, doc } = (c.req as any).valid("json") as ErpUpdateRequest;
+  try {
+    return c.json({ data: await erpUpdate(doctype, name, doc) });
+  } catch (err) {
+    return mcpError(c, err);
+  }
+});
+
+mcpRouter.post("/erp/count", zValidator("json", ErpCountRequest), async (c) => {
+  const { doctype, filters } = (c.req as any).valid("json") as ErpCountRequest;
+  try {
+    return c.json({ data: await erpCount(doctype, filters) });
+  } catch (err) {
+    return mcpError(c, err);
+  }
+});
+
+mcpRouter.post("/erp/doctype-fields", zValidator("json", ErpDoctypeFieldsRequest), async (c) => {
+  const { doctype } = (c.req as any).valid("json") as ErpDoctypeFieldsRequest;
+  try {
+    return c.json({ data: await erpDoctypeFields(doctype) });
+  } catch (err) {
+    return mcpError(c, err);
+  }
+});
+
+mcpRouter.post("/erp/run-method", zValidator("json", ErpRunMethodRequest), async (c) => {
+  const { method, params } = (c.req as any).valid("json") as ErpRunMethodRequest;
+  try {
+    return c.json({ data: await erpRunMethod(method, params ?? {}) });
+  } catch (err) {
+    return mcpError(c, err);
+  }
 });
 
 // ── Tickets ──────────────────────────────────────────────────────────────────
@@ -375,8 +495,8 @@ mcpRouter.get("/deliveries/daily-ops-summary", async (c) => {
 
 function erpCreds() {
   return {
-    base:   process.env.ERPNEXT_BASE_URL   ?? "",
-    key:    process.env.ERPNEXT_API_KEY    ?? "",
-    secret: process.env.ERPNEXT_API_SECRET ?? "",
+    base:   process.env.ERPNEXT_BASE_URL   ?? process.env.ERP_URL ?? "",
+    key:    process.env.ERPNEXT_API_KEY    ?? process.env.ERP_API_KEY ?? "",
+    secret: process.env.ERPNEXT_API_SECRET ?? process.env.ERP_API_SECRET ?? "",
   };
 }

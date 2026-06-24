@@ -3,6 +3,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
+import { erpMcp } from "./erp-mcp";
 import { useActiveLocation, locationQueryString } from "./locationContext";
 import type {
   Alteration,
@@ -182,6 +183,15 @@ export function useStyleOptions() {
   return useQuery({
     queryKey: ["styles"],
     queryFn: () => api.get<StyleOption[]>("/api/reference/styles"),
+    staleTime: 10 * 60_000,
+  });
+}
+
+export function useErpDocTypeSchema(doctype: string | undefined) {
+  return useQuery({
+    queryKey: ["erp", "doctype-fields", doctype],
+    queryFn: () => erpMcp.erp_doctype_fields({ doctype: doctype! }),
+    enabled: !!doctype,
     staleTime: 10 * 60_000,
   });
 }
