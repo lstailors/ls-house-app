@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshCallLog(frappe.model.document.Document):
+class LSHCallLog(frappe.model.document.Document):
 	pass

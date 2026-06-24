@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshAgentBrief(frappe.model.document.Document):
+class LSHAgentBrief(frappe.model.document.Document):
 	pass

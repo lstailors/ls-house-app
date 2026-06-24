@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshAgentEvent(frappe.model.document.Document):
+class LSHAgentEvent(frappe.model.document.Document):
 	pass

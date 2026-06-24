@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshOrderRequest(frappe.model.document.Document):
+class LSHOrderRequest(frappe.model.document.Document):
 	pass

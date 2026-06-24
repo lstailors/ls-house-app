@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshSmsMessage(frappe.model.document.Document):
+class LSHSmsMessage(frappe.model.document.Document):
 	pass

@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshPlaudCapture(frappe.model.document.Document):
+class LSHPlaudCapture(frappe.model.document.Document):
 	pass

@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshEscalation(frappe.model.document.Document):
+class LSHEscalation(frappe.model.document.Document):
 	pass

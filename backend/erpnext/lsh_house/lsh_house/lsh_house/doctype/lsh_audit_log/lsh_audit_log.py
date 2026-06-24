@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshAuditLog(frappe.model.document.Document):
+class LSHAuditLog(frappe.model.document.Document):
 	pass

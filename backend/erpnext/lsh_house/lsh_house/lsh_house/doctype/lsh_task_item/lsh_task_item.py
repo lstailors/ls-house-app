@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshTaskItem(frappe.model.document.Document):
+class LSHTaskItem(frappe.model.document.Document):
 	pass

@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshPendingEmailDraft(frappe.model.document.Document):
+class LSHPendingEmailDraft(frappe.model.document.Document):
 	pass

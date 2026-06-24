@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshCronJob(frappe.model.document.Document):
+class LSHCronJob(frappe.model.document.Document):
 	pass

@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshApprovalQueue(frappe.model.document.Document):
+class LSHApprovalQueue(frappe.model.document.Document):
 	pass

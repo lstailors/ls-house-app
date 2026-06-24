@@ -1,5 +1,5 @@
 import frappe
 
 
-class LshFabricPricing(frappe.model.document.Document):
+class LSHFabricPricing(frappe.model.document.Document):
 	pass
