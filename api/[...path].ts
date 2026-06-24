@@ -1,6 +1,9 @@
-// Vercel Edge function — Hono's app.fetch IS the Fetch API handler.
-export const config = { runtime: "edge" };
+// Vercel Node.js serverless function.
+// Using Node runtime (not Edge) so async tasks like processMessage complete
+// before the function exits — Edge kills pending work after response is sent.
+export const config = { runtime: "nodejs22.x", maxDuration: 60 };
 
 import app from "../backend/src/app";
+import { handle } from "hono/vercel";
 
-export default app.fetch;
+export default handle(app);
