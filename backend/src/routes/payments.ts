@@ -64,6 +64,14 @@ function normalizeCheckout(result: any) {
   return { ok: true, checkout_id: String(checkoutId) };
 }
 
+// An alteration ticket name (ALT-...) is NOT a Sales Invoice. Route it to the
+// ERP method as `ticket` so ERPNext resolves it to the ticket's linked invoice;
+// pass a real Sales Invoice name straight through as `invoice`. Without this,
+// charging from a ticket fails with "Sales Invoice ALT-... not found".
+function refFor(id: string): { ticket: string } | { invoice: string } {
+  return /^ALT/i.test(id) ? { ticket: id } : { invoice: id };
+}
+
 // POST /api/payments/link
 paymentsRouter.post("/link", async (c) => {
   const user = await getAuthedUser(c);
@@ -79,7 +87,7 @@ paymentsRouter.post("/link", async (c) => {
 
   try {
     const result = await callErpMethod("ls_alterations.ls_square.pos.create_payment_link", {
-      invoice: body.invoice,
+      ...refFor(body.invoice),
       ...(body.amount ? { amount: body.amount } : {}),
     });
     return c.json(normalizePaymentLink(result));
@@ -105,8 +113,7 @@ paymentsRouter.post("/terminal-checkout", async (c) => {
 
   try {
     const result = await callErpMethod("ls_alterations.ls_square.pos.create_checkout", {
-      ...(body.invoice ? { invoice: body.invoice } : {}),
-      ...(body.ticket ? { ticket: body.ticket } : {}),
+      ...(body.ticket ? { ticket: body.ticket } : refFor(body.invoice!)),
       ...(body.amount ? { amount: body.amount } : {}),
     });
     return c.json(normalizeCheckout(result));
