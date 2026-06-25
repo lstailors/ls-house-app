@@ -38,6 +38,7 @@ const StyleLibraryPage = lazy(() => import('./pages/reference/StyleLibraryPage')
 const Academy = lazy(() => import('./pages/Academy'));
 const MissionControl = lazy(() => import('./pages/MissionControl'));
 const AgentDetail = lazy(() => import('./pages/mission-control/AgentDetail'));
+const House = lazy(() => import('./pages/house/House'));
 const AlterationTags = lazy(() => import('./pages/intake/AlterationTags'));
 const AlterationReceipt = lazy(() => import('./pages/intake/AlterationReceipt'));
 const QRScanner = lazy(() => import('./pages/intake/QRScanner'));
@@ -93,6 +94,15 @@ const App = () => (
               element={
                 <RoleGuard allow={["super_admin", "store_manager"]}>
                   <MissionControl />
+                </RoleGuard>
+              }
+            />
+
+            <Route
+              path="/house"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager"]}>
+                  <House />
                 </RoleGuard>
               }
             />

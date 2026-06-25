@@ -41,6 +41,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: "/", label: "Dashboard", icon: LayoutDashboard, roles: ALL },
       { to: "/mission-control", label: "Mission Control", icon: Zap, roles: MGMT },
+      { to: "/house", label: "House", icon: Building2, roles: MGMT },
     ],
   },
   {
