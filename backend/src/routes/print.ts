@@ -274,9 +274,6 @@ async function printXml(
 }
 
 printRouter.get("/config", async (c) => {
-  const user = await getAuthedUser(c);
-  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-
   try {
     return c.json(await getPrintConfig());
   } catch (e) {
