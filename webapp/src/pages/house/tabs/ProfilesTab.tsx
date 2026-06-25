@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Plus, Check, Pencil, Cpu, Calendar } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, Check, Pencil, Cpu, RefreshCw } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -8,12 +9,30 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  PROFILES, MODEL_OPTIONS, PROVIDER_OPTIONS, SKILL_OPTIONS, type HouseProfile,
-} from "../mockData";
-import { SkeletonGrid, useFakeLoading, comingSoon } from "../components/shared";
+import { api } from "@/lib/api";
+import { MODEL_OPTIONS, PROVIDER_OPTIONS, SKILL_OPTIONS } from "../mockData";
+import { SkeletonGrid } from "../components/shared";
+import { toast } from "sonner";
 
-function ProfileCard({ profile }: { profile: HouseProfile }) {
+interface LiveProfile {
+  id: string;
+  name: string;
+  model: string;
+  provider: string;
+  status: "active" | "inactive";
+  description: string;
+  isDefault?: boolean;
+}
+
+function ProfileCard({
+  profile,
+  onEdit,
+  onSetActive,
+}: {
+  profile: LiveProfile;
+  onEdit: (p: LiveProfile) => void;
+  onSetActive: (p: LiveProfile) => void;
+}) {
   const active = profile.status === "active";
   return (
     <div className={cn(
@@ -50,18 +69,15 @@ function ProfileCard({ profile }: { profile: HouseProfile }) {
           <span className="ui-label text-[9px]">Provider</span>
           <span className="text-[11px] text-cream-muted">{profile.provider}</span>
         </div>
-        <div className="flex items-center justify-between text-xs">
-          <span className="ui-label text-[9px]">Created</span>
-          <span className="text-[11px] text-cream-dim flex items-center gap-1">
-            <Calendar className="h-2.5 w-2.5" /> {profile.created}
-          </span>
-        </div>
+        {profile.description ? (
+          <div className="text-[10px] text-cream-dim/70 leading-snug pt-1">{profile.description}</div>
+        ) : null}
       </div>
 
       <div className="mt-5 flex gap-2">
         <Button
           size="sm"
-          onClick={comingSoon}
+          onClick={() => onSetActive(profile)}
           disabled={active}
           className={cn(
             "flex-1 h-8 text-xs",
@@ -75,7 +91,7 @@ function ProfileCard({ profile }: { profile: HouseProfile }) {
         <Button
           size="sm"
           variant="outline"
-          onClick={comingSoon}
+          onClick={() => onEdit(profile)}
           className="h-8 text-xs border-brass/20 text-cream hover:bg-brass/10 hover:text-cream"
         >
           <Pencil className="h-3 w-3 mr-1" /> Edit
@@ -85,26 +101,45 @@ function ProfileCard({ profile }: { profile: HouseProfile }) {
   );
 }
 
-function NewProfileDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const [name, setName] = useState("");
-  const [model, setModel] = useState(MODEL_OPTIONS[0]);
-  const [provider, setProvider] = useState(PROVIDER_OPTIONS[0]);
+function ProfileDialog({
+  open,
+  onOpenChange,
+  initial,
+  onSave,
+  saving,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  initial: Partial<LiveProfile> | null;
+  onSave: (p: Partial<LiveProfile>) => void;
+  saving: boolean;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [model, setModel] = useState(initial?.model ?? MODEL_OPTIONS[0]);
+  const [provider, setProvider] = useState(initial?.provider ?? PROVIDER_OPTIONS[0]);
+  const [description, setDescription] = useState(initial?.description ?? "");
   const [skills, setSkills] = useState<string[]>([]);
-  const [description, setDescription] = useState("");
 
   const toggleSkill = (s: string) =>
     setSkills((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
 
-  const handleCreate = () => {
-    comingSoon();
-    onOpenChange(false);
+  const handleSave = () => {
+    if (!name.trim()) {
+      toast.error("Profile name is required");
+      return;
+    }
+    onSave({ id: initial?.id, name: name.trim(), model, provider, description, status: initial?.status ?? "active" });
   };
+
+  const isEdit = !!initial?.id;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-forest-deep/95 backdrop-blur-2xl border border-brass/20 text-cream max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-display italic text-2xl text-cream font-medium">New Profile</DialogTitle>
+          <DialogTitle className="font-display italic text-2xl text-cream font-medium">
+            {isEdit ? "Edit Profile" : "New Profile"}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -190,8 +225,8 @@ function NewProfileDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
           <Button variant="outline" onClick={() => onOpenChange(false)} className="border-brass/20 text-cream hover:bg-brass/10 hover:text-cream">
             Cancel
           </Button>
-          <Button onClick={handleCreate} className="btn-brass">
-            Create Profile
+          <Button onClick={handleSave} disabled={saving} className="btn-brass">
+            {saving ? "Saving…" : isEdit ? "Save Changes" : "Create Profile"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -199,9 +234,82 @@ function NewProfileDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   );
 }
 
+function ErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="glass-panel rounded-2xl p-8 border border-brass/10 flex flex-col items-center gap-4 text-center">
+      <p className="text-sm text-cream-dim">Could not load profiles.</p>
+      <Button variant="outline" size="sm" onClick={onRetry} className="border-brass/20 text-cream hover:bg-brass/10 hover:text-cream">
+        <RefreshCw className="h-3.5 w-3.5 mr-1" /> Retry
+      </Button>
+    </div>
+  );
+}
+
 export default function ProfilesTab() {
-  const loading = useFakeLoading();
-  const [open, setOpen] = useState(false);
+  const qc = useQueryClient();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<Partial<LiveProfile> | null>(null);
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["house-profiles"],
+    queryFn: () => api.get<{ profiles: LiveProfile[] }>("/api/house/profiles"),
+    staleTime: 60_000,
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (updated: LiveProfile[]) =>
+      api.post<{ profiles: LiveProfile[] }>("/api/house/profiles", { profiles: updated }),
+    onSuccess: (res) => {
+      qc.setQueryData(["house-profiles"], res);
+      toast.success("Profiles saved");
+      setDialogOpen(false);
+      setEditTarget(null);
+    },
+    onError: () => toast.error("Failed to save profiles"),
+  });
+
+  const profiles: LiveProfile[] = data?.profiles ?? [];
+
+  const handleSave = (incoming: Partial<LiveProfile>) => {
+    const existing = profiles.find((p) => p.id === incoming.id);
+    let next: LiveProfile[];
+
+    if (existing) {
+      next = profiles.map((p) =>
+        p.id === incoming.id ? { ...p, ...incoming } as LiveProfile : p
+      );
+    } else {
+      const newProfile: LiveProfile = {
+        id: incoming.name?.toLowerCase().replace(/\s+/g, "-") ?? `p-${Date.now()}`,
+        name: incoming.name ?? "",
+        model: incoming.model ?? MODEL_OPTIONS[0],
+        provider: incoming.provider ?? PROVIDER_OPTIONS[0],
+        status: "active",
+        description: incoming.description ?? "",
+      };
+      next = [...profiles, newProfile];
+    }
+
+    saveMutation.mutate(next);
+  };
+
+  const handleSetActive = (profile: LiveProfile) => {
+    const next = profiles.map((p) => ({
+      ...p,
+      status: (p.id === profile.id ? "active" : p.status) as "active" | "inactive",
+    }));
+    saveMutation.mutate(next);
+  };
+
+  const openNew = () => {
+    setEditTarget(null);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (p: LiveProfile) => {
+    setEditTarget(p);
+    setDialogOpen(true);
+  };
 
   return (
     <div className="space-y-4">
@@ -210,22 +318,35 @@ export default function ProfilesTab() {
           <Cpu className="h-3.5 w-3.5 text-brass-light" />
           <span className="ui-label text-[10px] tracking-widest">HERMES PROFILES</span>
         </div>
-        <Button size="sm" onClick={() => setOpen(true)} className="btn-brass h-8 text-xs">
+        <Button size="sm" onClick={openNew} className="btn-brass h-8 text-xs">
           <Plus className="h-3.5 w-3.5 mr-1" /> New Profile
         </Button>
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <SkeletonGrid count={3} h="h-56" />
+      ) : isError ? (
+        <ErrorState onRetry={() => refetch()} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {PROFILES.map((p) => (
-            <ProfileCard key={p.id} profile={p} />
+          {profiles.map((p) => (
+            <ProfileCard key={p.id} profile={p} onEdit={openEdit} onSetActive={handleSetActive} />
           ))}
+          {profiles.length === 0 ? (
+            <div className="col-span-full glass-panel rounded-2xl p-8 border border-brass/10 text-center">
+              <p className="text-sm text-cream-dim">No profiles yet. Create one to get started.</p>
+            </div>
+          ) : null}
         </div>
       )}
 
-      <NewProfileDialog open={open} onOpenChange={setOpen} />
+      <ProfileDialog
+        open={dialogOpen}
+        onOpenChange={(o) => { setDialogOpen(o); if (!o) setEditTarget(null); }}
+        initial={editTarget}
+        onSave={handleSave}
+        saving={saveMutation.isPending}
+      />
     </div>
   );
 }
