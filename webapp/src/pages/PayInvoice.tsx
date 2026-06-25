@@ -56,6 +56,8 @@ export default function PayInvoice() {
 
   const cardRef = useRef<any>(null);
   const paymentsRef = useRef<any>(null);
+  const applePayRef = useRef<any>(null);
+  const googlePayRef = useRef<any>(null);
 
   // Load Square SDK script
   useEffect(() => {
@@ -149,22 +151,33 @@ export default function PayInvoice() {
           total: { amount: amountStr, label: "L&S Custom Tailors" },
         });
 
-        // Apple Pay
+        // Apple Pay — the SDK's ApplePay object has NO attach() method (unlike
+        // Card / Google Pay). We render our own Apple Pay button and call
+        // applePay.tokenize() on click. It only initializes on Safari/iOS/macOS
+        // with the domain registered in the Square dashboard; otherwise
+        // payments.applePay() throws and we leave the button hidden.
+        const appleBtn = document.getElementById("apple-pay-button");
         try {
           const applePay = await payments.applePay(paymentRequest);
-          await applePay.attach("#apple-pay-button");
+          applePayRef.current = applePay;
+          if (appleBtn) {
+            appleBtn.style.display = "block";
+            appleBtn.addEventListener("click", () => walletPay(applePay));
+          }
         } catch {
-          const el = document.getElementById("apple-pay-button");
-          if (el) el.style.display = "none";
+          if (appleBtn) appleBtn.style.display = "none";
         }
 
-        // Google Pay
+        // Google Pay — attach() renders the official button; we add the click
+        // handler that tokenizes and charges (attach alone does not charge).
+        const googleBtn = document.getElementById("google-pay-button");
         try {
           const googlePay = await payments.googlePay(paymentRequest);
+          googlePayRef.current = googlePay;
           await googlePay.attach("#google-pay-button");
+          if (googleBtn) googleBtn.addEventListener("click", () => walletPay(googlePay));
         } catch {
-          const el = document.getElementById("google-pay-button");
-          if (el) el.style.display = "none";
+          if (googleBtn) googleBtn.style.display = "none";
         }
       } catch (err: any) {
         console.error("[PayInvoice] Square init error:", err);
@@ -174,11 +187,32 @@ export default function PayInvoice() {
     })();
   }, [pageState, sdkReady, invoice]);
 
+  // POST a Square token (from card or a wallet) to the backend to charge it.
+  const submitToken = async (token: string) => {
+    if (!invoice) return;
+    const outstanding = invoice.outstanding_amount ?? invoice.grand_total ?? 0;
+    const amountCents = Math.round(outstanding * 100);
+
+    const res = await fetch(`${API_BASE}/api/pay-info/${encodeURIComponent(invoice.erp_name)}/charge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source_id: token, amount_cents: amountCents }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setPageState("ready");
+      setErrorMsg(data?.error ?? "Payment could not be processed. Please try again.");
+      return;
+    }
+    setSuccessPaymentId(data?.data?.payment_id ?? "");
+    setPageState("success");
+  };
+
+  // Card "Pay" button.
   const handlePay = async () => {
     if (!cardRef.current || !invoice) return;
     setPageState("processing");
     setErrorMsg("");
-
     try {
       const result = await cardRef.current.tokenize();
       if (result.status !== "OK") {
@@ -186,26 +220,29 @@ export default function PayInvoice() {
         setErrorMsg(result.errors?.[0]?.message ?? "Card tokenization failed. Please check your card details.");
         return;
       }
+      await submitToken(result.token as string);
+    } catch {
+      setPageState("ready");
+      setErrorMsg("An unexpected error occurred. Please try again.");
+    }
+  };
 
-      const outstanding = invoice.outstanding_amount ?? invoice.grand_total ?? 0;
-      const amountCents = Math.round(outstanding * 100);
-
-      const res = await fetch(`${API_BASE}/api/pay-info/${encodeURIComponent(invoice.erp_name)}/charge`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source_id: result.token as string, amount_cents: amountCents }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
+  // Apple Pay / Google Pay — both tokenize the same way and charge identically.
+  const walletPay = async (wallet: any) => {
+    if (!invoice) return;
+    setPageState("processing");
+    setErrorMsg("");
+    try {
+      const result = await wallet.tokenize();
+      if (result.status !== "OK") {
         setPageState("ready");
-        setErrorMsg(data?.error ?? "Payment could not be processed. Please try again.");
+        // Dismissing the wallet sheet reports "Cancel" — not a real error.
+        if (result.status !== "Cancel") {
+          setErrorMsg(result.errors?.[0]?.message ?? "Wallet payment failed. Please try another method.");
+        }
         return;
       }
-
-      setSuccessPaymentId(data?.data?.payment_id ?? "");
-      setPageState("success");
+      await submitToken(result.token as string);
     } catch {
       setPageState("ready");
       setErrorMsg("An unexpected error occurred. Please try again.");
@@ -339,8 +376,21 @@ export default function PayInvoice() {
             </div>
           ) : (
             <>
-              {/* Apple Pay */}
-              <div id="apple-pay-button" className="w-full min-h-[48px]" />
+              {/* Apple Pay — native button; hidden until the SDK initializes it
+                  (Safari/iOS/macOS with the domain registered in Square). */}
+              <style>{`
+                #apple-pay-button {
+                  display: none;
+                  width: 100%;
+                  height: 48px;
+                  border-radius: 8px;
+                  cursor: pointer;
+                  -webkit-appearance: -apple-pay-button;
+                  -apple-pay-button-type: plain;
+                  -apple-pay-button-style: black;
+                }
+              `}</style>
+              <div id="apple-pay-button" />
 
               {/* Google Pay */}
               <div id="google-pay-button" className="w-full min-h-[48px]" />
