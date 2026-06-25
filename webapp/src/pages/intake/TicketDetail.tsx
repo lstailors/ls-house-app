@@ -19,6 +19,7 @@ import {
   Mic,
   CheckCircle2,
   ShoppingCart,
+  Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
@@ -76,6 +77,12 @@ interface AlterationTicketDoc {
 interface TailorDoc {
   name: string
   full_name: string
+}
+
+interface PaymentLinkResult {
+  ok: boolean
+  url: string
+  payment_link_id: string
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -835,6 +842,8 @@ export default function TicketDetail() {
   const queryClient = useQueryClient()
 
   const [copiedPayLink, setCopiedPayLink] = useState(false)
+  const [paymentLinkOpen, setPaymentLinkOpen] = useState(false)
+  const [paymentLink, setPaymentLink] = useState<PaymentLinkResult | null>(null)
   const [editOpen, setEditOpen] = useState(false)
   const { data: me } = useMe()
 
@@ -986,6 +995,94 @@ export default function TicketDetail() {
     },
   })
 
+  const printTicketMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.raw('/api/print/ticket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_name: ticketName }),
+      })
+      const result = await res.json().catch(() => ({}))
+      if (!result.ok) throw new Error(result.error?.message ?? result.error ?? 'Print failed')
+      return result
+    },
+    onSuccess: () => toast.success('✓ Printed'),
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const printReceiptMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.raw('/api/print/receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice: ticket?.name }),
+      })
+      const result = await res.json().catch(() => ({}))
+      if (!result.ok) throw new Error(result.error?.message ?? result.error ?? 'Receipt print failed')
+      return result
+    },
+    onSuccess: () => toast.success('✓ Printed'),
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const createPaymentLinkMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.raw('/api/payments/link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice: ticket?.name }),
+      })
+      const result = await res.json().catch(() => ({})) as PaymentLinkResult | { error?: { message?: string } }
+      if (!res.ok || !(result as PaymentLinkResult).url) {
+        throw new Error((result as any)?.error?.message ?? 'Could not create payment link')
+      }
+      return result as PaymentLinkResult
+    },
+    onSuccess: (result) => {
+      setPaymentLink(result)
+      setPaymentLinkOpen(true)
+      navigator.clipboard?.writeText(result.url).catch(() => undefined)
+      toast.success('Payment link created')
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const sendPaymentLinkSmsMutation = useMutation({
+    mutationFn: async () => {
+      if (!ticket?.customer_mobile || !paymentLink?.url) throw new Error('Missing phone or payment link')
+      const firstName = ticket.customer_name?.split(' ')[0] ?? 'there'
+      const message = `Hi ${firstName}, here is your secure L&S payment link for ${ticket.name}: ${paymentLink.url}`
+      return api.post(`/api/intake-alterations/tickets/${ticketName}/sms`, {
+        phone: ticket.customer_mobile,
+        message,
+        includeQr: false,
+      })
+    },
+    onSuccess: () => toast.success('Payment link SMS sent'),
+    onError: (e: Error) => toast.error(e.message || 'Failed to send SMS'),
+  })
+
+  const printPaymentLinkMutation = useMutation({
+    mutationFn: async () => {
+      if (!paymentLink?.url) throw new Error('Create a payment link first')
+      const res = await api.raw('/api/print/payment-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: paymentLink.url,
+          invoice: ticket?.name,
+          amount: ticket?.ticket_total ?? 0,
+          customer_name: ticket?.customer_name ?? '',
+        }),
+      })
+      const result = await res.json().catch(() => ({}))
+      if (!result.ok) throw new Error(result.error?.message ?? result.error ?? 'QR slip print failed')
+      return result
+    },
+    onSuccess: () => toast.success('✓ Printed'),
+    onError: (e: Error) => toast.error(e.message),
+  })
+
   // ── Render guards ─────────────────────────────────────────────────────────
 
   if (isLoading) {
@@ -1132,7 +1229,23 @@ export default function TicketDetail() {
             </div>
           </div>
 
-          {ticket.payment_status !== 'Paid' && (ticket.ticket_total ?? 0) > 0 ? (
+          {ticket.payment_status === 'Paid' ? (
+            <div className="mt-3 flex flex-wrap items-center gap-3 justify-end">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-900/30 px-3 py-1.5 text-sm text-emerald-300">
+                <CheckCircle2 size={14} /> Paid ✓
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => printReceiptMutation.mutate()}
+                disabled={printReceiptMutation.isPending}
+                className="border-brass/20 text-cream-muted hover:bg-brass/10 hover:text-cream"
+              >
+                {printReceiptMutation.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Printer className="h-4 w-4 mr-1.5" />}
+                Print Receipt
+              </Button>
+            </div>
+          ) : ticket.payment_status !== 'Paid' && (ticket.ticket_total ?? 0) > 0 ? (
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <ChargeTerminalButton
                 invoiceId={ticket.name}
@@ -1144,25 +1257,20 @@ export default function TicketDetail() {
                 }}
                 onError={(msg) => toast.error(msg)}
               />
-              <button
+              <Button
                 type="button"
-                onClick={() => {
-                  const url = `https://app.lstailors.com/pay/${ticket.name}`
-                  navigator.clipboard.writeText(url).then(() => {
-                    setCopiedPayLink(true)
-                    toast.success('Payment link copied')
-                    setTimeout(() => setCopiedPayLink(false), 2500)
-                  })
-                }}
-                className="flex items-center gap-1.5 text-xs text-cream-dim hover:text-cream transition-colors"
+                variant="outline"
+                onClick={() => createPaymentLinkMutation.mutate()}
+                disabled={createPaymentLinkMutation.isPending}
+                className="border-brass/20 text-cream-muted hover:bg-brass/10 hover:text-cream"
               >
-                {copiedPayLink ? (
-                  <Check className="w-3.5 h-3.5 text-signal-emerald" />
+                {createPaymentLinkMutation.isPending ? (
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
                 ) : (
-                  <Copy className="w-3.5 h-3.5" />
+                  <Copy className="w-3.5 h-3.5 mr-1.5" />
                 )}
-                {copiedPayLink ? 'Copied!' : 'Copy payment link'}
-              </button>
+                Send Payment Link
+              </Button>
             </div>
           ) : null}
         </section>
@@ -1208,6 +1316,21 @@ export default function TicketDetail() {
             </button>
           )}
 
+          <button
+            type="button"
+            onClick={() => printTicketMutation.mutate()}
+            disabled={printTicketMutation.isPending}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium',
+              'bg-forest-raised border border-brass/20 text-cream-muted',
+              'hover:border-brass/40 hover:text-cream transition-all',
+              'disabled:opacity-60 disabled:cursor-not-allowed'
+            )}
+          >
+            {printTicketMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer size={15} />}
+            {printTicketMutation.isPending ? 'Printing…' : 'Print Ticket'}
+          </button>
+
           <Link
             to={`/orders/alterations/${ticketName}/receipt`}
             className={cn(
@@ -1217,7 +1340,7 @@ export default function TicketDetail() {
             )}
           >
             <Printer size={15} />
-            Print Receipt
+            View Ticket
           </Link>
 
           <Link
@@ -1245,6 +1368,58 @@ export default function TicketDetail() {
         </div>
 
       </div>
+
+      <Dialog open={paymentLinkOpen} onOpenChange={setPaymentLinkOpen}>
+        <DialogContent className="bg-forest-raised border-brass/20 text-cream">
+          <DialogHeader>
+            <DialogTitle className="text-brass-shimmer">Square payment link</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-brass/20 bg-forest-deep p-3">
+              <p className="text-xs text-cream-dim mb-1">Secure URL</p>
+              <p className="break-all font-mono text-xs text-cream-muted">{paymentLink?.url}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="border-brass/20 text-cream-muted hover:bg-brass/10 hover:text-cream"
+                onClick={() => {
+                  if (!paymentLink?.url) return
+                  navigator.clipboard.writeText(paymentLink.url).then(() => {
+                    setCopiedPayLink(true)
+                    toast.success('Payment link copied')
+                    setTimeout(() => setCopiedPayLink(false), 2500)
+                  })
+                }}
+              >
+                {copiedPayLink ? <Check className="h-4 w-4 mr-1.5 text-signal-emerald" /> : <Copy className="h-4 w-4 mr-1.5" />}
+                {copiedPayLink ? 'Copied' : 'Copy URL'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!ticket.customer_mobile || sendPaymentLinkSmsMutation.isPending}
+                onClick={() => sendPaymentLinkSmsMutation.mutate()}
+                className="border-brass/20 text-cream-muted hover:bg-brass/10 hover:text-cream"
+              >
+                {sendPaymentLinkSmsMutation.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <MessageSquare className="h-4 w-4 mr-1.5" />}
+                SMS to Client
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={printPaymentLinkMutation.isPending}
+                onClick={() => printPaymentLinkMutation.mutate()}
+                className="border-brass/20 text-cream-muted hover:bg-brass/10 hover:text-cream"
+              >
+                {printPaymentLinkMutation.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Printer className="h-4 w-4 mr-1.5" />}
+                Print QR Slip
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <EditTicketDrawer
         open={editOpen}

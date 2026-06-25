@@ -5,7 +5,6 @@ import { Printer, ArrowLeft, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { buildReceiptXml, sendToEpson, getPrinterIp } from '@/lib/thermal'
 
 interface AlterationTicketDoc {
   name: string
@@ -53,32 +52,20 @@ export default function AlterationReceipt() {
     }
   }, [ticket])
 
-  const handleEpsonPrint = async () => {
+  const handleThermalPrint = async () => {
     if (!ticket) return
-    if (!getPrinterIp()) { toast.error('No printer IP — go to Settings'); return }
     setPrinting(true)
     try {
-      const xml = buildReceiptXml({
-        ticketName: ticket.name,
-        customerName: ticket.customer_name,
-        customerPhone: ticket.customer_phone,
-        location: ticket.origin_location === 'HOU' ? 'Houston' : 'New York City',
-        ticketDate: fmt(ticket.ticket_date),
-        dueDate: fmt(ticket.due_date),
-        isRush: ticket.is_rush === 1,
-        deliveryMethod: ticket.delivery_method,
-        paymentStatus: ticket.payment_status ?? '—',
-        customerNotes: ticket.customer_notes,
-        total: ticket.ticket_total,
-        garments: (ticket.garments ?? []).map(g => ({
-          id: g.garment_id, type: g.garment_type, color: g.color,
-          lines: (ticket.lines ?? []).filter(l => l.garment_ref === g.garment_id).map(l => ({ description: l.description, price: l.price })),
-        })),
+      const res = await api.raw('/api/print/ticket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_name: ticket.name }),
       })
-      await sendToEpson(xml)
-      toast.success('Receipt sent to Epson')
+      const result = await res.json().catch(() => ({}))
+      if (!result.ok) throw new Error(result.error ?? 'Print failed')
+      toast.success('✓ Printed')
     } catch (e: any) {
-      toast.error(e.message || 'Print failed — ensure iPad and printer are on same WiFi')
+      toast.error(e.message || 'Print failed')
     } finally { setPrinting(false) }
   }
 
@@ -113,9 +100,9 @@ export default function AlterationReceipt() {
         </button>
         <span className="text-sm font-medium text-gray-200">{ticket.name} · Receipt</span>
         <div className="flex gap-2">
-          <button onClick={handleEpsonPrint} disabled={printing}
+          <button onClick={handleThermalPrint} disabled={printing}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium disabled:opacity-50">
-            <Zap size={12} /> {printing ? 'Sending…' : 'Epson'}
+            <Zap size={12} /> {printing ? 'Printing…' : 'Print to Thermal'}
           </button>
           <button onClick={() => window.print()}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium">

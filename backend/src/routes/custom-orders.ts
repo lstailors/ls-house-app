@@ -2,14 +2,12 @@ import { Hono } from "hono";
 import { getAuthedUser, resolveLocationCode } from "../lib/scope";
 import { CreateCustomOrderInput, TakeDepositInput, UpdateOrderStatusInput } from "../types";
 import { getCustomersByIds } from "../lib/erpnext/customers";
+import { erpRunMethod } from "../lib/erp";
 import {
   listCustomOrders,
   getCustomOrder,
   createCustomOrder,
-  updateCustomOrderDeposit,
   updateCustomOrderStatus,
-  serializeOrder,
-  listGarmentsForOrders,
 } from "../lib/erpnext/custom-orders";
 
 export const customOrdersRouter = new Hono();
@@ -100,22 +98,23 @@ customOrdersRouter.post("/deposit", async (c) => {
       return c.json({ error: { message: "Forbidden" } }, 403);
     }
 
-    const updated = await updateCustomOrderDeposit(customOrderId, amount);
-    const [garmentsByOrder, customerMap] = await Promise.all([
-      listGarmentsForOrders([customOrderId]),
-      getCustomersByIds(updated.customer ? [updated.customer] : []),
-    ]);
+    const paymentResult = await erpRunMethod("ls_alterations.ls_square.pos.create_payment_link", {
+      invoice: (existing as any).erpName ?? (existing as any).erp_sales_order ?? customOrderId,
+      amount,
+    }) as any;
+    const paymentData = paymentResult?.data ?? paymentResult ?? {};
 
     return c.json({
       data: {
-        order: serializeOrder(updated, garmentsByOrder.get(customOrderId) ?? [], customerMap.get(updated.customer)),
+        order: existing,
         receipt: {
-          provider: "Square (stub)",
-          status: "approved",
+          provider: "Square Payment Link",
+          status: "pending",
           amount,
-          transactionId: `sqr_stub_${Date.now()}`,
-          last4: "4242",
+          transactionId: paymentData.payment_link_id ?? paymentData.id ?? "",
+          last4: "",
           timestamp: new Date().toISOString(),
+          url: paymentData.url ?? paymentData.payment_url ?? "",
         },
       },
     });

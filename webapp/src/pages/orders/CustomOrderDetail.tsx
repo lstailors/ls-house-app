@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
-  ArrowLeft, Sparkles, User, Phone, Mail, Calendar, CreditCard, Star, FileText, Printer, Truck,
+  ArrowLeft, Sparkles, User, Phone, Mail, Calendar, CreditCard, Star, FileText, Printer, Truck, Copy, Check, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SectionHeader } from "@/components/glass/SectionHeader";
@@ -14,6 +15,8 @@ import type { CustomOrder } from "@/lib/types";
 import { GARMENT_LABEL } from "@/lib/pricing";
 import { formatUSD, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { ChargeTerminalButton } from "@/components/payments/ChargeTerminalButton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const STAGES: CustomOrder["status"][] = [
   "quote",
@@ -37,6 +40,9 @@ export default function CustomOrderDetail() {
   const navigate = useNavigate();
   const { data: order, isLoading } = useCustomOrder(id);
   const qc = useQueryClient();
+  const [paymentLinkOpen, setPaymentLinkOpen] = useState(false);
+  const [paymentLink, setPaymentLink] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const createDelivery = useMutation({
     mutationFn: async () => {
@@ -72,6 +78,71 @@ export default function CustomOrderDetail() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const printTicket = useMutation({
+    mutationFn: async () => {
+      const target = (order as any)?.erpName ?? (order as any)?.erpnextName ?? order?.id;
+      const res = await api.raw("/api/print/ticket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticket_name: target }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!result.ok) throw new Error(result.error?.message ?? result.error ?? "Print failed");
+      return result;
+    },
+    onSuccess: () => toast.success("✓ Printed"),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const createPaymentLink = useMutation({
+    mutationFn: async () => {
+      const target = (order as any)?.erpName ?? (order as any)?.erpnextName ?? order?.id;
+      const res = await api.raw("/api/payments/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoice: target }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result.url) {
+        throw new Error(result.error?.message ?? "Could not create payment link");
+      }
+      return result.url as string;
+    },
+    onSuccess: (url) => {
+      setPaymentLink(url);
+      setPaymentLinkOpen(true);
+      navigator.clipboard?.writeText(url).catch(() => undefined);
+      toast.success("Payment link created");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const printPaymentLink = useMutation({
+    mutationFn: async () => {
+      if (!paymentLink) throw new Error("Create a payment link first");
+      const target = (order as any)?.erpName ?? (order as any)?.erpnextName ?? order?.id;
+      const res = await api.raw("/api/print/payment-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: paymentLink,
+          invoice: target,
+          amount: Math.max(
+            0,
+            Number((order as any)?.erp?.grand_total ?? (order as any)?.grandTotal ?? order?.quotedPrice ?? 0) -
+              Number((order as any)?.erp?.advance_paid ?? (order as any)?.advancePaid ?? order?.depositAmount ?? 0),
+          ),
+          customer_name: order?.customer?.name ?? "",
+        }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!result.ok) throw new Error(result.error?.message ?? result.error ?? "QR slip print failed");
+      return result;
+    },
+    onSuccess: () => toast.success("✓ Printed"),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   if (isLoading) {
     return <div className="text-cream-muted text-sm">Loading…</div>;
   }
@@ -87,6 +158,10 @@ export default function CustomOrderDetail() {
   }
 
   const stageIndex = STAGES.indexOf(order.status as CustomOrder["status"]);
+  const invoiceName = (order as any).erpName ?? (order as any).erpnextName ?? order.id;
+  const grandTotal = Number((order as any).erp?.grand_total ?? (order as any).grandTotal ?? order.quotedPrice ?? 0);
+  const advancePaid = Number((order as any).erp?.advance_paid ?? (order as any).advancePaid ?? order.depositAmount ?? 0);
+  const balanceDue = Math.max(0, grandTotal - advancePaid);
 
   return (
     <div className="space-y-6 animate-fade-up">
@@ -111,8 +186,14 @@ export default function CustomOrderDetail() {
           actions={
             <div className="flex items-center gap-2">
               <StatusPill status={order.status} />
-              <Button variant="outline" className="border-brass/20 hover:bg-brass/10 text-cream-muted">
-                <Printer className="h-4 w-4 mr-1.5" /> Print
+              <Button
+                variant="outline"
+                className="border-brass/20 hover:bg-brass/10 text-cream-muted"
+                onClick={() => printTicket.mutate()}
+                disabled={printTicket.isPending}
+              >
+                {printTicket.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Printer className="h-4 w-4 mr-1.5" />}
+                Print Ticket
               </Button>
               <Button
                 variant="outline"
@@ -220,22 +301,81 @@ export default function CustomOrderDetail() {
             </div>
           ) : null}
           <div className="space-y-2">
-            <Row label="Quoted price" value={order.priceTbd ? "TBD" : formatUSD(order.quotedPrice)} accent />
-            <Row label="Deposit paid" value={formatUSD(order.depositAmount)} />
+            <Row label="Grand total" value={order.priceTbd ? "TBD" : formatUSD(grandTotal)} accent />
+            <Row label="Advance paid" value={formatUSD(advancePaid)} />
             {!order.priceTbd ? (
-              <Row label="Balance" value={formatUSD(Math.max(0, order.quotedPrice - order.depositAmount))} />
+              <Row label="Balance Due" value={formatUSD(balanceDue)} />
             ) : null}
           </div>
           <div className="brass-divider my-4" />
-          <Button className="w-full btn-brass" disabled>
-            <CreditCard className="h-4 w-4 mr-1.5" /> Take additional payment
-          </Button>
+          {balanceDue > 0 ? (
+            <div className="space-y-3">
+              <ChargeTerminalButton
+                invoiceId={invoiceName}
+                amountCents={Math.round(balanceDue * 100)}
+                amountDisplay={formatUSD(balanceDue)}
+                onSuccess={() => {
+                  toast.success("Payment captured — refreshing…");
+                  qc.invalidateQueries({ queryKey: ["custom-orders", "detail", id] });
+                }}
+                onError={(msg) => toast.error(msg)}
+              />
+              <Button
+                className="w-full btn-brass"
+                onClick={() => createPaymentLink.mutate()}
+                disabled={createPaymentLink.isPending}
+              >
+                {createPaymentLink.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <CreditCard className="h-4 w-4 mr-1.5" />}
+                Send Payment Link
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-emerald-500/25 bg-emerald-900/20 px-3 py-2 text-sm text-emerald-300">
+              Paid ✓
+            </div>
+          )}
           <div className="mt-3 flex items-center gap-1.5 text-[10px] text-cream-dim">
             <Calendar className="h-3 w-3" />
             <span>Created {formatDateTime(order.createdAt)}</span>
           </div>
         </GlassCard>
       </div>
+      <Dialog open={paymentLinkOpen} onOpenChange={setPaymentLinkOpen}>
+        <DialogContent className="bg-forest-raised border-brass/20 text-cream">
+          <DialogHeader>
+            <DialogTitle className="text-brass-shimmer">Square payment link</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-brass/20 bg-forest-deep p-3">
+              <p className="text-xs text-cream-dim mb-1">Secure URL</p>
+              <p className="break-all font-mono text-xs text-cream-muted">{paymentLink}</p>
+            </div>
+            <Button
+              variant="outline"
+              className="border-brass/20 text-cream-muted hover:bg-brass/10 hover:text-cream"
+              onClick={() => {
+                navigator.clipboard.writeText(paymentLink).then(() => {
+                  setCopied(true);
+                  toast.success("Payment link copied");
+                  setTimeout(() => setCopied(false), 2500);
+                });
+              }}
+            >
+              {copied ? <Check className="h-4 w-4 mr-1.5 text-signal-emerald" /> : <Copy className="h-4 w-4 mr-1.5" />}
+              {copied ? "Copied" : "Copy URL"}
+            </Button>
+            <Button
+              variant="outline"
+              className="border-brass/20 text-cream-muted hover:bg-brass/10 hover:text-cream"
+              disabled={printPaymentLink.isPending}
+              onClick={() => printPaymentLink.mutate()}
+            >
+              {printPaymentLink.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Printer className="h-4 w-4 mr-1.5" />}
+              Print QR Slip
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

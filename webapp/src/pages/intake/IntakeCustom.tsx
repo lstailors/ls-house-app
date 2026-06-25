@@ -7,7 +7,6 @@ import { GarmentTiles } from "@/components/pos/GarmentTiles";
 import { FabricTiles } from "@/components/pos/FabricTiles";
 import { StyleChips } from "@/components/pos/StyleChips";
 import { PriceCard, TAX_TEMPLATES } from "@/components/pos/PriceCard";
-import { SquareTerminal } from "@/components/pos/SquareTerminal";
 import { DepositReceipt } from "@/components/pos/DepositReceipt";
 import { CustomerField, type CustomerDraft } from "@/components/pos/CustomerField";
 import { Button } from "@/components/ui/button";
@@ -17,7 +16,6 @@ import {
   useStyleOptions,
   useCustomers,
   useCreateCustomOrder,
-  useTakeDeposit,
   type DepositReceipt as ReceiptT,
 } from "@/lib/queries";
 import { useMe } from "@/lib/session";
@@ -27,6 +25,8 @@ import type { CustomOrder, GarmentType } from "@/lib/types";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { formatUSD } from "@/lib/format";
+import { api } from "@/lib/api";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const STEPS = [
   { n: 1, label: "Customer" },
@@ -52,7 +52,6 @@ export default function IntakeCustom() {
       : null;
 
   const createOrder = useCreateCustomOrder();
-  const takeDeposit = useTakeDeposit();
 
   const [customer, setCustomer] = useState<CustomerDraft>({ name: "", phone: "", email: "" });
   const [garment, setGarment] = useState<GarmentType | undefined>(undefined);
@@ -62,7 +61,8 @@ export default function IntakeCustom() {
   const [notes, setNotes] = useState("");
   const [depositAmount, setDepositAmount] = useState(0);
 
-  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [paymentLinkOpen, setPaymentLinkOpen] = useState(false);
+  const [paymentLink, setPaymentLink] = useState("");
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [completedOrder, setCompletedOrder] = useState<CustomOrder | undefined>(undefined);
   const [completedReceipt, setCompletedReceipt] = useState<ReceiptT | undefined>(undefined);
@@ -157,23 +157,25 @@ export default function IntakeCustom() {
       toast.error("Set a deposit amount.");
       return;
     }
-    setTerminalOpen(true);
-  };
-
-  const handleTerminalApproved = async () => {
-    setTerminalOpen(false);
     try {
       const order = await createOrder.mutateAsync(buildOrderPayload());
-      const deposit = await takeDeposit.mutateAsync({
-        customOrderId: order.id,
-        amount: depositAmount,
+      const invoice = (order as any).erpName ?? order.id;
+      const res = await api.raw("/api/payments/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoice, amount: depositAmount }),
       });
-      setCompletedOrder(deposit.order);
-      setCompletedReceipt(deposit.receipt);
-      setReceiptOpen(true);
-      toast.success("Deposit captured");
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result.url) {
+        throw new Error(result.error?.message ?? "Could not create deposit payment link");
+      }
+      setCompletedOrder(order);
+      setPaymentLink(result.url);
+      setPaymentLinkOpen(true);
+      navigator.clipboard?.writeText(result.url).catch(() => undefined);
+      toast.success("Deposit link created");
     } catch (e) {
-      toast.error((e as Error).message || "Charge failed");
+      toast.error((e as Error).message || "Could not start deposit payment");
     }
   };
 
@@ -184,6 +186,7 @@ export default function IntakeCustom() {
     setNotes("");
     setPriceTbd(false);
     setDepositAmount(0);
+    setPaymentLink("");
     setCompletedOrder(undefined);
     setCompletedReceipt(undefined);
   };
@@ -317,7 +320,7 @@ export default function IntakeCustom() {
               canSubmit={canSubmit}
               onChargeDeposit={handleChargeDeposit}
               onSaveQuote={handleSaveQuote}
-              isSubmitting={createOrder.isPending || takeDeposit.isPending}
+              isSubmitting={createOrder.isPending}
               isTaxable={isTaxable}
               onTaxableChange={setIsTaxable}
               location={activeLocationId ?? "NYC"}
@@ -336,7 +339,7 @@ export default function IntakeCustom() {
             canSubmit={canSubmit}
             onChargeDeposit={handleChargeDeposit}
             onSaveQuote={handleSaveQuote}
-            isSubmitting={createOrder.isPending || takeDeposit.isPending}
+            isSubmitting={createOrder.isPending}
             isTaxable={isTaxable}
             onTaxableChange={setIsTaxable}
             location={activeLocationId ?? "NYC"}
@@ -381,14 +384,29 @@ export default function IntakeCustom() {
         </div>
       </div>
 
-      {/* Square terminal modal */}
-      <SquareTerminal
-        open={terminalOpen}
-        amount={depositAmount}
-        customerName={customer.name || "Customer"}
-        onCancel={() => setTerminalOpen(false)}
-        onApproved={handleTerminalApproved}
-      />
+      <Dialog open={paymentLinkOpen} onOpenChange={setPaymentLinkOpen}>
+        <DialogContent className="bg-forest-raised border-brass/20 text-cream">
+          <DialogHeader>
+            <DialogTitle className="text-brass-shimmer">Deposit payment link</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-cream-muted">
+              Custom order {completedOrder?.id} was saved. Send this Square link to collect the {formatUSD(depositAmount)} deposit.
+            </p>
+            <div className="rounded-lg border border-brass/20 bg-forest-deep p-3">
+              <p className="break-all font-mono text-xs text-cream-muted">{paymentLink}</p>
+            </div>
+            <Button
+              className="btn-brass"
+              onClick={() => {
+                navigator.clipboard.writeText(paymentLink).then(() => toast.success("Payment link copied"));
+              }}
+            >
+              Copy Link
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Receipt */}
       <DepositReceipt

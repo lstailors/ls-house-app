@@ -132,7 +132,13 @@ export async function getCustomOrder(id: string) {
     erpData = await erpGet("Sales Order", row.erp_sales_order).catch(() => null);
   }
   const serialized = serializeOrder(row, garments, customerMap.get(row.customer));
-  return erpData ? { ...serialized, erp: erpData } : serialized;
+  return erpData ? {
+    ...serialized,
+    erp: erpData,
+    grandTotal: Number((erpData as any).grand_total ?? serialized.quotedPrice ?? 0),
+    advancePaid: Number((erpData as any).advance_paid ?? serialized.depositAmount ?? 0),
+    balanceDue: Math.max(0, Number((erpData as any).grand_total ?? 0) - Number((erpData as any).advance_paid ?? 0)),
+  } : serialized;
 }
 
 export async function createCustomOrder(body: any, user: { email: string; locationCode?: string | null }) {
@@ -180,28 +186,27 @@ export async function createCustomOrder(body: any, user: { email: string; locati
     price: body.quotedPrice,
   });
 
-  // Linked Sales Order
-  void (async () => {
-    try {
-      const erpSO = await erpCreate("Sales Order", {
-        customer: customerId,
-        order_type: "Sales",
-        transaction_date: new Date().toISOString().slice(0, 10),
-        delivery_date: body.expectedDelivery ?? null,
-        po_no: order.name,
-        items: [{
-          item_code: `MTM-${(body.garmentType ?? "SUIT").toUpperCase().replace(/ /g, "-")}`,
-          qty: 1,
-          rate: Number(body.quotedPrice ?? 0),
-        }],
-      });
-      if ((erpSO as any)?.name) {
-        await erpUpdate(DT.CUSTOM_ORDER, order.name, { erp_sales_order: (erpSO as any).name });
-      }
-    } catch (e) {
-      console.error("[custom-orders] ERP SO create failed:", e);
+  try {
+    const erpSO = await erpCreate("Sales Order", {
+      customer: customerId,
+      order_type: "Sales",
+      transaction_date: new Date().toISOString().slice(0, 10),
+      delivery_date: body.expectedDelivery ?? null,
+      po_no: order.name,
+      custom_location_code: locCode,
+      items: [{
+        item_code: `MTM-${(body.garmentType ?? "SUIT").toUpperCase().replace(/ /g, "-")}`,
+        qty: 1,
+        rate: Number(body.quotedPrice ?? 0),
+      }],
+    });
+    if ((erpSO as any)?.name) {
+      order.erp_sales_order = (erpSO as any).name;
+      await erpUpdate(DT.CUSTOM_ORDER, order.name, { erp_sales_order: (erpSO as any).name });
     }
-  })();
+  } catch (e) {
+    console.error("[custom-orders] ERP SO create failed:", e);
+  }
 
   const customerMap = await getCustomersByIds([customerId]);
   const garments = await erpList<any>(DT.CUSTOM_ORDER_GARMENT, {

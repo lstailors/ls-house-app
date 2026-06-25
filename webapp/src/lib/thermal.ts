@@ -1,18 +1,23 @@
-// Epson TM-M30II thermal printer — client-side ePOS-Print XML
-//
-// Uses HTTPS to the printer to avoid iOS mixed-content blocking.
-// The TM-M30II has a built-in HTTPS endpoint with a self-signed cert.
-// One-time setup: visit https://PRINTER_IP in Safari and tap "Visit Website"
-// to trust the self-signed cert. After that, fetch() to https://PRINTER_IP works.
+// Thermal printer helpers. The printer configuration now lives in ERPNext
+// (LSH Print Settings), and browser UI prints through /api/print/*.
 
-export const PRINTER_IP_KEY = "lst_printer_ip"
+import { api } from "@/lib/api"
 
-export function getPrinterIp(): string {
-  return localStorage.getItem(PRINTER_IP_KEY) ?? "10.0.1.41"
+export interface PrintConfig {
+  enabled: boolean
+  printer_ip: string
+  printer_port: number
+  timeout: number
+  app_base_url: string
 }
 
-export function setPrinterIp(ip: string): void {
-  localStorage.setItem(PRINTER_IP_KEY, ip.trim())
+export async function getPrintConfig(): Promise<PrintConfig> {
+  const res = await api.raw("/api/print/config")
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok || json?.ok === false) {
+    throw new Error(json?.error?.message ?? json?.error ?? "Could not load printer config")
+  }
+  return json as PrintConfig
 }
 
 function esc(s: string): string {
@@ -27,29 +32,6 @@ function col(left: string, right: string, width = 42): string {
   const l = left.slice(0, width - right.length - 1)
   const pad = width - l.length - right.length
   return l + " ".repeat(Math.max(pad, 1)) + right
-}
-
-// ── Send raw XML to printer ───────────────────────────────────────────────
-
-export async function sendToEpson(xml: string, ip?: string): Promise<void> {
-  const printerIp = ip ?? getPrinterIp()
-  if (!printerIp) throw new Error("No printer IP set. Add it in Settings.")
-
-  // Use HTTPS — the TM-M30II has a built-in HTTPS endpoint.
-  // User must visit https://PRINTER_IP once in Safari to trust the self-signed cert.
-  const url = `https://${printerIp}/cgi-bin/epos/service.cgi`
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "text/xml; charset=utf-8",
-      "SOAPAction": '""',
-    },
-    body: xml,
-    signal: AbortSignal.timeout(8000),
-  })
-
-  if (!res.ok) throw new Error(`Printer returned HTTP ${res.status}. Make sure you've trusted the certificate at https://${printerIp} in Safari.`)
 }
 
 // ── Receipt XML ───────────────────────────────────────────────────────────

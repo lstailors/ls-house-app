@@ -144,6 +144,70 @@ export const Alteration = z.object({
 });
 export type Alteration = z.infer<typeof Alteration>;
 
+export const AlterationTicketGarment = z.object({
+  name: z.string(),
+  garment_id: z.string().nullable().optional(),
+  garment_type: z.string().nullable().optional(),
+  garment_description: z.string().nullable().optional(),
+  color: z.string().nullable().optional(),
+}).passthrough();
+export type AlterationTicketGarment = z.infer<typeof AlterationTicketGarment>;
+
+export const AlterationTicketLine = z.object({
+  name: z.string().optional(),
+  garment_ref: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  price: z.number().optional().default(0),
+  preset: z.string().nullable().optional(),
+}).passthrough();
+export type AlterationTicketLine = z.infer<typeof AlterationTicketLine>;
+
+export const AlterationTicketDoc = z.object({
+  name: z.string(),
+  customer: z.string().nullable().optional(),
+  customer_name: z.string().nullable().optional(),
+  customer_mobile: z.string().nullable().optional(),
+  customer_email: z.string().nullable().optional(),
+  origin_location: z.string().nullable().optional(),
+  workflow_state: z.string().nullable().optional(),
+  ticket_date: z.string().nullable().optional(),
+  due_date: z.string().nullable().optional(),
+  is_rush: z.union([z.literal(0), z.literal(1), z.boolean()]).optional(),
+  ticket_total: z.number().optional().default(0),
+  payment_status: z.string().nullable().optional(),
+  assigned_tailor: z.string().nullable().optional(),
+  assigned_tailor_name: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  customer_notes: z.string().nullable().optional(),
+  delivery_method: z.string().nullable().optional(),
+  notified_ready_at: z.string().nullable().optional(),
+  garments: z.array(AlterationTicketGarment).optional().default([]),
+  lines: z.array(AlterationTicketLine).optional().default([]),
+}).passthrough();
+export type AlterationTicketDoc = z.infer<typeof AlterationTicketDoc>;
+
+export const PrintConfig = z.object({
+  enabled: z.boolean(),
+  printer_ip: z.string(),
+  printer_port: z.number(),
+  timeout: z.number(),
+  app_base_url: z.string(),
+});
+export type PrintConfig = z.infer<typeof PrintConfig>;
+
+export const PaymentLinkResponse = z.object({
+  ok: z.literal(true),
+  url: z.string(),
+  payment_link_id: z.string(),
+});
+export type PaymentLinkResponse = z.infer<typeof PaymentLinkResponse>;
+
+export const TerminalCheckoutResponse = z.object({
+  ok: z.literal(true),
+  checkout_id: z.string(),
+});
+export type TerminalCheckoutResponse = z.infer<typeof TerminalCheckoutResponse>;
+
 export const CustomOrderSpec = z.object({
   fabricId: z.string().optional(),
   lapel: z.string().optional(),

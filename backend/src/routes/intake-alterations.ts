@@ -125,7 +125,7 @@ intakeAlterationsRouter.get('/public/tickets/:name', async (c) => {
 // 1. GET /presets?origin=NYC|HOU
 intakeAlterationsRouter.get('/presets', async (c) => {
   const user = await getAuthedUser(c);
-  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+  if (!user) return c.json({ error: { message: 'Unauthorized' } }, 401);
 
   const origin = c.req.query('origin') ?? 'NYC';
   try {
@@ -658,7 +658,7 @@ intakeAlterationsRouter.get('/customers/:id', async (c) => {
   const id = c.req.param('id');
 
   try {
-    const { message: cust } = await erpFetch(
+    const { data: cust } = await erpFetch(
       `/api/resource/Customer/${encodeURIComponent(id)}`
     );
 
@@ -666,7 +666,7 @@ intakeAlterationsRouter.get('/customers/:id', async (c) => {
     let contact: any = null;
     if (cust.customer_primary_contact) {
       try {
-        const { message: ct } = await erpFetch(
+        const { data: ct } = await erpFetch(
           `/api/resource/Contact/${encodeURIComponent(cust.customer_primary_contact)}`
         );
         contact = ct;
@@ -685,7 +685,7 @@ intakeAlterationsRouter.get('/customers/:id', async (c) => {
     let address: any = null;
     if (cust.customer_primary_address) {
       try {
-        const { message: addr } = await erpFetch(
+        const { data: addr } = await erpFetch(
           `/api/resource/Address/${encodeURIComponent(cust.customer_primary_address)}`
         );
         address = addr;
@@ -720,7 +720,7 @@ intakeAlterationsRouter.get('/customers/:id', async (c) => {
       },
     });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    return c.json({ error: { message: e.message } }, 500);
   }
 });
 

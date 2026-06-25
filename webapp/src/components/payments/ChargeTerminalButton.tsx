@@ -33,6 +33,7 @@ interface ChargeTerminalButtonProps {
   amountCents: number;
   amountDisplay: string;
   deviceId?: string;
+  ticketId?: string;
   onSuccess: () => void;
   onError: (msg: string) => void;
 }
@@ -41,7 +42,7 @@ export function ChargeTerminalButton({
   invoiceId,
   amountCents,
   amountDisplay,
-  deviceId,
+  ticketId,
   onSuccess,
   onError,
 }: ChargeTerminalButtonProps) {
@@ -66,10 +67,12 @@ export function ChargeTerminalButton({
   const pollCheckoutStatus = (checkoutId: string) => {
     pollRef.current = setInterval(async () => {
       try {
-        const result = await api.get<{ checkout_id: string; status: string }>(
-          `/api/square/terminal-checkout/${checkoutId}`,
-        );
-        const status = result.status?.toUpperCase() ?? "";
+        const res = await api.raw(`/api/payments/terminal-checkout/${checkoutId}`);
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(result?.error?.message ?? result?.error ?? "Could not poll terminal");
+        }
+        const status = (result?.status ?? result?.data?.status ?? "").toUpperCase();
 
         if (status === "COMPLETED") {
           cleanup();
@@ -99,38 +102,27 @@ export function ChargeTerminalButton({
   const handleConfirm = async () => {
     setStage("sending");
 
-    const terminalDeviceId =
-      deviceId ?? import.meta.env.VITE_SQUARE_TERMINAL_DEVICE_ID ?? "";
-
-    if (!terminalDeviceId) {
-      const msg = "No terminal device configured";
-      setStage("error");
-      setErrorMsg(msg);
-      onError(msg);
-      return;
-    }
-
     try {
-      const res = await api.raw("/api/square/terminal-checkout", {
+      const res = await api.raw("/api/payments/terminal-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          invoice_id: invoiceId,
-          amount_cents: amountCents,
-          device_id: terminalDeviceId,
+          ...(ticketId ? { ticket: ticketId } : { invoice: invoiceId }),
+          amount: amountCents / 100,
         }),
       });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data?.error ?? "Failed to reach terminal");
+        throw new Error(data?.error?.message ?? data?.error ?? "Failed to reach terminal");
       }
-      if (!data?.checkout_id) {
-        throw new Error(data?.error ?? "No checkout ID returned");
+      const checkoutId = data?.checkout_id ?? data?.data?.checkout_id;
+      if (!checkoutId) {
+        throw new Error(data?.error?.message ?? data?.error ?? "No checkout ID returned");
       }
 
       setStage("waiting");
-      pollCheckoutStatus(data.checkout_id as string);
+      pollCheckoutStatus(checkoutId as string);
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "Failed to reach terminal";

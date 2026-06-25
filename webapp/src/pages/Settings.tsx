@@ -1,8 +1,8 @@
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Save, LogOut, Loader2, User, Mail, Phone, Shield, Printer, Wifi } from "lucide-react";
-import { getPrinterIp, setPrinterIp } from "@/lib/thermal";
+import { getPrintConfig } from "@/lib/thermal";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { Button } from "@/components/ui/button";
@@ -15,15 +15,11 @@ import { api } from "@/lib/api";
 import { useMutation } from "@tanstack/react-query";
 
 function PrinterSettings() {
-  const [ip, setIp] = useState(getPrinterIp);
-  const [saved, setSaved] = useState(false);
-
-  const handleSave = () => {
-    setPrinterIp(ip);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-    toast.success("Printer IP saved");
-  };
+  const { data: config, isLoading, isError, refetch } = useQuery({
+    queryKey: ["print-config"],
+    queryFn: getPrintConfig,
+    staleTime: 60_000,
+  });
 
   return (
     <GlassCard className="p-5 space-y-4">
@@ -32,44 +28,26 @@ function PrinterSettings() {
         <span className="text-sm text-cream font-medium">Epson TM-M30II Printer</span>
       </div>
       <p className="text-xs text-cream-dim leading-relaxed">
-        Enter your printer's IP (hold Feed while powering on to print a self-test with the IP).
-        Your iPad must be on the same WiFi as the printer.
+        Printer settings are managed in ERPNext LSH Print Settings. Printing now runs through the backend so browsers do not connect directly to the Epson.
       </p>
       <div className="rounded-xl bg-brass/10 border border-brass/20 p-3 text-xs text-cream-muted space-y-1">
-        <p className="font-medium text-cream">One-time setup required:</p>
-        <p>1. Save the IP below</p>
-        <p>2. Open Safari and visit <span className="font-mono text-brass-shimmer">https://{ip || "10.0.1.41"}</span></p>
-        <p>3. Tap "Visit Website" to trust the printer's certificate</p>
-        <p>4. Come back — direct Epson printing will work</p>
+        <p className="font-medium text-cream">Current ERPNext configuration</p>
+        {isLoading ? (
+          <p>Loading printer config…</p>
+        ) : isError ? (
+          <p className="text-signal-amber">Could not load printer config.</p>
+        ) : (
+          <>
+            <p>Enabled: <span className="text-cream">{config?.enabled ? "Yes" : "No"}</span></p>
+            <p>Printer: <span className="font-mono text-brass-shimmer">{config?.printer_ip}:{config?.printer_port}</span></p>
+            <p>Timeout: <span className="text-cream">{config?.timeout}s</span></p>
+            <p>App URL: <span className="text-cream">{config?.app_base_url}</span></p>
+          </>
+        )}
       </div>
-      <div className="space-y-2">
-        <label className="ui-label block">Printer IP Address</label>
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Wifi className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-brass/50" />
-            <input
-              type="text"
-              value={ip}
-              onChange={e => setIp(e.target.value)}
-              placeholder="192.168.1.x"
-              className="w-full pl-9 pr-3 py-2.5 text-sm bg-forest-raised/50 border border-brass/20 rounded-xl text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50"
-            />
-          </div>
-          <Button className="btn-brass" onClick={handleSave}>
-            {saved ? "Saved ✓" : "Save"}
-          </Button>
-        </div>
-      </div>
-      {ip && (
-        <a
-          href={`https://${ip}`}
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center gap-1.5 text-xs text-brass-shimmer underline"
-        >
-          <Wifi className="h-3 w-3" /> Open https://{ip} in Safari to trust certificate →
-        </a>
-      )}
+      <Button variant="outline" className="btn-ghost-brass" onClick={() => refetch()}>
+        <Wifi className="h-4 w-4 mr-1.5" /> Refresh printer config
+      </Button>
     </GlassCard>
   );
 }

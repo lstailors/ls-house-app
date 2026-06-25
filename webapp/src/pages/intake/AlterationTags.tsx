@@ -5,7 +5,6 @@ import { QRCodeSVG } from 'qrcode.react'
 import { Printer, ArrowLeft, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
-import { buildTagsXml, sendToEpson, getPrinterIp } from '@/lib/thermal'
 
 interface AlterationTicketDoc {
   name: string
@@ -44,26 +43,18 @@ export default function AlterationTags() {
 
   const handleEpsonPrint = async () => {
     if (!ticket) return
-    if (!getPrinterIp()) { toast.error('No printer IP — go to Settings'); return }
     setPrinting(true)
     try {
-      const garments = (ticket.garments ?? []).map(g => ({
-        id: g.garment_id, type: g.garment_type, color: g.color,
-        dueDate: fmt(ticket.due_date),
-        lines: (ticket.lines ?? []).filter(l => l.garment_ref === g.garment_id).map(l => ({ description: l.description })),
-      }))
-      const xml = buildTagsXml({
-        ticketName: ticket.name,
-        customerName: ticket.customer_name,
-        location: ticket.origin_location === 'HOU' ? 'HOU' : 'NYC',
-        isRush: ticket.is_rush === 1,
-        appBaseUrl: window.location.origin,
-        garments,
+      const res = await api.raw('/api/print/tags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_name: ticket.name }),
       })
-      await sendToEpson(xml)
-      toast.success(`${garments.length} tag${garments.length !== 1 ? 's' : ''} sent to Epson`)
+      const result = await res.json().catch(() => ({}))
+      if (!result.ok) throw new Error(result.error ?? 'Print failed')
+      toast.success(`✓ Printed ${ticket.garments?.length ?? 0} tag${(ticket.garments?.length ?? 0) !== 1 ? 's' : ''}`)
     } catch (e: any) {
-      toast.error(e.message || 'Print failed — ensure iPad and printer are on same WiFi')
+      toast.error(e.message || 'Print failed')
     } finally { setPrinting(false) }
   }
 
@@ -104,7 +95,7 @@ export default function AlterationTags() {
         <div className="flex gap-2">
           <button onClick={handleEpsonPrint} disabled={printing}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium disabled:opacity-50">
-            <Zap size={12} /> {printing ? 'Sending…' : 'Epson'}
+            <Zap size={12} /> {printing ? 'Printing…' : 'Print to Thermal'}
           </button>
           <button onClick={() => window.print()}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium">
