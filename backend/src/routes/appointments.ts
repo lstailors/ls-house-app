@@ -2,6 +2,7 @@
 // All endpoints require an authenticated staff user (not guest).
 
 import { Hono } from "hono";
+import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import { getAuthedUser } from "../lib/scope";
 import { erpList, erpGet, erpCreate, erpUpdate, erpDelete } from "../lib/erp";
@@ -214,7 +215,7 @@ appointmentsRouter.post(
     const user = await getAuthedUser(c);
     if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
-    const body = (c.req as any).valid("json") as typeof BlockTimeRequest._type;
+    const body = (c.req as any).valid("json") as z.infer<typeof BlockTimeRequest>;
 
     if (body.whole_shop && user.role !== "super_admin" && user.role !== "store_manager") {
       return c.json({ error: { message: "Only admins can create whole-shop blocks" } }, 403);
@@ -280,7 +281,7 @@ appointmentsRouter.post(
     const user = await getAuthedUser(c);
     if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
-    const body = (c.req as any).valid("json") as typeof StaffBookingRequest._type;
+    const body = (c.req as any).valid("json") as z.infer<typeof StaffBookingRequest>;
 
     const agents = await erpList<any>("LSH Booking Agent", {
       filters: [["agent_user", "=", body.agent_user], ["active", "=", 1]],
@@ -352,7 +353,7 @@ appointmentsRouter.patch(
     if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
     const appointmentName = c.req.param("name");
-    const { status } = (c.req as any).valid("json") as typeof SetAppointmentStatusRequest._type;
+    const { status } = (c.req as any).valid("json") as z.infer<typeof SetAppointmentStatusRequest>;
 
     const appt = await erpGet<any>("Appointment", appointmentName);
     if (!appt) return c.json({ error: { message: "Appointment not found" } }, 404);

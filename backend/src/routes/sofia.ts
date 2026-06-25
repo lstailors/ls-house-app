@@ -725,7 +725,7 @@ async function executeTool(
         endDate.setDate(endDate.getDate() + days);
         const endUtc = endDate.toISOString();
         const statusFilter = String(args.status ?? "confirmed_or_pending");
-        const apptFilters = [["start_time", ">=", startUtc], ["start_time", "<", endUtc]];
+        const apptFilters: any[] = [["start_time", ">=", startUtc], ["start_time", "<", endUtc]];
         if (statusFilter === "confirmed") apptFilters.push(["status", "=", "confirmed"]);
         else if (statusFilter === "cancelled") apptFilters.push(["status", "=", "cancelled"]);
         else if (statusFilter !== "all") apptFilters.push(["status", "in", ["confirmed", "pending"]]);
@@ -854,7 +854,7 @@ async function executeTool(
           is_significant: isSignificant,
         });
         if (isSignificant && dossier?.name) {
-          await storeUpdate(DT.CUSTOMER_DOSSIER, dossier.name, { last_significant_update: new Date().toISOString() });
+          await storeUpdate(DT.CUSTOMER_DOSSIER, String(dossier.name), { last_significant_update: new Date().toISOString() });
         }
         return JSON.stringify({ ok: true, recorded: true, significant: isSignificant });
       }
@@ -1677,7 +1677,7 @@ sofiaRouter.post("/conversations/:phone/handoff", async (c) => {
   // Best-effort: find which agent was last active on this phone
   let agentName = "sofia";
   const actRows = await storeList(DT.SOFIA_ACTIVITY_LOG, { filters: [["client_phone", "=", phone]], orderBy: "creation desc", limit: 1 });
-  if (actRows[0]?.agent_name) agentName = actRows[0].agent_name;
+  if (actRows[0]?.agent_name) agentName = actRows[0].agent_name as string;
   try {
     await storeInsert(DT.CONVERSATION_HANDOFF, {
       handoff_type: "human_takeover",

@@ -187,7 +187,7 @@ agentsRouter.patch("/cron/:id", async (c) => {
 
   try {
     const data = await updateCronJob(id, update);
-    return c.json({ data: { ...data, id: (data as any)?.name } });
+    return c.json({ data: { ...(data as any), id: (data as any)?.name } });
   } catch (e: any) {
     return c.json({ error: { message: e.message } }, 500);
   }
