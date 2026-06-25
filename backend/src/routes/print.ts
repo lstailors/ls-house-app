@@ -1,413 +1,207 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
-import { erpCreate, erpGet } from "../lib/erp";
+import { erpGet } from "../lib/erp";
 
 export const printRouter = new Hono();
 
-type PrintType = "Ticket" | "Receipt" | "PaymentLink" | "Tags";
+// ───────────────────────────────────────────────────────────────────────────
+// All thermal printing is routed THROUGH ERPNext — never directly to the
+// printer.
+//
+// Why: the Epson TM-M30ii lives on the shop LAN (e.g. 10.0.1.41:9100) and is
+// only reachable from inside the shop. This backend runs on Vercel, and the
+// browser may be anywhere — neither can reach that LAN address. The
+// `ls_thermal` Python package is deployed on the ERPNext bench, which DOES have
+// LAN access to the printer. So we proxy every print job to its whitelisted
+// methods; ERPNext builds the ESC/POS job, opens the raw socket to the printer,
+// and writes the LSH Print Log row itself (we do not double-log here).
+//
+//   POST /api/print/ticket        -> ls_alterations.ls_thermal.api.print_ticket
+//   POST /api/print/tags          -> ls_alterations.ls_thermal.api.print_ticket (what=tags)
+//   POST /api/print/receipt       -> print_ticket (what=receipts) | print_payment_receipt
+//   POST /api/print/payment-link  -> ls_alterations.ls_thermal.api.print_pay_link
+//   GET  /api/print/status        -> ls_alterations.ls_thermal.api.test_printer
+//   GET  /api/print/config        -> reads LSH Print Settings (display only)
+// ───────────────────────────────────────────────────────────────────────────
 
-interface PrintConfig {
-  enabled: boolean;
-  printer_ip: string;
-  printer_port: number;
-  timeout: number;
-  app_base_url: string;
-}
+const ERP_BASE = process.env.ERPNEXT_BASE_URL ?? "https://erp.lstailors.com";
 
-let cachedConfig: { value: PrintConfig; expiresAt: number } | null = null;
+// Alteration Ticket names look like ALT-NYC-2026-00048; Sales Invoices do not.
+const isAlterationTicket = (name: string) => /^ALT/i.test(name);
 
-function esc(s: unknown): string {
-  return String(s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function col(left: string, right: string, width = 42): string {
-  const l = left.slice(0, Math.max(0, width - right.length - 1));
-  const pad = width - l.length - right.length;
-  return l + " ".repeat(Math.max(pad, 1)) + right;
-}
-
-function money(n: unknown): string {
-  const value = Number(n ?? 0);
-  return `$${value.toFixed(2)}`;
-}
-
-function formatDate(value: unknown): string {
-  if (!value) return "-";
-  const d = new Date(String(value));
-  if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-async function getPrintConfig(): Promise<PrintConfig> {
-  const now = Date.now();
-  if (cachedConfig && cachedConfig.expiresAt > now) return cachedConfig.value;
-
-  const row = await erpGet<any>("LSH Print Settings", "LSH Print Settings");
-  if (!row) throw new Error("LSH Print Settings not found in ERPNext");
-
-  const value: PrintConfig = {
-    enabled: Boolean(Number(row.enabled ?? 0)),
-    printer_ip: String(row.thermal_printer_ip ?? ""),
-    printer_port: Number(row.thermal_printer_port ?? 9100),
-    timeout: Number(row.thermal_timeout ?? 5),
-    app_base_url: String(row.app_base_url ?? process.env.APP_URL ?? "https://app.lstailors.com"),
-  };
-  cachedConfig = { value, expiresAt: now + 60_000 };
-  return value;
-}
-
-async function logPrint(input: {
-  ticket?: string | null;
-  invoice?: string | null;
-  print_type: PrintType;
-  status: "Success" | "Failed";
-  bytes_sent: number;
+interface ErpPrintResult {
+  ok?: boolean;
   error?: string;
-  printer_ip?: string;
-}) {
-  try {
-    await erpCreate("LSH Print Log", {
-      ticket: input.ticket ?? null,
-      invoice: input.invoice ?? null,
-      print_type: input.print_type,
-      status: input.status,
-      printed_at: new Date().toISOString(),
-      bytes_sent: input.bytes_sent,
-      error: input.error ?? "",
-      printer_ip: input.printer_ip ?? "",
-    });
-  } catch (e) {
-    console.error("[print] failed to write LSH Print Log:", e);
-  }
+  url?: string;
+  jobs?: Array<{ ok?: boolean; target?: string; bytes?: number; error?: string }>;
+  [k: string]: unknown;
 }
 
-async function sendXml(xml: string, config: PrintConfig): Promise<number> {
-  if (!config.enabled) throw new Error("Thermal printing is disabled in ERPNext");
-  if (!config.printer_ip) throw new Error("Thermal printer IP is not configured in ERPNext");
+async function printViaErp(
+  method: string,
+  kwargs: Record<string, unknown>,
+): Promise<ErpPrintResult> {
+  const key = process.env.ERPNEXT_API_KEY ?? "";
+  const secret = process.env.ERPNEXT_API_SECRET ?? "";
+  if (!key || !secret) throw new Error("ERPNext API credentials are not configured");
 
-  const bytes = new TextEncoder().encode(xml).byteLength;
-  const res = await fetch(`http://${config.printer_ip}/cgi-bin/epos/service.cgi`, {
+  const res = await fetch(`${ERP_BASE}/api/method/${method}`, {
     method: "POST",
     headers: {
-      "Content-Type": "text/xml; charset=utf-8",
-      SOAPAction: '""',
+      Authorization: `token ${key}:${secret}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
     },
-    body: xml,
-    signal: AbortSignal.timeout(Math.max(1, config.timeout) * 1000),
+    body: JSON.stringify(kwargs),
+    signal: AbortSignal.timeout(15_000),
   });
 
-  const text = await res.text().catch(() => "");
-  if (!res.ok) throw new Error(`Printer returned HTTP ${res.status}`);
-  if (text.includes('success="false"')) {
-    const code = text.match(/code="([^"]+)"/)?.[1] ?? "unknown";
-    throw new Error(`Printer error: ${code}`);
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) {
+    const serverMessages = json?._server_messages;
+    const msg =
+      (Array.isArray(serverMessages) && serverMessages.join(" ")) ||
+      (typeof json?.exception === "string" && json.exception) ||
+      (typeof json?.message === "string" && json.message) ||
+      `ERPNext print failed (HTTP ${res.status})`;
+    throw new Error(String(msg).slice(0, 300));
   }
-  return bytes;
+  // Frappe wraps a whitelisted method's return value in { message: ... }.
+  return (json?.message ?? json) as ErpPrintResult;
 }
 
-function lineItemsForGarment(ticket: any, garment: any) {
-  const ref = garment.name ?? garment.garment_id;
-  const garmentId = garment.garment_id ?? garment.name;
-  return (ticket.lines ?? []).filter((line: any) =>
-    line.garment_ref === ref || line.garment_ref === garmentId,
-  );
+// Collapse an ERP print result into the { ok, error? } shape the frontend uses.
+// ls_thermal methods return either { ok, jobs:[{ok,error}] } (print_ticket /
+// receipt / pay_link) or a bare { ok, error } (test_printer).
+function toClientResult(out: ErpPrintResult): { ok: boolean; error?: string } {
+  if (out?.ok) return { ok: true };
+  const failedJob = (out?.jobs ?? []).find((j) => j && j.ok === false && j.error);
+  const error =
+    (typeof out?.error === "string" && out.error) ||
+    failedJob?.error ||
+    "Print failed";
+  return { ok: false, error };
 }
 
-function buildTicketXml(ticket: any): string {
-  const p: string[] = [];
-  p.push(`<?xml version="1.0" encoding="utf-8"?>`);
-  p.push(`<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">`);
-  p.push(`<text align="center" font="font_a" width="2" height="2">L&amp;S Custom Tailors&#10;</text>`);
-  p.push(`<text align="center">${esc(ticket.origin_location ?? "")} ALTERATION TICKET&#10;</text>`);
-  p.push(`<text>--------------------------------&#10;</text>`);
-  p.push(`<text>${esc(col("Ticket:", ticket.name))}&#10;</text>`);
-  p.push(`<text>${esc(col("Customer:", ticket.customer_name))}&#10;</text>`);
-  if (ticket.customer_mobile || ticket.customer_phone) {
-    p.push(`<text>${esc(col("Phone:", ticket.customer_mobile ?? ticket.customer_phone))}&#10;</text>`);
-  }
-  p.push(`<text>${esc(col("Date:", formatDate(ticket.ticket_date)))}&#10;</text>`);
-  p.push(`<text>${esc(col("Due:", `${formatDate(ticket.due_date)}${Number(ticket.is_rush) ? " RUSH" : ""}`))}&#10;</text>`);
-  p.push(`<text>${esc(col("Status:", ticket.workflow_state ?? ""))}&#10;</text>`);
-  p.push(`<text>--------------------------------&#10;</text>`);
-
-  for (const garment of ticket.garments ?? []) {
-    const label = `${garment.garment_type ?? "Garment"}${garment.color ? ` - ${garment.color}` : ""} (${garment.garment_id ?? garment.name})`;
-    p.push(`<text bold="true">${esc(label)}&#10;</text>`);
-    for (const line of lineItemsForGarment(ticket, garment)) {
-      p.push(`<text>${esc(col(`  ${line.description ?? ""}`, money(line.price)))}&#10;</text>`);
-    }
-  }
-
-  p.push(`<text>--------------------------------&#10;</text>`);
-  p.push(`<text width="1" height="2" bold="true">${esc(col("TOTAL", money(ticket.ticket_total)))}&#10;</text>`);
-  p.push(`<text>${esc(col("Payment:", ticket.payment_status ?? ""))}&#10;</text>`);
-  if (ticket.customer_notes) {
-    p.push(`<text>--------------------------------&#10;</text>`);
-    p.push(`<text>${esc(ticket.customer_notes)}&#10;</text>`);
-  }
-  p.push(`<feed line="3"/>`);
-  p.push(`<cut type="feed"/>`);
-  p.push(`</epos-print>`);
-  return p.join("\n");
-}
-
-function buildTagsXml(ticket: any, appBaseUrl: string): string {
-  const p: string[] = [];
-  p.push(`<?xml version="1.0" encoding="utf-8"?>`);
-  p.push(`<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">`);
-  for (const garment of ticket.garments ?? []) {
-    const garmentId = garment.garment_id ?? garment.name;
-    const tagUrl = `${appBaseUrl}/garments/${encodeURIComponent(ticket.name)}/${encodeURIComponent(garmentId)}`;
-    if (Number(ticket.is_rush)) {
-      p.push(`<text align="center" width="2" height="2" bold="true">** RUSH **&#10;</text>`);
-    }
-    p.push(`<text align="center">${esc(ticket.name)}&#10;</text>`);
-    p.push(`<text align="center" width="1" height="2" bold="true">${esc(ticket.customer_name)}&#10;</text>`);
-    p.push(`<text align="center">${esc(garment.garment_type ?? "Garment")} ${esc(garment.color ?? "")}&#10;</text>`);
-    p.push(`<text align="center">ID: ${esc(garmentId)}&#10;</text>`);
-    p.push(`<symbol align="center" type="qrcode_model_2" level="level_m" width="6" height="6" size="0">${esc(tagUrl)}</symbol>`);
-    p.push(`<text>&#10;</text>`);
-    for (const line of lineItemsForGarment(ticket, garment)) {
-      p.push(`<text>${esc(`  ${line.description ?? ""}`)}&#10;</text>`);
-    }
-    p.push(`<text align="center">Due: ${esc(formatDate(ticket.due_date))} | ${esc(ticket.origin_location ?? "")}&#10;</text>`);
-    p.push(`<feed line="2"/>`);
-    p.push(`<cut type="feed"/>`);
-  }
-  p.push(`</epos-print>`);
-  return p.join("\n");
-}
-
-function buildInvoiceReceiptXml(invoice: any, paymentEntry?: string): string {
-  const p: string[] = [];
-  p.push(`<?xml version="1.0" encoding="utf-8"?>`);
-  p.push(`<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">`);
-  p.push(`<text align="center" font="font_a" width="2" height="2">L&amp;S Custom Tailors&#10;</text>`);
-  p.push(`<text align="center">PAYMENT RECEIPT&#10;</text>`);
-  p.push(`<text>--------------------------------&#10;</text>`);
-  p.push(`<text>${esc(col("Invoice:", invoice.name))}&#10;</text>`);
-  p.push(`<text>${esc(col("Customer:", invoice.customer_name ?? invoice.customer ?? ""))}&#10;</text>`);
-  p.push(`<text>${esc(col("Date:", formatDate(invoice.posting_date ?? invoice.creation)))}&#10;</text>`);
-  if (paymentEntry) p.push(`<text>${esc(col("Payment:", paymentEntry))}&#10;</text>`);
-  p.push(`<text>--------------------------------&#10;</text>`);
-  for (const item of invoice.items ?? []) {
-    p.push(`<text>${esc(col(item.item_name ?? item.item_code ?? "Item", money(item.amount ?? item.net_amount)))}&#10;</text>`);
-  }
-  p.push(`<text>--------------------------------&#10;</text>`);
-  p.push(`<text width="1" height="2" bold="true">${esc(col("TOTAL", money(invoice.grand_total)))}&#10;</text>`);
-  p.push(`<text>${esc(col("Outstanding:", money(invoice.outstanding_amount)))}&#10;</text>`);
-  p.push(`<text align="center">Thank you!&#10;</text>`);
-  p.push(`<feed line="3"/>`);
-  p.push(`<cut type="feed"/>`);
-  p.push(`</epos-print>`);
-  return p.join("\n");
-}
-
-function buildCustomOrderXml(order: any): string {
-  const p: string[] = [];
-  p.push(`<?xml version="1.0" encoding="utf-8"?>`);
-  p.push(`<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">`);
-  p.push(`<text align="center" font="font_a" width="2" height="2">L&amp;S Custom Tailors&#10;</text>`);
-  p.push(`<text align="center">CUSTOM ORDER TICKET&#10;</text>`);
-  p.push(`<text>--------------------------------&#10;</text>`);
-  p.push(`<text>${esc(col("Order:", order.name))}&#10;</text>`);
-  p.push(`<text>${esc(col("Customer:", order.customer_name ?? order.customer ?? ""))}&#10;</text>`);
-  p.push(`<text>${esc(col("Date:", formatDate(order.transaction_date ?? order.creation)))}&#10;</text>`);
-  p.push(`<text>${esc(col("Delivery:", formatDate(order.delivery_date)))}&#10;</text>`);
-  p.push(`<text>${esc(col("Status:", order.status ?? ""))}&#10;</text>`);
-  p.push(`<text>--------------------------------&#10;</text>`);
-  for (const item of order.items ?? []) {
-    p.push(`<text bold="true">${esc(item.item_name ?? item.item_code ?? "Custom Item")}&#10;</text>`);
-    p.push(`<text>${esc(col("  Qty", String(item.qty ?? 1)))}&#10;</text>`);
-    p.push(`<text>${esc(col("  Amount", money(item.amount ?? item.net_amount ?? item.rate)))}&#10;</text>`);
-  }
-  p.push(`<text>--------------------------------&#10;</text>`);
-  p.push(`<text width="1" height="2" bold="true">${esc(col("TOTAL", money(order.grand_total)))}&#10;</text>`);
-  p.push(`<text>${esc(col("Advance:", money(order.advance_paid)))}&#10;</text>`);
-  p.push(`<text>${esc(col("Balance:", money(Number(order.grand_total ?? 0) - Number(order.advance_paid ?? 0))))}&#10;</text>`);
-  p.push(`<feed line="3"/>`);
-  p.push(`<cut type="feed"/>`);
-  p.push(`</epos-print>`);
-  return p.join("\n");
-}
-
-function buildPaymentLinkXml(input: { url: string; invoice: string; amount: number; customer_name: string }): string {
-  const p: string[] = [];
-  p.push(`<?xml version="1.0" encoding="utf-8"?>`);
-  p.push(`<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">`);
-  p.push(`<text align="center" font="font_a" width="2" height="2">L&amp;S Tailors&#10;</text>`);
-  p.push(`<text align="center">PAYMENT LINK&#10;</text>`);
-  p.push(`<text>--------------------------------&#10;</text>`);
-  p.push(`<text>${esc(col("Invoice:", input.invoice))}&#10;</text>`);
-  p.push(`<text>${esc(col("Customer:", input.customer_name))}&#10;</text>`);
-  p.push(`<text>${esc(col("Amount:", money(input.amount)))}&#10;</text>`);
-  p.push(`<text>&#10;</text>`);
-  p.push(`<symbol align="center" type="qrcode_model_2" level="level_m" width="7" height="7" size="0">${esc(input.url)}</symbol>`);
-  p.push(`<text>&#10;</text>`);
-  p.push(`<text align="center">Scan to pay securely&#10;</text>`);
-  p.push(`<text align="center">${esc(input.url)}&#10;</text>`);
-  p.push(`<feed line="3"/>`);
-  p.push(`<cut type="feed"/>`);
-  p.push(`</epos-print>`);
-  return p.join("\n");
-}
-
-async function printXml(
-  config: PrintConfig,
-  xml: string,
-  meta: { ticket?: string | null; invoice?: string | null; print_type: PrintType },
-) {
-  let bytes = 0;
-  try {
-    bytes = await sendXml(xml, config);
-    await logPrint({ ...meta, status: "Success", bytes_sent: bytes, printer_ip: config.printer_ip });
-    return { ok: true, bytes };
-  } catch (e) {
-    const error = e instanceof Error ? e.message : "Print failed";
-    await logPrint({ ...meta, status: "Failed", bytes_sent: bytes, error, printer_ip: config.printer_ip });
-    return { ok: false, error };
-  }
-}
-
+// GET /api/print/config — read-only printer config for the Settings screen.
 printRouter.get("/config", async (c) => {
   try {
-    return c.json(await getPrintConfig());
+    const row = await erpGet<Record<string, unknown>>("LSH Print Settings", "LSH Print Settings");
+    if (!row) throw new Error("LSH Print Settings not found in ERPNext");
+    return c.json({
+      enabled: Boolean(Number(row.enabled ?? 0)),
+      printer_ip: String(row.thermal_printer_ip ?? ""),
+      printer_port: Number(row.thermal_printer_port ?? 9100),
+      timeout: Number(row.thermal_timeout ?? 5),
+      app_base_url: String(row.app_base_url ?? process.env.APP_URL ?? "https://app.lstailors.com"),
+    });
   } catch (e) {
     const error = e instanceof Error ? e.message : "Could not load print config";
     return c.json({ ok: false, error });
   }
 });
 
+// GET /api/print/status — fire a small diagnostic slip from the bench.
+printRouter.get("/status", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  try {
+    const out = await printViaErp("ls_alterations.ls_thermal.api.test_printer", {});
+    return c.json(toClientResult(out));
+  } catch (e) {
+    return c.json({ ok: false, error: e instanceof Error ? e.message : "Printer test failed" });
+  }
+});
+
+// POST /api/print/ticket — full alteration ticket: office + customer + tags.
 printRouter.post("/ticket", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
-  const body = (await c.req.json().catch(() => null)) as { ticket_name?: string } | null;
-  if (!body?.ticket_name) return c.json({ ok: false, error: "ticket_name is required" });
+  const body = (await c.req.json().catch(() => null)) as { ticket_name?: string; what?: string } | null;
+  const ticket = body?.ticket_name?.trim();
+  if (!ticket) return c.json({ ok: false, error: "ticket_name is required" });
 
-  try {
-    const config = await getPrintConfig();
-    const ticket = await erpGet<any>("Alteration Ticket", body.ticket_name);
-    if (ticket) {
-      return c.json(await printXml(config, buildTicketXml(ticket), {
-        ticket: body.ticket_name,
-        print_type: "Ticket",
-      }));
-    }
-
-    const customOrder = await erpGet<any>("Sales Order", body.ticket_name);
-    if (!customOrder) {
-      await logPrint({
-        ticket: body.ticket_name,
-        print_type: "Ticket",
-        status: "Failed",
-        bytes_sent: 0,
-        error: "Ticket not found",
-        printer_ip: config.printer_ip,
-      });
-      return c.json({ ok: false, error: "Ticket not found" });
-    }
-
-    return c.json(await printXml(config, buildCustomOrderXml(customOrder), {
-      invoice: body.ticket_name,
-      print_type: "Ticket",
-    }));
-  } catch (e) {
-    const error = e instanceof Error ? e.message : "Print failed";
-    return c.json({ ok: false, error });
-  }
-});
-
-printRouter.post("/receipt", async (c) => {
-  const user = await getAuthedUser(c);
-  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-
-  const body = (await c.req.json().catch(() => null)) as {
-    invoice?: string;
-    payment_entry?: string;
-  } | null;
-  if (!body?.invoice) return c.json({ ok: false, error: "invoice is required" });
-
-  try {
-    const config = await getPrintConfig();
-    const invoice = await erpGet<any>("Sales Invoice", body.invoice);
-    if (!invoice) {
-      await logPrint({
-        invoice: body.invoice,
-        print_type: "Receipt",
-        status: "Failed",
-        bytes_sent: 0,
-        error: "Invoice not found",
-        printer_ip: config.printer_ip,
-      });
-      return c.json({ ok: false, error: "Invoice not found" });
-    }
-
-    return c.json(await printXml(config, buildInvoiceReceiptXml(invoice, body.payment_entry), {
-      invoice: body.invoice,
-      print_type: "Receipt",
-    }));
-  } catch (e) {
-    const error = e instanceof Error ? e.message : "Receipt print failed";
-    return c.json({ ok: false, error });
-  }
-});
-
-printRouter.post("/payment-link", async (c) => {
-  const user = await getAuthedUser(c);
-  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-
-  const body = (await c.req.json().catch(() => null)) as {
-    url?: string;
-    invoice?: string;
-    amount?: number;
-    customer_name?: string;
-  } | null;
-  if (!body?.url || !body.invoice) {
-    return c.json({ ok: false, error: "url and invoice are required" });
+  // ls_thermal prints Alteration Tickets. Custom orders (Sales Orders) have no
+  // thermal print method yet — fail clearly instead of with an ERPNext stack.
+  if (!isAlterationTicket(ticket)) {
+    return c.json({
+      ok: false,
+      error: "Thermal ticket printing is only available for alteration tickets right now.",
+    });
   }
 
   try {
-    const config = await getPrintConfig();
-    return c.json(await printXml(
-      config,
-      buildPaymentLinkXml({
-        url: body.url,
-        invoice: body.invoice,
-        amount: Number(body.amount ?? 0),
-        customer_name: body.customer_name ?? "",
-      }),
-      { invoice: body.invoice, print_type: "PaymentLink" },
-    ));
+    const out = await printViaErp("ls_alterations.ls_thermal.api.print_ticket", {
+      ticket,
+      what: body?.what ?? "all",
+    });
+    return c.json(toClientResult(out));
   } catch (e) {
-    const error = e instanceof Error ? e.message : "Payment link print failed";
-    return c.json({ ok: false, error });
+    return c.json({ ok: false, error: e instanceof Error ? e.message : "Print failed" });
   }
 });
 
-// Backward-compatible tag printing endpoint used by the garment tag page.
+// POST /api/print/tags — just the garment tags for a ticket.
 printRouter.post("/tags", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
   const body = (await c.req.json().catch(() => null)) as { ticket_name?: string } | null;
-  if (!body?.ticket_name) return c.json({ ok: false, error: "ticket_name is required" });
+  const ticket = body?.ticket_name?.trim();
+  if (!ticket) return c.json({ ok: false, error: "ticket_name is required" });
+  if (!isAlterationTicket(ticket)) {
+    return c.json({ ok: false, error: "Garment tags are only available for alteration tickets." });
+  }
 
   try {
-    const config = await getPrintConfig();
-    const ticket = await erpGet<any>("Alteration Ticket", body.ticket_name);
-    if (!ticket) return c.json({ ok: false, error: "Ticket not found" });
-
-    return c.json(await printXml(config, buildTagsXml(ticket, config.app_base_url), {
-      ticket: body.ticket_name,
-      print_type: "Tags",
-    }));
+    const out = await printViaErp("ls_alterations.ls_thermal.api.print_ticket", {
+      ticket,
+      what: "tags",
+    });
+    return c.json(toClientResult(out));
   } catch (e) {
-    const error = e instanceof Error ? e.message : "Tag print failed";
-    return c.json({ ok: false, error });
+    return c.json({ ok: false, error: e instanceof Error ? e.message : "Tag print failed" });
+  }
+});
+
+// POST /api/print/receipt — for an alteration ticket, the office + customer
+// receipt copies; for a Sales Invoice, the post-payment receipt.
+printRouter.post("/receipt", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const body = (await c.req.json().catch(() => null)) as { invoice?: string } | null;
+  const id = body?.invoice?.trim();
+  if (!id) return c.json({ ok: false, error: "invoice is required" });
+
+  try {
+    const out = isAlterationTicket(id)
+      ? await printViaErp("ls_alterations.ls_thermal.api.print_ticket", { ticket: id, what: "receipts" })
+      : await printViaErp("ls_alterations.ls_thermal.api.print_payment_receipt", { invoice: id });
+    return c.json(toClientResult(out));
+  } catch (e) {
+    return c.json({ ok: false, error: e instanceof Error ? e.message : "Receipt print failed" });
+  }
+});
+
+// POST /api/print/payment-link — print a "scan to pay" QR slip. ls_thermal
+// creates the Square link for the invoice/ticket and prints it in one step.
+// (The client may still send url/amount/customer_name; ERPNext is the source of
+// truth for the printed link, so only the id is needed.)
+printRouter.post("/payment-link", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const body = (await c.req.json().catch(() => null)) as { invoice?: string; ticket?: string } | null;
+  const id = (body?.ticket ?? body?.invoice)?.trim();
+  if (!id) return c.json({ ok: false, error: "invoice is required" });
+
+  try {
+    const kwargs = isAlterationTicket(id) ? { ticket: id } : { invoice: id };
+    const out = await printViaErp("ls_alterations.ls_thermal.api.print_pay_link", kwargs);
+    return c.json({ ...toClientResult(out), url: out?.url });
+  } catch (e) {
+    return c.json({ ok: false, error: e instanceof Error ? e.message : "QR slip print failed" });
   }
 });
