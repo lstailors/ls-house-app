@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Save, LogOut, Loader2, User, Mail, Phone, Shield, Printer, Wifi } from "lucide-react";
 import { getPrintConfig } from "@/lib/thermal";
+import { PairTerminalCard } from "@/components/payments/PairTerminalCard";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { Button } from "@/components/ui/button";
@@ -193,6 +194,9 @@ export default function Settings() {
 
       {/* ── Printer ── */}
       <PrinterSettings />
+
+      {/* ── Square Terminal ── */}
+      <PairTerminalCard />
 
       {/* ── Sign out ── */}
       <GlassCard className="p-5">

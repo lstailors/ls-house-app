@@ -185,3 +185,100 @@ paymentsRouter.post("/webhook", async (c) => {
     return c.json({ error: { message } }, 502);
   }
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// Square Terminal pairing (Terminal API device codes)
+//
+// A Square Terminal only receives app-driven checkouts once it is PAIRED to
+// this application via a device code. The "Device ID" on the terminal's About
+// screen is not enough. Flow:
+//   1. POST /api/payments/terminal/pair       -> creates a device code
+//   2. staff type that code into the Terminal (Sign in > use a device code)
+//   3. GET  /api/payments/terminal/pair/:id    -> poll until PAIRED; on success
+//      we save the returned device_id into Square Integration Settings.
+// ───────────────────────────────────────────────────────────────────────────
+
+const SQUARE_VERSION = "2024-12-18";
+
+async function saveTerminalDeviceId(deviceId: string): Promise<void> {
+  // PUT the single Square Integration Settings doc so the live checkout flow
+  // (pos.create_checkout) picks up the freshly-paired device.
+  await fetch(
+    `${ERP_BASE}/api/resource/${encodeURIComponent("Square Integration Settings")}/${encodeURIComponent("Square Integration Settings")}`,
+    { method: "PUT", headers: erpHeaders(), body: JSON.stringify({ device_id: deviceId }) },
+  );
+}
+
+// POST /api/payments/terminal/pair — start pairing, returns a code to enter on the device.
+paymentsRouter.post("/terminal/pair", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const accessToken = process.env.SQUARE_ACCESS_TOKEN ?? "";
+  const locationId = process.env.SQUARE_LOCATION_ID ?? "";
+  if (!accessToken) return c.json({ error: { message: "Square not configured" } }, 500);
+
+  try {
+    const squareRes = await fetch("https://connect.squareup.com/v2/devices/codes", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Square-Version": SQUARE_VERSION,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        idempotency_key: crypto.randomUUID(),
+        device_code: {
+          name: "L&S House App",
+          product_type: "TERMINAL_API",
+          ...(locationId ? { location_id: locationId } : {}),
+        },
+      }),
+    });
+    const data = (await squareRes.json().catch(() => ({}))) as {
+      device_code?: { id?: string; code?: string; status?: string };
+      errors?: Array<{ detail?: string }>;
+    };
+    if (!squareRes.ok) {
+      return c.json({ error: { message: data.errors?.[0]?.detail ?? "Square device code error" } }, 502);
+    }
+    const dc = data.device_code ?? {};
+    return c.json({ ok: true, id: dc.id, code: dc.code, status: dc.status });
+  } catch (e) {
+    return c.json({ error: { message: e instanceof Error ? e.message : "Could not start pairing" } }, 502);
+  }
+});
+
+// GET /api/payments/terminal/pair/:id — poll a device code; saves device_id when PAIRED.
+paymentsRouter.get("/terminal/pair/:id", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const id = c.req.param("id");
+  const accessToken = process.env.SQUARE_ACCESS_TOKEN ?? "";
+  if (!accessToken) return c.json({ error: { message: "Square not configured" } }, 500);
+
+  try {
+    const squareRes = await fetch(
+      `https://connect.squareup.com/v2/devices/codes/${encodeURIComponent(id)}`,
+      { headers: { Authorization: `Bearer ${accessToken}`, "Square-Version": SQUARE_VERSION } },
+    );
+    const data = (await squareRes.json().catch(() => ({}))) as {
+      device_code?: { status?: string; device_id?: string };
+      errors?: Array<{ detail?: string }>;
+    };
+    if (!squareRes.ok) {
+      return c.json({ error: { message: data.errors?.[0]?.detail ?? "Square API error" } }, 502);
+    }
+    const dc = data.device_code ?? {};
+    const status = dc.status ?? "UNKNOWN";
+    const deviceId = dc.device_id ?? null;
+    let saved = false;
+    if (status === "PAIRED" && deviceId) {
+      try { await saveTerminalDeviceId(deviceId); saved = true; } catch { saved = false; }
+    }
+    return c.json({ ok: true, status, device_id: deviceId, saved });
+  } catch (e) {
+    return c.json({ error: { message: e instanceof Error ? e.message : "Pairing check failed" } }, 502);
+  }
+});
