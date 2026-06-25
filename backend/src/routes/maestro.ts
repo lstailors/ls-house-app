@@ -12,7 +12,9 @@ import {
   insertAgentEvents,
   insertAgentCosts,
   updateAgent,
+  getAgentBySlug,
 } from "../lib/erpnext/agents";
+import { erpCreate } from "../lib/erp";
 import { storeList } from "../lib/erpnext/store";
 import { DT } from "../lib/erpnext/doctypes";
 
@@ -461,7 +463,21 @@ maestroRouter.post("/heartbeat", async (c) => {
   try {
     await updateAgent(slug, update);
   } catch (e: any) {
-    return c.json({ error: { message: e.message } }, 500);
+    if (e.message === "Agent not found") {
+      // Agent row missing — create a minimal record so the heartbeat succeeds.
+      try {
+        await erpCreate(DT.AGENT, {
+          slug,
+          agent_name: slug,
+          status: update.status ?? "active",
+          ...update,
+        });
+      } catch (createErr: any) {
+        return c.json({ error: { message: `Agent not found and could not be created: ${createErr.message}` } }, 500);
+      }
+    } else {
+      return c.json({ error: { message: e.message } }, 500);
+    }
   }
 
   return c.json({ data: { ok: true, slug } });
