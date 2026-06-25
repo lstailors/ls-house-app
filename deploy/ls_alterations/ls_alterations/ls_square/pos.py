@@ -63,11 +63,15 @@ def _record(invoice, kind, amount, **ids):
 
 
 @frappe.whitelist()
-def create_checkout(code=None, invoice=None, ticket=None):
+def create_checkout(code=None, invoice=None, ticket=None, amount=None):
     """
-    TERMINAL flow: resolve to an invoice and push a Terminal Checkout for the
-    outstanding amount. Pass either `code` (scanned QR text), `invoice`, or
-    `ticket`.
+    TERMINAL flow: resolve to an invoice and push a Terminal Checkout. Pass
+    either `code` (scanned QR text), `invoice`, or `ticket`.
+
+    `amount` is optional. Omit it to charge the full outstanding balance; pass
+    it (in dollars) to collect a partial deposit. It is always clamped to the
+    outstanding balance so we never charge more than is owed. The webhook posts
+    the actual amount paid, so a partial charge leaves the invoice part-paid.
     """
     if invoice:
         inv_name = invoice
@@ -86,31 +90,41 @@ def create_checkout(code=None, invoice=None, ticket=None):
     if outstanding <= 0:
         return {"ok": False, "status": "already_paid", "invoice": inv_name}
 
-    amount_cents = int(round(outstanding * 100))
+    charge = flt(amount) if amount else outstanding
+    if charge <= 0:
+        frappe.throw("Charge amount must be greater than zero")
+    if charge > outstanding + 0.01:
+        charge = outstanding
+
+    amount_cents = int(round(charge * 100))
     checkout = client.create_terminal_checkout(
         amount_cents=amount_cents,
         reference_id=inv_name,
         note="L&S {} - {}".format(inv_name, inv.customer_name or inv.customer),
     )
-    _record(inv_name, "Terminal", outstanding,
+    _record(inv_name, "Terminal", charge,
             checkout_id=checkout.get("id"))
     return {
         "ok": True,
         "status": "pushed_to_terminal",
         "method": "terminal",
         "invoice": inv_name,
-        "amount": outstanding,
+        "amount": charge,
+        "is_partial": charge < outstanding,
         "checkout_id": checkout.get("id"),
         "checkout_status": checkout.get("status"),
     }
 
 
 @frappe.whitelist()
-def create_payment_link(code=None, invoice=None, ticket=None):
+def create_payment_link(code=None, invoice=None, ticket=None, amount=None):
     """
-    PAY-BY-SQUARE flow: create a Square-hosted checkout link for the
-    outstanding amount. The returned `url` is rendered as a QR the customer
-    scans with their phone (or printed via ls_thermal.api.print_pay_link).
+    PAY-BY-SQUARE flow: create a Square-hosted checkout link. The returned `url`
+    is rendered as a QR the customer scans with their phone (or printed via
+    ls_thermal.api.print_pay_link).
+
+    `amount` is optional (dollars). Omit it to bill the full outstanding
+    balance; pass it for a partial deposit. Clamped to the outstanding balance.
     """
     if invoice:
         inv_name = invoice
@@ -129,7 +143,13 @@ def create_payment_link(code=None, invoice=None, ticket=None):
     if outstanding <= 0:
         return {"ok": False, "status": "already_paid", "invoice": inv_name}
 
-    amount_cents = int(round(outstanding * 100))
+    charge = flt(amount) if amount else outstanding
+    if charge <= 0:
+        frappe.throw("Charge amount must be greater than zero")
+    if charge > outstanding + 0.01:
+        charge = outstanding
+
+    amount_cents = int(round(charge * 100))
     link = client.create_payment_link(
         amount_cents=amount_cents,
         reference_id=inv_name,
@@ -137,7 +157,7 @@ def create_payment_link(code=None, invoice=None, ticket=None):
         note="{} - {}".format(inv_name, inv.customer_name or inv.customer),
     )
     url = link.get("url") or link.get("long_url")
-    _record(inv_name, "Payment Link", outstanding,
+    _record(inv_name, "Payment Link", charge,
             order_id=link.get("order_id"),
             payment_link_id=link.get("id"), url=url)
     return {
@@ -145,7 +165,8 @@ def create_payment_link(code=None, invoice=None, ticket=None):
         "status": "link_created",
         "method": "qr",
         "invoice": inv_name,
-        "amount": outstanding,
+        "amount": charge,
+        "is_partial": charge < outstanding,
         "url": url,
         "payment_link_id": link.get("id"),
         "order_id": link.get("order_id"),
