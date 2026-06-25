@@ -128,7 +128,11 @@ export default function PayInvoice() {
         const card = await payments.card({
           style: {
             ".input-container": { borderColor: "#4a7c59", borderRadius: "6px" },
-            input: { color: "#1a2e1d", fontFamily: "Montserrat", fontSize: "14px" },
+            // NOTE: Square's Web Payments SDK validates fontFamily against its
+            // own allowlist and rejects arbitrary fonts (e.g. "Montserrat"),
+            // which makes card.attach() throw and the whole form fail to load
+            // ("Payment system unavailable"). Omit it and use Square's default.
+            input: { color: "#1a2e1d", fontSize: "14px" },
             "input::placeholder": { color: "#9ca3af" },
           },
         });
