@@ -1,0 +1,95 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-26 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "scanned_at",
+  "scanned_by",
+  "raw_input",
+  "normalized_token",
+  "resolved_type",
+  "resolved_name",
+  "outcome",
+  "error_detail"
+ ],
+ "fields": [
+  {
+   "fieldname": "scanned_at",
+   "fieldtype": "Datetime",
+   "label": "Scanned At",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "scanned_by",
+   "fieldtype": "Link",
+   "label": "Scanned By",
+   "options": "User",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "raw_input",
+   "fieldtype": "Data",
+   "label": "Raw Input"
+  },
+  {
+   "fieldname": "normalized_token",
+   "fieldtype": "Data",
+   "label": "Normalized Token"
+  },
+  {
+   "fieldname": "resolved_type",
+   "fieldtype": "Data",
+   "label": "Resolved Type",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "resolved_name",
+   "fieldtype": "Data",
+   "label": "Resolved Name",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "outcome",
+   "fieldtype": "Select",
+   "label": "Outcome",
+   "options": "Resolved\nUnknown\nError\nDenied",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "error_detail",
+   "fieldtype": "Small Text",
+   "label": "Error Detail"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-06-26 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "LS Alterations",
+ "name": "LSH Scan Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  },
+  {
+   "role": "LST Super Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 0
+  }
+ ],
+ "sort_field": "scanned_at",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
