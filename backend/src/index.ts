@@ -34,6 +34,7 @@ import { calendarRouter } from "./routes/calendar";
 import { espressoRouter } from "./routes/espresso";
 import { mcpRouter } from "./routes/mcp";
 import { tasksRouter } from "./routes/tasks";
+import { scannerRouter } from "./routes/scanner";
 
 const app = new Hono();
 
@@ -87,6 +88,7 @@ app.route("/api/calendar", calendarRouter);
 app.route("/api/espresso", espressoRouter);
 app.route("/api/mcp", mcpRouter);
 app.route("/api/tasks", tasksRouter);
+app.route("/api/scanner", scannerRouter);
 app.route("/api/files", filesRouter);
 app.route("/api/square", squareRouter);
 app.route("/api/payments", paymentsRouter);

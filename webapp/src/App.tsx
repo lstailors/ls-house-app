@@ -53,6 +53,7 @@ const CalendarPage = lazy(() => import('./pages/Calendar'));
 const AppointmentsPage = lazy(() => import('./pages/Appointments'));
 const Helpdesk = lazy(() => import('./pages/Helpdesk'));
 const HelpdeskTicketDetail = lazy(() => import('./pages/helpdesk/HelpdeskTicketDetail'));
+const Scanner = lazy(() => import('./pages/Scanner'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -81,6 +82,15 @@ const App = () => (
           <Route path="/pay/:invoiceId" element={<PayInvoice />} />
           {/* Customer-facing e-ticket — public, no auth */}
           <Route path="/e-ticket/:ticketName" element={<ETicket />} />
+          {/* Full-screen in-app QR scanner — protected, but outside AppShell (no sidebar chrome) */}
+          <Route
+            path="/scanner"
+            element={
+              <RoleGuard allow={["super_admin", "store_manager", "salesperson", "driver", "tailor"]}>
+                <Scanner />
+              </RoleGuard>
+            }
+          />
           {/* Standalone print pages — outside AppShell so only content renders */}
           <Route path="/orders/alterations/:ticketName/tags" element={<AlterationTags />} />
           <Route path="/orders/alterations/:ticketName/receipt" element={<AlterationReceipt />} />
