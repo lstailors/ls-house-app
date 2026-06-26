@@ -314,7 +314,7 @@ export default function Dashboard() {
             <span className="sm:hidden">Alteration</span>
           </button>
           <button
-            onClick={() => window.open("https://erp.lstailors.com/lsh-scanner", "_blank", "noopener")}
+            onClick={() => window.open("https://erp.lstailors.com/app/lsh-scanner", "_blank", "noopener")}
             className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/8 px-3.5 py-2 text-xs font-medium text-emerald-300 hover:bg-emerald-500/15 hover:border-emerald-500/50 transition-all"
           >
             <QrCode className="h-3.5 w-3.5" />

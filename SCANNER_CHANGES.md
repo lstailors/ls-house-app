@@ -75,7 +75,7 @@ The `GET /api/scan/:token` and `POST /api/scan/:token/pod` endpoints used by the
 
 ### Updated: Scanner navigation links
 
-Scanner links in the webapp now open `erp.lstailors.com/lsh-scanner` in a new tab instead of the deleted `/scan` route:
+Scanner links in the webapp now open `erp.lstailors.com/app/lsh-scanner` in a new tab instead of the deleted `/scan` route. (Frappe desk pages are served under `/app/<page>`; the bare `/lsh-scanner` path returns 404.)
 - `webapp/src/components/shell/Sidebar.tsx`
 - `webapp/src/components/shell/TopBar.tsx`
 - `webapp/src/pages/Dashboard.tsx`
@@ -106,7 +106,7 @@ bench --site erp.lstailors.com clear-cache
 bench restart
 
 # 7. Verify
-#    Open https://erp.lstailors.com/lsh-scanner on an iPhone
+#    Open https://erp.lstailors.com/app/lsh-scanner on an iPhone (must be logged into the Frappe desk)
 #    Should show camera viewfinder with brass/forest-green design
 ```
 
