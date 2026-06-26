@@ -41,7 +41,6 @@ const AgentDetail = lazy(() => import('./pages/mission-control/AgentDetail'));
 const House = lazy(() => import('./pages/house/House'));
 const AlterationTags = lazy(() => import('./pages/intake/AlterationTags'));
 const AlterationReceipt = lazy(() => import('./pages/intake/AlterationReceipt'));
-const QRScanner = lazy(() => import('./pages/intake/QRScanner'));
 const GarmentTag = lazy(() => import('./pages/GarmentTag'));
 const PayInvoice = lazy(() => import('./pages/PayInvoice'));
 const ETicket = lazy(() => import('./pages/ETicket'));
@@ -152,14 +151,6 @@ const App = () => (
             <Route
               path="/garments/:ticketId/:garmentId"
               element={<GarmentTag />}
-            />
-            <Route
-              path="/scan"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "driver"]}>
-                  <QRScanner />
-                </RoleGuard>
-              }
             />
             <Route
               path="/orders/custom"
