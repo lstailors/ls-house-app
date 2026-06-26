@@ -41,7 +41,7 @@ const AgentDetail = lazy(() => import('./pages/mission-control/AgentDetail'));
 const House = lazy(() => import('./pages/house/House'));
 const AlterationTags = lazy(() => import('./pages/intake/AlterationTags'));
 const AlterationReceipt = lazy(() => import('./pages/intake/AlterationReceipt'));
-const GarmentTag = lazy(() => import('./pages/GarmentTag'));
+import GarmentTagRedirect from './components/garment/GarmentTagRedirect';
 const PayInvoice = lazy(() => import('./pages/PayInvoice'));
 const ETicket = lazy(() => import('./pages/ETicket'));
 const Tasks = lazy(() => import('./pages/Tasks'));
@@ -159,9 +159,10 @@ const App = () => (
                 </RoleGuard>
               }
             />
+            {/* Retired: old garment page now redirects to the /g/ job card */}
             <Route
               path="/garments/:ticketId/:garmentId"
-              element={<GarmentTag />}
+              element={<GarmentTagRedirect />}
             />
             {/* Garment job card — opened when shop-floor staff scan a garment tag QR */}
             <Route
