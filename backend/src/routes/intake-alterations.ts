@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { getAuthedUser } from '../lib/scope';
 import { uploadFile, erpFileAbsoluteUrl } from '../lib/erpnext/files';
-import { erpList, erpPdf } from '../lib/erp';
+import { erpList, erpPdf, erpRunMethod } from '../lib/erp';
 import { sendSms } from '../lib/twilio';
 
 // ---------------------------------------------------------------------------
@@ -354,6 +354,8 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
       garment_condition: g.condition || '',
       fit_area: Array.isArray(g.fitAreas) ? g.fitAreas.join(', ') : (g.fitAreas || ''),
       complexity: g.complexity || '',
+      // Photo URLs stored as JSON array (damage, marks, fitting, reference)
+      lsh_photos: JSON.stringify(Array.isArray(g.photos) ? g.photos : []),
     })),
     lines: garments.flatMap((g: any) =>
       (g.lines ?? []).map((l: any) => ({
@@ -758,6 +760,34 @@ intakeAlterationsRouter.post('/photos', async (c) => {
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Upload failed';
     return c.json({ error: message }, 500);
+  }
+});
+
+// PATCH /tickets/:name/garments/:garmentId/photos — update a garment's photo list
+intakeAlterationsRouter.patch('/tickets/:name/garments/:garmentId/photos', async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+  const ticketName = c.req.param('name');
+  const garmentId = c.req.param('garmentId');
+  const body = (await c.req.json()) as { photos?: string[] };
+  const photos = Array.isArray(body.photos) ? body.photos.filter((p) => typeof p === 'string') : [];
+
+  try {
+    const doc = await mcpGet<any>('Alteration Ticket', ticketName);
+    const row = (doc.garments ?? []).find((g: any) => g.garment_id === garmentId);
+    if (!row) return c.json({ error: { message: 'Garment not found' } }, 404);
+
+    await erpRunMethod('frappe.client.set_value', {
+      doctype: 'Alteration Ticket Garment',
+      name: row.name,
+      fieldname: 'lsh_photos',
+      value: JSON.stringify(photos),
+    });
+
+    return c.json({ data: { photos } });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message || 'Failed to update photos' } }, 502);
   }
 });
 

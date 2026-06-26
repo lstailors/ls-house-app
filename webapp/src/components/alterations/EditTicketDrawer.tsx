@@ -36,6 +36,8 @@ interface Garment {
   garment_type: string
   garment_description: string
   color: string
+  // Preserved verbatim so editing a ticket doesn't wipe attached photos.
+  lsh_photos: string
 }
 
 interface Line {
@@ -54,6 +56,7 @@ interface Props {
     garment_type: string
     garment_description: string
     color?: string
+    lsh_photos?: string
   }>
   initialLines: Array<{
     name: string
@@ -97,6 +100,7 @@ export function EditTicketDrawer({
       garment_type: g.garment_type,
       garment_description: g.garment_description,
       color: g.color ?? '',
+      lsh_photos: g.lsh_photos ?? '[]',
     }))
   )
 
@@ -139,7 +143,7 @@ export function EditTicketDrawer({
     const id = `G${Date.now()}`
     setGarments((prev) => [
       ...prev,
-      { _key: uid(), garment_id: id, garment_type: 'Jacket', garment_description: '', color: '' },
+      { _key: uid(), garment_id: id, garment_type: 'Jacket', garment_description: '', color: '', lsh_photos: '[]' },
     ])
   }
 

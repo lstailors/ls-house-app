@@ -92,10 +92,34 @@ interface ErpTicket {
   lines?: Array<{ description: string; price: number; garment_ref: string }>;
 }
 
+// Parse the lsh_photos Long Text field (JSON array of URLs) defensively.
+function parsePhotos(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.filter((p) => typeof p === "string");
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((p) => typeof p === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 function serialize(t: ErpTicket) {
   const items = (t.lines ?? []).map((l) => ({
     label: l.description ?? "",
     price: l.price ?? 0,
+  }));
+
+  const garments = ((t as any).garments ?? []).map((g: any) => ({
+    name: g.name,
+    garment_id: g.garment_id,
+    garment_type: g.garment_type,
+    description: g.garment_description ?? "",
+    color: g.color ?? "",
+    status: g.garment_status ?? null,
+    photos: parsePhotos(g.lsh_photos),
   }));
 
   return {
@@ -114,6 +138,7 @@ function serialize(t: ErpTicket) {
     },
     locationId: t.origin_location,
     items,
+    garments,
     price: t.ticket_total ?? 0,
     status: mapStatus(t.workflow_state),
     workflow_state: t.workflow_state,
@@ -401,6 +426,7 @@ alterationsRouter.patch("/:id/full", async (c) => {
       garment_description: string;
       color?: string;
       fabric_notes?: string;
+      lsh_photos?: string | string[];
     }>;
     lines: Array<{
       garment_ref: string;
@@ -431,6 +457,10 @@ alterationsRouter.patch("/:id/full", async (c) => {
           garment_description: g.garment_description,
           color: g.color ?? "",
           fabric_notes: g.fabric_notes ?? "",
+          // Preserve photos through the full-table replace (don't wipe on edit)
+          lsh_photos: Array.isArray(g.lsh_photos)
+            ? JSON.stringify(g.lsh_photos)
+            : (g.lsh_photos ?? "[]"),
         })),
         lines: body.lines.map((l) => ({
           garment_ref: l.garment_ref,

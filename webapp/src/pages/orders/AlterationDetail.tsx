@@ -259,15 +259,35 @@ export default function AlterationDetail() {
                 <Package className="h-3.5 w-3.5" /> Garments
               </div>
               <div className="space-y-2">
-                {garments.map((g: any, i: number) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between rounded-lg border border-brass/10 bg-brass/5 px-3 py-2"
-                  >
-                    <span className="text-cream text-sm">{g.description ?? g.label ?? `Garment ${i + 1}`}</span>
-                    {g.status ? <StatusPill status={g.status} /> : null}
-                  </div>
-                ))}
+                {garments.map((g: any, i: number) => {
+                  const photos: string[] = Array.isArray(g.photos) ? g.photos : [];
+                  return (
+                    <div
+                      key={i}
+                      className="rounded-lg border border-brass/10 bg-brass/5 px-3 py-2 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-cream text-sm">{g.description ?? g.label ?? g.garment_type ?? `Garment ${i + 1}`}</span>
+                        {g.status ? <StatusPill status={g.status} /> : null}
+                      </div>
+                      {photos.length > 0 ? (
+                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+                          {photos.map((url: string, j: number) => (
+                            <a
+                              key={j}
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="aspect-square rounded-md overflow-hidden border border-brass/20 bg-forest-deep"
+                            >
+                              <img src={url} alt={`Garment ${i + 1} photo ${j + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             </GlassCard>
           ) : null}

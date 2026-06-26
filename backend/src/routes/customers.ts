@@ -6,6 +6,7 @@ import {
   getCustomer,
   createCustomer,
   updateCustomer,
+  updateCustomerPhotos,
   upsertCustomerDossier,
   archiveCustomer,
 } from "../lib/erpnext/customers";
@@ -121,6 +122,22 @@ customersRouter.patch("/:id", async (c) => {
     return c.json({ data });
   } catch (e: any) {
     return c.json({ error: { message: e.message ?? "Failed to update customer" } }, 500);
+  }
+});
+
+customersRouter.patch("/:id/photos", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const id = c.req.param("id");
+  const body = (await c.req.json()) as { photos?: string[] };
+  const photos = Array.isArray(body.photos) ? body.photos : [];
+
+  try {
+    const data = await updateCustomerPhotos(id, photos);
+    return c.json({ data });
+  } catch (e: any) {
+    return c.json({ error: { message: e.message ?? "Failed to update photos" } }, 500);
   }
 });
 

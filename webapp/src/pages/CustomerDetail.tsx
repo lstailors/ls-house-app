@@ -5,9 +5,10 @@ import {
   ArrowLeft, Star, Phone, MapPin,
   Edit2, Save, X, Trash2, Plus, Tag, Calendar,
   FileText, Heart, Ruler, AlertCircle, ShoppingBag,
-  Scissors, Receipt, ExternalLink, DollarSign
+  Scissors, Receipt, ExternalLink, DollarSign, Camera
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { PhotoUploader } from "@/components/PhotoUploader";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -27,6 +28,7 @@ interface Customer {
   paymentPreference: string | null; creditTerms: string | null;
   referralCode: string | null; referralCredits: number;
   erpnextCustomerId: string | null;
+  photos: string[];
   dossier: any | null;
   createdAt: string; updatedAt: string;
 }
@@ -87,6 +89,41 @@ function Section({ title, icon: Icon, children }: { title: string; icon: any; ch
         <h3 className="ui-label text-brass-light tracking-wider">{title}</h3>
       </div>
       <div className="space-y-4">{children}</div>
+    </div>
+  );
+}
+
+// ── Photos Section ─────────────────────────────────────────────────────────────
+function PhotosSection({ customerId, initialPhotos }: { customerId: string; initialPhotos: string[] }) {
+  const qc = useQueryClient();
+  const [photos, setPhotos] = useState<string[]>(initialPhotos);
+
+  const save = useMutation({
+    mutationFn: (next: string[]) => api.patch(`/api/customers/${customerId}/photos`, { photos: next }),
+    onError: () => toast.error("Failed to save photos"),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["customer", customerId] }),
+  });
+
+  const onChange = (next: string[]) => {
+    setPhotos(next);
+    save.mutate(next);
+  };
+
+  return (
+    <div className="glass-panel rounded-2xl p-5 border border-brass/10">
+      <div className="flex items-center gap-2 mb-4">
+        <Camera className="w-4 h-4 text-brass-light" />
+        <h3 className="ui-label text-brass-light tracking-wider">Photos</h3>
+        <span className="text-cream-dim text-[10px]">fitting, reference, inspiration</span>
+      </div>
+      <PhotoUploader
+        photos={photos}
+        onChange={onChange}
+        pathPrefix={`customers/${customerId}`}
+        doctype="Customer"
+        docname={customerId}
+        label="Add Photos"
+      />
     </div>
   );
 }
@@ -650,6 +687,11 @@ export default function CustomerDetail() {
           <TextArea label="Style Preferences" value={c.stylePreferences} editing={editing} field="style_preferences" draft={draft} onChange={onChange} />
           <TextArea label="Fit Notes" value={c.fitNotes} editing={editing} field="fit_notes" draft={draft} onChange={onChange} />
         </Section>
+
+        {/* Photos — fitting & reference */}
+        <div className="lg:col-span-2">
+          <PhotosSection customerId={c.id} initialPhotos={Array.isArray(c.photos) ? c.photos : []} />
+        </div>
 
         {/* Notes & Dossier */}
         <Section title="Notes & Dossier" icon={FileText}>

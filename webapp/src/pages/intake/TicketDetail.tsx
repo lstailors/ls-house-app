@@ -28,6 +28,8 @@ import { useMe } from '@/lib/session'
 import type { CartPayload } from '@/lib/cart/parked'
 import { ChargeTerminalButton } from '@/components/payments/ChargeTerminalButton'
 import { EditTicketDrawer } from '@/components/alterations/EditTicketDrawer'
+import { PhotoUploader } from '@/components/PhotoUploader'
+import { parsePhotos } from '@/lib/photos'
 import {
   Dialog,
   DialogContent,
@@ -64,6 +66,7 @@ interface AlterationTicketDoc {
     garment_type: string
     garment_description: string
     color?: string
+    lsh_photos?: string
   }>
   lines?: Array<{
     name: string
@@ -246,6 +249,24 @@ function GarmentCard({
   const garmentTotal = garmentLines.reduce((sum, l) => sum + (l.price ?? 0), 0)
   const qrValue = window.location.origin + '/garments/' + ticketName + '/' + garment.garment_id
 
+  const queryClient = useQueryClient()
+  const [photos, setPhotos] = useState<string[]>(() => parsePhotos(garment.lsh_photos))
+
+  const savePhotos = useMutation({
+    mutationFn: (next: string[]) =>
+      api.patch(
+        `/api/intake-alterations/tickets/${ticketName}/garments/${garment.garment_id}/photos`,
+        { photos: next },
+      ),
+    onError: () => toast.error('Failed to save photos'),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] }),
+  })
+
+  const handlePhotosChange = (next: string[]) => {
+    setPhotos(next)
+    savePhotos.mutate(next)
+  }
+
   return (
     <div className="glass-panel rounded-lg p-4 space-y-3">
       <div className="flex items-start justify-between gap-4">
@@ -295,6 +316,19 @@ function GarmentCard({
       ) : (
         <p className="text-cream-dim/50 text-xs italic">No alteration lines</p>
       )}
+
+      {/* Photos — garment, damage, fitting, reference */}
+      <div className="border-t border-brass/10 pt-3">
+        <p className="text-cream-dim text-[10px] uppercase tracking-wider mb-2">Photos</p>
+        <PhotoUploader
+          photos={photos}
+          onChange={handlePhotosChange}
+          pathPrefix={`alterations/${ticketName}/${garment.garment_id}`}
+          doctype="Alteration Ticket"
+          docname={ticketName}
+          label="Add Photos"
+        />
+      </div>
     </div>
   )
 }

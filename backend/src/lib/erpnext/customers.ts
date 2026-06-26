@@ -11,8 +11,23 @@ const CUSTOMER_FIELDS = [
   "custom_anniversary", "custom_communication_pref", "custom_preferred_contact",
   "custom_sms_opted_out", "custom_payment_preference", "custom_credit_terms",
   "custom_referral_code", "custom_referral_credits", "custom_casa_tier",
+  "lsh_photos",
   "creation", "modified",
 ];
+
+// Parse the lsh_photos Long Text field (JSON array of URLs) defensively.
+function parsePhotos(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.filter((p) => typeof p === "string");
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((p) => typeof p === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
 
 export function serializeCustomer(row: any) {
   return {
@@ -47,6 +62,7 @@ export function serializeCustomer(row: any) {
     referralCode: row.custom_referral_code ?? null,
     referralCredits: Number(row.custom_referral_credits ?? 0),
     casaTier: row.custom_casa_tier ?? null,
+    photos: parsePhotos(row.lsh_photos),
     erpnextCustomerId: row.name,
     createdAt: row.creation,
     updatedAt: row.modified,
@@ -178,6 +194,13 @@ export async function updateCustomer(id: string, body: any) {
   const doc = bodyToCustomerDoc(body);
   const updated = await erpUpdate<any>("Customer", id, doc);
   if (!updated) throw new Error("Failed to update customer");
+  return serializeCustomer(updated);
+}
+
+export async function updateCustomerPhotos(id: string, photos: string[]) {
+  const clean = Array.isArray(photos) ? photos.filter((p) => typeof p === "string") : [];
+  const updated = await erpUpdate<any>("Customer", id, { lsh_photos: JSON.stringify(clean) });
+  if (!updated) throw new Error("Failed to update customer photos");
   return serializeCustomer(updated);
 }
 
