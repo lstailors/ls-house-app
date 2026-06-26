@@ -732,3 +732,47 @@ export const SetAppointmentStatusRequest = z.object({
   status: z.enum(["confirm", "complete", "no_show", "cancel"]),
 });
 export type SetAppointmentStatusRequest = z.infer<typeof SetAppointmentStatusRequest>;
+
+// ─── Scanner (in-app QR scanner → ERPNext ls_alterations.api.scanner) ─────
+// Mirrors the resolve_qr return contract. meta is intentionally permissive
+// (passthrough) so new ERPNext fields don't break parsing.
+
+export const ScannerType = z.enum([
+  "sales_invoice",
+  "alteration_ticket",
+  "lsh_delivery",
+  "custom_order",
+  "tailor_transfer",
+  "payment_link",
+  "garment_tag",
+]);
+export type ScannerType = z.infer<typeof ScannerType>;
+
+export const ScannerResolveRequest = z.object({
+  token: z.string().min(1),
+});
+export type ScannerResolveRequest = z.infer<typeof ScannerResolveRequest>;
+
+export const ScannerResult = z
+  .object({
+    ok: z.boolean(),
+    type: ScannerType.optional(),
+    doctype: z.string().optional(),
+    name: z.string().optional(),
+    title: z.string().optional(),
+    subtitle: z.string().optional(),
+    state: z.string().optional(),
+    actions: z.array(z.string()).optional(),
+    meta: z.record(z.string(), z.unknown()).optional(),
+    reason: z.string().optional(),
+    raw: z.string().optional(),
+  })
+  .passthrough();
+export type ScannerResult = z.infer<typeof ScannerResult>;
+
+export const ScannerActionResult = z.object({
+  ok: z.boolean(),
+  message: z.string().optional(),
+  idempotent: z.boolean().optional(),
+});
+export type ScannerActionResult = z.infer<typeof ScannerActionResult>;
