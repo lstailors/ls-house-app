@@ -763,7 +763,7 @@ export const ScannerResult = z
     subtitle: z.string().optional(),
     state: z.string().optional(),
     actions: z.array(z.string()).optional(),
-    meta: z.record(z.unknown()).optional(),
+    meta: z.record(z.string(), z.unknown()).optional(),
     reason: z.string().optional(),
     raw: z.string().optional(),
   })
