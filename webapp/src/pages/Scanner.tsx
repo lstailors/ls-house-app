@@ -99,13 +99,26 @@ export default function Scanner() {
     startingRef.current = true;
     setCameraError(null);
     try {
-      const qr = new Html5Qrcode(VIDEO_ID, { verbose: false });
+      const qr = new Html5Qrcode(VIDEO_ID, {
+        verbose: false,
+        // Use the device's native BarcodeDetector when available (iOS 16+/
+        // modern Android). It is dramatically faster and more reliable at
+        // reading real-world printed tags than the JS (zxing) fallback.
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+      });
       scannerRef.current = qr;
+      // Responsive scan box: ~80% of the smaller video edge, so the QR only
+      // has to be roughly within the frame (a fixed 250px box is a tiny center
+      // crop on a full-screen feed, which is why nothing was decoding).
+      const qrbox = (vw: number, vh: number) => {
+        const size = Math.floor(Math.min(vw, vh) * 0.8);
+        return { width: size, height: size };
+      };
       // .start() rejects ASYNCHRONOUSLY when camera is denied/unavailable
       // (common in iOS in-app webviews) — this await catches that rejection.
       await qr.start(
         { facingMode: "environment" },
-        { fps: 15, qrbox: { width: 250, height: 250 } },
+        { fps: 10, qrbox },
         (decoded) => handleDecode(decoded),
         () => { /* per-frame decode failures are noise — ignore */ },
       );
