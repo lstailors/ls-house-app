@@ -1,9 +1,10 @@
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, CheckCircle2, Circle, Tag, User, Calendar, MapPin, Shirt } from 'lucide-react'
-import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { CompleteGarmentModal } from '@/components/alterations/CompleteGarmentModal'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -53,25 +54,12 @@ export default function GarmentTag() {
   const { ticketId, garmentId } = useParams<{ ticketId: string; garmentId: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [completeOpen, setCompleteOpen] = useState(false)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['garment', ticketId, garmentId],
     queryFn: () => api.get<GarmentData>(`/api/alterations/${ticketId}/garments/${garmentId}`),
     enabled: !!ticketId && !!garmentId,
-  })
-
-  const statusMutation = useMutation({
-    mutationFn: (garment_status: string) =>
-      api.raw(`/api/alterations/${ticketId}/garments/${garmentId}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ garment_status }),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['garment', ticketId, garmentId] })
-      toast.success('Garment status updated')
-    },
-    onError: () => toast.error('Failed to update status'),
   })
 
   if (isLoading) {
@@ -218,23 +206,15 @@ export default function GarmentTag() {
         <div className="space-y-3">
           {!isReady ? (
             <button
-              onClick={() => {
-                const next = currentStatusIdx === 0 ? 'In Progress' : 'Ready'
-                statusMutation.mutate(next)
-              }}
-              disabled={statusMutation.isPending}
+              onClick={() => setCompleteOpen(true)}
               className={cn(
                 'w-full py-3.5 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2',
                 'bg-emerald-700/80 border border-emerald-500/40 text-emerald-100',
-                'hover:bg-emerald-600/80 disabled:opacity-50 disabled:cursor-not-allowed',
+                'hover:bg-emerald-600/80',
               )}
             >
               <CheckCircle2 size={16} />
-              {statusMutation.isPending
-                ? 'Saving…'
-                : currentStatusIdx === 0
-                ? 'Start Work on Garment'
-                : 'Mark Garment Ready'}
+              Mark Complete
             </button>
           ) : (
             <div className="w-full py-3.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 bg-emerald-900/30 border border-emerald-500/30 text-emerald-400">
@@ -253,6 +233,19 @@ export default function GarmentTag() {
         </div>
 
       </div>
+
+      {ticketId && garmentId ? (
+        <CompleteGarmentModal
+          open={completeOpen}
+          onClose={() => setCompleteOpen(false)}
+          ticketId={ticketId}
+          garmentId={garmentId}
+          garmentLabel={`${garment.garment_id} · ${garment.garment_type}`}
+          onCompleted={() => {
+            queryClient.invalidateQueries({ queryKey: ['garment', ticketId, garmentId] })
+          }}
+        />
+      ) : null}
     </div>
   )
 }

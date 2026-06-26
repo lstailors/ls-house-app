@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
-import { erpList, erpGet, erpCreate, erpUpdate } from "../lib/erp";
+import { erpList, erpGet, erpCreate, erpUpdate, erpRunMethod } from "../lib/erp";
 import { sendSms } from "../lib/twilio";
+import { CompleteGarmentRequest } from "../types";
 
 async function callGrok(prompt: string): Promise<string> {
   const apiKey = process.env.XAI_API_KEY
@@ -203,6 +204,41 @@ alterationsRouter.post("/brief", async (c) => {
 
   const brief = await callGrok(prompt);
   return c.json({ data: { brief, period: body.period, generatedAt: new Date().toISOString() } });
+});
+
+// POST /api/alterations/complete-garment — thin proxy to the ERPNext
+// `complete_garment` method. ALL completion logic (start work if still
+// Received, mark the garment Ready, fire the pickup SMS once every garment is
+// Ready) lives in ERPNext — this route only validates input, forwards with the
+// server-side ERP credentials, and relays ERP's result (or its error message).
+// Must be registered before "/:id" so the literal path wins.
+alterationsRouter.post("/complete-garment", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const parsed = CompleteGarmentRequest.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json(
+      { error: { message: parsed.error.issues[0]?.message ?? "Invalid request" } },
+      400,
+    );
+  }
+
+  const { ticket, garment_id, worker, actual_minutes } = parsed.data;
+
+  try {
+    const result = await erpRunMethod("complete_garment", {
+      ticket,
+      garment_id,
+      worker,
+      ...(actual_minutes != null ? { actual_minutes } : {}),
+    });
+    return c.json({ data: result });
+  } catch (e: any) {
+    // erpRunMethod throws with the Frappe error message (e.g. "Garment G2 not
+    // found on ALT-..."). Surface it verbatim so staff see what went wrong.
+    return c.json({ error: { message: e?.message || "Failed to complete garment" } }, 502);
+  }
 });
 
 alterationsRouter.get("/", async (c) => {
