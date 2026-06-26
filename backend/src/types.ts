@@ -776,3 +776,30 @@ export const ScannerActionResult = z.object({
   idempotent: z.boolean().optional(),
 });
 export type ScannerActionResult = z.infer<typeof ScannerActionResult>;
+
+// ─── Complete Garment ───────────────────────────────────────────────────
+// Thin proxy to the ERPNext `complete_garment` method (the single source of
+// truth for completion logic: it starts work if needed, marks the garment
+// Ready, and fires the customer pickup SMS once every garment is Ready).
+
+export const CompleteGarmentRequest = z.object({
+  ticket: z.string().min(1),
+  garment_id: z.string().min(1),
+  worker: z.string().min(1),
+  actual_minutes: z.number().nonnegative().optional(),
+});
+export type CompleteGarmentRequest = z.infer<typeof CompleteGarmentRequest>;
+
+export const CompleteGarmentResult = z
+  .object({
+    ok: z.boolean(),
+    ticket: z.string(),
+    garment_id: z.string(),
+    garment_status: z.string(),
+    ticket_state: z.string(),
+    all_garments_ready: z.boolean(),
+    movement: z.unknown().optional(),
+    notified_ready_at: z.string().nullable().optional(),
+  })
+  .passthrough();
+export type CompleteGarmentResult = z.infer<typeof CompleteGarmentResult>;
