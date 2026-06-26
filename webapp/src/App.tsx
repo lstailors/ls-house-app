@@ -54,6 +54,7 @@ const AppointmentsPage = lazy(() => import('./pages/Appointments'));
 const Helpdesk = lazy(() => import('./pages/Helpdesk'));
 const HelpdeskTicketDetail = lazy(() => import('./pages/helpdesk/HelpdeskTicketDetail'));
 const Scanner = lazy(() => import('./pages/Scanner'));
+const GarmentJobCard = lazy(() => import('./pages/GarmentJobCard'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -161,6 +162,15 @@ const App = () => (
             <Route
               path="/garments/:ticketId/:garmentId"
               element={<GarmentTag />}
+            />
+            {/* Garment job card — opened when shop-floor staff scan a garment tag QR */}
+            <Route
+              path="/g/:ticket/:garmentId"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
+                  <GarmentJobCard />
+                </RoleGuard>
+              }
             />
             <Route
               path="/orders/custom"

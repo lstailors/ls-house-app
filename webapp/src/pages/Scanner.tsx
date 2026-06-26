@@ -13,6 +13,32 @@ import { ScannerResultSheet } from "@/components/scanner/ScannerResultSheet";
 const VIDEO_ID = "ls-scanner-video";
 const RESCAN_DEBOUNCE_MS = 2000;
 
+// Detect a garment-tag QR payload of the form `<scheme>://<host>/g/<ticket>/<garment>`
+// (any host) or the raw path form `host/g/<ticket>/<garment>` / `/g/<ticket>/<garment>`.
+// Returns the decoded { ticket, garment } when matched, otherwise null.
+function parseGarmentTagUrl(decoded: string): { ticket: string; garment: string } | null {
+  const value = decoded.trim();
+  if (!value) return null;
+
+  // Extract the path portion regardless of scheme/host presence.
+  let path: string;
+  try {
+    path = new URL(value).pathname;
+  } catch {
+    // Not a full URL — fall back to the substring starting at the first `/g/`.
+    const idx = value.indexOf("/g/");
+    path = idx >= 0 ? value.slice(idx) : value;
+  }
+
+  const match = path.match(/\/g\/([^/]+)\/([^/?#]+)/);
+  if (!match) return null;
+
+  const ticket = decodeURIComponent(match[1]);
+  const garment = decodeURIComponent(match[2]);
+  if (!ticket || !garment) return null;
+  return { ticket, garment };
+}
+
 // doctype → Frappe desk slug (lowercase, spaces → hyphens)
 function slugifyDoctype(doctype?: string): string {
   return (doctype ?? "").trim().toLowerCase().replace(/\s+/g, "-");
@@ -91,8 +117,17 @@ export default function Scanner() {
     // Debounce: ignore identical consecutive scans within the window.
     if (last && last.value === decoded && now - last.at < RESCAN_DEBOUNCE_MS) return;
     lastScanRef.current = { value: decoded, at: now };
+
+    // Garment tag QR → open the in-app garment job card instead of resolving via backend.
+    const garmentTag = parseGarmentTagUrl(decoded);
+    if (garmentTag) {
+      void stopCamera();
+      navigate(`/g/${encodeURIComponent(garmentTag.ticket)}/${encodeURIComponent(garmentTag.garment)}`);
+      return;
+    }
+
     void resolveToken(decoded);
-  }, [resolveToken]);
+  }, [resolveToken, navigate, stopCamera]);
 
   const startCamera = useCallback(async () => {
     if (startingRef.current || scannerRef.current) return;

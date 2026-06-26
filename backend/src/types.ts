@@ -777,6 +777,103 @@ export const ScannerActionResult = z.object({
 });
 export type ScannerActionResult = z.infer<typeof ScannerActionResult>;
 
+// ─── Garment Job Card (scan → /g/:ticket/:garmentId) ─────────────────────
+// Backed by Frappe Server Scripts (API type), called by bare name:
+//   /api/method/get_garment_job_card | update_garment_status | complete_garment
+// Schemas are permissive (.passthrough(), loose fields) — the proxy passes the
+// ERP payload through unchanged; these exist for frontend typing.
+
+export const GarmentJobLine = z
+  .object({
+    description: z.string().optional().nullable(),
+    preset: z.string().optional().nullable(),
+    amount: z.number().optional().nullable(),
+    tailor: z.string().optional().nullable(),
+    status: z.string().optional().nullable(),
+    notes: z.string().optional().nullable(),
+    est_minutes: z.number().optional().nullable(),
+    actual_minutes: z.number().optional().nullable(),
+  })
+  .passthrough();
+export type GarmentJobLine = z.infer<typeof GarmentJobLine>;
+
+export const GarmentMeasurement = z
+  .object({
+    type: z.string().optional().nullable(),
+    value: z.union([z.number(), z.string()]).optional().nullable(),
+    unit: z.string().optional().nullable(),
+  })
+  .passthrough();
+export type GarmentMeasurement = z.infer<typeof GarmentMeasurement>;
+
+export const GarmentDetail = z
+  .object({
+    id: z.string().optional().nullable(),
+    type: z.string().optional().nullable(),
+    color: z.string().optional().nullable(),
+    fabric: z.string().optional().nullable(),
+    condition: z.string().optional().nullable(),
+    fit_area: z.string().optional().nullable(),
+    status: z.string().optional().nullable(),
+    location: z.string().optional().nullable(),
+    completed_by: z.string().optional().nullable(),
+    completed_at: z.string().optional().nullable(),
+  })
+  .passthrough();
+export type GarmentDetail = z.infer<typeof GarmentDetail>;
+
+export const GarmentJobCard = z
+  .object({
+    ticket: z.string().optional().nullable(),
+    ticket_state: z.string().optional().nullable(),
+    due_date: z.string().optional().nullable(),
+    is_rush: z.union([z.boolean(), z.number()]).optional().nullable(),
+    customer: z.string().optional().nullable(),
+    customer_phone: z.string().optional().nullable(),
+    garment: GarmentDetail.optional().nullable(),
+    lines: z.array(GarmentJobLine).optional().default([]),
+    measurements: z.array(GarmentMeasurement).optional().default([]),
+  })
+  .passthrough();
+export type GarmentJobCard = z.infer<typeof GarmentJobCard>;
+
+export const GarmentWorker = z.object({
+  id: z.string(),
+  name: z.string(),
+});
+export type GarmentWorker = z.infer<typeof GarmentWorker>;
+
+// Request bodies
+export const GarmentJobCardRequest = z.object({
+  ticket: z.string().min(1),
+  garment_id: z.string().min(1),
+});
+export type GarmentJobCardRequest = z.infer<typeof GarmentJobCardRequest>;
+
+export const GarmentStatusRequest = z.object({
+  ticket: z.string().min(1),
+  garment_id: z.string().min(1),
+  status: z.enum(["In Progress", "Pending"]),
+  worker: z.string().optional(),
+});
+export type GarmentStatusRequest = z.infer<typeof GarmentStatusRequest>;
+
+export const GarmentCompleteRequest = z.object({
+  ticket: z.string().min(1),
+  garment_id: z.string().min(1),
+  worker: z.string().min(1),
+  actual_minutes: z.number().optional(),
+});
+export type GarmentCompleteRequest = z.infer<typeof GarmentCompleteRequest>;
+
+export const GarmentActionResult = z
+  .object({
+    all_garments_ready: z.boolean().optional(),
+    message: z.string().optional(),
+  })
+  .passthrough();
+export type GarmentActionResult = z.infer<typeof GarmentActionResult>;
+
 // ─── Complete Garment ───────────────────────────────────────────────────
 // Thin proxy to the ERPNext `complete_garment` method (the single source of
 // truth for completion logic: it starts work if needed, marks the garment
