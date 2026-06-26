@@ -10,7 +10,11 @@
  "page_name": "lsh-scanner",
  "restrict_to_domain": "",
  "roles": [
-  {"role": "System User"}
+  {"role": "System Manager"},
+  {"role": "LST Super Admin"},
+  {"role": "LST Store Manager"},
+  {"role": "LST Salesperson"},
+  {"role": "LST Tailor"}
  ],
  "title": "L&S Scanner"
 }
