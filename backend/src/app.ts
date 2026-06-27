@@ -43,6 +43,8 @@ import { payInfoRouter } from "./routes/pay-info";
 import { yzRouter } from "./routes/yz";
 import { helpdeskRouter } from "./routes/helpdesk";
 import { appointmentsRouter } from "./routes/appointments";
+import { scannerRouter } from "./routes/scanner";
+import { garmentRouter } from "./routes/garment";
 import { sofiaBridgeRouter } from "./routes/sofia-bridge";
 
 const app = new Hono();
@@ -132,5 +134,7 @@ app.route("/api/pay-info", payInfoRouter);
 app.route("/api/yz", yzRouter);
 app.route("/api/helpdesk", helpdeskRouter);
 app.route("/api/appointments", appointmentsRouter);
+app.route("/api/scanner", scannerRouter);
+app.route("/api/garment", garmentRouter);
 
 export default app;
