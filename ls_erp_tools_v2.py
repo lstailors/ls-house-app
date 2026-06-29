@@ -317,6 +317,8 @@ def erp_pending_approvals(
     roles) OR direct user assignment. Administrator sees all. Transition
     lookups are capped to avoid an N+1 fan-out on large queues.
     """
+    from frappe.query_builder import Order
+
     limit = min(limit or 50, 200)
     user = frappe.session.user
     roles = frappe.get_roles(user)
@@ -333,7 +335,7 @@ def erp_pending_approvals(
         .select(WA.name, WA.reference_doctype, WA.reference_name,
                 WA.workflow_state, WA.user, WA.creation)
         .where(WA.status == "Open")
-        .orderby(WA.creation, order=frappe.qb.desc)
+        .orderby(WA.creation, order=Order.desc)
         .limit(limit)
     )
     if user != "Administrator":

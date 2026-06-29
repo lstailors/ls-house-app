@@ -102,17 +102,11 @@ not `get_all`. **No load-bearing file in this repo was changed.**
 Nothing was reshaped (logic kept intact per instruction), but flag these against the target
 Frappe version:
 
-1. **HIGH — `frappe.qb.desc` in `erp_pending_approvals`.** `.orderby(WA.creation,
-   order=frappe.qb.desc)` is built *outside* the try/except. If your Frappe version doesn't
-   expose `frappe.qb.desc`, this raises `AttributeError` at call time and the whole tool
-   fails. The portable form is:
-   ```python
-   from frappe.query_builder import Order
-   ...
-   .orderby(WA.creation, order=Order.desc)
-   ```
-   Verify on the deploy bench; switch to `Order.desc` if `frappe.qb.desc` is absent. Left
-   as-is to honor "keep logic intact" — your call.
+1. **FIXED — `frappe.qb.desc` in `erp_pending_approvals`.** Was
+   `.orderby(WA.creation, order=frappe.qb.desc)`, which raises `AttributeError` on Frappe
+   versions that don't expose `frappe.qb.desc`. Now uses the portable canonical form
+   (`from frappe.query_builder import Order` → `order=Order.desc`), valid across modern
+   Frappe. No action needed.
 2. **MED — `search_link` signature.** `erp_search_link` calls
    `frappe.desk.search.search_link(doctype=, txt=, filters=, page_length=)`. Arg names have
    drifted across Frappe versions (`query=` vs `txt=`, return value vs
