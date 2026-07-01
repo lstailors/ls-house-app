@@ -595,6 +595,59 @@ export const YZTicket = z.object({
 });
 export type YZTicket = z.infer<typeof YZTicket>;
 
+// ─── YZ Production Tracker (Shop Floor) ────────────────────────────────────
+// Live production orders from the ERPNext "YZ Production Tracker" doctype.
+// Powers the /shop-floor page. Booleans normalized from ERPNext 0/1 checks,
+// empty production_status defaulted to "In Production", ERPNext deep link added.
+
+export const YZProductionStatus = z.enum([
+  "In Production",
+  "Shipped",
+  "Rush",
+  "Canceled",
+  "On Pause",
+  "Fabric Not Received",
+]);
+export type YZProductionStatus = z.infer<typeof YZProductionStatus>;
+
+export const YZOrder = z.object({
+  name: z.string(),                              // primary key (== order_no)
+  order_no: z.string(),
+  production_status: YZProductionStatus,         // empty rows normalized to "In Production"
+  customer_name: z.string().nullable(),
+  customer: z.string().nullable(),              // linked Customer id
+  mtmpro_order: z.string().nullable(),
+  fabric_number: z.string().nullable(),
+  process_category: z.string().nullable(),      // Machine | Half-Hand | Full-Hand
+  garment_summary: z.string().nullable(),
+  total_pieces: z.number(),
+  qty_suit_coat: z.number(),
+  qty_suit_pant: z.number(),
+  qty_suit_vest: z.number(),
+  qty_overcoat: z.number(),
+  qty_shirt: z.number(),
+  qty_tux_coat: z.number(),
+  qty_tux_pant: z.number(),
+  qty_tux_vest: z.number(),
+  date_received: z.string().nullable(),         // YYYY-MM-DD
+  date_placed: z.string().nullable(),
+  ship_date_planned: z.string().nullable(),
+  rush_days: z.number(),
+  embroidery_name: z.string().nullable(),
+  embroidery_qty: z.number(),
+  tracking_no: z.string().nullable(),
+  customs_flag: z.string().nullable(),
+  delivery_manner: z.string().nullable(),
+  solid_fabric: z.boolean(),
+  fully_lined: z.boolean(),
+  half_canvas: z.boolean(),
+  basted_note: z.string().nullable(),
+  comment: z.string().nullable(),
+  remarks: z.string().nullable(),
+  erpUrl: z.string(),                            // ERPNext deep link
+});
+export type YZOrder = z.infer<typeof YZOrder>;
+
 // ─── Helpdesk (HD Ticket) ──────────────────────────────────────────────────
 
 export const HDCommunication = z.object({

@@ -55,6 +55,7 @@ const Helpdesk = lazy(() => import('./pages/Helpdesk'));
 const HelpdeskTicketDetail = lazy(() => import('./pages/helpdesk/HelpdeskTicketDetail'));
 const Scanner = lazy(() => import('./pages/Scanner'));
 const GarmentJobCard = lazy(() => import('./pages/GarmentJobCard'));
+const ShopFloor = lazy(() => import('./pages/ShopFloor'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -170,6 +171,14 @@ const App = () => (
               element={
                 <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
                   <GarmentJobCard />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/shop-floor"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
+                  <ShopFloor />
                 </RoleGuard>
               }
             />

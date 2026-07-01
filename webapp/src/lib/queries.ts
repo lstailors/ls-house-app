@@ -21,6 +21,7 @@ import type {
   StyleOption,
   Tailor,
   YZTicket,
+  YZOrder,
 } from "./types";
 
 export interface DepositReceipt {
@@ -832,6 +833,20 @@ export function useOpenYZTickets() {
     queryKey: ["yz", "open-tickets"],
     queryFn: () => api.get<YZTicket[]>("/api/yz/open-tickets"),
     staleTime: 60_000,
+  });
+}
+
+// Live YZ Production Tracker orders for the Shop Floor page. Refetches every
+// 60s (matching the requested revalidate window); keeps prior data on error so
+// the UI can show a stale banner instead of an empty screen.
+export function useYzProduction() {
+  return useQuery({
+    queryKey: ["yz", "production"],
+    queryFn: () => api.get<YZOrder[]>("/api/yz/production"),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
   });
 }
 
