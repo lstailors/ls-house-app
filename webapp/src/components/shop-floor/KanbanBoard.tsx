@@ -24,7 +24,7 @@ export function KanbanBoard({ orders, onSelect }: Props) {
       {columns.map((col) => (
         <div
           key={col.status}
-          className="flex w-[280px] shrink-0 flex-col rounded-2xl border border-brass/12 bg-forest-deep/30"
+          className="flex w-[300px] shrink-0 flex-col rounded-2xl border border-brass/12 bg-forest-deep/30"
         >
           {/* Column header */}
           <div className="flex items-center justify-between gap-2 border-b border-brass/12 px-3.5 py-3">
@@ -33,11 +33,11 @@ export function KanbanBoard({ orders, onSelect }: Props) {
                 className="h-2 w-2 rounded-full"
                 style={{ backgroundColor: col.meta.color }}
               />
-              <span className="text-xs font-medium uppercase tracking-widerer text-cream-muted">
+              <span className="text-sm font-semibold uppercase tracking-widerer text-cream-muted">
                 {col.meta.label}
               </span>
             </div>
-            <span className="rounded-full bg-brass/10 px-2 py-0.5 text-[10px] font-semibold text-brass-light">
+            <span className="rounded-full bg-brass/10 px-2.5 py-0.5 text-xs font-semibold text-brass-light">
               {col.items.length}
             </span>
           </div>

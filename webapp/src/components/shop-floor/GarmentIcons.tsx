@@ -36,9 +36,9 @@ export function GarmentBreakdown({ order, className }: Props) {
           >
             <Icon className="h-4 w-4 shrink-0 text-brass-light/70" />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-xs text-cream">{line.label}</div>
+              <div className="truncate text-sm text-cream">{line.label}</div>
             </div>
-            <div className="font-display italic text-lg leading-none text-brass-light">
+            <div className="font-display italic text-xl leading-none text-brass-light">
               {line.qty}
             </div>
           </div>

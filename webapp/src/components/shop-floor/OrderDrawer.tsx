@@ -29,7 +29,7 @@ interface Props {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="border-t border-brass/10 pt-4">
-      <div className="ui-label mb-2.5">{title}</div>
+      <div className="ui-label text-xs mb-2.5">{title}</div>
       {children}
     </div>
   );
@@ -37,9 +37,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Field({ label, value, tone }: { label: string; value: React.ReactNode; tone?: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-1">
-      <span className="text-xs text-cream-dim">{label}</span>
-      <span className={cn("text-sm text-cream text-right", tone)}>{value}</span>
+    <div className="flex items-baseline justify-between gap-3 py-1.5">
+      <span className="text-sm text-cream-dim">{label}</span>
+      <span className={cn("text-base font-medium text-cream text-right", tone)}>{value}</span>
     </div>
   );
 }
@@ -48,7 +48,7 @@ function CheckFlag({ label, on }: { label: string; on: boolean }) {
   return (
     <div
       className={cn(
-        "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs",
+        "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm",
         on
           ? "border-brass/30 bg-brass/10 text-brass-light"
           : "border-brass/10 bg-forest-deep/40 text-cream-dim",
@@ -117,7 +117,7 @@ export function OrderDrawer({ orders, order, onClose, onNavigate }: Props) {
             {/* Header */}
             <SheetHeader className="space-y-0 border-b border-brass/12 px-5 pb-4 pt-5 text-left">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-mono text-xs text-brass-light">{order.order_no}</span>
+                <span className="font-mono text-sm font-semibold text-brass-light">{order.order_no}</span>
                 <div className="flex items-center gap-1.5 pr-8">
                   {prev ? (
                     <button
@@ -140,7 +140,7 @@ export function OrderDrawer({ orders, order, onClose, onNavigate }: Props) {
                 </div>
               </div>
               <SheetTitle asChild>
-                <div className="pt-1 font-display text-3xl italic text-cream">
+                <div className="pt-1 font-display text-4xl italic text-cream">
                   {order.customer_name ?? "Unnamed customer"}
                 </div>
               </SheetTitle>
@@ -158,7 +158,7 @@ export function OrderDrawer({ orders, order, onClose, onNavigate }: Props) {
                   href={`${ERP_MTMPRO_BASE}/${encodeURIComponent(order.mtmpro_order)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-2 inline-flex items-center gap-1 text-xs text-cream-muted transition-colors hover:text-brass-light"
+                  className="mt-2 inline-flex items-center gap-1 text-sm text-cream-muted transition-colors hover:text-brass-light"
                 >
                   MTMPro {order.mtmpro_order}
                   <ExternalLink className="h-3 w-3" />
@@ -170,7 +170,7 @@ export function OrderDrawer({ orders, order, onClose, onNavigate }: Props) {
             <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
               {/* Garments */}
               <div>
-                <div className="ui-label mb-2.5">Garments</div>
+                <div className="ui-label text-xs mb-2.5">Garments</div>
                 <GarmentBreakdown order={order} />
                 <div className="mt-3 space-y-0.5">
                   <Field label="Total Pieces" value={order.total_pieces || "—"} />
@@ -191,8 +191,8 @@ export function OrderDrawer({ orders, order, onClose, onNavigate }: Props) {
                 </div>
                 {order.basted_note ? (
                   <div className="mt-3 flex items-start gap-2 rounded-lg border border-brass/12 bg-forest-deep/40 p-2.5">
-                    <Ruler className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brass-light/70" />
-                    <p className="text-xs leading-relaxed text-cream-muted">{order.basted_note}</p>
+                    <Ruler className="mt-0.5 h-4 w-4 shrink-0 text-brass-light/70" />
+                    <p className="text-sm leading-relaxed text-cream-muted">{order.basted_note}</p>
                   </div>
                 ) : null}
               </Section>
@@ -224,21 +224,21 @@ export function OrderDrawer({ orders, order, onClose, onNavigate }: Props) {
               {/* Delivery */}
               <Section title="Delivery">
                 <Field label="Delivery Manner" value={order.delivery_manner ?? "—"} />
-                <div className="flex items-baseline justify-between gap-3 py-1">
-                  <span className="text-xs text-cream-dim">Tracking</span>
+                <div className="flex items-baseline justify-between gap-3 py-1.5">
+                  <span className="text-sm text-cream-dim">Tracking</span>
                   {track ? (
                     <a
                       href={track.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-sm text-signal-emerald hover:underline"
+                      className="inline-flex items-center gap-1 text-base font-medium text-signal-emerald hover:underline"
                     >
-                      <Truck className="h-3 w-3" />
+                      <Truck className="h-3.5 w-3.5" />
                       {track.carrier} · {order.tracking_no}
-                      <ExternalLink className="h-2.5 w-2.5" />
+                      <ExternalLink className="h-3 w-3" />
                     </a>
                   ) : (
-                    <span className="text-sm text-cream">—</span>
+                    <span className="text-base text-cream">—</span>
                   )}
                 </div>
                 {order.customs_flag ? (
@@ -251,14 +251,14 @@ export function OrderDrawer({ orders, order, onClose, onNavigate }: Props) {
                 <Section title="Notes">
                   {order.comment ? (
                     <div className="mb-2">
-                      <div className="mb-1 text-[10px] uppercase tracking-wide text-cream-dim">Comment</div>
-                      <p className="text-xs leading-relaxed text-cream-muted">{order.comment}</p>
+                      <div className="mb-1 text-xs uppercase tracking-wide text-cream-dim">Comment</div>
+                      <p className="text-sm leading-relaxed text-cream-muted">{order.comment}</p>
                     </div>
                   ) : null}
                   {order.remarks ? (
                     <div>
-                      <div className="mb-1 text-[10px] uppercase tracking-wide text-cream-dim">Remarks</div>
-                      <p className="text-xs leading-relaxed text-cream-muted">{order.remarks}</p>
+                      <div className="mb-1 text-xs uppercase tracking-wide text-cream-dim">Remarks</div>
+                      <p className="text-sm leading-relaxed text-cream-muted">{order.remarks}</p>
                     </div>
                   ) : null}
                 </Section>

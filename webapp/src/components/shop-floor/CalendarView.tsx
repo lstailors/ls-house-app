@@ -142,7 +142,7 @@ export function CalendarView({ orders, onSelect }: Props) {
       {/* Day grid */}
       <div className="grid grid-cols-7 gap-1.5">
         {cells.map((cell, i) => {
-          if (!cell) return <div key={`blank-${i}`} className="min-h-[92px] rounded-lg" />;
+          if (!cell) return <div key={`blank-${i}`} className="min-h-[108px] rounded-lg" />;
           const dayOrders = byDate.get(cell.date) ?? [];
           const hasRush = dayOrders.some(isRush);
           const isToday = cell.date === today;
@@ -150,7 +150,7 @@ export function CalendarView({ orders, onSelect }: Props) {
             <div
               key={cell.date}
               className={cn(
-                "flex min-h-[92px] flex-col rounded-lg border bg-forest-raised/30 p-1.5",
+                "flex min-h-[108px] flex-col rounded-lg border bg-forest-raised/30 p-1.5",
                 isToday ? "border-brass/50" : "border-brass/10",
                 hasRush && "border-l-2 border-l-[#FF9800]",
               )}
@@ -158,14 +158,14 @@ export function CalendarView({ orders, onSelect }: Props) {
               <div className="mb-1 flex items-center justify-between px-0.5">
                 <span
                   className={cn(
-                    "text-[11px] font-medium",
+                    "text-sm font-semibold",
                     isToday ? "text-brass-light" : "text-cream-muted",
                   )}
                 >
                   {cell.day}
                 </span>
                 {dayOrders.length > 0 ? (
-                  <span className="text-[9px] text-cream-dim">{dayOrders.length}</span>
+                  <span className="text-[11px] text-cream-dim">{dayOrders.length}</span>
                 ) : null}
               </div>
               <div className="flex flex-col gap-1 overflow-hidden">
@@ -183,10 +183,10 @@ export function CalendarView({ orders, onSelect }: Props) {
                         style={{ backgroundColor: meta.color }}
                       />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[9px] font-mono text-brass-light/90">
+                        <span className="block truncate text-[11px] font-mono font-semibold text-brass-light/90">
                           {o.order_no}
                         </span>
-                        <span className="block truncate text-[9px] text-cream-muted">
+                        <span className="block truncate text-[11px] text-cream-muted">
                           {o.customer_name ?? o.garment_summary ?? ""}
                         </span>
                       </span>
@@ -194,7 +194,7 @@ export function CalendarView({ orders, onSelect }: Props) {
                   );
                 })}
                 {dayOrders.length > 3 ? (
-                  <span className="px-1 text-[9px] text-cream-dim">
+                  <span className="px-1 text-[11px] text-cream-dim">
                     +{dayOrders.length - 3} more
                   </span>
                 ) : null}
