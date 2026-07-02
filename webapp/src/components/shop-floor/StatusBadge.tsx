@@ -19,8 +19,11 @@ export function StatusBadge({ status, className, size = "md" }: Props) {
       )}
     >
       <span
-        className="h-1.5 w-1.5 rounded-full shrink-0"
-        style={{ backgroundColor: meta.color }}
+        className={cn("rounded-full shrink-0", size === "sm" ? "h-2 w-2" : "h-2.5 w-2.5")}
+        style={{
+          backgroundColor: meta.color,
+          boxShadow: `0 0 6px 1px ${meta.color}, 0 0 2px 0 ${meta.color}`,
+        }}
       />
       {meta.label}
     </span>

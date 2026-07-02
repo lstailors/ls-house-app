@@ -30,8 +30,11 @@ export function KanbanBoard({ orders, onSelect }: Props) {
           <div className="flex items-center justify-between gap-2 border-b border-brass/12 px-3.5 py-3">
             <div className="flex items-center gap-2">
               <span
-                className="h-2 w-2 rounded-full"
-                style={{ backgroundColor: col.meta.color }}
+                className="h-2.5 w-2.5 rounded-full"
+                style={{
+                  backgroundColor: col.meta.color,
+                  boxShadow: `0 0 6px 1px ${col.meta.color}, 0 0 2px 0 ${col.meta.color}`,
+                }}
               />
               <span className="text-sm font-semibold uppercase tracking-widerer text-cream-muted">
                 {col.meta.label}
