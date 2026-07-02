@@ -610,6 +610,14 @@ export const YZProductionStatus = z.enum([
 ]);
 export type YZProductionStatus = z.infer<typeof YZProductionStatus>;
 
+// Computed "needs attention" flags, attached server-side to each order.
+export const YZAttentionFlag = z.object({
+  code: z.enum(["overdue", "stale_fabric", "rush_at_risk", "no_ship_date"]),
+  label: z.string(),
+  severity: z.enum(["high", "medium"]),
+});
+export type YZAttentionFlag = z.infer<typeof YZAttentionFlag>;
+
 export const YZOrder = z.object({
   name: z.string(),                              // primary key (== order_no)
   order_no: z.string(),
@@ -645,8 +653,32 @@ export const YZOrder = z.object({
   comment: z.string().nullable(),
   remarks: z.string().nullable(),
   erpUrl: z.string(),                            // ERPNext deep link
+  attention: z.array(YZAttentionFlag),           // computed risk flags (may be empty)
 });
 export type YZOrder = z.infer<typeof YZOrder>;
+
+// AI-assisted production brief for the Shop Floor banner.
+export const YZBriefItem = z.object({
+  order_no: z.string(),
+  customer_name: z.string().nullable(),
+  reason: z.string(),
+  severity: z.enum(["high", "medium"]),
+});
+export type YZBriefItem = z.infer<typeof YZBriefItem>;
+
+export const YZProductionBrief = z.object({
+  generatedAt: z.string(),                       // ISO timestamp
+  headline: z.string(),                          // 1-2 sentence AI summary (may be "")
+  stats: z.object({
+    active: z.number(),
+    rush: z.number(),
+    shippingThisWeek: z.number(),
+    overdue: z.number(),
+    attention: z.number(),
+  }),
+  items: z.array(YZBriefItem),                    // prioritized attention list
+});
+export type YZProductionBrief = z.infer<typeof YZProductionBrief>;
 
 // ─── Helpdesk (HD Ticket) ──────────────────────────────────────────────────
 

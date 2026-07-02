@@ -22,6 +22,7 @@ import type {
   Tailor,
   YZTicket,
   YZOrder,
+  YZProductionBrief,
 } from "./types";
 
 export interface DepositReceipt {
@@ -846,6 +847,19 @@ export function useYzProduction() {
     staleTime: 60_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
+}
+
+// AI production brief for the Shop Floor banner. Refreshes less often than the
+// board (AI cost) and keeps prior data so the banner never flashes empty.
+export function useYzProductionBrief() {
+  return useQuery({
+    queryKey: ["yz", "production", "brief"],
+    queryFn: () => api.get<YZProductionBrief>("/api/yz/production/brief"),
+    staleTime: 5 * 60_000,
+    refetchInterval: 5 * 60_000,
+    refetchOnWindowFocus: false,
     placeholderData: (prev) => prev,
   });
 }

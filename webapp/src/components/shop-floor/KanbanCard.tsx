@@ -1,10 +1,13 @@
-import { Truck, Flame, Sparkles } from "lucide-react";
+import { Truck, Flame, Sparkles, AlertTriangle } from "lucide-react";
 import type { YZOrder } from "@/lib/types";
 import {
   formatShipDate,
   shipTone,
   shipToneClass,
   isRush,
+  attentionTone,
+  attentionLabel,
+  ATTENTION_COLOR,
 } from "@/lib/shopFloor";
 import { cn } from "@/lib/utils";
 
@@ -16,12 +19,20 @@ interface Props {
 export function KanbanCard({ order, onClick }: Props) {
   const tone = shipTone(order);
   const rush = isRush(order);
+  const attn = attentionTone(order);
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group w-full rounded-xl border border-brass/12 bg-forest-raised/40 p-3 text-left transition-all hover:border-brass/30 hover:bg-forest-raised/60"
+      className={cn(
+        "group w-full rounded-xl border bg-forest-raised/40 p-3 text-left transition-all hover:bg-forest-raised/60",
+        attn === "high"
+          ? "border-l-2 border-l-[#FF5722] border-y-brass/12 border-r-brass/12 hover:border-brass/30"
+          : attn === "medium"
+            ? "border-l-2 border-l-[#FF9800] border-y-brass/12 border-r-brass/12 hover:border-brass/30"
+            : "border-brass/12 hover:border-brass/30",
+      )}
     >
       {/* Top row: order no + indicators */}
       <div className="flex items-start justify-between gap-2">
@@ -29,6 +40,11 @@ export function KanbanCard({ order, onClick }: Props) {
           {order.order_no}
         </span>
         <div className="flex items-center gap-1.5 pt-0.5">
+          {attn !== "none" ? (
+            <span title={attentionLabel(order.attention)} className="flex items-center">
+              <AlertTriangle className="h-3.5 w-3.5" style={{ color: ATTENTION_COLOR[attn] }} />
+            </span>
+          ) : null}
           {order.embroidery_name ? (
             <Sparkles className="h-3.5 w-3.5 text-brass-light/70" aria-label="Embroidery" />
           ) : null}

@@ -5,7 +5,9 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
 import { erpList } from "../lib/erp";
-import { YZTicket, YZOrder, YZProductionStatus } from "../types";
+import { YZTicket, YZOrder, YZProductionStatus, YZProductionBrief } from "../types";
+import type { YZAttentionFlag } from "../types";
+import { summarizeProduction } from "../lib/ai";
 
 export const yzRouter = new Hono();
 
@@ -147,21 +149,92 @@ function str(v: string | null): string | null {
   return s === "" ? null : s;
 }
 
-yzRouter.get("/production", async (c) => {
-  const user = await getAuthedUser(c);
-  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+// ── Attention flags ─────────────────────────────────────────────────────────
+// Rule-based enrichment computed server-side so every consumer (page + brief)
+// agrees on what "needs attention". Dates are YYYY-MM-DD; string compare is safe.
 
+const STALE_FABRIC_DAYS = 21;
+const SHIPPED_OR_DONE = new Set(["Shipped", "Canceled"]);
+
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function addDaysStr(base: string, days: number): string {
+  const p = base.split("-").map(Number);
+  const dt = new Date(Date.UTC(p[0] ?? 1970, (p[1] ?? 1) - 1, (p[2] ?? 1) + days));
+  return dt.toISOString().slice(0, 10);
+}
+
+function daysBetween(from: string, to: string): number {
+  const a = Date.parse(from);
+  const b = Date.parse(to);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
+  return Math.round((b - a) / 86_400_000);
+}
+
+interface OrderCore {
+  production_status: YZProductionStatus;
+  ship_date_planned: string | null;
+  date_received: string | null;
+  rush_days: number;
+}
+
+function computeAttention(o: OrderCore, today: string): YZAttentionFlag[] {
+  const flags: YZAttentionFlag[] = [];
+  const active = !SHIPPED_OR_DONE.has(o.production_status);
+  const isRush = o.rush_days > 0 || o.production_status === "Rush";
+
+  if (active && o.ship_date_planned && o.ship_date_planned < today) {
+    flags.push({ code: "overdue", label: "Overdue", severity: "high" });
+  }
+
+  if (o.production_status === "Fabric Not Received" && o.date_received) {
+    const days = daysBetween(o.date_received, today);
+    if (days >= STALE_FABRIC_DAYS) {
+      flags.push({ code: "stale_fabric", label: `Fabric awaited ${days}d`, severity: "high" });
+    }
+  }
+
+  if (isRush && active) {
+    const overdue = !!o.ship_date_planned && o.ship_date_planned < today;
+    const soon = !!o.ship_date_planned && o.ship_date_planned <= addDaysStr(today, 3);
+    if (overdue || soon || !o.ship_date_planned) {
+      flags.push({ code: "rush_at_risk", label: "Rush at risk", severity: "high" });
+    }
+  }
+
+  if (active && o.production_status !== "Fabric Not Received" && !o.ship_date_planned) {
+    flags.push({ code: "no_ship_date", label: "No ship date", severity: "medium" });
+  }
+
+  return flags;
+}
+
+// Fetch + normalize + enrich all YZ production orders. Shared by both endpoints.
+async function fetchYZOrders(): Promise<YZOrder[]> {
   const rows = await erpList<ErpYZOrder>("YZ Production Tracker", {
     fields: YZ_FIELDS,
     order_by: "ship_date_planned asc",
     limit: 500,
   }).catch(() => []);
 
-  const orders = rows.map((r) =>
-    YZOrder.parse({
+  const today = todayStr();
+
+  return rows.map((r) => {
+    const production_status = normalizeStatus(r.production_status);
+    const ship_date_planned = str(r.ship_date_planned);
+    const date_received = str(r.date_received);
+    const rush_days = num(r.rush_days);
+    const attention = computeAttention(
+      { production_status, ship_date_planned, date_received, rush_days },
+      today,
+    );
+
+    return YZOrder.parse({
       name: r.name,
       order_no: str(r.order_no) ?? r.name,
-      production_status: normalizeStatus(r.production_status),
+      production_status,
       customer_name: str(r.customer_name),
       customer: str(r.customer),
       mtmpro_order: str(r.mtmpro_order),
@@ -177,10 +250,10 @@ yzRouter.get("/production", async (c) => {
       qty_tux_coat: num(r.qty_tux_coat),
       qty_tux_pant: num(r.qty_tux_pant),
       qty_tux_vest: num(r.qty_tux_vest),
-      date_received: str(r.date_received),
+      date_received,
       date_placed: str(r.date_placed),
-      ship_date_planned: str(r.ship_date_planned),
-      rush_days: num(r.rush_days),
+      ship_date_planned,
+      rush_days,
       embroidery_name: str(r.embroidery_name),
       embroidery_qty: num(r.embroidery_qty),
       tracking_no: str(r.tracking_no),
@@ -193,8 +266,78 @@ yzRouter.get("/production", async (c) => {
       comment: str(r.comment),
       remarks: str(r.remarks),
       erpUrl: `${ERP_YZ_BASE}/${encodeURIComponent(r.name)}`,
-    }),
-  );
+      attention,
+    });
+  });
+}
 
+yzRouter.get("/production", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  const orders = await fetchYZOrders();
   return c.json({ data: orders });
+});
+
+// ── AI production brief ─────────────────────────────────────────────────────
+// Deterministic stats + prioritized attention list, plus an AI-written headline.
+// The headline degrades gracefully to "" if the AI gateway is unavailable, so
+// the banner still shows the (accurate) structured data.
+
+const ACTIVE_STATUSES = new Set(["In Production", "Rush", "On Pause", "Fabric Not Received"]);
+const SEVERITY_RANK: Record<string, number> = { high: 0, medium: 1 };
+
+yzRouter.get("/production/brief", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const orders = await fetchYZOrders();
+  const today = todayStr();
+  const weekEnd = addDaysStr(today, 7);
+
+  let active = 0, rush = 0, shippingThisWeek = 0, overdue = 0, attention = 0;
+  for (const o of orders) {
+    if (ACTIVE_STATUSES.has(o.production_status)) active++;
+    if (o.rush_days > 0 || o.production_status === "Rush") rush++;
+    if (o.ship_date_planned && o.ship_date_planned >= today && o.ship_date_planned <= weekEnd) shippingThisWeek++;
+    if (o.attention.some((f) => f.code === "overdue")) overdue++;
+    if (o.attention.length > 0) attention++;
+  }
+
+  // Prioritize: highest-severity flag first, then earliest ship date.
+  const rank = (s: "high" | "medium") => SEVERITY_RANK[s] ?? 9;
+
+  const flagged = orders
+    .filter((o) => o.attention.length > 0)
+    .map((o) => {
+      const severity: "high" | "medium" = o.attention.some((f) => f.severity === "high")
+        ? "high"
+        : "medium";
+      return {
+        order_no: o.order_no,
+        customer_name: o.customer_name,
+        reason: o.attention.map((f) => f.label).join(", "),
+        severity,
+        _ship: o.ship_date_planned ?? "9999-99-99",
+      };
+    })
+    .sort((a, b) => rank(a.severity) - rank(b.severity) || a._ship.localeCompare(b._ship));
+
+  const stats = { active, rush, shippingThisWeek, overdue, attention };
+  const items = flagged.slice(0, 20).map(({ _ship, ...rest }) => rest);
+
+  let headline = "";
+  try {
+    headline = await summarizeProduction({ stats, items: items.slice(0, 12) });
+  } catch (err) {
+    console.warn("[yz:brief] AI headline failed, returning structured only:", err);
+  }
+
+  const brief = YZProductionBrief.parse({
+    generatedAt: new Date().toISOString(),
+    headline,
+    stats,
+    items,
+  });
+
+  return c.json({ data: brief });
 });

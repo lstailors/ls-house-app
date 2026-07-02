@@ -260,3 +260,38 @@ Write the summary now (plain text only, no bullet points or headers):`;
 
   return text.trim();
 }
+
+// ── Shop Floor production brief ────────────────────────────────────────────────
+// Turns production stats + the top "needs attention" items into a tight,
+// glanceable headline for the shop-floor team. Returns a plain string.
+
+export interface ProductionBriefInput {
+  stats: { active: number; rush: number; shippingThisWeek: number; overdue: number; attention: number };
+  items: Array<{ order_no: string; customer_name: string | null; reason: string; severity: "high" | "medium" }>;
+}
+
+export async function summarizeProduction(input: ProductionBriefInput): Promise<string> {
+  const { stats, items } = input;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const lines = items.slice(0, 12).map((i) =>
+    `- [${i.severity}] ${i.order_no} ${i.customer_name ?? "?"}: ${i.reason}`
+  ).join("\n") || "  (nothing flagged)";
+
+  const prompt = `You are the production manager at L&S Custom Tailors reviewing the YongZheng workshop floor.
+
+Date: ${today}
+TOTALS: Active=${stats.active} · Rush=${stats.rush} · Shipping this week=${stats.shippingThisWeek} · Overdue=${stats.overdue} · Needs attention=${stats.attention}
+
+FLAGGED ITEMS (most urgent first):
+${lines}
+
+Write a concise 2-3 sentence briefing for the shop-floor team: lead with what needs action today, name the most urgent one or two orders (by order no + customer), and end on overall state. Direct and calm — no fluff, no bullet points, no markdown.
+
+Write the briefing now (plain text only):`;
+
+  const { text, usage } = await generateText({ model: gatewayModel(), prompt, maxOutputTokens: 300 });
+  console.log(`[ai:production-brief] items=${items.length} in=${usage.inputTokens} out=${usage.outputTokens}`);
+
+  return text.trim();
+}

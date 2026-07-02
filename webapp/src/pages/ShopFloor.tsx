@@ -6,9 +6,10 @@ import { EmptyState } from "@/components/glass/EmptyState";
 import { Button } from "@/components/ui/button";
 import { useYzProduction } from "@/lib/queries";
 import type { YZOrder } from "@/lib/types";
-import { matchesQuery, computeStats, byShipDate } from "@/lib/shopFloor";
+import { matchesQuery, computeStats, byShipDate, hasAttention, attentionCount } from "@/lib/shopFloor";
 import { cn } from "@/lib/utils";
 import { StatsBar } from "@/components/shop-floor/StatsBar";
+import { ProductionBrief } from "@/components/shop-floor/ProductionBrief";
 import { ViewToggle, type ShopFloorView } from "@/components/shop-floor/ViewToggle";
 import { SearchInput } from "@/components/shop-floor/SearchInput";
 import { KanbanBoard } from "@/components/shop-floor/KanbanBoard";
@@ -91,6 +92,19 @@ export default function ShopFloor() {
     [setParams],
   );
 
+  const attnOnly = params.get("attn") === "1";
+  const setAttnOnly = useCallback(
+    (v: boolean) => {
+      setParams((p) => {
+        const nx = new URLSearchParams(p);
+        if (v) nx.set("attn", "1");
+        else nx.delete("attn");
+        return nx;
+      });
+    },
+    [setParams],
+  );
+
   const selectedOrderNo = params.get("order");
 
   const setSelectedOrderNo = useCallback(
@@ -109,9 +123,11 @@ export default function ShopFloor() {
   const stats = useMemo(() => computeStats(orders), [orders]);
 
   const filtered = useMemo(
-    () => orders.filter((o) => matchesQuery(o, query)),
-    [orders, query],
+    () => orders.filter((o) => matchesQuery(o, query) && (!attnOnly || hasAttention(o))),
+    [orders, query, attnOnly],
   );
+
+  const attnCount = useMemo(() => attentionCount(orders), [orders]);
 
   // Consistent ordering used for drawer prev/next navigation.
   const navList = useMemo(() => [...filtered].sort(byShipDate), [filtered]);
@@ -162,10 +178,38 @@ export default function ShopFloor() {
         </div>
       ) : null}
 
+      {/* AI production brief — what needs attention now */}
+      <ProductionBrief onOpenOrder={setSelectedOrderNo} />
+
       <StatsBar stats={stats} />
 
-      {/* Global search — shared across every view */}
-      <SearchInput value={query} onChange={setQuery} className="max-w-md" />
+      {/* Global search + attention filter — shared across every view */}
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchInput value={query} onChange={setQuery} className="w-full max-w-md" />
+        {attnCount > 0 ? (
+          <button
+            type="button"
+            onClick={() => setAttnOnly(!attnOnly)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm transition-colors",
+              attnOnly
+                ? "border-[#FF5722]/50 bg-[#FF5722]/15 font-medium text-[#FF8A65]"
+                : "border-brass/20 text-cream-dim hover:border-brass/40 hover:text-cream",
+            )}
+          >
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Attention
+            <span
+              className={cn(
+                "rounded-full px-1.5 text-xs font-semibold",
+                attnOnly ? "bg-[#FF5722]/25 text-[#FF8A65]" : "bg-brass/15 text-brass-light",
+              )}
+            >
+              {attnCount}
+            </span>
+          </button>
+        ) : null}
+      </div>
 
       {/* Views */}
       {isLoading ? (

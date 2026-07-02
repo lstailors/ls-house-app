@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowUp, ArrowDown, ChevronsUpDown, ExternalLink, Truck } from "lucide-react";
+import { ArrowUp, ArrowDown, ChevronsUpDown, ExternalLink, Truck, AlertTriangle } from "lucide-react";
 import type { YZOrder } from "@/lib/types";
 import {
   formatFullDate,
@@ -7,6 +7,9 @@ import {
   shipToneClass,
   trackingLink,
   ALL_STATUSES,
+  attentionTone,
+  attentionLabel,
+  ATTENTION_COLOR,
 } from "@/lib/shopFloor";
 import { StatusBadge } from "./StatusBadge";
 import { cn } from "@/lib/utils";
@@ -175,8 +178,18 @@ export function TableView({ orders, onSelect }: Props) {
                   className="cursor-pointer border-b border-brass/8 transition-colors last:border-0 hover:bg-brass/5"
                 >
                   <td className="px-3.5 py-3.5">
-                    <span className="font-mono text-sm font-semibold text-brass-light">
-                      {order.order_no}
+                    <span className="flex items-center gap-1.5">
+                      {attentionTone(order) !== "none" ? (
+                        <span title={attentionLabel(order.attention)} className="flex items-center">
+                          <AlertTriangle
+                            className="h-3.5 w-3.5 shrink-0"
+                            style={{ color: ATTENTION_COLOR[attentionTone(order) as "high" | "medium"] }}
+                          />
+                        </span>
+                      ) : null}
+                      <span className="font-mono text-sm font-semibold text-brass-light">
+                        {order.order_no}
+                      </span>
                     </span>
                   </td>
                   <td className="px-3.5 py-3.5 text-cream">

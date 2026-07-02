@@ -2,7 +2,7 @@
 // Dates from ERPNext are "YYYY-MM-DD" strings; we compare them as strings
 // (lexicographic order == chronological for that format) to sidestep timezones.
 
-import type { YZOrder, YZProductionStatus } from "./types";
+import type { YZOrder, YZProductionStatus, YZAttentionFlag } from "./types";
 
 // ─── Status metadata ────────────────────────────────────────────────────────
 
@@ -251,4 +251,32 @@ export function computeStats(orders: YZOrder[]): ShopFloorStats {
 
 export function isRush(o: YZOrder): boolean {
   return o.rush_days > 0 || o.production_status === "Rush";
+}
+
+// ─── Attention flags ──────────────────────────────────────────────────────────
+
+export type AttentionTone = "high" | "medium" | "none";
+
+export function attentionTone(o: YZOrder): AttentionTone {
+  if (!o.attention || o.attention.length === 0) return "none";
+  return o.attention.some((f) => f.severity === "high") ? "high" : "medium";
+}
+
+export function hasAttention(o: YZOrder): boolean {
+  return (o.attention?.length ?? 0) > 0;
+}
+
+// Brand hex for the attention "light" — reuses the rush/amber signal colors.
+export const ATTENTION_COLOR: Record<Exclude<AttentionTone, "none">, string> = {
+  high: "#FF5722",
+  medium: "#FF9800",
+};
+
+/** Short combined label of an order's flags, e.g. "Overdue · Rush at risk". */
+export function attentionLabel(flags: YZAttentionFlag[]): string {
+  return flags.map((f) => f.label).join(" · ");
+}
+
+export function attentionCount(orders: YZOrder[]): number {
+  return orders.reduce((n, o) => (hasAttention(o) ? n + 1 : n), 0);
 }
