@@ -47,6 +47,7 @@ const ETicket = lazy(() => import('./pages/ETicket'));
 const Tasks = lazy(() => import('./pages/Tasks'));
 const Comms = lazy(() => import('./pages/Comms'));
 const SofiaChat = lazy(() => import('./pages/SofiaChat'));
+const SofiaDispatch = lazy(() => import('./pages/SofiaDispatch'));
 const Customers = lazy(() => import('./pages/Customers'));
 const CustomerDetail = lazy(() => import('./pages/CustomerDetail'));
 const CalendarPage = lazy(() => import('./pages/Calendar'));
@@ -315,6 +316,7 @@ const App = () => (
             <Route path="/tasks" element={<Tasks />} />
             <Route path="/comms" element={<Comms />} />
             <Route path="/sofia" element={<SofiaChat />} />
+            <Route path="/dispatch" element={<SofiaDispatch />} />
             <Route
               path="/customers"
               element={

@@ -329,6 +329,14 @@ export default function Dashboard() {
             <span className="hidden sm:inline">Transfer Warehouse</span>
             <span className="sm:hidden">Transfer</span>
           </button>
+          <button
+            onClick={() => navigate("/dispatch")}
+            className="inline-flex items-center gap-1.5 rounded-full border border-brass/30 bg-brass/8 px-3.5 py-2 text-xs font-medium text-brass-shimmer hover:bg-brass/15 hover:border-brass/50 transition-all"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Sofia Dispatch</span>
+            <span className="sm:hidden">Dispatch</span>
+          </button>
         </div>
       </div>
 

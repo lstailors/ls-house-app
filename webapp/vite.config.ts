@@ -7,7 +7,7 @@ import path from "path";
 export default defineConfig(({ mode }) => ({
   server: {
     host: "0.0.0.0",
-    port: 8000,
+    port: Number(process.env.PORT) || 8000,
     allowedHosts: true,
     proxy: {
       '/api': {

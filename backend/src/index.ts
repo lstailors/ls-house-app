@@ -120,6 +120,8 @@ import { helpdeskRouter } from "./routes/helpdesk";
 app.route("/api/helpdesk", helpdeskRouter);
 import { sofiaBridgeRouter } from "./routes/sofia-bridge";
 app.route("/api/sofia-bridge", sofiaBridgeRouter);
+import { dispatchRouter } from "./routes/dispatch";
+app.route("/api/dispatch", dispatchRouter);
 
 const port = Number(process.env.PORT) || 3000;
 

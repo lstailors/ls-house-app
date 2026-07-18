@@ -22,6 +22,7 @@ export async function erpList<T = unknown>(
     filters?: unknown[]
     fields?: string[]
     limit?: number
+    start?: number
     order_by?: string
   } = {}
 ): Promise<T[]> {
@@ -32,6 +33,7 @@ export async function erpList<T = unknown>(
   if (opts.filters)  url.searchParams.set('filters',           JSON.stringify(opts.filters))
   if (opts.fields)   url.searchParams.set('fields',            JSON.stringify(opts.fields))
   if (opts.limit)    url.searchParams.set('limit_page_length', String(opts.limit))
+  if (opts.start)    url.searchParams.set('limit_start',       String(opts.start))
   if (opts.order_by) url.searchParams.set('order_by',          opts.order_by)
 
   const res = await fetch(url.toString(), { headers: authHeaders(key, secret) })

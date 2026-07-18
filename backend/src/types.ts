@@ -985,3 +985,97 @@ export const CompleteGarmentResult = z
   })
   .passthrough();
 export type CompleteGarmentResult = z.infer<typeof CompleteGarmentResult>;
+
+// ─── Sofia Dispatch ─────────────────────────────────────────────────────
+// Contracts for the Sofia Dispatch SMS console (webapp ↔ backend ↔ n8n
+// WF-DISPATCH-10/11).
+
+export const DispatchTemplate = z.object({
+  name: z.string(),
+  template_name: z.string(),
+  category: z.string(),
+  body: z.string(),
+  resolved_body: z.string(),
+  pending_fields: z.array(z.string()),
+});
+export type DispatchTemplate = z.infer<typeof DispatchTemplate>;
+
+export const DispatchCustomer = z.object({
+  id: z.string(),
+  name: z.string(),
+  phone: z.string().nullable(),
+});
+export type DispatchCustomer = z.infer<typeof DispatchCustomer>;
+
+export const DispatchRecentThread = z.object({
+  phone: z.string(),
+  customerId: z.string().nullable(),
+  name: z.string(),
+  lastMessage: z.string(),
+  lastDirection: z.string().nullable(),
+  lastTimestamp: z.string().nullable(),
+});
+export type DispatchRecentThread = z.infer<typeof DispatchRecentThread>;
+
+export const DispatchMessage = z
+  .object({
+    name: z.string(),
+    client_phone: z.string().nullable().optional(),
+    client_name: z.string().nullable().optional(),
+    customer: z.string().nullable().optional(),
+    direction: z.enum(["inbound", "outbound"]).nullable().optional(),
+    content: z.string().nullable().optional(),
+    sender: z.string().nullable().optional(),
+    timestamp: z.string().nullable().optional(),
+    twilio_sid: z.string().nullable().optional(),
+    status: z.string().nullable().optional(),
+    context_tag: z.string().nullable().optional(),
+    error_message: z.string().nullable().optional(),
+  })
+  .passthrough();
+export type DispatchMessage = z.infer<typeof DispatchMessage>;
+
+export const DispatchThread = z.object({
+  messages: z.array(DispatchMessage),
+  hasMore: z.boolean(),
+  phone: z.string().nullable(),
+  customer: DispatchCustomer.nullable(),
+  optedOut: z.boolean(),
+});
+export type DispatchThread = z.infer<typeof DispatchThread>;
+
+export const DispatchSendRequest = z.object({
+  customer: z.string().optional(),
+  clientName: z.string().optional(),
+  phone: z.string().min(7),
+  body: z.string().min(1).max(1600),
+  mode: z.enum(["template", "custom", "sofia"]),
+  template: z.string().optional(),
+});
+export type DispatchSendRequest = z.infer<typeof DispatchSendRequest>;
+
+export const DispatchSendResult = z.object({
+  ok: z.boolean(),
+  messageId: z.string().nullable(),
+  twilioSid: z.string().nullable(),
+  status: z.string(),
+  error: z.string().nullable(),
+});
+export type DispatchSendResult = z.infer<typeof DispatchSendResult>;
+
+export const DispatchComposeRequest = z.object({
+  customer: z.string().optional(),
+  customerName: z.string().optional(),
+  phone: z.string().optional(),
+  instruction: z.string().min(3).max(2000),
+});
+export type DispatchComposeRequest = z.infer<typeof DispatchComposeRequest>;
+
+export const DispatchComposeResult = z.object({ draft: z.string() });
+export type DispatchComposeResult = z.infer<typeof DispatchComposeResult>;
+
+export const DispatchPhoneRequest = z.object({
+  customer: z.string().min(1),
+  phone: z.string().min(7),
+});
+export type DispatchPhoneRequest = z.infer<typeof DispatchPhoneRequest>;

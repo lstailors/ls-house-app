@@ -46,6 +46,7 @@ import { appointmentsRouter } from "./routes/appointments";
 import { scannerRouter } from "./routes/scanner";
 import { garmentRouter } from "./routes/garment";
 import { sofiaBridgeRouter } from "./routes/sofia-bridge";
+import { dispatchRouter } from "./routes/dispatch";
 
 const app = new Hono();
 
@@ -136,5 +137,6 @@ app.route("/api/helpdesk", helpdeskRouter);
 app.route("/api/appointments", appointmentsRouter);
 app.route("/api/scanner", scannerRouter);
 app.route("/api/garment", garmentRouter);
+app.route("/api/dispatch", dispatchRouter);
 
 export default app;

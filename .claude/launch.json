@@ -13,7 +13,15 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "cwd": "webapp",
-      "port": 8000
+      "port": 8000,
+      "autoPort": true
+    },
+    {
+      "name": "booking",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "8100"],
+      "cwd": "booking",
+      "port": 8100
     }
   ]
 }
