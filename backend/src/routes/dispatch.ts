@@ -233,7 +233,7 @@ dispatchRouter.post("/send", async (c) => {
 
   const parsed = DispatchSendRequest.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: { message: "Invalid request", code: "bad_request" } }, 400);
-  const { customer, clientName, phone, body, mode, template } = parsed.data;
+  const { customer, clientName, phone, body, mode, template, batch } = parsed.data;
 
   const unresolved = [...new Set(body.match(/\{[a-z_]+\}/gi) ?? [])];
   if (unresolved.length) {
@@ -248,7 +248,7 @@ dispatchRouter.post("/send", async (c) => {
     mode === "sofia" ? "dispatch:sofia" :
     mode === "template" && template ? `dispatch:template:${template}` :
     "dispatch:C";
-  const contextTag = mode === "sofia" ? "sofia-dispatch:instructed" : "sofia-dispatch";
+  const contextTag = batch ? "sofia-dispatch:batch" : mode === "sofia" ? "sofia-dispatch:instructed" : "sofia-dispatch";
 
   try {
     const result = await callDispatchWebhook("dispatch-send", {

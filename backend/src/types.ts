@@ -1051,6 +1051,7 @@ export const DispatchSendRequest = z.object({
   body: z.string().min(1).max(1600),
   mode: z.enum(["template", "custom", "sofia"]),
   template: z.string().optional(),
+  batch: z.boolean().optional(),
 });
 export type DispatchSendRequest = z.infer<typeof DispatchSendRequest>;
 

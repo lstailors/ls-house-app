@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, MessageSquare, User } from "lucide-react";
+import { Check, Search, MessageSquare, User } from "lucide-react";
 import { api } from "@/lib/api";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { cn } from "@/lib/utils";
@@ -21,12 +21,19 @@ function timeAgo(iso: string | null) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+export function selectionKey(sel: { customerId: string | null; phone: string | null }): string {
+  return sel.customerId ?? sel.phone ?? "";
+}
+
 interface Props {
   selected: DispatchSelection | null;
   onSelect: (sel: DispatchSelection) => void;
+  /** Batch mode: onSelect toggles membership; checkmarks shown for batchKeys. */
+  batchMode?: boolean;
+  batchKeys?: Set<string>;
 }
 
-export function CustomerPicker({ selected, onSelect }: Props) {
+export function CustomerPicker({ selected, onSelect, batchMode = false, batchKeys }: Props) {
   const [query, setQuery] = useState<string>("");
   const [debounced, setDebounced] = useState<string>("");
 
@@ -65,26 +72,33 @@ export function CustomerPicker({ selected, onSelect }: Props) {
           {results.length === 0 && !searching ? (
             <p className="text-xs text-cream-dim px-1 py-2">No customers match "{debounced}".</p>
           ) : null}
-          {results.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => onSelect({ customerId: r.id, phone: r.phone, name: r.name })}
-              className={cn(
-                "w-full text-left flex items-center gap-3 rounded-lg px-3 py-2.5 border transition-all",
-                selected?.customerId === r.id
-                  ? "border-brass/40 bg-brass/10"
-                  : "border-transparent hover:border-brass/20 hover:bg-brass/5",
-              )}
-            >
-              <div className="h-8 w-8 rounded-full bg-brass/15 border border-brass/25 flex items-center justify-center shrink-0">
-                <User className="h-3.5 w-3.5 text-brass-light" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-sm text-cream truncate">{r.name}</div>
-                <div className="text-[11px] text-cream-dim">{r.phone ?? "No phone on file"}</div>
-              </div>
-            </button>
-          ))}
+          {results.map((r) => {
+            const inBatch = batchKeys?.has(r.id) ?? false;
+            const active = batchMode ? inBatch : selected?.customerId === r.id;
+            return (
+              <button
+                key={r.id}
+                onClick={() => onSelect({ customerId: r.id, phone: r.phone, name: r.name })}
+                className={cn(
+                  "w-full text-left flex items-center gap-3 rounded-lg px-3 py-2.5 border transition-all",
+                  active ? "border-brass/40 bg-brass/10" : "border-transparent hover:border-brass/20 hover:bg-brass/5",
+                )}
+              >
+                <div
+                  className={cn(
+                    "h-8 w-8 rounded-full border flex items-center justify-center shrink-0",
+                    inBatch ? "bg-brass border-brass" : "bg-brass/15 border-brass/25",
+                  )}
+                >
+                  {inBatch ? <Check className="h-4 w-4 text-forest-deep" /> : <User className="h-3.5 w-3.5 text-brass-light" />}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm text-cream truncate">{r.name}</div>
+                  <div className="text-[11px] text-cream-dim">{r.phone ? r.phone : "No phone on file"}</div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       ) : null}
 
@@ -93,7 +107,11 @@ export function CustomerPicker({ selected, onSelect }: Props) {
           <MessageSquare className="h-3 w-3" /> Recent conversations
         </div>
         {recent.map((t) => {
-          const active = selected && (selected.customerId === t.customerId || selected.phone === t.phone);
+          const key = t.customerId ?? t.phone;
+          const inBatch = batchKeys?.has(key) ?? false;
+          const active = batchMode
+            ? inBatch
+            : selected && (selected.customerId === t.customerId || selected.phone === t.phone);
           return (
             <button
               key={t.phone}
@@ -104,7 +122,10 @@ export function CustomerPicker({ selected, onSelect }: Props) {
               )}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm text-cream truncate">{t.name}</span>
+                <span className="text-sm text-cream truncate flex items-center gap-1.5">
+                  {inBatch ? <Check className="h-3.5 w-3.5 text-brass-light shrink-0" /> : null}
+                  {t.name}
+                </span>
                 <span className="text-[10px] text-cream-dim shrink-0">{timeAgo(t.lastTimestamp)}</span>
               </div>
               <div className="text-[11px] text-cream-dim truncate mt-0.5">

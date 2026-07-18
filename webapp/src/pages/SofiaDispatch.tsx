@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ExternalLink, Phone, RefreshCw } from "lucide-react";
+import { ChevronLeft, ExternalLink, Phone, RefreshCw, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { SectionHeader } from "@/components/glass/SectionHeader";
 import { GlassCard } from "@/components/glass/GlassCard";
-import { CustomerPicker, type DispatchSelection } from "@/components/dispatch/CustomerPicker";
+import { CustomerPicker, selectionKey, type DispatchSelection } from "@/components/dispatch/CustomerPicker";
 import { ThreadView, type PendingDraft } from "@/components/dispatch/ThreadView";
 import { Composer } from "@/components/dispatch/Composer";
+import { BatchPanel } from "@/components/dispatch/BatchPanel";
 import { cn } from "@/lib/utils";
 import type { DispatchThread } from "../../../../backend/src/types";
 
@@ -19,6 +20,17 @@ export default function SofiaDispatch() {
   const [limit, setLimit] = useState<number>(50);
   const [pendingDraft, setPendingDraft] = useState<PendingDraft | null>(null);
   const [newPhone, setNewPhone] = useState<string>("");
+  const [batchMode, setBatchMode] = useState<boolean>(false);
+  const [batchRecipients, setBatchRecipients] = useState<DispatchSelection[]>([]);
+
+  const batchKeys = new Set(batchRecipients.map(selectionKey));
+
+  const toggleRecipient = (sel: DispatchSelection) => {
+    const key = selectionKey(sel);
+    setBatchRecipients((list) =>
+      list.some((r) => selectionKey(r) === key) ? list.filter((r) => selectionKey(r) !== key) : [...list, sel],
+    );
+  };
 
   const threadKey = ["dispatch-thread", selected?.customerId ?? null, selected?.phone ?? null, limit];
   const { data: thread, isLoading: threadLoading, refetch } = useQuery({
@@ -128,14 +140,38 @@ export default function SofiaDispatch() {
           </>
         }
         description="Pick a client, see the whole conversation, and send — a starter template, your own words, or a message Sofia composes for your approval."
+        actions={
+          <button
+            onClick={() => {
+              setBatchMode((b) => !b);
+              setSelected(null);
+              setPendingDraft(null);
+            }}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-medium transition-all",
+              batchMode
+                ? "border-brass/60 bg-brass/20 text-cream"
+                : "border-brass/30 bg-brass/8 text-brass-shimmer hover:bg-brass/15 hover:border-brass/50",
+            )}
+          >
+            <Users className="h-3.5 w-3.5" />
+            {batchMode ? "Exit batch mode" : "Batch send"}
+          </button>
+        }
       />
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[340px,1fr] gap-4">
-        {/* Left: customer picker (hidden on mobile once a thread is open) */}
-        <div className={cn("min-h-0 lg:h-[calc(100vh-16rem)]", selected ? "hidden lg:block" : "h-[calc(100vh-16rem)]")}>
+        {/* Left: customer picker (hidden on mobile once a thread is open; always visible in batch mode) */}
+        <div className={cn("min-h-0 lg:h-[calc(100vh-16rem)]", !batchMode && selected ? "hidden lg:block" : "h-[calc(100vh-16rem)]")}>
           <CustomerPicker
             selected={selected}
+            batchMode={batchMode}
+            batchKeys={batchKeys}
             onSelect={(sel) => {
+              if (batchMode) {
+                toggleRecipient(sel);
+                return;
+              }
               setSelected(sel);
               setPendingDraft(null);
               setLimit(50);
@@ -143,9 +179,20 @@ export default function SofiaDispatch() {
           />
         </div>
 
-        {/* Right: conversation */}
-        <GlassCard className={cn("min-h-0 flex-col lg:h-[calc(100vh-16rem)] overflow-hidden p-0", selected ? "flex h-[calc(100vh-14rem)]" : "hidden lg:flex")}>
-          {!selected ? (
+        {/* Right: conversation or batch panel */}
+        <GlassCard className={cn("min-h-0 flex-col lg:h-[calc(100vh-16rem)] overflow-hidden p-0", batchMode || selected ? "flex h-[calc(100vh-14rem)]" : "hidden lg:flex")}>
+          {batchMode ? (
+            <BatchPanel
+              recipients={batchRecipients}
+              onRemove={(key) => setBatchRecipients((list) => list.filter((r) => selectionKey(r) !== key))}
+              onClear={() => setBatchRecipients([])}
+              onDone={() => {
+                setBatchRecipients([]);
+                setBatchMode(false);
+                invalidateThread();
+              }}
+            />
+          ) : !selected ? (
             <div className="flex-1 flex items-center justify-center">
               <p className="text-sm text-cream-dim">Select a customer to open their conversation.</p>
             </div>
