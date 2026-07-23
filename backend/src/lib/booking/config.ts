@@ -2,9 +2,9 @@
  * Public booking config — store hours, per-type durations, public tailors.
  *
  * Per-type durations + room flags locked by C's booking spec (Jul 2026).
- * Per-tailor weekly hours (C 2026-07-22):
- *   Carl + Christopher = full store hours
- *   Sal = Wed / Thu / Fri + Sat when store is open
+ * Per-tailor bookable windows come from Availability Google Calendars
+ * (Mia contract 2026-07-22): presence of an Event = bookable window.
+ * weeklyHours is no longer the positive source (kept off; calendars own it).
  */
 
 export type DayName =
@@ -89,23 +89,32 @@ export const ADVANCE_BOOKING_DAYS = 60;
 export const MIN_NOTICE_MINUTES = 120;
 
 /**
- * Locked shop-level hours (NYC) — base daily windows.
- * Open-days mask is seasonal (store-hours.ts): Sep–Jun Tue–Sat; summer Mon–Fri.
- * C: no starts before 9am; nothing that runs past 6pm (slot end ≤ 18:00).
+ * Absolute shop clamp (C 2026-07-22 bedtime):
+ * no start before 09:00; no appointment past 18:00.
+ * Applied on top of store hours + availability events.
  */
-export const STORE_HOURS_WEEKDAY: TimeWindow = { fromMin: 9 * 60, toMin: 18 * 60 };
-export const STORE_HOURS_SATURDAY: TimeWindow = { fromMin: 9 * 60, toMin: 15 * 60 };
+export const BOOKABLE_CLAMP_WEEKDAY: TimeWindow = { fromMin: 9 * 60, toMin: 18 * 60 };
+export const BOOKABLE_CLAMP_SATURDAY: TimeWindow = { fromMin: 9 * 60, toMin: 15 * 60 };
+
+/** @deprecated use BOOKABLE_CLAMP_* — kept for import compatibility */
+export const STORE_HOURS_WEEKDAY = BOOKABLE_CLAMP_WEEKDAY;
+export const STORE_HOURS_SATURDAY = BOOKABLE_CLAMP_SATURDAY;
 
 export interface PublicTailor {
   id: string;
   agentUser: string;
   displayName: string;
   shortName: string;
-  /** Calendar Event subject prefixes (lowercase, no colon). */
+  /** Calendar Event subject prefixes (lowercase, no colon) on L&S Appointments. */
   tagAliases: string[];
   /**
-   * Individual bookable hours. Intersected with store hours.
-   * null = full store hours for open store days.
+   * ERPNext Google Calendar doc name for positive availability events.
+   * Fallback when LSH Booking Agent.availability_google_calendar is empty.
+   */
+  availabilityGoogleCalendar: string;
+  /**
+   * @deprecated Positive availability now comes from availabilityGoogleCalendar events.
+   * Left null for all public tailors.
    */
   weeklyHours: WeeklyHours | null;
   /**
@@ -122,10 +131,8 @@ export interface PublicTailor {
  * Public bookable tailors: Sal, Carl, Christopher.
  * Kelvin out of public picker (HOU / internal).
  *
- * Locked C 2026-07-22:
- *   Carl + Christopher = full store hours
- *   Sal = Wed / Thu / Fri + Saturdays when store has Sat hours
- *   (summer Sat closed → Sal has no Sat slots then)
+ * Availability calendars (Mia 2026-07-22):
+ *   Carl Availability / Christopher Availability / Sal Availability
  */
 export const PUBLIC_TAILORS: PublicTailor[] = [
   {
@@ -134,6 +141,7 @@ export const PUBLIC_TAILORS: PublicTailor[] = [
     displayName: "Calogero Cristiano",
     shortName: "Carl",
     tagAliases: ["calogero", "carl"],
+    availabilityGoogleCalendar: "Carl Availability",
     weeklyHours: null,
     typeModes: {
       "Initial Consultation": "Auto",
@@ -148,6 +156,7 @@ export const PUBLIC_TAILORS: PublicTailor[] = [
     displayName: "Christopher Korey",
     shortName: "Christopher",
     tagAliases: ["christopher", "chris"],
+    availabilityGoogleCalendar: "Christopher Availability",
     weeklyHours: null,
     typeModes: {
       "Initial Consultation": "Auto",
@@ -162,12 +171,8 @@ export const PUBLIC_TAILORS: PublicTailor[] = [
     displayName: "Salvatore Cristiano",
     shortName: "Sal",
     tagAliases: ["salvatore", "sal", "papa"],
-    weeklyHours: {
-      Wednesday: [STORE_HOURS_WEEKDAY],
-      Thursday: [STORE_HOURS_WEEKDAY],
-      Friday: [STORE_HOURS_WEEKDAY],
-      Saturday: [STORE_HOURS_SATURDAY],
-    },
+    availabilityGoogleCalendar: "Sal Availability",
+    weeklyHours: null,
     typeModes: {
       "Initial Consultation": "On request",
       "Fitting Appointment": "On request",
@@ -175,11 +180,19 @@ export const PUBLIC_TAILORS: PublicTailor[] = [
     },
     publicBookable: true,
     notes:
-      "Part-time: Wed / Thu / Fri + Sat when store open (C confirmed 2026-07-22). Off Mon–Tue.",
+      "Part-time windows come from Sal Availability calendar (seeded Wed/Thu/Fri/Sat). Off when no events posted.",
   },
 ];
 
+/** Confirmed bookings land here only — never on Availability calendars. */
 export const GOOGLE_APPOINTMENTS_CALENDAR = "L&S Appointments";
+
+/** Known availability calendar names (engine query allow-list). */
+export const AVAILABILITY_CALENDARS = [
+  "Carl Availability",
+  "Christopher Availability",
+  "Sal Availability",
+] as const;
 
 /** ERP Holiday List linked from Appointment Booking Settings. */
 export const DEFAULT_HOLIDAY_LIST = "LSTNY 2026";
@@ -206,6 +219,10 @@ export function getTypeByErpName(name: string): PublicAppointmentType | undefine
 
 export function getTailorByUser(agentUser: string): PublicTailor | undefined {
   return PUBLIC_TAILORS.find((t) => t.agentUser === agentUser);
+}
+
+export function getTailorById(id: string): PublicTailor | undefined {
+  return PUBLIC_TAILORS.find((t) => t.id === id);
 }
 
 /** Minutes → "HH:MM:SS" */
