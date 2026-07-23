@@ -92,3 +92,13 @@ bookingRouter.get("/slots", async (c) => {
     return c.json({ error: { message } }, status as 400);
   }
 });
+
+bookingRouter.get("/health", (c) =>
+  c.json({
+    data: {
+      ok: true,
+      service: "booking-availability",
+      types: listPublicTypes().map((x) => x.id),
+    },
+  }),
+);

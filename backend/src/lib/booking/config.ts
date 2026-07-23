@@ -162,22 +162,15 @@ export const PUBLIC_TAILORS: PublicTailor[] = [
     displayName: "Salvatore Cristiano",
     shortName: "Sal",
     tagAliases: ["salvatore", "sal", "papa"],
-    // SCAFFOLD — part-time reduced hours (confirm with C before cutover).
-    weeklyHours: {
-      Tuesday: [{ fromMin: 10 * 60, toMin: 15 * 60 }],
-      Wednesday: [{ fromMin: 10 * 60, toMin: 15 * 60 }],
-      Thursday: [{ fromMin: 10 * 60, toMin: 15 * 60 }],
-      Saturday: [{ fromMin: 9 * 60, toMin: 13 * 60 }],
-    },
+    weeklyHours: null, // DATA GAP — part-time hours not in ERP; do not invent
     typeModes: {
-      // ERP has Sal as On request for public types (by-name / part-time)
       "Initial Consultation": "On request",
       "Fitting Appointment": "On request",
       "Alterations Appointment": "On request",
     },
     publicBookable: true,
     notes:
-      "Part-time scaffold (Tue–Thu 10–15, Sat 9–13). Confirm reduced schedule with C before cutover.",
+      "Part-time — weekly hours missing in ERP. Bookable at full store hours only when picked by name until C confirms reduced schedule.",
   },
 ];
 
