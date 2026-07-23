@@ -1,12 +1,10 @@
 /**
  * Public booking config — store hours, per-type durations, public tailors.
  *
- * Per-type durations + room flags are locked by C's booking spec (Jul 2026).
- * Per-tailor weekly hours: NOT in ERP yet — weeklyHours stays null (full store
- * hours) until C supplies real schedules. Do not invent Sal's reduced hours.
- *
- * typeModes seed matches live LSH Booking Agent.type_rules (ERP) where set;
- * unset types default to Auto for Carl/Christopher, Off for anyone not listed.
+ * Per-type durations + room flags locked by C's booking spec (Jul 2026).
+ * Per-tailor weekly hours (C 2026-07-22):
+ *   Carl + Christopher = full store hours
+ *   Sal = Wed / Thu / Fri + Sat when store is open
  */
 
 export type DayName =
@@ -58,7 +56,7 @@ export const PUBLIC_APPOINTMENT_TYPES: PublicAppointmentType[] = [
     label: "Consultation",
     description: "New custom clothing consultation",
     durationMinutes: 60,
-    needsRoom: true, // spec: Consultation consumes a room (ERP flag currently 0)
+    needsRoom: true,
     requiresEligibilityGate: false,
   },
   {
@@ -81,10 +79,10 @@ export const PUBLIC_APPOINTMENT_TYPES: PublicAppointmentType[] = [
   },
 ];
 
-/** Physical fitting rooms at 138 E 61st. Matches Appointment Booking Settings.fitting_room_count. */
+/** Physical fitting rooms at 138 E 61st. */
 export const FITTING_ROOM_COUNT = 2;
 
-/** How far ahead public can book (days). Matches advance_booking_days. */
+/** How far ahead public can book (days). */
 export const ADVANCE_BOOKING_DAYS = 60;
 
 /** Minimum notice before a slot can be booked (minutes). */
@@ -106,15 +104,13 @@ export interface PublicTailor {
   tagAliases: string[];
   /**
    * Individual bookable hours. Intersected with store hours.
-   * null = full store hours for that day.
-   * DATA GAP: no weekly_schedule field on LSH Booking Agent; HR Shift* empty.
+   * null = full store hours for open store days.
    */
   weeklyHours: WeeklyHours | null;
   /**
    * Per-type eligibility. Auto = in no-preference pool.
    * On request = only when customer picks them by name.
    * Off = not offered for that type.
-   * Seeded from live LSH Booking Agent.type_rules.
    */
   typeModes: Record<string, "Auto" | "On request" | "Off">;
   publicBookable: boolean;
@@ -123,9 +119,12 @@ export interface PublicTailor {
 
 /**
  * Public bookable tailors: Sal, Carl, Christopher.
- * Kelvin is on LSH Booking Agent but out of the public picker (HOU / internal).
+ * Kelvin out of public picker (HOU / internal).
  *
- * weeklyHours: ALL null until C provides real reduced schedules (esp. Sal part-time).
+ * Locked C 2026-07-22:
+ *   Carl + Christopher = full store hours
+ *   Sal = Wed / Thu / Fri + Saturdays when store has Sat hours
+ *   (summer Sat closed → Sal has no Sat slots then)
  */
 export const PUBLIC_TAILORS: PublicTailor[] = [
   {
@@ -138,7 +137,7 @@ export const PUBLIC_TAILORS: PublicTailor[] = [
     typeModes: {
       "Initial Consultation": "Auto",
       "Fitting Appointment": "Auto",
-      "Alterations Appointment": "On request", // ERP type_rules
+      "Alterations Appointment": "On request",
     },
     publicBookable: true,
   },
@@ -152,7 +151,7 @@ export const PUBLIC_TAILORS: PublicTailor[] = [
     typeModes: {
       "Initial Consultation": "Auto",
       "Fitting Appointment": "Auto",
-      "Alterations Appointment": "Off", // ERP type_rules
+      "Alterations Appointment": "Off",
     },
     publicBookable: true,
   },
@@ -162,7 +161,12 @@ export const PUBLIC_TAILORS: PublicTailor[] = [
     displayName: "Salvatore Cristiano",
     shortName: "Sal",
     tagAliases: ["salvatore", "sal", "papa"],
-    weeklyHours: null, // DATA GAP — part-time hours not in ERP; do not invent
+    weeklyHours: {
+      Wednesday: [STORE_HOURS_WEEKDAY],
+      Thursday: [STORE_HOURS_WEEKDAY],
+      Friday: [STORE_HOURS_WEEKDAY],
+      Saturday: [STORE_HOURS_SATURDAY],
+    },
     typeModes: {
       "Initial Consultation": "On request",
       "Fitting Appointment": "On request",
@@ -170,7 +174,7 @@ export const PUBLIC_TAILORS: PublicTailor[] = [
     },
     publicBookable: true,
     notes:
-      "Part-time — weekly hours missing in ERP. Bookable at full store hours only when picked by name until C confirms reduced schedule.",
+      "Part-time: Wed / Thu / Fri + Sat when store open (C confirmed 2026-07-22). Off Mon–Tue.",
   },
 ];
 
@@ -212,6 +216,8 @@ export function minToTime(m: number): string {
 
 /** "HH:MM" | "HH:MM:SS" → minutes from midnight */
 export function timeToMin(t: string): number {
-  const [h, m] = String(t).split(":");
-  return Number(h) * 60 + Number(m);
+  const parts = String(t).split(":");
+  const h = Number(parts[0] ?? 0);
+  const m = Number(parts[1] ?? 0);
+  return h * 60 + m;
 }
