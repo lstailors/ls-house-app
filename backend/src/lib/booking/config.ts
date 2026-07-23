@@ -95,7 +95,6 @@ export const MIN_NOTICE_MINUTES = 120;
  */
 export const STORE_HOURS_WEEKDAY: TimeWindow = { fromMin: 9 * 60, toMin: 18 * 60 };
 export const STORE_HOURS_SATURDAY: TimeWindow = { fromMin: 9 * 60, toMin: 15 * 60 };
-export const STORE_HOURS_SATURDAY: TimeWindow = { fromMin: 9 * 60, toMin: 15 * 60 };
 
 export interface PublicTailor {
   id: string;
