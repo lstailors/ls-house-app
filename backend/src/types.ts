@@ -818,6 +818,65 @@ export const SetAppointmentStatusRequest = z.object({
 });
 export type SetAppointmentStatusRequest = z.infer<typeof SetAppointmentStatusRequest>;
 
+// ─── Public booking (book.lstailors.com → ERPNext → Google) ───────────────────
+
+export const PublicBookingType = z.object({
+  id: z.enum(["consultation", "fitting", "alterations"]),
+  erpType: z.string(),
+  label: z.string(),
+  description: z.string(),
+  durationMinutes: z.number().int().positive(),
+  needsRoom: z.boolean(),
+  requiresEligibilityGate: z.boolean(),
+});
+export type PublicBookingType = z.infer<typeof PublicBookingType>;
+
+export const PublicBookingTailor = z.object({
+  id: z.string(),
+  agentUser: z.string(),
+  displayName: z.string(),
+  shortName: z.string(),
+});
+export type PublicBookingTailor = z.infer<typeof PublicBookingTailor>;
+
+export const PublicBookingSlot = z.object({
+  datetime: z.string(),
+  date: z.string(),
+  time: z.string(),
+  end_datetime: z.string().optional(),
+  duration_minutes: z.number().optional(),
+  rooms_free: z.number().optional(),
+  free_agents: z.array(
+    z.object({
+      agent_user: z.string(),
+      display_name: z.string(),
+      tailor_id: z.string().optional(),
+    }),
+  ),
+});
+export type PublicBookingSlot = z.infer<typeof PublicBookingSlot>;
+
+export const PublicBookingSlotsResponse = z.object({
+  appointmentType: z.object({
+    id: z.string(),
+    erpType: z.string(),
+    label: z.string(),
+    durationMinutes: z.number(),
+    needsRoom: z.boolean(),
+    requiresEligibilityGate: z.boolean(),
+  }),
+  fittingRoomCount: z.number(),
+  slots: z.array(PublicBookingSlot),
+  meta: z.object({
+    dateFrom: z.string(),
+    dateTo: z.string(),
+    tailorFilter: z.string().nullable(),
+    holidaySource: z.enum(["erp", "fallback"]),
+    generatedAt: z.string(),
+  }),
+});
+export type PublicBookingSlotsResponse = z.infer<typeof PublicBookingSlotsResponse>;
+
 // ─── Scanner (in-app QR scanner → ERPNext ls_alterations.api.scanner) ─────
 // Mirrors the resolve_qr return contract. meta is intentionally permissive
 // (passthrough) so new ERPNext fields don't break parsing.

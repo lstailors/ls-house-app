@@ -43,6 +43,7 @@ import { payInfoRouter } from "./routes/pay-info";
 import { yzRouter } from "./routes/yz";
 import { helpdeskRouter } from "./routes/helpdesk";
 import { appointmentsRouter } from "./routes/appointments";
+import { bookingRouter, publicBookingRouter } from "./routes/booking";
 import { scannerRouter } from "./routes/scanner";
 import { garmentRouter } from "./routes/garment";
 import { sofiaBridgeRouter } from "./routes/sofia-bridge";
@@ -66,6 +67,7 @@ const BASE_ALLOWED = [
   /^https:\/\/vibecode\.dev$/,
   /^https:\/\/[a-z0-9-]+\.vercel\.app$/,
   /^https:\/\/app\.lstailors\.com$/,
+  /^https:\/\/book\.lstailors\.com$/,
 ];
 
 const extraOrigins: RegExp[] = (process.env.ALLOWED_ORIGINS ?? "")
@@ -137,6 +139,10 @@ app.route("/api/helpdesk", helpdeskRouter);
 app.route("/api/appointments", appointmentsRouter);
 app.route("/api/scanner", scannerRouter);
 app.route("/api/garment", garmentRouter);
+
+
 app.route("/api/dispatch", dispatchRouter);
+app.route("/api/booking", bookingRouter);
+app.route("/api/public/booking", publicBookingRouter);
 
 export default app;

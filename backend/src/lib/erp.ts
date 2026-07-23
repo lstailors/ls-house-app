@@ -13,7 +13,12 @@ function creds() {
 }
 
 function authHeaders(key: string, secret: string): Record<string, string> {
-  return { Authorization: `token ${key}:${secret}`, Accept: 'application/json' }
+  // Browser UA required when ERPNEXT_BASE_URL is the public CF tunnel (code 1010 otherwise).
+  return {
+    Authorization: `token ${key}:${secret}`,
+    Accept: 'application/json',
+    'User-Agent': 'Mozilla/5.0 (compatible; L&S-House-App/1.0; +https://app.lstailors.com)',
+  }
 }
 
 export async function erpList<T = unknown>(

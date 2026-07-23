@@ -37,6 +37,19 @@ import { tasksRouter } from "./routes/tasks";
 import { scannerRouter } from "./routes/scanner";
 import { garmentRouter } from "./routes/garment";
 import { qrRouter } from "./routes/qr";
+import { outreachRouter } from "./routes/outreach";
+import { searchRouter } from "./routes/search";
+import { notificationsRouter } from "./routes/notifications";
+import { erpnextCustomersRouter } from "./routes/erpnext-customers";
+import { cartsRouter } from "./routes/carts";
+import { alternationsBoardRouter } from "./routes/alterations-board";
+import { payInfoRouter } from "./routes/pay-info";
+import { transfersRouter } from "./routes/transfers";
+import { yzRouter } from "./routes/yz";
+import { helpdeskRouter } from "./routes/helpdesk";
+import { sofiaBridgeRouter } from "./routes/sofia-bridge";
+import { dispatchRouter } from "./routes/dispatch";
+import { bookingRouter, publicBookingRouter } from "./routes/booking";
 
 const app = new Hono();
 
@@ -49,6 +62,8 @@ const allowed = [
   /^https:\/\/[a-z0-9-]+\.vibecode\.dev$/,
   /^https:\/\/vibecode\.dev$/,
   /^https:\/\/[a-z0-9-]+\.vercel\.app$/,
+  /^https:\/\/app\.lstailors\.com$/,
+  /^https:\/\/book\.lstailors\.com$/,
 ];
 
 app.use(
@@ -97,13 +112,6 @@ app.route("/api/files", filesRouter);
 app.route("/api/square", squareRouter);
 app.route("/api/payments", paymentsRouter);
 app.route("/api/print", printRouter);
-import { outreachRouter } from "./routes/outreach";
-import { searchRouter } from "./routes/search";
-import { notificationsRouter } from "./routes/notifications";
-import { erpnextCustomersRouter } from "./routes/erpnext-customers";
-import { cartsRouter } from "./routes/carts";
-import { alternationsBoardRouter } from "./routes/alterations-board";
-import { payInfoRouter } from "./routes/pay-info";
 app.route("/api/outreach", outreachRouter);
 app.route("/api/search", searchRouter);
 app.route("/api/notifications", notificationsRouter);
@@ -112,16 +120,14 @@ app.route("/api/erpnext-customers", erpnextCustomersRouter);
 app.route("/api/carts", cartsRouter);
 app.route("/api/alterations/board", alternationsBoardRouter);
 app.route("/api/alterations-board", alternationsBoardRouter);
-import { transfersRouter } from "./routes/transfers";
 app.route("/api/transfers", transfersRouter);
-import { yzRouter } from "./routes/yz";
 app.route("/api/yz", yzRouter);
-import { helpdeskRouter } from "./routes/helpdesk";
 app.route("/api/helpdesk", helpdeskRouter);
-import { sofiaBridgeRouter } from "./routes/sofia-bridge";
 app.route("/api/sofia-bridge", sofiaBridgeRouter);
-import { dispatchRouter } from "./routes/dispatch";
+
 app.route("/api/dispatch", dispatchRouter);
+app.route("/api/booking", bookingRouter);
+app.route("/api/public/booking", publicBookingRouter);
 
 const port = Number(process.env.PORT) || 3000;
 
