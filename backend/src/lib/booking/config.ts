@@ -92,7 +92,8 @@ export const MIN_NOTICE_MINUTES = 120;
  * Locked shop-level hours (NYC) — base daily windows.
  * Open-days mask is seasonal (store-hours.ts): Sep–Jun Tue–Sat; summer Mon–Fri.
  */
-export const STORE_HOURS_WEEKDAY: TimeWindow = { fromMin: 9 * 60, toMin: 17 * 60 };
+// C 2026-07-22: no appts before 9am; nothing keeps staff past 6pm (slot end ≤ 18:00)
+export const STORE_HOURS_WEEKDAY: TimeWindow = { fromMin: 9 * 60, toMin: 18 * 60 };
 export const STORE_HOURS_SATURDAY: TimeWindow = { fromMin: 9 * 60, toMin: 15 * 60 };
 
 export interface PublicTailor {

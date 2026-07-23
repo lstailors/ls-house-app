@@ -20,7 +20,8 @@ export const REGULAR_OPEN_DAYS = new Set([2, 3, 4, 5, 6]);
 export const SUMMER_OPEN_DAYS = new Set([1, 2, 3, 4, 5]);
 
 /** Default shop hours in minutes (local) */
-export const DEFAULT_DAY_HOURS: TimeRange = { startMin: 9 * 60, endMin: 17 * 60 };
+// C 2026-07-22: open 9:00; last appointment must end by 18:00 (not start-only)
+export const DEFAULT_DAY_HOURS: TimeRange = { startMin: 9 * 60, endMin: 18 * 60 };
 export const SATURDAY_HOURS: TimeRange = { startMin: 9 * 60, endMin: 15 * 60 };
 
 export function parseYmd(ymd: string): { y: number; m: number; d: number } {
