@@ -11,12 +11,18 @@
 //
 // This is a UI guard, not a security boundary — the API is shared and
 // unchanged. It stops accidents, not a determined user with the same role.
+//
+// An earlier version also blocked writes globally inside api.ts as a backstop
+// against a missed call site. That was removed: a module-global flag cannot
+// tell "inside the provider" from "anywhere else in the app", so with a
+// read-only ticket open it also blocked QuickCreateFAB's task creation and the
+// AI daily brief's POST on that very page. Guard the actions instead — the
+// blast radius of a missed one is far smaller than of a false positive.
 
-import { createContext, useContext, useEffect, type ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { ExternalLink, Eye } from "lucide-react";
 import { POS_ORIGIN } from "./publicOrigin";
-import { enterReadOnly, exitReadOnly } from "./readOnlyState";
 
 const ReadOnlyContext = createContext(false);
 
@@ -25,11 +31,6 @@ export function useReadOnly(): boolean {
 }
 
 export function ReadOnlyProvider({ children }: { children: ReactNode }) {
-  useEffect(() => {
-    enterReadOnly();
-    return exitReadOnly;
-  }, []);
-
   return <ReadOnlyContext.Provider value={true}>{children}</ReadOnlyContext.Provider>;
 }
 

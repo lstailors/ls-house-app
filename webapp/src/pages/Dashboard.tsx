@@ -14,6 +14,7 @@ import { GlassCard } from "@/components/glass/GlassCard";
 import { Button } from "@/components/ui/button";
 import { formatUSD, statusToLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { POS_ORIGIN } from "@/lib/publicOrigin";
 import { RevenueTrend } from "@/components/dashboard/RevenueTrend";
 import { SalesLeaderboard } from "@/components/dashboard/SalesLeaderboard";
 import { TopCustomers } from "@/components/dashboard/TopCustomers";
@@ -237,7 +238,7 @@ export default function Dashboard() {
           <KpiCard label="Remaining" value={isLoading ? "—" : Math.max(0, (kpis?.myDeliveriesToday ?? 0) - (kpis?.myDeliveriesCompletedToday ?? 0))} icon={<Truck className="h-4 w-4" />} />
         </div>
         <div className="flex">
-          <Button className="btn-brass" onClick={() => navigate("/deliveries")}>Open Route</Button>
+          <Button className="btn-brass" onClick={() => window.location.assign(`${POS_ORIGIN}/deliveries`)}>Open Route</Button>
         </div>
       </div>
     );
@@ -272,7 +273,7 @@ export default function Dashboard() {
         </GlassCard>
         <div className="flex gap-3">
           <Button className="btn-brass" onClick={() => navigate("/intake/custom")}>New Custom Order</Button>
-          <Button variant="outline" className="border-brass/30 text-cream hover:bg-brass/10" onClick={() => navigate("/intake/alterations")}>New Alteration</Button>
+          <Button variant="outline" className="border-brass/30 text-cream hover:bg-brass/10" onClick={() => window.location.assign(`${POS_ORIGIN}/intake/alterations`)}>New Alteration</Button>
         </div>
       </div>
     );
@@ -306,7 +307,7 @@ export default function Dashboard() {
         />
         <div className="flex items-center gap-2 flex-wrap shrink-0 pt-1">
           <button
-            onClick={() => navigate("/intake/alterations")}
+            onClick={() => window.location.assign(`${POS_ORIGIN}/intake/alterations`)}
             className="inline-flex items-center gap-1.5 rounded-full border border-brass/30 bg-brass/8 px-3.5 py-2 text-xs font-medium text-brass-shimmer hover:bg-brass/15 hover:border-brass/50 transition-all"
           >
             <Scissors className="h-3.5 w-3.5" />
@@ -506,7 +507,7 @@ export default function Dashboard() {
           </div>
           <div className="kpi-number text-4xl mb-1">{isLoading ? "—" : (kpis?.deliveriesDue ?? 0)}</div>
           <div className="text-xs text-cream-muted mb-3">deliveries scheduled</div>
-          <button onClick={() => navigate("/deliveries")}
+          <button onClick={() => window.location.assign(`${POS_ORIGIN}/deliveries`)}
             className="text-xs text-brass-light hover:text-brass transition-colors">
             Open dispatch board →
           </button>
@@ -524,7 +525,7 @@ export default function Dashboard() {
               className="text-xs text-brass-light hover:text-brass transition-colors">
               New custom →
             </button>
-            <button onClick={() => navigate("/intake/alterations")}
+            <button onClick={() => window.location.assign(`${POS_ORIGIN}/intake/alterations`)}
               className="text-xs text-cream-muted hover:text-cream transition-colors">
               New alteration →
             </button>

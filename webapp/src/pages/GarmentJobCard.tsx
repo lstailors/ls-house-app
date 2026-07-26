@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { useReadOnly } from "@/lib/readOnly";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { StatusPill } from "@/components/glass/StatusPill";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ import {
 import type { GarmentJobCard, GarmentActionResult } from "../../../backend/src/types";
 
 export default function GarmentJobCardPage() {
+  const readOnly = useReadOnly();
   const { ticket, garmentId } = useParams<{ ticket: string; garmentId: string }>();
   const queryClient = useQueryClient();
   const [completeOpen, setCompleteOpen] = useState(false);
@@ -174,8 +176,9 @@ export default function GarmentJobCardPage() {
 
       <MeasurementsList measurements={data.measurements} />
 
-      {/* Sticky action bar */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-brass/20 bg-forest-deep/95 backdrop-blur-2xl px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      {/* Sticky action bar — hidden on the admin dashboard, where this
+          page is oversight only; garments are worked at the POS. */}
+      <div hidden={readOnly} className="fixed inset-x-0 bottom-0 z-30 border-t border-brass/20 bg-forest-deep/95 backdrop-blur-2xl px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <div className="mx-auto flex max-w-lg flex-col gap-2">
           <div className="flex gap-2">
             <Button

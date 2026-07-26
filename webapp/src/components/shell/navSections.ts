@@ -54,6 +54,7 @@ export const ADMIN_SECTIONS: NavSection[] = [
     items: [
       { to: "/shop-floor", label: "Shop Floor", icon: Factory, roles: STAFF },
       { to: "/orders/custom", label: "Custom Orders", icon: ClipboardList, roles: STAFF },
+      // Read-only oversight — alterations are worked at alts.lstailors.com.
       { to: "/orders/alterations", label: "Alterations", icon: Scissors, roles: STAFF },
       { to: "/scanner", label: "QR Scanner", icon: Zap, roles: ALL },
       { to: "/sales-orders", label: "Sales Orders", icon: Receipt, roles: MGMT },
@@ -66,7 +67,7 @@ export const ADMIN_SECTIONS: NavSection[] = [
     items: [
       { to: "/appointments", label: "Appointments", icon: CalendarCheck, roles: STAFF },
       { to: "/calendar", label: "Calendar", icon: Calendar, roles: STAFF },
-      { to: "/deliveries", label: "Deliveries", icon: Truck, roles: ALL },
+      // Deliveries moved to the POS entirely — see src/alts/navSections.alts.ts.
       { to: "/tasks", label: "Tasks", icon: CheckSquare, roles: MGMT },
       { to: "/comms", label: "Intelligence", icon: Radio, roles: [...MGMT, "salesperson"] as UserRole[] },
       { to: "/helpdesk", label: "Helpdesk", icon: Headphones, roles: [...MGMT, "salesperson"] as UserRole[] },

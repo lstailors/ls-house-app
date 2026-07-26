@@ -198,7 +198,7 @@ function OrdersTab({ customerId, erpnextCustomerId }: { customerId: string; erpn
           </div>
           <div className="divide-y divide-brass/8">
             {(alterations ?? []).map((alt: any) => (
-              <Link key={alt.id} to={`/alterations/${alt.id}`}
+              <Link key={alt.id} to={`/orders/alterations/${alt.id}`}
                 className="flex items-center justify-between px-4 py-3 hover:bg-brass/5 transition-colors group">
                 <div>
                   <p className="text-cream text-sm font-mono">{alt.id}</p>

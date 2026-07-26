@@ -13,6 +13,7 @@ import type { Alteration } from "@/lib/types";
 import { AlterationKpiBar } from "@/components/alterations/AlterationKpiBar";
 import { AlterationDailyBrief } from "@/components/alterations/AlterationDailyBrief";
 import { TransferButton } from "@/components/alterations/TransferButton";
+import { useReadOnly } from "@/lib/readOnly";
 
 const FILTERS = [
   { value: "all",          label: "All"         },
@@ -22,6 +23,8 @@ const FILTERS = [
 ];
 
 export default function OrdersAlterations() {
+  // Admin sees this board for oversight only; work happens at the POS.
+  const readOnly = useReadOnly();
   const { data: alterations = [], isLoading } = useAlterations();
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
@@ -146,11 +149,13 @@ export default function OrdersAlterations() {
         title={<>The <span className="text-brass-shimmer">alterations</span> board.</>}
         description="Tickets across every stage — from intake to pickup."
         actions={
-          <Button asChild className="btn-brass">
-            <Link to="/intake/alterations">
-              <Plus className="h-4 w-4 mr-1.5" /> New ticket
-            </Link>
-          </Button>
+          readOnly ? null : (
+            <Button asChild className="btn-brass">
+              <Link to="/intake/alterations">
+                <Plus className="h-4 w-4 mr-1.5" /> New ticket
+              </Link>
+            </Button>
+          )
         }
       />
 
@@ -174,9 +179,11 @@ export default function OrdersAlterations() {
           title="No alteration tickets"
           description="Tickets created in intake will appear here once synced from ERPNext."
           action={
-            <Button asChild className="btn-brass">
-              <Link to="/intake/alterations">New ticket</Link>
-            </Button>
+            readOnly ? undefined : (
+              <Button asChild className="btn-brass">
+                <Link to="/intake/alterations">New ticket</Link>
+              </Button>
+            )
           }
         />
       ) : (
@@ -188,7 +195,7 @@ export default function OrdersAlterations() {
         />
       )}
 
-      <TransferButton />
+      {readOnly ? null : <TransferButton />}
     </div>
   );
 }

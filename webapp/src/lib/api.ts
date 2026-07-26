@@ -1,5 +1,4 @@
 import { getStoredToken } from "./authClient";
-import { isReadOnlyActive } from "./readOnlyState";
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || "";
 
@@ -15,20 +14,7 @@ interface ApiResponse<T> {
   data: T;
 }
 
-// Backstop for read-only mode: rather than trusting that every one of the ~15
-// mutation call sites in the alterations screens got its guard, block writes at
-// the one place they all funnel through. Reads are never blocked.
-function assertWritable(method: string | undefined, endpoint: string): void {
-  if (!method || method === "GET" || method === "HEAD") return;
-  if (!isReadOnlyActive()) return;
-  throw new ApiError(
-    `Read-only — alterations are managed in the POS (attempted ${method} ${endpoint})`,
-    403,
-  );
-}
-
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  assertWritable(options.method, endpoint);
   const url = `${API_BASE_URL}${endpoint}`;
   const token = getStoredToken();
 
@@ -77,7 +63,6 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
 // Raw request for non-JSON endpoints (uploads, downloads, streams)
 async function rawRequest(endpoint: string, options: RequestInit = {}): Promise<Response> {
-  assertWritable(options.method, endpoint);
   const url = `${API_BASE_URL}${endpoint}`;
   const token = getStoredToken();
 

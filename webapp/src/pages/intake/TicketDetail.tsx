@@ -26,6 +26,7 @@ import { api } from '@/lib/api'
 import { PUBLIC_ORIGIN } from '@/lib/publicOrigin'
 import { cn } from '@/lib/utils'
 import { useMe } from '@/lib/session'
+import { useReadOnly } from '@/lib/readOnly'
 import type { CartPayload } from '@/lib/cart/parked'
 import { ChargeTerminalButton } from '@/components/payments/ChargeTerminalButton'
 import { EditTicketDrawer } from '@/components/alterations/EditTicketDrawer'
@@ -312,6 +313,7 @@ function CustomerCard({
   const [smsOpen, setSmsOpen] = useState(false)
   const [emailOpen, setEmailOpen] = useState(false)
   const [smsIncludeQr, setSmsIncludeQr] = useState(true)
+  const readOnly = useReadOnly()
 
   const firstName = ticket.customer_name?.split(' ')[0] ?? ticket.customer_name
   const dueFormatted = formatDate(ticket.due_date)
@@ -375,7 +377,7 @@ function CustomerCard({
           )}
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className={cn("flex items-center gap-2 flex-wrap", readOnly && "hidden")}>
           <button
             onClick={() => setSmsOpen(true)}
             disabled={!ticket.customer_mobile}
@@ -680,6 +682,10 @@ function NotifySection({
   onToggle: (v: boolean) => void
 }) {
   const hasPhone = !!ticket.customer_mobile
+  const readOnly = useReadOnly()
+
+  // Nothing here is informational — it's a toggle and a send button.
+  if (readOnly) return null
 
   return (
     <section className="glass-panel rounded-lg p-5 space-y-4">
@@ -771,6 +777,7 @@ function InlineDueDate({
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(ticket.due_date ?? '')
   const inputRef = useRef<HTMLInputElement>(null)
+  const readOnly = useReadOnly()
 
   useEffect(() => {
     setValue(ticket.due_date ?? '')
@@ -822,6 +829,9 @@ function InlineDueDate({
           }}
           className="text-cream text-sm bg-forest-raised border border-brass/30 rounded px-1.5 py-0.5 w-36 focus:outline-none focus:ring-1 focus:ring-brass-shimmer/50"
         />
+      ) : readOnly ? (
+        // Keep the date visible for oversight, drop the pencil affordance.
+        <p className="text-cream-muted text-sm">{formatDate(ticket.due_date)}</p>
       ) : (
         <button
           onClick={() => setEditing(true)}
@@ -847,6 +857,9 @@ export default function TicketDetail() {
   const [paymentLink, setPaymentLink] = useState<PaymentLinkResult | null>(null)
   const [editOpen, setEditOpen] = useState(false)
   const { data: me } = useMe()
+  // True on the admin dashboard, false at the POS. Hides the actions that write
+  // to the ticket; api.ts blocks the writes themselves as a backstop.
+  const readOnly = useReadOnly()
 
   const [autoNotify, setAutoNotify] = useState<boolean>(() => {
     try { return localStorage.getItem(`notify-ready-${ticketName}`) === 'true' } catch { return false }
@@ -1175,6 +1188,7 @@ export default function TicketDetail() {
           current={ticket.workflow_state}
           isPending={updateStatusMutation.isPending}
           onStep={(step) => {
+            if (readOnly) return
             if (step !== ticket.workflow_state) updateStatusMutation.mutate(step)
           }}
         />
@@ -1277,13 +1291,15 @@ export default function TicketDetail() {
         </section>
 
         {/* ── Tailor Assignment ── */}
-        <TailorSection ticket={ticket} tailors={tailors} ticketName={ticketName!} />
+        {readOnly ? null : (
+          <TailorSection ticket={ticket} tailors={tailors} ticketName={ticketName!} />
+        )}
 
         {/* ── Transfer Location ── */}
-        <TransferSection ticket={ticket} ticketName={ticketName!} />
+        {readOnly ? null : <TransferSection ticket={ticket} ticketName={ticketName!} />}
 
         {/* ── Actions ── */}
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className={cn("flex items-center gap-3 flex-wrap", readOnly && "hidden")}>
           <button
             type="button"
             onClick={() => createDeliveryMutation.mutate()}

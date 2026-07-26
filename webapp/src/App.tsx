@@ -5,10 +5,11 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { RoleGuard } from "@/components/shell/RoleGuard";
+import { MovedToPos } from "@/components/shell/MovedToPos";
+import { ReadOnlyLayout } from "@/lib/readOnly";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
-import IntakeAlterations from "./pages/intake/IntakeAlterations";
 import IntakeCustom from "./pages/intake/IntakeCustom";
 import OrdersAlterations from "./pages/orders/OrdersAlterations";
 import OrdersCustom from "./pages/orders/OrdersCustom";
@@ -20,10 +21,7 @@ const SalesOrders = lazy(() => import('./pages/orders/SalesOrders'));
 const SalesOrderDetail = lazy(() => import('./pages/orders/SalesOrderDetail'));
 const Invoices = lazy(() => import('./pages/orders/Invoices'));
 const InvoiceDetail = lazy(() => import('./pages/orders/InvoiceDetail'));
-const Deliveries = lazy(() => import('./pages/Deliveries'));
 const DeliveryTracking = lazy(() => import('./pages/DeliveryTracking'));
-const DeliveryLabel = lazy(() => import('./pages/DeliveryLabel'));
-const DeliveryDetail = lazy(() => import('./pages/DeliveryDetail'));
 const Communications = lazy(() => import('./pages/Communications'));
 const Financials = lazy(() => import('./pages/Financials'));
 const Settings = lazy(() => import('./pages/Settings'));
@@ -97,7 +95,6 @@ const App = () => (
           {/* Standalone print pages — outside AppShell so only content renders */}
           <Route path="/orders/alterations/:ticketName/tags" element={<AlterationTags />} />
           <Route path="/orders/alterations/:ticketName/receipt" element={<AlterationReceipt />} />
-          <Route path="/deliveries/:id/label" element={<DeliveryLabel />} />
           <Route element={<AppShell />}>
             <Route path="/" element={<Dashboard />} />
 
@@ -128,14 +125,10 @@ const App = () => (
               }
             />
 
-            <Route
-              path="/intake/alterations"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
-                  <IntakeAlterations />
-                </RoleGuard>
-              }
-            />
+            {/* Alterations intake moved to alts.lstailors.com. The path stays
+                registered so bookmarks and muscle memory hand over cleanly
+                instead of landing on a 404 mid-customer. */}
+            <Route path="/intake/alterations" element={<MovedToPos />} />
             <Route
               path="/intake/custom"
               element={
@@ -145,35 +138,40 @@ const App = () => (
               }
             />
 
-            <Route
-              path="/orders/alterations"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
-                  <OrdersAlterations />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/orders/alterations/:ticketName"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
-                  <TicketDetail />
-                </RoleGuard>
-              }
-            />
-            {/* Retired: old garment page now redirects to the /g/ job card */}
+            {/* Alterations oversight. Work happens at the POS; these stay here
+                so the business is still visible from the dashboard, but they are
+                read-only so one ERPNext record never has two live editors. */}
+            <Route element={<ReadOnlyLayout />}>
+              <Route
+                path="/orders/alterations"
+                element={
+                  <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
+                    <OrdersAlterations />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/orders/alterations/:ticketName"
+                element={
+                  <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
+                    <TicketDetail />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/g/:ticket/:garmentId"
+                element={
+                  <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
+                    <GarmentJobCard />
+                  </RoleGuard>
+                }
+              />
+            </Route>
+            {/* Retired: old garment page now redirects to the /g/ job card.
+                Outside the read-only layout — it only redirects. */}
             <Route
               path="/garments/:ticketId/:garmentId"
               element={<GarmentTagRedirect />}
-            />
-            {/* Garment job card — opened when shop-floor staff scan a garment tag QR */}
-            <Route
-              path="/g/:ticket/:garmentId"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
-                  <GarmentJobCard />
-                </RoleGuard>
-              }
             />
             <Route
               path="/shop-floor"
@@ -232,8 +230,9 @@ const App = () => (
               }
             />
 
-            <Route path="/deliveries" element={<Deliveries />} />
-            <Route path="/deliveries/:id" element={<DeliveryDetail />} />
+            {/* Deliveries moved to the POS entirely. */}
+            <Route path="/deliveries" element={<MovedToPos what="Deliveries" />} />
+            <Route path="/deliveries/:id" element={<MovedToPos what="Deliveries" />} />
             <Route
               path="/communications"
               element={
@@ -303,14 +302,16 @@ const App = () => (
                 </RoleGuard>
               }
             />
-            <Route
-              path="/admin/board"
-              element={
-                <RoleGuard allow={["super_admin", "salesperson"]}>
-                  <AdminBoard />
-                </RoleGuard>
-              }
-            />
+            <Route element={<ReadOnlyLayout />}>
+              <Route
+                path="/admin/board"
+                element={
+                  <RoleGuard allow={["super_admin", "salesperson"]}>
+                    <AdminBoard />
+                  </RoleGuard>
+                }
+              />
+            </Route>
 
             <Route path="/academy" element={<Academy />} />
             <Route path="/tasks" element={<Tasks />} />
