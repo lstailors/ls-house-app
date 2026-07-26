@@ -10,7 +10,7 @@ async function mcpGet<T>(doctype: string, name: string): Promise<T | null> {
     const res = await fetch(`${MCP_BASE}/mcp`, {
       method: 'POST',
       headers: {
-        Authorization: `token ${MCP_TOKEN}`,
+        Authorization: `Bearer ${MCP_TOKEN}`,
         Accept: 'application/json',
         'Content-Type': 'application/json',
       },
@@ -31,30 +31,35 @@ async function mcpGet<T>(doctype: string, name: string): Promise<T | null> {
   }
 }
 
+const ERP_BASE = (process.env.ERPNEXT_BASE_URL ?? 'https://erp.lstailors.com').replace(/\/$/, '');
+
+function erpTokenAuth(): string {
+  const key = process.env.ERPNEXT_API_KEY ?? '';
+  const secret = process.env.ERPNEXT_API_SECRET ?? '';
+  return `token ${key}:${secret}`;
+}
+
 // Best-effort: persist a generated Square hosted link back onto the Sales Invoice
 // custom field `lsh_square_payment_link` so email/SMS/pay-page all share one link.
+// Field is allow_on_submit=1 (set Jul 2026).
 async function persistLinkToInvoice(invoiceId: string, url: string): Promise<void> {
+  const key = process.env.ERPNEXT_API_KEY ?? '';
+  const secret = process.env.ERPNEXT_API_SECRET ?? '';
+  if (!key || !secret) return;
   try {
-    await fetch(`${MCP_BASE}/mcp`, {
+    await fetch(`${ERP_BASE}/api/method/frappe.client.set_value`, {
       method: 'POST',
       headers: {
-        Authorization: `token ${MCP_TOKEN}`,
+        Authorization: erpTokenAuth(),
         Accept: 'application/json',
         'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 L&S-House-Pay',
       },
       body: JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'tools/call',
-        id: 1,
-        params: {
-          name: 'erp_update',
-          arguments: {
-            doctype: 'Sales Invoice',
-            name: invoiceId,
-            fieldname: 'lsh_square_payment_link',
-            value: url,
-          },
-        },
+        doctype: 'Sales Invoice',
+        name: invoiceId,
+        fieldname: 'lsh_square_payment_link',
+        value: url,
       }),
     });
   } catch {
