@@ -17,6 +17,14 @@
       "autoPort": true
     },
     {
+      "name": "alts-pos",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:alts"],
+      "cwd": "webapp",
+      "port": 8000,
+      "autoPort": true
+    },
+    {
       "name": "booking",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--", "--port", "8100"],

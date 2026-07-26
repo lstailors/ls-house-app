@@ -1,0 +1,10 @@
+{
+  "framework": null,
+  "installCommand": "cd .. && bun install && cd backend && bun install && cd ../webapp && bun install",
+  "buildCommand": "cd ../webapp && bun run build:alts",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://app.lstailors.com/api/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

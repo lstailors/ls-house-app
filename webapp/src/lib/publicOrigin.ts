@@ -12,3 +12,9 @@
 export const PUBLIC_ORIGIN: string =
   import.meta.env.VITE_PUBLIC_ORIGIN ||
   (import.meta.env.PROD ? "https://app.lstailors.com" : window.location.origin);
+
+// Where alterations are actually worked. Used by the admin dashboard's
+// read-only screens to deep-link staff over to the POS.
+export const POS_ORIGIN: string =
+  import.meta.env.VITE_POS_ORIGIN ||
+  (import.meta.env.PROD ? "https://alts.lstailors.com" : window.location.origin);

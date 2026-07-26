@@ -1,0 +1,29 @@
+{
+  "name": "L&S Alterations",
+  "short_name": "Alterations",
+  "description": "Alterations POS — L&S Custom Tailors",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0D1A10",
+  "theme_color": "#1F3A2E",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/ls-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

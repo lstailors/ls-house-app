@@ -1,14 +1,15 @@
 import { NavLink } from "react-router-dom";
-import {
-  LayoutDashboard, Zap, ClipboardList, Scissors, Receipt,
-  Truck, CheckSquare, Radio, MessageSquare, Users, Wallet,
-  Palette, Layers, Shield, Building2, Settings, Bell,
-  ChevronLeft, ChevronRight, FileText, Calendar, Headphones, CalendarCheck, Factory, Send, type LucideIcon,
-} from "lucide-react";
+import { Settings, Bell, ChevronLeft, ChevronRight } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useMaestroApprovalCount, useTaskCount, useHelpdeskOpenCount } from "@/lib/queries";
 import { useMe } from "@/lib/session";
 import type { UserRole } from "@/lib/types";
+import {
+  ADMIN_BRAND,
+  ADMIN_SECTIONS,
+  type NavBrand,
+  type NavSection,
+} from "./navSections";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/format";
 import {
@@ -18,87 +19,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-interface NavItem {
-  to: string;
-  label: string;
-  icon: LucideIcon;
-  roles: UserRole[];
-}
-
-interface NavSection {
-  title: string;
-  items: NavItem[];
-  roles?: UserRole[];
-}
-
-const ALL:   UserRole[] = ["super_admin", "store_manager", "salesperson", "driver", "tailor"];
-const MGMT:  UserRole[] = ["super_admin", "store_manager"];
-const STAFF: UserRole[] = ["super_admin", "store_manager", "salesperson", "tailor"];
-
-const SECTIONS: NavSection[] = [
-  {
-    title: "House",
-    items: [
-      { to: "/", label: "Dashboard", icon: LayoutDashboard, roles: ALL },
-      { to: "/mission-control", label: "Mission Control", icon: Zap, roles: MGMT },
-      { to: "/house", label: "House", icon: Building2, roles: MGMT },
-    ],
-  },
-  {
-    title: "Workshop",
-    roles: STAFF,
-    items: [
-      { to: "/shop-floor", label: "Shop Floor", icon: Factory, roles: STAFF },
-      { to: "/orders/custom", label: "Custom Orders", icon: ClipboardList, roles: STAFF },
-      { to: "/orders/alterations", label: "Alterations", icon: Scissors, roles: STAFF },
-      { to: "/scanner", label: "QR Scanner", icon: Zap, roles: ALL },
-      { to: "/sales-orders", label: "Sales Orders", icon: Receipt, roles: MGMT },
-      { to: "/invoices", label: "Invoices", icon: FileText, roles: MGMT },
-    ],
-  },
-  {
-    title: "Ops",
-    roles: [...MGMT, "tailor", "salesperson"] as UserRole[],
-    items: [
-      { to: "/appointments", label: "Appointments", icon: CalendarCheck, roles: STAFF },
-      { to: "/calendar", label: "Calendar", icon: Calendar, roles: STAFF },
-      { to: "/deliveries", label: "Deliveries", icon: Truck, roles: ALL },
-      { to: "/tasks", label: "Tasks", icon: CheckSquare, roles: MGMT },
-      { to: "/comms", label: "Intelligence", icon: Radio, roles: [...MGMT, "salesperson"] as UserRole[] },
-      { to: "/helpdesk", label: "Helpdesk", icon: Headphones, roles: [...MGMT, "salesperson"] as UserRole[] },
-    ],
-  },
-  {
-    title: "Clients",
-    roles: STAFF,
-    items: [
-      { to: "/sofia", label: "Sofia — SMS", icon: MessageSquare, roles: STAFF },
-      { to: "/dispatch", label: "Sofia Dispatch", icon: Send, roles: STAFF },
-      { to: "/customers", label: "Customers", icon: Users, roles: [...MGMT, "salesperson"] as UserRole[] },
-    ],
-  },
-  {
-    title: "Financials",
-    roles: MGMT,
-    items: [
-      { to: "/financials", label: "Financials", icon: Wallet, roles: MGMT },
-      { to: "/reference/fabrics", label: "Fabric Pricing", icon: Palette, roles: MGMT },
-      { to: "/reference/styles", label: "Style Library", icon: Layers, roles: MGMT },
-    ],
-  },
-  {
-    title: "Admin",
-    roles: ["super_admin", "salesperson"] as UserRole[],
-    items: [
-      { to: "/admin/users", label: "Users", icon: Shield, roles: ["super_admin"] },
-      { to: "/admin/locations", label: "Locations", icon: Building2, roles: ["super_admin"] },
-      { to: "/admin/tailors", label: "Tailors", icon: Shield, roles: ["super_admin"] },
-      { to: "/admin/overview", label: "Org Overview", icon: Shield, roles: ["super_admin"] },
-      { to: "/admin/board", label: "Alterations Board", icon: Scissors, roles: ["super_admin", "salesperson"] },
-    ],
-  },
-];
-
 export type SidebarMode = "expanded" | "icons" | "hidden";
 
 interface Props {
@@ -106,9 +26,20 @@ interface Props {
   onNavigate?: () => void;
   mode?: SidebarMode;
   onModeChange?: (mode: SidebarMode) => void;
+  /** Menu to render. Defaults to the admin dashboard menu. */
+  sections?: NavSection[];
+  /** Wordmark in the header. Defaults to the admin branding. */
+  brand?: NavBrand;
 }
 
-export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: Props) {
+export function Sidebar({
+  role,
+  onNavigate,
+  mode = "expanded",
+  onModeChange,
+  sections = ADMIN_SECTIONS,
+  brand = ADMIN_BRAND,
+}: Props) {
   const { data: approvalCount = 0 } = useMaestroApprovalCount();
   const { data: taskCountData } = useTaskCount();
   const { data: helpdeskCount } = useHelpdeskOpenCount();
@@ -141,8 +72,8 @@ export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: P
                   onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
                 />
                 <div className="leading-tight">
-                  <div className="font-display italic text-lg text-cream">L&amp;S House</div>
-                  <div className="ui-label mt-0 text-[9px]">Bespoke Operations</div>
+                  <div className="font-display italic text-lg text-cream">{brand.title}</div>
+                  <div className="ui-label mt-0 text-[9px]">{brand.subtitle}</div>
                 </div>
               </div>
             )}
@@ -180,7 +111,7 @@ export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: P
 
         {/* ── Nav ── */}
         <nav className={cn("flex-1 overflow-y-auto pb-4 scrollbar-none", collapsed ? "px-1.5" : "px-3")}>
-          {SECTIONS.filter((s) => !s.roles || s.roles.includes(role)).map((section) => {
+          {sections.filter((s) => !s.roles || s.roles.includes(role)).map((section) => {
             const items = section.items.filter((i) => i.roles.includes(role));
             if (items.length === 0) return null;
             return (

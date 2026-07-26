@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { Outlet, Navigate, useLocation } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 import { Sidebar, type SidebarMode } from "./Sidebar";
 import { TopBar } from "./TopBar";
-import { useMe } from "@/lib/session";
+import { useAuthGate } from "./useAuthGate";
 import { LocationProvider } from "@/lib/locationContext";
-import { Monogram } from "../glass/Monogram";
 import {
   Sheet,
   SheetContent,
@@ -14,8 +13,7 @@ import {
 import { QuickCreateFAB } from "./QuickCreateFAB";
 
 export function AppShell() {
-  const { data: user, isLoading } = useMe();
-  const location = useLocation();
+  const { user, gate } = useAuthGate();
   const [navOpen, setNavOpen] = useState(false);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>(() => {
     try {
@@ -30,20 +28,7 @@ export function AppShell() {
     try { localStorage.setItem("ls-sidebar-mode", mode); } catch {}
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Monogram size="lg" className="animate-glow-pulse" />
-          <div className="ui-label">Preparing the atelier…</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
-  }
+  if (gate || !user) return <>{gate}</>;
 
   return (
     <LocationProvider user={user}>
