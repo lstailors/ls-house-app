@@ -7,6 +7,7 @@ import {
   Banknote, ClipboardList, Search, User, Phone, Mail, MapPin,
   Camera
 } from 'lucide-react'
+import imageCompression from 'browser-image-compression'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useMe } from '@/lib/session'
@@ -694,8 +695,22 @@ function GarmentPhotoCapture({ garmentId, ticketRef, photos, onChange }: Garment
     const ext = file.name.split('.').pop() ?? 'jpg'
     const path = `intake/${ticketRef}/${garmentId}/${Date.now()}.${ext}`
     try {
+      // Straight off an iPad camera a photo is 2–5MB, which overruns the Edge
+      // function's request body limit and fails as an opaque 500. Same
+      // treatment the delivery POD capture already applies.
+      let upload: File | Blob = file
+      try {
+        upload = await imageCompression(file, {
+          maxWidthOrHeight: 1600,
+          maxSizeMB: 1,
+          useWebWorker: true,
+        })
+      } catch {
+        // Compression is an optimisation, not a gate — fall back to the original.
+      }
+
       const formData = new FormData()
-      formData.append('file', file)
+      formData.append('file', upload, file.name)
       formData.append('path', path)
       if (ticketRef && !ticketRef.startsWith('temp-')) {
         formData.append('doctype', 'Alteration Ticket')
