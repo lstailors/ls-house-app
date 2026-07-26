@@ -174,6 +174,15 @@ async function resolvePaymentLink(
   return url;
 }
 
+function stripFactoryCost(desc: string | null | undefined): string {
+  if (!desc) return '';
+  const plain = String(desc).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (plain.includes('factory $')) {
+    return plain.split('factory $')[0].replace(/[·\s]+$/g, '').trim();
+  }
+  return plain;
+}
+
 function mapSalesInvoice(doc: any, paymentLink: string | null) {
   return {
     id: doc.name,
@@ -181,15 +190,20 @@ function mapSalesInvoice(doc: any, paymentLink: string | null) {
     customer_name: doc.customer_name ?? doc.customer ?? '',
     grand_total: doc.grand_total ?? 0,
     outstanding_amount: doc.outstanding_amount ?? 0,
+    net_total: doc.net_total ?? doc.total ?? null,
+    total_taxes_and_charges: doc.total_taxes_and_charges ?? 0,
+    discount_amount: doc.discount_amount ?? 0,
     status: doc.status ?? 'Unpaid',
     currency: doc.currency ?? 'USD',
     due_date: doc.due_date ?? null,
     posting_date: doc.posting_date ?? null,
     square_payment_link: paymentLink,
     items: (doc.items ?? []).map((it: any) => ({
-      item_name: it.item_name,
-      description: it.description,
-      amount: it.amount,
+      item_name: it.item_name || it.item_code || 'Item',
+      description: stripFactoryCost(it.description),
+      qty: it.qty ?? 1,
+      rate: it.rate ?? null,
+      amount: it.amount ?? null,
     })),
   };
 }

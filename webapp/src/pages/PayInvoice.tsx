@@ -1,36 +1,27 @@
-// IMPORTANT: Before Apple Pay works in production, register app.lstailors.com
-// in Square Developer Dashboard > Apple Pay.
-// Square provides the domain association file — host it at:
-// app.lstailors.com/.well-known/apple-developer-merchantid-domain-association
-// Add this as a static file in the Vite public/ directory.
+// Public invoice + pay page.
+// Details mirror the branded email (items, totals). Payment is Square hosted
+// checkout only (Apple Pay / cards) — embedded Web Payments SDK removed so
+// clients always get a working Apple Pay path on square.link.
 
-import { useEffect, useRef, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
 import {
   Loader2,
   CheckCircle2,
   AlertTriangle,
-  CreditCard,
   Lock,
   ExternalLink,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { formatUSD, formatDate } from "@/lib/format";
 
-// Use sandbox SDK in dev, production in prod
-const IS_PROD = import.meta.env.PROD;
-const SQUARE_JS_URL = IS_PROD
-  ? "https://web.squarecdn.com/v1/square.js"
-  : "https://sandbox.web.squarecdn.com/v1/square.js";
-
-const SQUARE_APP_ID = import.meta.env.VITE_SQUARE_APPLICATION_ID as string | undefined;
-const SQUARE_LOCATION_ID = import.meta.env.VITE_SQUARE_LOCATION_ID as string | undefined;
 const API_BASE = import.meta.env.VITE_BACKEND_URL || "";
 
-declare global {
-  interface Window {
-    Square: any;
-  }
+interface LineItem {
+  item_name?: string;
+  description?: string;
+  qty?: number | null;
+  rate?: number | null;
+  amount?: number | null;
 }
 
 interface InvoiceData {
@@ -38,223 +29,91 @@ interface InvoiceData {
   customer_name: string;
   grand_total: number;
   outstanding_amount: number;
+  net_total: number | null;
+  total_taxes_and_charges: number;
+  discount_amount: number;
   status: string;
   due_date: string | null;
   posting_date: string | null;
-  items: Array<{ item_name?: string; description?: string; amount?: number | null }>;
+  items: LineItem[];
   currency: string;
   square_payment_link: string | null;
 }
 
-type PageState = "loading" | "not_found" | "already_paid" | "ready" | "sdk_error" | "processing" | "success" | "error";
+type PageState = "loading" | "not_found" | "already_paid" | "ready" | "error";
+
+function cleanDesc(raw?: string | null): string {
+  if (!raw) return "";
+  const plain = String(raw).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  if (plain.includes("factory $")) {
+    return plain.split("factory $")[0].replace(/[·\s]+$/g, "").trim();
+  }
+  return plain;
+}
 
 export default function PayInvoice() {
   const { invoiceId } = useParams<{ invoiceId: string }>();
   const [invoice, setInvoice] = useState<InvoiceData | null>(null);
   const [pageState, setPageState] = useState<PageState>("loading");
   const [errorMsg, setErrorMsg] = useState("");
-  const [sdkReady, setSdkReady] = useState(false);
-  const [successPaymentId, setSuccessPaymentId] = useState("");
 
-  const cardRef = useRef<any>(null);
-  const paymentsRef = useRef<any>(null);
-  const applePayRef = useRef<any>(null);
-  const googlePayRef = useRef<any>(null);
-
-  // Load Square SDK script
   useEffect(() => {
-    if (!SQUARE_APP_ID || !SQUARE_LOCATION_ID) {
-      console.error("[PayInvoice] Missing VITE_SQUARE_APPLICATION_ID or VITE_SQUARE_LOCATION_ID");
-      setPageState("sdk_error");
-      setErrorMsg("Payment system is not configured. Please contact us directly.");
+    if (!invoiceId) {
+      setPageState("not_found");
       return;
     }
-    if (document.querySelector(`script[src="${SQUARE_JS_URL}"]`)) {
-      if (window.Square) setSdkReady(true);
-      else document.querySelector(`script[src="${SQUARE_JS_URL}"]`)!
-        .addEventListener("load", () => setSdkReady(true));
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = SQUARE_JS_URL;
-    script.onload = () => setSdkReady(true);
-    script.onerror = () => {
-      setPageState("sdk_error");
-      setErrorMsg("Failed to load payment processor. Please try again or contact us.");
-    };
-    document.head.appendChild(script);
-  }, []);
-
-  // Fetch invoice / ticket
-  useEffect(() => {
-    if (!invoiceId) { setPageState("not_found"); return; }
     (async () => {
       try {
         const res = await fetch(`${API_BASE}/api/pay-info/${encodeURIComponent(invoiceId)}`);
-        if (!res.ok) { setPageState("not_found"); return; }
+        if (!res.ok) {
+          setPageState("not_found");
+          return;
+        }
         const json = await res.json();
         const d = json?.data;
-        if (!d) { setPageState("not_found"); return; }
+        if (!d) {
+          setPageState("not_found");
+          return;
+        }
         const row: InvoiceData = {
           erp_name: d.id,
           customer_name: d.customer_name ?? "Valued Customer",
-          grand_total: d.grand_total ?? 0,
-          outstanding_amount: d.outstanding_amount ?? 0,
+          grand_total: Number(d.grand_total ?? 0),
+          outstanding_amount: Number(d.outstanding_amount ?? 0),
+          net_total: d.net_total != null ? Number(d.net_total) : null,
+          total_taxes_and_charges: Number(d.total_taxes_and_charges ?? 0),
+          discount_amount: Number(d.discount_amount ?? 0),
           status: d.status ?? "Unpaid",
           due_date: d.due_date ?? null,
           posting_date: d.posting_date ?? null,
-          items: d.items ?? [],
+          items: Array.isArray(d.items)
+            ? d.items.map((it: any) => ({
+                item_name: it.item_name || "Item",
+                description: cleanDesc(it.description),
+                qty: it.qty ?? 1,
+                rate: it.rate ?? null,
+                amount: it.amount ?? null,
+              }))
+            : [],
           currency: d.currency ?? "USD",
           square_payment_link: (d.square_payment_link || d.lsh_square_payment_link || "").trim() || null,
         };
         setInvoice(row);
         if (row.status === "Paid" || row.outstanding_amount <= 0) {
           setPageState("already_paid");
-        } else if (pageState === "loading") {
+        } else {
           setPageState("ready");
         }
       } catch {
         setPageState("not_found");
       }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoiceId]);
-
-  // Init Square card element once invoice loaded + SDK ready
-  useEffect(() => {
-    if (pageState !== "ready" || !sdkReady || !invoice) return;
-    if (!window.Square || !SQUARE_APP_ID || !SQUARE_LOCATION_ID) return;
-
-    (async () => {
-      try {
-        const payments = window.Square.payments(SQUARE_APP_ID, SQUARE_LOCATION_ID);
-        paymentsRef.current = payments;
-
-        const card = await payments.card({
-          style: {
-            ".input-container": { borderColor: "#4a7c59", borderRadius: "6px" },
-            // NOTE: Square's Web Payments SDK validates fontFamily against its
-            // own allowlist and rejects arbitrary fonts (e.g. "Montserrat"),
-            // which makes card.attach() throw and the whole form fail to load
-            // ("Payment system unavailable"). Omit it and use Square's default.
-            input: { color: "#1a2e1d", fontSize: "14px" },
-            "input::placeholder": { color: "#9ca3af" },
-          },
-        });
-        await card.attach("#card-container");
-        if (!document.querySelector("#card-container iframe")) {
-          throw new Error("Card element did not render — check Square Dashboard configuration.");
-        }
-        cardRef.current = card;
-
-        const amountStr = (invoice.outstanding_amount ?? invoice.grand_total ?? 0).toFixed(2);
-        const paymentRequest = payments.paymentRequest({
-          countryCode: "US",
-          currencyCode: "USD",
-          total: { amount: amountStr, label: "L&S Custom Tailors" },
-        });
-
-        // Apple Pay — the SDK's ApplePay object has NO attach() method (unlike
-        // Card / Google Pay). We render our own Apple Pay button and call
-        // applePay.tokenize() on click. It only initializes on Safari/iOS/macOS
-        // with the domain registered in the Square dashboard; otherwise
-        // payments.applePay() throws and we leave the button hidden.
-        const appleBtn = document.getElementById("apple-pay-button");
-        try {
-          const applePay = await payments.applePay(paymentRequest);
-          applePayRef.current = applePay;
-          if (appleBtn) {
-            appleBtn.style.display = "block";
-            appleBtn.addEventListener("click", () => walletPay(applePay));
-          }
-        } catch {
-          if (appleBtn) appleBtn.style.display = "none";
-        }
-
-        // Google Pay — attach() renders the official button; we add the click
-        // handler that tokenizes and charges (attach alone does not charge).
-        const googleBtn = document.getElementById("google-pay-button");
-        try {
-          const googlePay = await payments.googlePay(paymentRequest);
-          googlePayRef.current = googlePay;
-          await googlePay.attach("#google-pay-button");
-          if (googleBtn) googleBtn.addEventListener("click", () => walletPay(googlePay));
-        } catch {
-          if (googleBtn) googleBtn.style.display = "none";
-        }
-      } catch (err: any) {
-        console.error("[PayInvoice] Square init error:", err);
-        setPageState("sdk_error");
-        setErrorMsg(err?.message ?? "Payment system failed to load. Please try again.");
-      }
-    })();
-  }, [pageState, sdkReady, invoice]);
-
-  // POST a Square token (from card or a wallet) to the backend to charge it.
-  const submitToken = async (token: string) => {
-    if (!invoice) return;
-    const outstanding = invoice.outstanding_amount ?? invoice.grand_total ?? 0;
-    const amountCents = Math.round(outstanding * 100);
-
-    const res = await fetch(`${API_BASE}/api/pay-info/${encodeURIComponent(invoice.erp_name)}/charge`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source_id: token, amount_cents: amountCents }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setPageState("ready");
-      setErrorMsg(data?.error ?? "Payment could not be processed. Please try again.");
-      return;
-    }
-    setSuccessPaymentId(data?.data?.payment_id ?? "");
-    setPageState("success");
-  };
-
-  // Card "Pay" button.
-  const handlePay = async () => {
-    if (!cardRef.current || !invoice) return;
-    setPageState("processing");
-    setErrorMsg("");
-    try {
-      const result = await cardRef.current.tokenize();
-      if (result.status !== "OK") {
-        setPageState("ready");
-        setErrorMsg(result.errors?.[0]?.message ?? "Card tokenization failed. Please check your card details.");
-        return;
-      }
-      await submitToken(result.token as string);
-    } catch {
-      setPageState("ready");
-      setErrorMsg("An unexpected error occurred. Please try again.");
-    }
-  };
-
-  // Apple Pay / Google Pay — both tokenize the same way and charge identically.
-  const walletPay = async (wallet: any) => {
-    if (!invoice) return;
-    setPageState("processing");
-    setErrorMsg("");
-    try {
-      const result = await wallet.tokenize();
-      if (result.status !== "OK") {
-        setPageState("ready");
-        // Dismissing the wallet sheet reports "Cancel" — not a real error.
-        if (result.status !== "Cancel") {
-          setErrorMsg(result.errors?.[0]?.message ?? "Wallet payment failed. Please try another method.");
-        }
-        return;
-      }
-      await submitToken(result.token as string);
-    } catch {
-      setPageState("ready");
-      setErrorMsg("An unexpected error occurred. Please try again.");
-    }
-  };
 
   const outstanding = invoice?.outstanding_amount ?? invoice?.grand_total ?? 0;
   const amountDisplay = invoice ? formatUSD(outstanding) : "";
   const customerName = invoice?.customer_name ?? "Valued Customer";
+  const payHref = invoice?.square_payment_link || null;
 
   if (pageState === "loading") {
     return (
@@ -267,9 +126,11 @@ export default function PayInvoice() {
   if (pageState === "not_found") {
     return (
       <div className="min-h-screen bg-forest-deep flex items-center justify-center px-6">
-        <div className="text-center">
+        <div className="text-center max-w-sm">
           <div className="font-display italic text-3xl text-cream mb-3">Invoice not found</div>
-          <p className="text-cream-muted">This invoice doesn&apos;t exist or the link may have expired.</p>
+          <p className="text-cream-muted text-sm">
+            This invoice doesn&apos;t exist or the link may have expired. Call us at (212) 308-4431.
+          </p>
         </div>
       </div>
     );
@@ -292,182 +153,236 @@ export default function PayInvoice() {
     );
   }
 
-  if (pageState === "success") {
-    return (
-      <div className="min-h-screen bg-forest-deep flex items-center justify-center px-6">
-        <div className="text-center max-w-sm">
-          <div className="relative inline-flex items-center justify-center mb-6">
-            <div className="absolute inset-0 rounded-full bg-signal-emerald/20 blur-3xl" />
-            <CheckCircle2 className="relative h-16 w-16 text-signal-emerald" />
-          </div>
-          <div className="font-display italic text-4xl text-cream mb-2">Payment confirmed</div>
-          <p className="text-cream-muted mb-1 text-sm">
-            Invoice <span className="font-mono text-cream">{invoice?.erp_name}</span>
-          </p>
-          <p className="font-display italic text-brass-shimmer text-2xl mb-6">{amountDisplay}</p>
-          <p className="text-cream-dim text-sm mb-6">
-            Thank you, {customerName}. Your payment has been received.
-          </p>
-          {successPaymentId && (
-            <p className="text-cream-dim text-xs mb-4">Payment ID: <span className="font-mono">{successPaymentId}</span></p>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const items = invoice?.items ?? [];
+  const showTax = (invoice?.total_taxes_and_charges ?? 0) > 0;
+  const showDiscount = (invoice?.discount_amount ?? 0) > 0;
+  const showSubtotal =
+    invoice?.net_total != null &&
+    Math.abs(Number(invoice.net_total) - Number(invoice.grand_total)) > 0.001;
 
   return (
     <div className="min-h-screen bg-forest-deep px-5 py-10">
       <div className="max-w-md mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
+          <img
+            src="https://erp.lstailors.com/files/ls-logo-email-192.png"
+            alt="L&S"
+            className="mx-auto mb-3 h-12 w-12 rounded"
+            width={48}
+            height={48}
+          />
           <div className="font-display italic text-3xl text-cream mb-1">L&amp;S Custom Tailors</div>
-          <div className="text-brass text-[10px] tracking-[0.2em] font-medium uppercase" style={{ fontFamily: "Montserrat, sans-serif" }}>
-            Secure Payment
+          <div
+            className="text-brass text-[10px] tracking-[0.2em] font-medium uppercase"
+            style={{ fontFamily: "Montserrat, sans-serif" }}
+          >
+            Your Invoice
           </div>
           <div className="flex items-center justify-center gap-1.5 mt-2">
             <Lock className="h-3 w-3 text-cream-dim" />
-            <span className="text-cream-dim text-[10px]">Powered by Square</span>
+            <span className="text-cream-dim text-[10px]">Secure payment via Square</span>
           </div>
         </div>
 
-        {/* Invoice summary */}
+        {/* Invoice details — email parity */}
         {invoice && (
-          <div className="mb-5 rounded-xl border p-5" style={{ backdropFilter: "blur(12px)", background: "rgba(15, 26, 16, 0.7)", borderColor: "rgba(176, 141, 87, 0.25)" }}>
-            <div className="flex items-start justify-between mb-4">
+          <div
+            className="mb-5 rounded-xl border p-5"
+            style={{
+              backdropFilter: "blur(12px)",
+              background: "rgba(15, 26, 16, 0.7)",
+              borderColor: "rgba(176, 141, 87, 0.25)",
+            }}
+          >
+            <div className="flex items-start justify-between gap-3 mb-4">
               <div>
-                <div className="text-cream-dim text-[9px] tracking-widest uppercase mb-1" style={{ fontFamily: "Montserrat, sans-serif" }}>Invoice</div>
-                <div className="font-mono text-cream text-sm">{invoice.erp_name}</div>
+                <div
+                  className="text-cream-dim text-[9px] tracking-widest uppercase mb-1"
+                  style={{ fontFamily: "Montserrat, sans-serif" }}
+                >
+                  Invoice
+                </div>
+                <div className="font-mono text-cream text-sm break-all">{invoice.erp_name}</div>
               </div>
-              <div className="text-right">
-                <div className="text-cream-dim text-[9px] tracking-widest uppercase mb-1" style={{ fontFamily: "Montserrat, sans-serif" }}>Customer</div>
+              <div className="text-right shrink-0">
+                <div
+                  className="text-cream-dim text-[9px] tracking-widest uppercase mb-1"
+                  style={{ fontFamily: "Montserrat, sans-serif" }}
+                >
+                  Customer
+                </div>
                 <div className="text-cream text-sm">{customerName}</div>
               </div>
             </div>
 
-            {Array.isArray(invoice.items) && invoice.items.length > 0 && (
-              <div className="border-t border-brass/10 pt-3 mb-4 space-y-1.5">
-                {invoice.items.slice(0, 6).map((item, i) => (
-                  <div key={i} className="flex justify-between text-sm">
-                    <span className="text-cream-muted truncate max-w-[60%]">{item.item_name ?? item.description ?? "Item"}</span>
-                    <span className="text-cream-dim font-mono tabular-nums">{item.amount != null ? formatUSD(item.amount) : ""}</span>
+            {(invoice.posting_date || invoice.due_date) && (
+              <div className="grid grid-cols-2 gap-3 mb-4 pb-3 border-b border-brass/10">
+                {invoice.posting_date && (
+                  <div>
+                    <div
+                      className="text-cream-dim text-[9px] tracking-widest uppercase mb-0.5"
+                      style={{ fontFamily: "Montserrat, sans-serif" }}
+                    >
+                      Date
+                    </div>
+                    <div className="text-cream text-xs">{formatDate(invoice.posting_date)}</div>
                   </div>
-                ))}
+                )}
+                {invoice.due_date && (
+                  <div className="text-right">
+                    <div
+                      className="text-cream-dim text-[9px] tracking-widest uppercase mb-0.5"
+                      style={{ fontFamily: "Montserrat, sans-serif" }}
+                    >
+                      Due
+                    </div>
+                    <div className="text-cream text-xs">{formatDate(invoice.due_date)}</div>
+                  </div>
+                )}
               </div>
             )}
 
-            <div className="border-t border-brass/20 pt-4 flex items-end justify-between">
-              <div>
-                <div className="text-cream-dim text-[9px] tracking-widest uppercase mb-1" style={{ fontFamily: "Montserrat, sans-serif" }}>Amount Due</div>
-                {invoice.due_date && <div className="text-cream-dim text-xs">Due {formatDate(invoice.due_date)}</div>}
+            {/* Line items */}
+            <div className="mb-1">
+              <div
+                className="text-brass text-[9px] tracking-[0.2em] uppercase font-medium mb-2"
+                style={{ fontFamily: "Montserrat, sans-serif" }}
+              >
+                Items
               </div>
-              <div className="font-display italic text-3xl text-brass-shimmer">{amountDisplay}</div>
+              {items.length === 0 ? (
+                <p className="text-cream-dim text-xs mb-3">See your email for full item detail.</p>
+              ) : (
+                <div className="space-y-3 mb-4">
+                  {items.map((item, i) => {
+                    const name = item.item_name || "Item";
+                    const desc =
+                      item.description && item.description !== name ? item.description : "";
+                    const qty = item.qty != null && Number(item.qty) !== 1 ? Number(item.qty) : null;
+                    return (
+                      <div
+                        key={i}
+                        className="flex justify-between gap-3 border-t border-brass/10 pt-3 first:border-0 first:pt-0"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="text-cream text-sm font-medium leading-snug">
+                            {name}
+                            {qty != null && (
+                              <span className="text-cream-dim font-normal"> × {qty}</span>
+                            )}
+                          </div>
+                          {desc && (
+                            <div className="text-cream-dim text-[11px] leading-snug mt-1">{desc}</div>
+                          )}
+                        </div>
+                        <div className="text-cream text-sm font-mono tabular-nums shrink-0">
+                          {item.amount != null ? formatUSD(Number(item.amount)) : ""}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Totals */}
+            <div className="border-t border-brass/20 pt-3 space-y-1.5">
+              {showSubtotal && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-cream-dim uppercase tracking-wider">Subtotal</span>
+                  <span className="text-cream font-mono tabular-nums">
+                    {formatUSD(Number(invoice.net_total))}
+                  </span>
+                </div>
+              )}
+              {showTax && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-cream-dim uppercase tracking-wider">Tax</span>
+                  <span className="text-cream font-mono tabular-nums">
+                    {formatUSD(Number(invoice.total_taxes_and_charges))}
+                  </span>
+                </div>
+              )}
+              {showDiscount && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-cream-dim uppercase tracking-wider">Discount</span>
+                  <span className="text-cream font-mono tabular-nums">
+                    −{formatUSD(Number(invoice.discount_amount))}
+                  </span>
+                </div>
+              )}
+              {(showSubtotal || showTax || showDiscount) &&
+                Math.abs(Number(invoice.grand_total) - Number(outstanding)) > 0.01 && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-cream-dim uppercase tracking-wider">Invoice total</span>
+                    <span className="text-cream font-mono tabular-nums">
+                      {formatUSD(Number(invoice.grand_total))}
+                    </span>
+                  </div>
+                )}
+              <div className="flex items-end justify-between pt-2">
+                <div
+                  className="text-brass text-[10px] tracking-[0.2em] uppercase font-medium"
+                  style={{ fontFamily: "Montserrat, sans-serif" }}
+                >
+                  Balance Due
+                </div>
+                <div className="font-display italic text-3xl text-brass-shimmer leading-none">
+                  {amountDisplay}
+                </div>
+              </div>
             </div>
           </div>
         )}
 
-        {/* Payment form */}
-        <div className="rounded-xl border p-5 space-y-4" style={{ backdropFilter: "blur(12px)", background: "rgba(15, 26, 16, 0.7)", borderColor: "rgba(176, 141, 87, 0.3)" }}>
-          {pageState === "sdk_error" ? (
+        {/* Pay — Square hosted only (Apple Pay + cards) */}
+        <div
+          className="rounded-xl border p-5 space-y-3"
+          style={{
+            backdropFilter: "blur(12px)",
+            background: "rgba(15, 26, 16, 0.7)",
+            borderColor: "rgba(176, 141, 87, 0.3)",
+          }}
+        >
+          {payHref ? (
+            <>
+              <a
+                href={payHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full h-14 items-center justify-center gap-2 rounded-md bg-brass text-forest-deep hover:bg-brass-light font-semibold text-base transition-all"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Pay {amountDisplay}
+              </a>
+              <p className="text-center text-cream-dim text-[11px] leading-relaxed">
+                Opens secure Square Checkout — <span className="text-cream-muted">Apple Pay</span>,
+                cards, and more
+              </p>
+            </>
+          ) : (
             <div className="flex items-start gap-2 rounded-lg p-4 text-sm text-signal-amber border border-signal-amber/20 bg-signal-amber/10">
               <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
               <div>
-                <p className="font-medium mb-1">Payment system unavailable</p>
-                <p className="text-xs opacity-80">{errorMsg}</p>
-                <p className="text-xs mt-2 opacity-70">Please call us at (212) 564-3536 to pay by phone.</p>
-                {invoice?.square_payment_link && (
-                  <a
-                    href={invoice.square_payment_link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex mt-3 items-center gap-1.5 text-brass text-xs font-medium underline underline-offset-2"
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                    Pay on Square Checkout instead
-                  </a>
-                )}
+                <p className="font-medium mb-1">Payment link unavailable</p>
+                <p className="text-xs opacity-80">
+                  {errorMsg || "Please call Concierge at (212) 308-4431 to pay by phone."}
+                </p>
               </div>
             </div>
-          ) : (
-            <>
-              {/* Preferred: Square hosted checkout (Apple Pay + cards on square.link) */}
-              {invoice?.square_payment_link && (
-                <div className="space-y-2">
-                  <a
-                    href={invoice.square_payment_link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex w-full h-14 items-center justify-center gap-2 rounded-md bg-brass text-forest-deep hover:bg-brass-light font-semibold text-base transition-all"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    Pay {amountDisplay} with Square
-                  </a>
-                  <p className="text-center text-cream-dim text-[10px]">
-                    Opens Square Checkout — Apple Pay, Google Pay, and cards
-                  </p>
-                  <div className="flex items-center gap-3 py-1">
-                    <div className="h-px flex-1 bg-brass/20" />
-                    <span className="text-cream-dim text-[9px] tracking-widest uppercase" style={{ fontFamily: "Montserrat, sans-serif" }}>
-                      Or pay here
-                    </span>
-                    <div className="h-px flex-1 bg-brass/20" />
-                  </div>
-                </div>
-              )}
-
-              {/* Apple Pay — native button; hidden until the SDK initializes it
-                  (Safari/iOS/macOS with the domain registered in Square). */}
-              <style>{`
-                #apple-pay-button {
-                  display: none;
-                  width: 100%;
-                  height: 48px;
-                  border-radius: 8px;
-                  cursor: pointer;
-                  -webkit-appearance: -apple-pay-button;
-                  -apple-pay-button-type: plain;
-                  -apple-pay-button-style: black;
-                }
-              `}</style>
-              <div id="apple-pay-button" />
-
-              {/* Google Pay */}
-              <div id="google-pay-button" className="w-full min-h-[48px]" />
-
-              {/* Card */}
-              <div>
-                <div className="flex items-center gap-2 text-cream-dim text-[9px] tracking-widest uppercase mb-2" style={{ fontFamily: "Montserrat, sans-serif" }}>
-                  <CreditCard className="h-3 w-3" />
-                  Card details
-                </div>
-                <div id="card-container" className="rounded-md overflow-hidden" style={{ border: "1px solid rgba(176, 141, 87, 0.5)", background: "#ffffff", minHeight: "54px" }} />
-              </div>
-
-              {errorMsg && (
-                <div className="flex items-start gap-2 rounded-lg p-3 text-sm text-signal-amber border border-signal-amber/20 bg-signal-amber/10">
-                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-                  <span>{errorMsg}</span>
-                </div>
-              )}
-
-              <Button
-                onClick={handlePay}
-                disabled={pageState === "processing" || !sdkReady || !cardRef.current}
-                className="w-full h-14 bg-brass text-forest-deep hover:bg-brass-light font-semibold text-base transition-all disabled:opacity-50"
-              >
-                {pageState === "processing" ? (
-                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Processing…</>
-                ) : (
-                  <>Pay {amountDisplay}</>
-                )}
-              </Button>
-
-              <p className="text-center text-cream-dim text-[10px]">
-                Your payment is encrypted and processed securely by Square.
-              </p>
-            </>
           )}
+
+          <p className="text-center text-cream-dim text-[10px] pt-1">
+            Questions? Text (212) 308-4431 · concierge@lstailors.com
+          </p>
         </div>
+
+        <p className="text-center text-cream-dim text-[10px] mt-6 leading-relaxed">
+          138 E 61st Street, Suite 201 · New York, NY 10065
+          <br />
+          Handcrafted in New York since 1974
+        </p>
       </div>
     </div>
   );
