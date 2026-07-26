@@ -3,9 +3,44 @@ import { Hono } from 'hono';
 export const payInfoRouter = new Hono();
 
 const MCP_BASE = process.env.ERPNEXT_MCP_URL ?? 'https://erp-mcp.lstailors.com';
-const MCP_TOKEN = process.env.ERPNEXT_MCP_TOKEN ?? '';
+const MCP_TOKEN = (process.env.ERPNEXT_MCP_TOKEN ?? '').trim();
+const ERP_BASE = (process.env.ERPNEXT_BASE_URL ?? 'https://erp.lstailors.com').replace(/\/$/, '');
 
+function erpAuth(): string {
+  const key = (process.env.ERPNEXT_API_KEY ?? '').trim();
+  const secret = (process.env.ERPNEXT_API_SECRET ?? '').trim();
+  return `token ${key}:${secret}`;
+}
+
+function hasErpCreds(): boolean {
+  return Boolean((process.env.ERPNEXT_API_KEY ?? '').trim() && (process.env.ERPNEXT_API_SECRET ?? '').trim());
+}
+
+/** Direct Frappe REST get — primary path (public ERP). Browser UA avoids CF 1010. */
+async function erpGet<T>(doctype: string, name: string): Promise<T | null> {
+  if (!hasErpCreds()) return null;
+  try {
+    const url = `${ERP_BASE}/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: erpAuth(),
+        Accept: 'application/json',
+        'User-Agent': 'Mozilla/5.0 L&S-House-Pay',
+      },
+    });
+    if (!res.ok) return null;
+    const json: any = await res.json();
+    const doc = json?.data;
+    return doc?.name ? (doc as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** MCP fallback if direct ERP fails. */
 async function mcpGet<T>(doctype: string, name: string): Promise<T | null> {
+  if (!MCP_TOKEN) return null;
   try {
     const res = await fetch(`${MCP_BASE}/mcp`, {
       method: 'POST',
@@ -24,33 +59,28 @@ async function mcpGet<T>(doctype: string, name: string): Promise<T | null> {
     if (!res.ok) return null;
     const json: any = await res.json();
     const text = json?.result?.content?.[0]?.text ?? '{}';
-    const doc = JSON.parse(text);
+    const parsed = JSON.parse(text);
+    // erp_get may return doc directly or {document}/{name}
+    const doc = parsed?.name ? parsed : parsed?.document ?? parsed?.data ?? null;
     return doc?.name ? (doc as T) : null;
   } catch {
     return null;
   }
 }
 
-const ERP_BASE = (process.env.ERPNEXT_BASE_URL ?? 'https://erp.lstailors.com').replace(/\/$/, '');
-
-function erpTokenAuth(): string {
-  const key = process.env.ERPNEXT_API_KEY ?? '';
-  const secret = process.env.ERPNEXT_API_SECRET ?? '';
-  return `token ${key}:${secret}`;
+async function getDoc<T>(doctype: string, name: string): Promise<T | null> {
+  const viaErp = await erpGet<T>(doctype, name);
+  if (viaErp) return viaErp;
+  return mcpGet<T>(doctype, name);
 }
 
-// Best-effort: persist a generated Square hosted link back onto the Sales Invoice
-// custom field `lsh_square_payment_link` so email/SMS/pay-page all share one link.
-// Field is allow_on_submit=1 (set Jul 2026).
 async function persistLinkToInvoice(invoiceId: string, url: string): Promise<void> {
-  const key = process.env.ERPNEXT_API_KEY ?? '';
-  const secret = process.env.ERPNEXT_API_SECRET ?? '';
-  if (!key || !secret) return;
+  if (!hasErpCreds()) return;
   try {
     await fetch(`${ERP_BASE}/api/method/frappe.client.set_value`, {
       method: 'POST',
       headers: {
-        Authorization: erpTokenAuth(),
+        Authorization: erpAuth(),
         Accept: 'application/json',
         'Content-Type': 'application/json',
         'User-Agent': 'Mozilla/5.0 L&S-House-Pay',
@@ -63,22 +93,43 @@ async function persistLinkToInvoice(invoiceId: string, url: string): Promise<voi
       }),
     });
   } catch {
-    // non-fatal — the freshly generated link is still returned to the caller
+    /* non-fatal */
   }
 }
 
-// Create a Square hosted payment link (quick_pay) for a given amount.
-// Returns the short square.link URL, or null on failure.
 async function createSquareLink(
   invoiceId: string,
   amountCents: number,
   customerName: string,
 ): Promise<string | null> {
-  const accessToken = process.env.SQUARE_ACCESS_TOKEN ?? '';
-  const locationId = process.env.SQUARE_LOCATION_ID ?? '';
+  const accessToken = (process.env.SQUARE_ACCESS_TOKEN ?? '').trim();
+  const locationId = (process.env.SQUARE_LOCATION_ID ?? process.env.VITE_SQUARE_LOCATION_ID ?? '').trim();
   if (!accessToken || !locationId || amountCents <= 0) return null;
 
   try {
+    // Prefer ERP method (ties order to invoice cleanly)
+    if (hasErpCreds()) {
+      const erpRes = await fetch(
+        `${ERP_BASE}/api/method/ls_alterations.ls_square.pos.create_payment_link`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: erpAuth(),
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 L&S-House-Pay',
+          },
+          body: JSON.stringify({ invoice: invoiceId }),
+        },
+      );
+      if (erpRes.ok) {
+        const j: any = await erpRes.json().catch(() => ({}));
+        const msg = j?.message ?? j;
+        const url = msg?.url || msg?.payment_url || msg?.data?.url;
+        if (typeof url === 'string' && url.startsWith('http')) return url;
+      }
+    }
+
     const res = await fetch('https://connect.squareup.com/v2/online-checkout/payment-links', {
       method: 'POST',
       headers: {
@@ -108,75 +159,190 @@ async function createSquareLink(
   }
 }
 
-// Resolve a hosted Square pay link for an invoice: reuse the stored one if present,
-// otherwise mint a new one and persist it. Never throws.
 async function resolvePaymentLink(
   invoiceId: string,
   storedLink: string | null | undefined,
   outstanding: number,
   customerName: string,
 ): Promise<string | null> {
-  if (storedLink && storedLink.startsWith('http')) return storedLink;
+  const prior = (storedLink || '').trim();
+  if (prior.startsWith('http')) return prior;
   if (outstanding <= 0) return null;
-  const amountCents = Math.round(outstanding * 100);
+  const amountCents = Math.round(Number(outstanding) * 100);
   const url = await createSquareLink(invoiceId, amountCents, customerName);
   if (url) void persistLinkToInvoice(invoiceId, url);
   return url;
 }
 
-// Public endpoint — no auth required.
-// Returns the minimal payment info needed to render the /pay/:id page.
-// Tries Sales Invoice first, then Alteration Ticket.
-payInfoRouter.get('/:id', async (c) => {
-  const id = c.req.param('id');
-  if (!id) return c.json({ error: 'Missing id' }, 400);
+function mapSalesInvoice(doc: any, paymentLink: string | null) {
+  return {
+    id: doc.name,
+    type: 'sales_invoice' as const,
+    customer_name: doc.customer_name ?? doc.customer ?? '',
+    grand_total: doc.grand_total ?? 0,
+    outstanding_amount: doc.outstanding_amount ?? 0,
+    status: doc.status ?? 'Unpaid',
+    currency: doc.currency ?? 'USD',
+    due_date: doc.due_date ?? null,
+    posting_date: doc.posting_date ?? null,
+    square_payment_link: paymentLink,
+    items: (doc.items ?? []).map((it: any) => ({
+      item_name: it.item_name,
+      description: it.description,
+      amount: it.amount,
+    })),
+  };
+}
 
-  // Try Sales Invoice (ACC-SINV-*, SINV-*, LSTNY-SINV-*, or any explicit prefix)
+// Link-preview / Open Graph HTML for iMessage & social crawlers.
+// Served at /api/pay-info/:id/og — middleware rewrites bot hits on /pay/:id here.
+payInfoRouter.get('/:id/og', async (c) => {
+  const rawId = c.req.param('id');
+  if (!rawId) return c.text('Missing id', 400);
+  let id = rawId;
+  try {
+    id = decodeURIComponent(rawId);
+  } catch {
+    id = rawId;
+  }
+
+  let doc = await getDoc<any>('Sales Invoice', id);
+  if (!doc) doc = await getDoc<any>('Alteration Ticket', id);
+
+  const pageUrl = `https://app.lstailors.com/pay/${encodeURIComponent(id)}`;
+  const logo = 'https://erp.lstailors.com/files/ls-logo-email-192.png';
+
+  let title = `Invoice ${id} — L&S Custom Tailors`;
+  let description = 'Review your L&S Custom Tailors invoice, then pay securely.';
+
+  if (doc) {
+    const customer = String(doc.customer_name || doc.customer || '').trim();
+    const outstanding = Number(
+      doc.outstanding_amount != null
+        ? doc.outstanding_amount
+        : doc.payment_status === 'Paid'
+          ? 0
+          : (doc.ticket_total ?? doc.grand_total ?? 0),
+    );
+    const currency = String(doc.currency || 'USD');
+    const total = Number(doc.grand_total ?? doc.ticket_total ?? outstanding ?? 0);
+    const amountLabel =
+      outstanding > 0
+        ? `${currency} ${outstanding.toFixed(2)} due`
+        : `${currency} ${total.toFixed(2)} · paid`;
+    title =
+      outstanding > 0
+        ? `L&S Invoice ${id} · ${amountLabel}`
+        : `L&S Invoice ${id} · Paid in full`;
+    const who = customer ? `${customer} · ` : '';
+    description = `${who}${amountLabel}. Open to review items, then pay with Apple Pay or card.`;
+  }
+
+  const esc = (s: string) =>
+    s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+
+  const html = [
+    '<!DOCTYPE html>',
+    '<html lang="en"><head>',
+    '<meta charset="utf-8" />',
+    '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+    `<title>${esc(title)}</title>`,
+    `<meta name="description" content="${esc(description)}" />`,
+    '<meta name="theme-color" content="#1F3A2E" />',
+    '<meta property="og:type" content="website" />',
+    '<meta property="og:site_name" content="L&S Custom Tailors" />',
+    `<meta property="og:title" content="${esc(title)}" />`,
+    `<meta property="og:description" content="${esc(description)}" />`,
+    `<meta property="og:url" content="${esc(pageUrl)}" />`,
+    `<meta property="og:image" content="${esc(logo)}" />`,
+    '<meta property="og:image:width" content="192" />',
+    '<meta property="og:image:height" content="192" />',
+    '<meta name="twitter:card" content="summary" />',
+    `<meta name="twitter:title" content="${esc(title)}" />`,
+    `<meta name="twitter:description" content="${esc(description)}" />`,
+    `<meta name="twitter:image" content="${esc(logo)}" />`,
+    `<link rel="canonical" href="${esc(pageUrl)}" />`,
+    '</head>',
+    '<body style="margin:0;background:#0D1A10;color:#F1E9D6;font-family:Georgia,serif;padding:32px;text-align:center;">',
+    '<p style="font-style:italic;font-size:22px;">L&amp;S Custom Tailors</p>',
+    `<p style="font-family:Helvetica,Arial,sans-serif;font-size:14px;color:#C9C0AB;">${esc(title)}</p>`,
+    `<p style="font-family:Helvetica,Arial,sans-serif;font-size:13px;"><a href="${esc(pageUrl)}" style="color:#B08D57;">Open invoice</a></p>`,
+    `<script>location.replace(${JSON.stringify(pageUrl)});</script>`,
+    '</body></html>',
+  ].join('');
+
+  return new Response(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'public, max-age=300',
+    },
+  });
+});
+
+// Public endpoint — no auth required.
+payInfoRouter.get('/:id', async (c) => {
+  const rawId = c.req.param('id');
+  if (!rawId) return c.json({ error: 'Missing id' }, 400);
+  // Decode once; Hono usually already decodes path params
+  let id = rawId;
+  try {
+    id = decodeURIComponent(rawId);
+  } catch {
+    id = rawId;
+  }
+
   const looksLikeSalesInvoice =
     id.startsWith('ACC-SINV') ||
     id.startsWith('SINV') ||
     id.startsWith('ACC-SI') ||
-    id.includes('-SINV-');
+    id.includes('-SINV-') ||
+    id.startsWith('LSTNY-') ||
+    id.startsWith('LSTX-');
+
+  const respondSi = async (doc: any) => {
+    const outstanding = Number(doc.outstanding_amount ?? 0);
+    const customerName = doc.customer_name ?? doc.customer ?? '';
+    const payment_link = await resolvePaymentLink(
+      doc.name,
+      doc.lsh_square_payment_link,
+      outstanding,
+      customerName,
+    );
+    return c.json({ data: mapSalesInvoice(doc, payment_link) });
+  };
 
   if (looksLikeSalesInvoice) {
-    const doc = await mcpGet<any>('Sales Invoice', id);
-    if (doc) {
-      const outstanding = doc.outstanding_amount ?? 0;
-      const customerName = doc.customer_name ?? doc.customer ?? '';
-      const payment_link = await resolvePaymentLink(
-        doc.name, doc.lsh_square_payment_link, outstanding, customerName,
-      );
-      return c.json({
-        data: {
-          id: doc.name,
-          type: 'sales_invoice',
-          customer_name: customerName,
-          grand_total: doc.grand_total ?? 0,
-          outstanding_amount: outstanding,
-          status: doc.status ?? 'Unpaid',
-          currency: doc.currency ?? 'USD',
-          due_date: doc.due_date ?? null,
-          posting_date: doc.posting_date ?? null,
-          square_payment_link: payment_link,
-          items: (doc.items ?? []).map((it: any) => ({
-            item_name: it.item_name,
-            description: it.description,
-            amount: it.amount,
-          })),
-        },
-      });
-    }
+    const doc = await getDoc<any>('Sales Invoice', id);
+    if (doc) return respondSi(doc);
   }
 
-  // Try Alteration Ticket
-  const ticket = await mcpGet<any>('Alteration Ticket', id);
+  const ticket = await getDoc<any>('Alteration Ticket', id);
   if (ticket) {
     const isPaid = ticket.payment_status === 'Paid';
-    const outstanding = isPaid ? 0 : (ticket.ticket_total ?? 0);
+    const outstanding = isPaid ? 0 : Number(ticket.ticket_total ?? 0);
     const customerName = ticket.customer_name ?? '';
-    const payment_link = await resolvePaymentLink(
-      ticket.name, ticket.lsh_square_payment_link, outstanding, customerName,
-    );
+    const stored =
+      ticket.lsh_square_payment_link || ticket.square_payment_link || null;
+    // Prefer linked SI for payment link generation
+    const linkedInvoice = ticket.sales_invoice || ticket.invoice || null;
+    let payment_link: string | null = null;
+    if (linkedInvoice) {
+      const inv = await getDoc<any>('Sales Invoice', String(linkedInvoice));
+      payment_link = await resolvePaymentLink(
+        String(linkedInvoice),
+        inv?.lsh_square_payment_link || stored,
+        outstanding,
+        customerName,
+      );
+    } else {
+      payment_link = await resolvePaymentLink(ticket.name, stored, outstanding, customerName);
+    }
+
     return c.json({
       data: {
         id: ticket.name,
@@ -198,41 +364,16 @@ payInfoRouter.get('/:id', async (c) => {
     });
   }
 
-  // Last resort: fall back to Sales Invoice (catches non-standard prefixes)
+  // Last resort: any name as Sales Invoice
   if (!looksLikeSalesInvoice) {
-    const inv = await mcpGet<any>('Sales Invoice', id);
-    if (inv) {
-      const outstanding = inv.outstanding_amount ?? 0;
-      const customerName = inv.customer_name ?? inv.customer ?? '';
-      const payment_link = await resolvePaymentLink(
-        inv.name, inv.lsh_square_payment_link, outstanding, customerName,
-      );
-      return c.json({
-        data: {
-          id: inv.name,
-          type: 'sales_invoice',
-          customer_name: customerName,
-          grand_total: inv.grand_total ?? 0,
-          outstanding_amount: outstanding,
-          status: inv.status ?? 'Unpaid',
-          currency: inv.currency ?? 'USD',
-          due_date: inv.due_date ?? null,
-          posting_date: inv.posting_date ?? null,
-          square_payment_link: payment_link,
-          items: (inv.items ?? []).map((it: any) => ({
-            item_name: it.item_name,
-            description: it.description,
-            amount: it.amount,
-          })),
-        },
-      });
-    }
+    const inv = await getDoc<any>('Sales Invoice', id);
+    if (inv) return respondSi(inv);
   }
 
   return c.json({ error: 'Not found' }, 404);
 });
 
-// Public charge endpoint — no auth required (customer payment link).
+// Public charge endpoint — embedded card form on /pay page
 payInfoRouter.post('/:id/charge', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => null);
@@ -240,8 +381,12 @@ payInfoRouter.post('/:id/charge', async (c) => {
     return c.json({ error: 'source_id and amount_cents are required' }, 400);
   }
 
-  const accessToken = process.env.SQUARE_ACCESS_TOKEN ?? '';
-  const locationId  = process.env.SQUARE_LOCATION_ID ?? '';
+  const accessToken = (process.env.SQUARE_ACCESS_TOKEN ?? '').trim();
+  const locationId = (
+    process.env.SQUARE_LOCATION_ID ??
+    process.env.VITE_SQUARE_LOCATION_ID ??
+    ''
+  ).trim();
 
   if (!accessToken || !locationId) {
     return c.json({ error: 'Payment processing is not configured' }, 500);
@@ -275,7 +420,10 @@ payInfoRouter.post('/:id/charge', async (c) => {
       CARD_EXPIRED: 'This card has expired. Please use a different card.',
       INVALID_EXPIRATION: 'Card expiration date is invalid.',
     };
-    return c.json({ error: ERRORS[code] ?? 'Payment could not be processed. Please try again.' }, 422);
+    return c.json(
+      { error: ERRORS[code] ?? 'Payment could not be processed. Please try again.' },
+      422,
+    );
   }
 
   const payment = squareData.payment;
