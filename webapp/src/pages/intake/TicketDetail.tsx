@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
+import { PUBLIC_ORIGIN } from '@/lib/publicOrigin'
 import { cn } from '@/lib/utils'
 import { useMe } from '@/lib/session'
 import type { CartPayload } from '@/lib/cart/parked'
@@ -244,7 +245,7 @@ function GarmentCard({
 }) {
   const garmentLines = lines?.filter((l) => l.garment_ref === garment.name) ?? []
   const garmentTotal = garmentLines.reduce((sum, l) => sum + (l.price ?? 0), 0)
-  const qrValue = window.location.origin + '/garments/' + ticketName + '/' + garment.garment_id
+  const qrValue = PUBLIC_ORIGIN + '/garments/' + ticketName + '/' + garment.garment_id
 
   return (
     <div className="glass-panel rounded-lg p-4 space-y-3">
@@ -316,7 +317,7 @@ function CustomerCard({
   const dueFormatted = formatDate(ticket.due_date)
   const totalFormatted = formatCurrency(ticket.ticket_total ?? 0)
 
-  const eTicketUrl = `${window.location.origin}/e-ticket/${ticket.name}`
+  const eTicketUrl = `${PUBLIC_ORIGIN}/e-ticket/${ticket.name}`
   const defaultSmsMsg = `Hi ${firstName}, your alteration at L&S is ${ticket.workflow_state}. Total: ${totalFormatted}. Due: ${dueFormatted}. View your e-ticket: ${eTicketUrl}`
   const defaultEmailSubject = `Your alteration ticket ${ticket.name} update`
   const defaultEmailBody = `Hi ${firstName},\n\nYour alteration ticket ${ticket.name} is currently: ${ticket.workflow_state}.\n\nTotal: ${totalFormatted}\nDue: ${dueFormatted}\n\nPlease contact us if you have any questions.\n\nThank you,\nL&S Tailors`
@@ -973,7 +974,7 @@ export default function TicketDetail() {
       )
       if (status === 'Ready' && autoNotify && ticket?.customer_mobile) {
         const firstName = ticket.customer_name?.split(' ')[0] ?? 'there'
-        const eTicketUrl = `${window.location.origin}/e-ticket/${ticketName}`
+        const eTicketUrl = `${PUBLIC_ORIGIN}/e-ticket/${ticketName}`
         const msg = `Hi ${firstName}, your alteration at L&S Tailors is ready for pickup! Total: ${formatCurrency(ticket.ticket_total ?? 0)}. View your e-ticket & bring it in: ${eTicketUrl}`
         try {
           await api.post(`/api/intake-alterations/tickets/${ticketName}/notify-ready`, {

@@ -93,6 +93,22 @@ export default function DeliveryDetail() {
     onError: () => toast.error("Could not update contact"),
   });
 
+  // The confirmation endpoint returns a PDF behind a Bearer token, so a plain
+  // window.open() of the URL gets a 401 — the browser can't attach the header.
+  // Fetch it with the token, then open the blob.
+  const openConfirmationPdf = async () => {
+    try {
+      const res = await api.raw(`/api/deliveries/${id}/confirmation`);
+      if (!res.ok) throw new Error(String(res.status));
+      const url = URL.createObjectURL(await res.blob());
+      window.open(url, "_blank");
+      // Give the new tab time to load before revoking.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      toast.error("Could not generate confirmation PDF");
+    }
+  };
+
   const handleStart = async () => {
     try {
       await update.mutateAsync({ id: id!, status: "out_for_delivery" });
@@ -184,7 +200,7 @@ export default function DeliveryDetail() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => window.open(`/api/deliveries/${id}/confirmation`, "_blank")}
+            onClick={() => void openConfirmationPdf()}
             className="border-brass/20 hover:bg-brass/10 text-cream-muted h-8 px-2"
             title="Print confirmation"
           >

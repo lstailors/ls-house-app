@@ -1,3 +1,4 @@
+import { api, ApiError } from "@/lib/api";
 import {
   TrendingUp,
   TrendingDown,
@@ -177,15 +178,14 @@ function FinancialsGate({ onUnlock }: { onUnlock: () => void }) {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/financials/unlock", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("lst_token")}` },
-        body: JSON.stringify({ pin }),
-      });
-      const json = await res.json();
-      if (!res.ok) { setError(json?.error?.message || "Incorrect code"); return; }
+      // Use the api helper rather than a relative fetch: it attaches the Bearer
+      // token and honours VITE_BACKEND_URL, so this keeps working if the app is
+      // ever served from a host that doesn't proxy /api itself.
+      await api.post("/api/financials/unlock", { pin });
       sessionStorage.setItem("fin_unlocked", "1");
       onUnlock();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Incorrect code");
     } finally {
       setLoading(false);
     }

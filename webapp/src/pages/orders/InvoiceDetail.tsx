@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { ChargeTerminalButton } from "@/components/payments/ChargeTerminalButton";
 import { api } from "@/lib/api";
+import { PUBLIC_ORIGIN } from "@/lib/publicOrigin";
 import { GlassCard } from "@/components/glass/GlassCard";
 import { StatusPill } from "@/components/glass/StatusPill";
 import { formatUSD, formatDate } from "@/lib/format";
@@ -384,7 +385,7 @@ export default function InvoiceDetail() {
                   />
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(`${window.location.origin}/pay/${invoice.erpnextId}`);
+                      navigator.clipboard.writeText(`${PUBLIC_ORIGIN}/pay/${invoice.erpnextId}`);
                       setLinkCopied(true);
                       setTimeout(() => setLinkCopied(false), 2000);
                     }}

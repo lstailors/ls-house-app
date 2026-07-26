@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { Printer, ArrowLeft, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
+import { PUBLIC_ORIGIN } from '@/lib/publicOrigin'
 
 interface AlterationTicketDoc {
   name: string
@@ -115,7 +116,7 @@ export default function AlterationTags() {
           className="print:block print:max-w-none">
           {garments.map(g => {
             const gLines = lines.filter(l => l.garment_ref === g.garment_id)
-            const tagUrl = `${window.location.origin}/garments/${ticket.name}/${g.garment_id}`
+            const tagUrl = `${PUBLIC_ORIGIN}/garments/${ticket.name}/${g.garment_id}`
 
             return (
               <div key={g.name} className="tag" style={{

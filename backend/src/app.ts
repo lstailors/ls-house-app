@@ -1,53 +1,12 @@
 // Hono app export for Vercel serverless deployment.
 // Does NOT import @vibecodeapp/proxy — that is Vibecode-runtime-only (loaded in index.ts).
-// All route logic is identical to index.ts.
+// Routes come from routes/register.ts, shared with index.ts, so the two entry
+// points cannot drift apart the way they did before (see that file's header).
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import "./env";
-import { meRouter } from "./routes/me";
-import { locationsRouter } from "./routes/locations";
-import { customersRouter } from "./routes/customers";
-import { alterationsRouter } from "./routes/alterations";
-import { customOrdersRouter } from "./routes/custom-orders";
-import { salesOrdersRouter } from "./routes/sales-orders";
-import { invoicesRouter } from "./routes/invoices";
-import { deliveriesRouter } from "./routes/deliveries";
-import { trackingRouter } from "./routes/tracking";
-import { communicationsRouter } from "./routes/communications";
-import { referenceRouter } from "./routes/reference";
-import { adminRouter } from "./routes/admin";
-import { dashboardRouter } from "./routes/dashboard";
-import { maestroRouter } from "./routes/maestro";
-import { sofiaRouter } from "./routes/sofia";
-import { agentsRouter } from "./routes/agents";
-import { espressoRouter } from "./routes/espresso";
-import { tasksRouter } from "./routes/tasks";
-import { intakeAlterationsRouter } from "./routes/intake-alterations";
-import { commsRouter } from "./routes/comms";
-import { searchRouter } from "./routes/search";
-import { notificationsRouter } from "./routes/notifications";
-import { calendarRouter } from "./routes/calendar";
-import { transfersRouter } from "./routes/transfers";
-import { printRouter } from "./routes/print";
-import { alternationsBoardRouter } from "./routes/alterations-board";
-import { paymentsRouter } from "./routes/payments";
-import { cartsRouter } from "./routes/carts";
-import { ravenRouter } from "./routes/raven";
-import { mcpRouter } from "./routes/mcp";
-import { webhooksRouter } from "./routes/webhooks";
-import { unifiRouter } from "./routes/unifi";
-import { authRouter } from "./routes/auth";
-import { financialsUnlockRouter } from "./routes/financials-unlock";
-import { payInfoRouter } from "./routes/pay-info";
-import { yzRouter } from "./routes/yz";
-import { helpdeskRouter } from "./routes/helpdesk";
-import { appointmentsRouter } from "./routes/appointments";
-import { bookingRouter, publicBookingRouter } from "./routes/booking";
-import { scannerRouter } from "./routes/scanner";
-import { garmentRouter } from "./routes/garment";
-import { sofiaBridgeRouter } from "./routes/sofia-bridge";
-import { dispatchRouter } from "./routes/dispatch";
+import { registerRoutes } from "./routes/register";
 
 const app = new Hono();
 
@@ -67,6 +26,7 @@ const BASE_ALLOWED = [
   /^https:\/\/vibecode\.dev$/,
   /^https:\/\/[a-z0-9-]+\.vercel\.app$/,
   /^https:\/\/app\.lstailors\.com$/,
+  /^https:\/\/alts\.lstailors\.com$/,
   /^https:\/\/book\.lstailors\.com$/,
 ];
 
@@ -83,6 +43,9 @@ app.use(
   cors({
     origin: (origin) => (origin && allowed.some((re) => re.test(origin)) ? origin : null),
     credentials: true,
+    // Without this every non-GET pays an extra preflight round-trip, which is felt
+    // at the counter. Only matters if alts calls this API cross-origin.
+    maxAge: 86400,
   }),
 );
 
@@ -97,52 +60,6 @@ app.get("/.well-known/apple-developer-merchantid-domain-association", (c) =>
   })
 );
 
-app.route("/api/auth", authRouter);
-app.route("/api/financials/unlock", financialsUnlockRouter);
-app.route("/api/me", meRouter);
-app.route("/api/locations", locationsRouter);
-app.route("/api/customers", customersRouter);
-app.route("/api/alterations", alterationsRouter);
-app.route("/api/custom-orders", customOrdersRouter);
-app.route("/api/sales-orders", salesOrdersRouter);
-app.route("/api/invoices", invoicesRouter);
-app.route("/api/deliveries", deliveriesRouter);
-app.route("/api/scan", trackingRouter);
-app.route("/api/communications", communicationsRouter);
-app.route("/api/reference", referenceRouter);
-app.route("/api/admin", adminRouter);
-app.route("/api/dashboard", dashboardRouter);
-app.route("/api/maestro", maestroRouter);
-app.route("/api/sofia", sofiaRouter);
-app.route("/api/sofia-bridge", sofiaBridgeRouter);
-app.route("/api/agents", agentsRouter);
-app.route("/api/espresso", espressoRouter);
-app.route("/api/tasks", tasksRouter);
-app.route("/api/intake-alterations", intakeAlterationsRouter);
-app.route("/api/comms", commsRouter);
-app.route("/api/search", searchRouter);
-app.route("/api/notifications", notificationsRouter);
-app.route("/api/calendar", calendarRouter);
-app.route("/api/transfers", transfersRouter);
-app.route("/api/print", printRouter);
-app.route("/api/alterations-board", alternationsBoardRouter);
-app.route("/api/alterations/board", alternationsBoardRouter);
-app.route("/api/payments", paymentsRouter);
-app.route("/api/carts", cartsRouter);
-app.route("/api/raven", ravenRouter);
-app.route("/api/mcp", mcpRouter);
-app.route("/api/webhooks", webhooksRouter);
-app.route("/api/unifi", unifiRouter);
-app.route("/api/pay-info", payInfoRouter);
-app.route("/api/yz", yzRouter);
-app.route("/api/helpdesk", helpdeskRouter);
-app.route("/api/appointments", appointmentsRouter);
-app.route("/api/scanner", scannerRouter);
-app.route("/api/garment", garmentRouter);
-
-
-app.route("/api/dispatch", dispatchRouter);
-app.route("/api/booking", bookingRouter);
-app.route("/api/public/booking", publicBookingRouter);
+registerRoutes(app);
 
 export default app;

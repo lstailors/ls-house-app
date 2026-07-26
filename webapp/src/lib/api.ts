@@ -50,8 +50,15 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     return json.data;
   }
 
-  // 3. Non-JSON: return undefined (caller should use api.raw() for these)
-  return undefined as T;
+  // 3. Non-JSON on a JSON endpoint is always a bug, and silently returning
+  //    undefined hides the worst version of it: when an SPA host rewrites an
+  //    unmatched /api/... path to index.html, this lands here as a 200 with
+  //    HTML and the screen just renders empty. Fail loudly instead.
+  throw new ApiError(
+    `Expected JSON from ${endpoint} but got ${contentType || "no content-type"}. ` +
+      `If this endpoint returns non-JSON, use api.raw().`,
+    response.status,
+  );
 }
 
 // Raw request for non-JSON endpoints (uploads, downloads, streams)
