@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   CreditCard,
   Lock,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatUSD, formatDate } from "@/lib/format";
@@ -42,6 +43,7 @@ interface InvoiceData {
   posting_date: string | null;
   items: Array<{ item_name?: string; description?: string; amount?: number | null }>;
   currency: string;
+  square_payment_link: string | null;
 }
 
 type PageState = "loading" | "not_found" | "already_paid" | "ready" | "sdk_error" | "processing" | "success" | "error";
@@ -103,6 +105,7 @@ export default function PayInvoice() {
           posting_date: d.posting_date ?? null,
           items: d.items ?? [],
           currency: d.currency ?? "USD",
+          square_payment_link: (d.square_payment_link || d.lsh_square_payment_link || "").trim() || null,
         };
         setInvoice(row);
         if (row.status === "Paid" || row.outstanding_amount <= 0) {
@@ -372,10 +375,46 @@ export default function PayInvoice() {
                 <p className="font-medium mb-1">Payment system unavailable</p>
                 <p className="text-xs opacity-80">{errorMsg}</p>
                 <p className="text-xs mt-2 opacity-70">Please call us at (212) 564-3536 to pay by phone.</p>
+                {invoice?.square_payment_link && (
+                  <a
+                    href={invoice.square_payment_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex mt-3 items-center gap-1.5 text-brass text-xs font-medium underline underline-offset-2"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Pay on Square Checkout instead
+                  </a>
+                )}
               </div>
             </div>
           ) : (
             <>
+              {/* Preferred: Square hosted checkout (Apple Pay + cards on square.link) */}
+              {invoice?.square_payment_link && (
+                <div className="space-y-2">
+                  <a
+                    href={invoice.square_payment_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex w-full h-14 items-center justify-center gap-2 rounded-md bg-brass text-forest-deep hover:bg-brass-light font-semibold text-base transition-all"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Pay {amountDisplay} with Square
+                  </a>
+                  <p className="text-center text-cream-dim text-[10px]">
+                    Opens Square Checkout — Apple Pay, Google Pay, and cards
+                  </p>
+                  <div className="flex items-center gap-3 py-1">
+                    <div className="h-px flex-1 bg-brass/20" />
+                    <span className="text-cream-dim text-[9px] tracking-widest uppercase" style={{ fontFamily: "Montserrat, sans-serif" }}>
+                      Or pay here
+                    </span>
+                    <div className="h-px flex-1 bg-brass/20" />
+                  </div>
+                </div>
+              )}
+
               {/* Apple Pay — native button; hidden until the SDK initializes it
                   (Safari/iOS/macOS with the domain registered in Square). */}
               <style>{`
