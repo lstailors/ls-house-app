@@ -1,2 +1,2 @@
-/** @deprecated use @ls/erp-client/alterations-data */
-export * from "@ls/erp-client/alterations-data";
+/** Edge-safe re-export — relative path (bare @ls/* breaks Vercel Edge NFT) */
+export * from "../../../../packages/erp-client/src/erpnext/alterations-data";

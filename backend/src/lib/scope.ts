@@ -1,2 +1,2 @@
-/** @deprecated use @ls/auth/scope */
-export * from "@ls/auth/scope";
+/** Edge-safe re-export — relative path (bare @ls/* breaks Vercel Edge NFT) */
+export * from "../../../packages/auth/src/scope";

@@ -1,2 +1,2 @@
-/** @deprecated use @ls/types */
-export * from "@ls/types";
+/** Edge-safe re-export — relative path (bare @ls/* breaks Vercel Edge NFT) */
+export * from "../../packages/types/src/index";

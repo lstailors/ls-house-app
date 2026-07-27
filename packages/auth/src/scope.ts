@@ -4,7 +4,7 @@
 
 import type { Context } from "hono";
 import { verifyToken } from "./jwt";
-import type { UserRole } from "@ls/types";
+import type { UserRole } from "../../types/src/index";
 export type { UserRole };
 
 export interface AuthedUser {

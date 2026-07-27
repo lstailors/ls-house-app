@@ -1,2 +1,2 @@
-/** @deprecated use @ls/erp-client/agents */
-export * from "@ls/erp-client/agents";
+/** Edge-safe re-export — relative path (bare @ls/* breaks Vercel Edge NFT) */
+export * from "../../../../packages/erp-client/src/erpnext/agents";

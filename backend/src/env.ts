@@ -26,7 +26,8 @@ function validateEnv() {
         console.error(`  - ${err.path.join(".")}: ${err.message}`);
       });
       console.error("\nPlease check your .env file and ensure all required variables are set.");
-      process.exit(1);
+      // Avoid process.exit on Edge — throw instead so local Node still fails loud.
+      throw new Error("Environment variable validation failed");
     }
     throw error;
   }
