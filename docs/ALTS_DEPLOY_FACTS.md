@@ -100,3 +100,9 @@ Closes REVIEW 1 finding 4.
           Brief gvmc05q01h, question Q15 for C.
     backend tsc errors (locations.ts, sofia.ts, square-terminal.ts) were routed
           around, not fixed -- Vercel only compiles webapp/.
+
+## SUPERSEDES
+ALTS_DEPLOY_LINEAGE_2026-07-27.md (commit 59d6f11) covered the same ground from
+an earlier pass this session and was consolidated into this file. Its facts were
+consistent; this version adds the source=cli / gitDirty=1 promotion implication
+(merging promotes nothing) and the pitfalls section.
