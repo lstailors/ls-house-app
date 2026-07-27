@@ -392,6 +392,23 @@ export default function HomeTiles() {
         })}
       </div>
 
+      <div className="mt-3 flex flex-wrap gap-2 shrink-0">
+        {[
+          { to: "/dispatch", lab: "Charge & dispatch" },
+          { to: "/quote", lab: "Send quote" },
+          { to: "/orders/alterations", lab: "Orders" },
+          { to: "/parked", lab: `Parked${s.parked ? ` · ${s.parked}` : ""}` },
+        ].map((l) => (
+          <Link
+            key={l.to}
+            to={l.to}
+            className="h-10 px-4 rounded-full border border-brass/25 bg-black/25 text-[10px] font-bold tracking-widest uppercase text-brass-light inline-flex items-center hover:border-brass/50"
+          >
+            {l.lab}
+          </Link>
+        ))}
+      </div>
+
       <div className="mt-[15px] rounded-[15px] border border-brass/15 bg-black/25 flex flex-wrap overflow-hidden shrink-0">
         <div className="flex-1 min-w-[110px] px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
           <span className="text-[9.5px] font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Open tickets</span>

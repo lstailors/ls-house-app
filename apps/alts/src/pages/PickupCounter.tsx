@@ -15,6 +15,7 @@ type Ticket = {
   due_date?: string;
   ticket_total?: number;
   payment_status?: string;
+  billing_status?: string;
   garments?: Array<{ name?: string; garment_id?: string; garment_type?: string; color?: string; garment_total?: number }>;
   lines?: Array<{ description?: string; price?: number; garment?: string }>;
   sales_invoice?: string;
@@ -29,6 +30,9 @@ export default function PickupCounter() {
   const qc = useQueryClient();
   const [selected, setSelected] = useState<string | null>(null);
   const [confirmWho, setConfirmWho] = useState(true);
+  const [collector, setCollector] = useState("");
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<"all" | "paid" | "unpaid">("all");
 
   const ready = useQuery({
     queryKey: ["pickup-ready"],
@@ -42,13 +46,31 @@ export default function PickupCounter() {
     queryFn: () => api.get<Ticket>(`/api/intake-alterations/tickets/${selected}`),
   });
 
-  const list = ready.data ?? [];
+  const list = useMemo(() => {
+    let rows = ready.data ?? [];
+    if (q.trim()) {
+      const s = q.trim().toLowerCase();
+      rows = rows.filter(
+        (r) =>
+          r.name?.toLowerCase().includes(s) ||
+          r.customer_name?.toLowerCase().includes(s) ||
+          (r.customer_mobile || r.customer_phone || "").includes(s),
+      );
+    }
+    if (filter === "paid") rows = rows.filter((r) => r.payment_status === "Paid" || r.payment_status === "N/A");
+    if (filter === "unpaid")
+      rows = rows.filter((r) => r.payment_status !== "Paid" && r.payment_status !== "N/A" && (Number(r.ticket_total) || 0) > 0);
+    return rows;
+  }, [ready.data, q, filter]);
+
   const t = detail.data;
   const unpaid =
     t &&
     t.payment_status !== "Paid" &&
     t.payment_status !== "N/A" &&
-    (Number(t.ticket_total) || 0) > 0;
+    (Number(t.ticket_total) || 0) > 0 &&
+    t.billing_status !== "Warranty" &&
+    t.billing_status !== "Included in Custom Order";
 
   const release = useMutation({
     mutationFn: async () => {
@@ -56,7 +78,7 @@ export default function PickupCounter() {
       if (!confirmWho) throw new Error("Confirm who’s collecting");
       return api.patch<{ unpaid_release_sms?: { sent?: boolean; reason?: string } }>(
         `/api/intake-alterations/tickets/${selected}/status`,
-        { status: "Picked Up" },
+        { status: "Picked Up", collected_by: collector.trim() || undefined },
       );
     },
     onSuccess: (data) => {
@@ -64,6 +86,7 @@ export default function PickupCounter() {
       if (data?.unpaid_release_sms?.sent) toast.success("Unpaid balance SMS sent");
       qc.invalidateQueries({ queryKey: ["pickup-ready"] });
       setSelected(null);
+      setCollector("");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -91,54 +114,101 @@ export default function PickupCounter() {
   });
 
   const total = Number(t?.ticket_total) || 0;
+  const unpaidCount = (ready.data ?? []).filter(
+    (r) => r.payment_status !== "Paid" && r.payment_status !== "N/A" && (Number(r.ticket_total) || 0) > 0,
+  ).length;
 
   return (
     <div className="alts-root flex flex-col min-h-screen">
       <header className="flex items-center gap-3 px-5 py-4 border-b border-brass/20">
-        <Link to="/" className="text-cream-dim hover:text-cream p-2">
+        <Link to="/" className="text-cream-dim hover:text-cream p-2 text-lg">
           ←
         </Link>
-        <h1 className="display text-2xl">Pickup</h1>
+        <div>
+          <h1 className="display text-2xl leading-none">Pickup</h1>
+          <div className="caps mt-0.5">Ready counter</div>
+        </div>
         <div className="flex-1" />
+        <div className="hidden md:flex items-center gap-2 rounded-full border border-brass/20 bg-black/30 px-3 h-11 min-w-[200px]">
+          <span className="text-cream-dim">⌕</span>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Name, ticket, phone…"
+            className="bg-transparent outline-none text-sm flex-1 text-cream placeholder:text-cream-dim"
+          />
+        </div>
         <Link
           to="/scanner"
           className="flex items-center gap-2 h-11 px-4 rounded-full border border-brass/30 text-sm font-semibold text-brass-light hover:border-brass/50"
         >
-          ⌗ Scan next ticket
+          ⌗ Scan
         </Link>
       </header>
 
+      <div className="flex gap-2 px-5 py-3 border-b border-brass/10 flex-wrap">
+        {(
+          [
+            ["all", `All ready · ${ready.data?.length ?? 0}`],
+            ["unpaid", `Unpaid · ${unpaidCount}`],
+            ["paid", "Paid / N/A"],
+          ] as const
+        ).map(([k, lab]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setFilter(k)}
+            className={cn(
+              "px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide border",
+              filter === k ? "bg-brass/20 border-brass text-cream" : "border-brass/25 text-cream-dim",
+            )}
+          >
+            {lab}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1 grid lg:grid-cols-[340px_1fr] min-h-0">
-        {/* queue */}
         <aside className="border-r border-brass/15 overflow-y-auto p-3 space-y-2">
-          <div className="caps px-2 py-2">Ready · {list.length}</div>
-          {list.map((row) => (
-            <button
-              key={row.name}
-              type="button"
-              onClick={() => {
-                setSelected(row.name);
-                setConfirmWho(true);
-              }}
-              className={cn(
-                "w-full text-left card-glass p-3",
-                selected === row.name && "border-brass ring-1 ring-brass/40",
-              )}
-            >
-              <div className="text-[11px] font-mono text-brass-light">{row.name}</div>
-              <div className="font-semibold mt-0.5">{row.customer_name}</div>
-              <div className="flex justify-between text-xs text-cream-dim mt-1">
-                <span>{row.payment_status || "—"}</span>
-                <span className="text-brass-light">{money(Number(row.ticket_total) || 0)}</span>
-              </div>
-            </button>
-          ))}
+          <div className="caps px-2 py-2">
+            Queue · {list.length}
+          </div>
+          {list.map((row) => {
+            const rowUnpaid =
+              row.payment_status !== "Paid" &&
+              row.payment_status !== "N/A" &&
+              (Number(row.ticket_total) || 0) > 0;
+            return (
+              <button
+                key={row.name}
+                type="button"
+                onClick={() => {
+                  setSelected(row.name);
+                  setConfirmWho(true);
+                  setCollector(row.customer_name || "");
+                }}
+                className={cn(
+                  "w-full text-left card-glass p-3",
+                  selected === row.name && "border-brass ring-1 ring-brass/40",
+                  rowUnpaid && "border-l-2 border-l-signal-amber",
+                )}
+              >
+                <div className="text-[11px] font-mono text-brass-light">{row.name}</div>
+                <div className="font-semibold mt-0.5">{row.customer_name}</div>
+                <div className="flex justify-between text-xs mt-1">
+                  <span className={cn(rowUnpaid ? "text-signal-amber" : "text-signal-emerald")}>
+                    {row.payment_status || "—"}
+                  </span>
+                  <span className="text-brass-light">{money(Number(row.ticket_total) || 0)}</span>
+                </div>
+              </button>
+            );
+          })}
           {!list.length && !ready.isLoading && (
-            <p className="text-cream-dim text-sm p-4 italic">No Ready tickets</p>
+            <p className="text-cream-dim text-sm p-4 italic">No Ready tickets in this filter</p>
           )}
         </aside>
 
-        {/* detail */}
         <main className="overflow-y-auto p-5">
           {!selected && (
             <div className="h-full grid place-items-center text-cream-dim">
@@ -160,36 +230,43 @@ export default function PickupCounter() {
                     <div className="flex flex-wrap gap-2 mt-2 text-xs items-center">
                       <span className="font-mono text-brass-light">{t.name}</span>
                       <span className="chip">Ready</span>
+                      {t.billing_status && t.billing_status !== "Billable" && (
+                        <span className="chip border-[rgba(155,139,196,0.5)] text-[var(--vi,#9B8BC4)]">{t.billing_status}</span>
+                      )}
                       <span className="text-cream-dim">{t.customer_mobile || t.customer_phone}</span>
                     </div>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setConfirmWho((v) => !v)}
-                  className="w-full card-glass p-4 flex items-center gap-3 mb-5 text-left"
-                >
-                  <span className="text-2xl opacity-80">👤</span>
-                  <span className="flex-1">
-                    <span className="block font-semibold">Confirm who’s collecting</span>
-                    <span className="text-xs text-cream-dim">
-                      {t.customer_name}, or an authorised name. Ask before releasing.
-                    </span>
-                  </span>
-                  <span
-                    className={cn(
-                      "w-8 h-8 rounded-full border-2 grid place-items-center",
-                      confirmWho ? "bg-signal-emerald border-signal-emerald text-forest-deep" : "border-brass/40",
-                    )}
+                <div className="card-glass p-4 mb-5 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmWho((v) => !v)}
+                    className="w-full flex items-center gap-3 text-left"
                   >
-                    {confirmWho ? "✓" : ""}
-                  </span>
-                </button>
-
-                <div className="caps mb-2">
-                  {t.garments?.length ?? 0} garments
+                    <span className="text-2xl opacity-80">👤</span>
+                    <span className="flex-1">
+                      <span className="block font-semibold">Confirm who’s collecting</span>
+                      <span className="text-xs text-cream-dim">Client or authorised person — ask before releasing.</span>
+                    </span>
+                    <span
+                      className={cn(
+                        "w-8 h-8 rounded-full border-2 grid place-items-center",
+                        confirmWho ? "bg-signal-emerald border-signal-emerald text-forest-deep" : "border-brass/40",
+                      )}
+                    >
+                      {confirmWho ? "✓" : ""}
+                    </span>
+                  </button>
+                  <input
+                    value={collector}
+                    onChange={(e) => setCollector(e.target.value)}
+                    placeholder="Name on the bag / collector"
+                    className="w-full h-11 rounded-xl bg-black/35 border border-brass/25 px-3 text-sm text-cream outline-none focus:border-brass"
+                  />
                 </div>
+
+                <div className="caps mb-2">{t.garments?.length ?? 0} garments</div>
                 <div className="space-y-3">
                   {(t.garments ?? []).map((g, i) => (
                     <div key={g.name || i} className="card-glass p-4">
@@ -207,13 +284,25 @@ export default function PickupCounter() {
                     <p className="text-cream-dim text-sm">Open full ticket for garment lines.</p>
                   )}
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => nav(`/orders/alterations/${selected}`)}
+                  className="mt-4 text-[11px] font-bold tracking-widest uppercase text-brass-light"
+                >
+                  Open full ticket →
+                </button>
               </div>
 
               <aside className="card-glass p-5 h-fit sticky top-4">
                 <div className="caps">Ticket total</div>
                 <div className="display text-4xl text-brass-light my-2">{money(total)}</div>
                 <div className="text-xs text-cream-dim mb-4">
-                  {t.payment_status === "Paid" ? "Paid in full" : unpaid ? "Collect at pickup" : t.payment_status}
+                  {t.payment_status === "Paid"
+                    ? "Paid in full"
+                    : unpaid
+                      ? "Collect at pickup"
+                      : t.payment_status}
                   {t.sales_invoice ? ` · ${t.sales_invoice}` : ""}
                 </div>
                 <p className="text-[11px] text-cream-dim mb-4">No tax — alterations are a service</p>
@@ -221,11 +310,7 @@ export default function PickupCounter() {
                 {unpaid && (
                   <div className="space-y-2 mb-4">
                     <div className="caps text-signal-amber">Charge at Ready / pickup</div>
-                    <button
-                      type="button"
-                      onClick={() => payLink.mutate()}
-                      className="btn-brass w-full h-12 text-[11px]"
-                    >
+                    <button type="button" onClick={() => payLink.mutate()} className="btn-brass w-full h-12 text-[11px]">
                       Send pay link
                     </button>
                     <button
@@ -259,9 +344,7 @@ export default function PickupCounter() {
                   }}
                   className={cn(
                     "w-full h-14 rounded-2xl font-bold tracking-widest uppercase text-sm",
-                    unpaid
-                      ? "bg-signal-amber/90 text-forest-deep"
-                      : "bg-signal-emerald text-forest-deep",
+                    unpaid ? "bg-signal-amber/90 text-forest-deep" : "bg-signal-emerald text-forest-deep",
                     "disabled:opacity-40",
                   )}
                 >

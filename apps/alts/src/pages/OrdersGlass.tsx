@@ -74,7 +74,7 @@ export default function OrdersGlass() {
           <div className="caps">Tickets · due · unpaid</div>
         </div>
         <div className="flex-1" />
-        <Link to="/intake/alterations" className="btn-brass h-11 px-4 text-[11px] inline-flex items-center">
+        <Link to="/intake/kind" className="btn-brass h-11 px-4 text-[11px] inline-flex items-center">
           New
         </Link>
       </header>

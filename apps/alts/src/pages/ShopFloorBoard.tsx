@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { cn } from "@ls/design/utils";
 import "@alts/styles/alts-pos.css";
@@ -13,11 +14,20 @@ type Ticket = {
   is_rush?: number;
   ticket_total?: number;
   payment_status?: string;
+  billing_status?: string;
   assigned_tailor?: string;
   origin_location?: string;
+  linked_sales_order?: string;
 };
 
 const COLS = ["Received", "In Progress", "Ready", "Picked Up"] as const;
+
+const NEXT: Record<string, { status: string; label: string } | null> = {
+  Received: { status: "In Progress", label: "Start" },
+  "In Progress": { status: "Ready", label: "Ready" },
+  Ready: { status: "Picked Up", label: "Pickup" },
+  "Picked Up": null,
+};
 
 function daysLate(due?: string) {
   if (!due) return 0;
@@ -39,14 +49,33 @@ function fmtDue(due?: string): { text: string; kind: "late" | "soon" | "ok"; lab
 
 export default function ShopFloorBoard() {
   const nav = useNavigate();
+  const qc = useQueryClient();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "today" | "unassigned">("all");
+  const [filter, setFilter] = useState<"all" | "today" | "unassigned" | "unpaid">("all");
   const [loc, setLoc] = useState<"NYC" | "HOU" | "All">("All");
 
   const tickets = useQuery({
     queryKey: ["shop-floor-tickets"],
     queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=200"),
     refetchInterval: 60_000,
+  });
+
+  const advance = useMutation({
+    mutationFn: async ({ name, status }: { name: string; status: string }) => {
+      if (status === "Picked Up") {
+        nav("/pickup");
+        return null;
+      }
+      return api.patch(`/api/intake-alterations/tickets/${encodeURIComponent(name)}/status`, { status });
+    },
+    onSuccess: (_d, vars) => {
+      if (vars.status !== "Picked Up") {
+        toast.success(`${vars.name} → ${vars.status}`);
+        qc.invalidateQueries({ queryKey: ["shop-floor-tickets"] });
+        qc.invalidateQueries({ queryKey: ["alts-home-stats"] });
+      }
+    },
+    onError: (e: Error) => toast.error(e.message || "Status update failed"),
   });
 
   const list = useMemo(() => {
@@ -57,7 +86,9 @@ export default function ShopFloorBoard() {
       rows = rows.filter(
         (t) =>
           t.name?.toLowerCase().includes(s) ||
-          t.customer_name?.toLowerCase().includes(s),
+          t.customer_name?.toLowerCase().includes(s) ||
+          t.assigned_tailor?.toLowerCase().includes(s) ||
+          t.linked_sales_order?.toLowerCase().includes(s),
       );
     }
     if (filter === "today") {
@@ -66,6 +97,15 @@ export default function ShopFloorBoard() {
     }
     if (filter === "unassigned") {
       rows = rows.filter((t) => !t.assigned_tailor && t.workflow_state !== "Picked Up");
+    }
+    if (filter === "unpaid") {
+      rows = rows.filter(
+        (t) =>
+          t.workflow_state === "Ready" &&
+          t.payment_status !== "Paid" &&
+          t.payment_status !== "N/A" &&
+          (Number(t.ticket_total) || 0) > 0,
+      );
     }
     return rows;
   }, [tickets.data, q, filter, loc]);
@@ -107,7 +147,7 @@ export default function ShopFloorBoard() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Ticket, name…"
+            placeholder="Ticket, name, tailor, SO…"
             className="bg-transparent outline-none text-sm flex-1 text-cream placeholder:text-cream-dim"
           />
         </div>
@@ -164,6 +204,7 @@ export default function ShopFloorBoard() {
             ["all", "All work"],
             ["today", "Due today"],
             ["unassigned", "Unassigned"],
+            ["unpaid", "Ready unpaid"],
           ] as const
         ).map(([k, lab]) => (
           <button
@@ -180,6 +221,9 @@ export default function ShopFloorBoard() {
         ))}
         <Link to="/pickup" className="ml-auto btn-brass h-10 px-4 text-[11px] inline-flex items-center">
           Pickup counter
+        </Link>
+        <Link to="/intake/kind" className="btn-ghost h-10 px-4 text-[11px] inline-flex items-center">
+          + New ticket
         </Link>
       </div>
 
@@ -203,40 +247,66 @@ export default function ShopFloorBoard() {
               <div className="flex-1 overflow-y-auto p-2 space-y-2">
                 {(byCol[col] ?? []).slice(0, 40).map((t) => {
                   const due = fmtDue(t.due_date);
+                  const next = NEXT[col];
+                  const nonBill =
+                    t.billing_status === "Warranty" || t.billing_status === "Included in Custom Order";
                   return (
-                    <button
+                    <div
                       key={t.name}
-                      type="button"
-                      onClick={() => nav(`/orders/alterations/${t.name}`)}
                       className={cn(
-                        "w-full text-left rounded-xl border border-brass/20 bg-black/25 p-3 hover:border-brass/45 transition-colors",
+                        "w-full text-left rounded-xl border border-brass/20 bg-black/25 p-3 transition-colors",
                         due.kind === "late" && "border-l-2 border-l-signal-rose",
                         due.kind === "soon" && "border-l-2 border-l-signal-amber",
                         col === "Picked Up" && "opacity-55",
                       )}
                     >
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[11px] font-mono text-brass-light truncate">{t.name}</span>
-                        {due.kind === "late" && <span className="badge-late">{due.text}</span>}
-                        {due.kind === "soon" && <span className="badge-soon">{due.text}</span>}
-                      </div>
-                      <div className="font-semibold text-sm truncate">{t.customer_name || "—"}</div>
-                      <div className="flex items-center gap-2 mt-2 text-[11px] text-cream-dim">
-                        <span>
-                          {t.assigned_tailor ? (
-                            t.assigned_tailor
-                          ) : col !== "Picked Up" ? (
-                            <span className="text-brass-light">Assign tailor</span>
-                          ) : (
-                            "—"
-                          )}
-                        </span>
-                        <span className="ml-auto">{due.label}</span>
-                      </div>
-                      {t.payment_status && t.payment_status !== "Paid" && col === "Ready" && (
-                        <div className="text-[10px] text-signal-amber mt-1">{t.payment_status}</div>
+                      <button
+                        type="button"
+                        onClick={() => nav(`/orders/alterations/${t.name}`)}
+                        className="w-full text-left"
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[11px] font-mono text-brass-light truncate">{t.name}</span>
+                          {due.kind === "late" && <span className="badge-late">{due.text}</span>}
+                          {due.kind === "soon" && <span className="badge-soon">{due.text}</span>}
+                        </div>
+                        <div className="font-semibold text-sm truncate">{t.customer_name || "—"}</div>
+                        <div className="flex items-center gap-2 mt-2 text-[11px] text-cream-dim">
+                          <span>
+                            {t.assigned_tailor ? (
+                              t.assigned_tailor
+                            ) : col !== "Picked Up" ? (
+                              <span className="text-brass-light">Assign tailor</span>
+                            ) : (
+                              "—"
+                            )}
+                          </span>
+                          <span className="ml-auto">{due.label}</span>
+                        </div>
+                        {nonBill && (
+                          <div className="text-[10px] text-[var(--vi,#9B8BC4)] mt-1">
+                            {t.billing_status}
+                            {t.linked_sales_order ? ` · ${t.linked_sales_order}` : ""}
+                          </div>
+                        )}
+                        {t.payment_status && t.payment_status !== "Paid" && t.payment_status !== "N/A" && col === "Ready" && (
+                          <div className="text-[10px] text-signal-amber mt-1">{t.payment_status}</div>
+                        )}
+                      </button>
+                      {next && (
+                        <button
+                          type="button"
+                          disabled={advance.isPending}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            advance.mutate({ name: t.name, status: next.status });
+                          }}
+                          className="mt-2 w-full h-9 rounded-lg border border-brass/30 text-[10px] font-bold tracking-widest uppercase text-brass-light hover:bg-brass/15 disabled:opacity-40"
+                        >
+                          {next.label} →
+                        </button>
                       )}
-                    </button>
+                    </div>
                   );
                 })}
                 {tickets.isLoading && <div className="text-cream-dim text-sm p-3">Loading…</div>}

@@ -16,6 +16,8 @@ import Transfers from "@alts/pages/Transfers";
 import OrdersGlass from "@alts/pages/OrdersGlass";
 import Lookup from "@alts/pages/Lookup";
 import TicketPhotos from "@alts/pages/TicketPhotos";
+import Dispatch from "@alts/pages/Dispatch";
+import QuoteComposer from "@alts/pages/QuoteComposer";
 import TicketDetail from "@/pages/intake/TicketDetail";
 
 const AlterationTags = lazy(() => import("@/pages/intake/AlterationTags"));
@@ -141,6 +143,22 @@ export default function App() {
                 element={
                   <RoleGuard allow={[...FOH, "driver"]}>
                     <Lookup />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/dispatch"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <Dispatch />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/quote"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <QuoteComposer />
                   </RoleGuard>
                 }
               />

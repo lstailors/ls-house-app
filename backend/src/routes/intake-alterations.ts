@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { getAuthedUser } from '../lib/scope';
 import { uploadFile, erpFileAbsoluteUrl } from '../lib/erpnext/files';
-import { erpList, erpGet, erpUpdate, erpPdf, erpRunMethod } from '../lib/erp';
+import { erpList, erpGet as erpGetDoc, erpUpdate, erpPdf, erpRunMethod } from '../lib/erp';
 import { sendSms } from '../lib/twilio';
 
 // ---------------------------------------------------------------------------
@@ -24,7 +24,7 @@ async function mcpList<T>(doctype: string, fields: string[], filters: any[] = []
 }
 
 async function mcpGet<T>(doctype: string, name: string): Promise<T> {
-  const doc = await erpGet<T>(doctype, name);
+  const doc = await erpGetDoc<T>(doctype, name);
   if (!doc) throw new Error(`${doctype} ${name} not found`);
   return doc;
 }
@@ -40,7 +40,7 @@ function erpHeaders() {
   };
 }
 
-async function erpGet<T>(method: string, params: Record<string, string> = {}): Promise<T> {
+async function erpCallMethod<T>(method: string, params: Record<string, string> = {}): Promise<T> {
   const url = new URL(`${ERP_BASE}/api/method/${method}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   const res = await fetch(url.toString(), {
@@ -265,7 +265,7 @@ intakeAlterationsRouter.get('/tickets', async (c) => {
   try {
     const filters = status ? [['workflow_state','=',status]] : [['workflow_state','!=','Cancelled']];
     const rows = await mcpList<any>('Alteration Ticket',
-      ['name','customer_name','origin_location','workflow_state','ticket_date','due_date','is_rush','ticket_total','payment_status'],
+      ['name','customer_name','customer_phone','origin_location','workflow_state','ticket_date','due_date','is_rush','ticket_total','payment_status','billing_status','assigned_tailor','linked_sales_order','included_in_custom','sales_invoice'],
       filters, parseInt(limit) || 100, 'modified desc');
     return c.json({ data: rows });
   } catch (e: any) {
@@ -398,7 +398,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
       await erpUpdate('Alteration Ticket', ticketName, patch);
 
       if (billingStatus === 'Warranty' || billingStatus === 'Included in Custom Order') {
-        const t = await erpGet<any>('Alteration Ticket', ticketName).catch(() => null);
+        const t = await erpGetDoc<any>('Alteration Ticket', ticketName).catch(() => null);
         const inv = t?.sales_invoice;
         if (inv) {
           try {
