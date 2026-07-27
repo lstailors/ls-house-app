@@ -4,6 +4,7 @@
   "installCommand": "cd .. && bun install",
   "framework": "vite",
   "rewrites": [
+    { "source": "/api/:path*", "destination": "https://app.lstailors.com/api/:path*" },
     { "source": "/((?!assets/).*)", "destination": "/index.html" }
   ]
 }
