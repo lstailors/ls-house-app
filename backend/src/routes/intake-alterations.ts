@@ -391,21 +391,11 @@ intakeAlterationsRouter.patch('/tickets/:name/tailor', async (c) => {
   const { tailorId } = body;
 
   try {
-    const res = await fetch(`${MCP_BASE}/mcp`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, doc:{ assigned_tailor: tailorId || null } } } }),
-    });
-    const json: any = await res.json();
-    const content = json?.result?.content?.[0];
-    const text = content?.text ?? '';
-    if (content?.isError || text.includes('Traceback') || text.includes('traceback')) {
-      console.error('[tailor patch] ERP error:', text.slice(0, 300));
-      return c.json({ error: { message: 'ERPNext update failed: ' + text.slice(0, 150) } }, 502);
-    }
+    await erpUpdate('Alteration Ticket', ticketName, { assigned_tailor: tailorId || null });
     return c.json({ data: { ok: true } });
   } catch (e: any) {
-    return c.json({ error: { message: e.message } }, 502);
+    console.error('[tailor patch] ERP error:', e?.message);
+    return c.json({ error: { message: 'ERPNext update failed: ' + (e?.message || '').slice(0, 150) } }, 502);
   }
 });
 
@@ -543,26 +533,12 @@ async function notifyUnpaidRelease(
 
   try {
     const now = new Date().toISOString().replace("T", " ").split(".")[0];
-    await fetch(`${MCP_BASE}/mcp`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${MCP_TOKEN}`,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "tools/call",
-        id: 1,
-        params: {
-          name: "erp_add_comment",
-          arguments: {
-            doctype: "Alteration Ticket",
-            name: ticketName,
-            text: `Unpaid release SMS sent (${sids.length} bubbles). Balance ${amt}. ${now}`,
-          },
-        },
-      }),
+    await erpRunMethod("frappe.client.add_comment", {
+      reference_doctype: "Alteration Ticket",
+      reference_name: ticketName,
+      content: `Unpaid release SMS sent (${sids.length} bubbles). Balance ${amt}. ${now}`,
+      comment_email: "carl@lstailors.com",
+      comment_by: "L&S POS",
     });
   } catch {
     /* non-fatal */
@@ -597,39 +573,34 @@ intakeAlterationsRouter.patch('/tickets/:name/due-date', async (c) => {
   const { due_date } = body;
 
   try {
-    const res = await fetch(`${MCP_BASE}/mcp`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, doc:{ due_date } } } }),
-    });
-    const json: any = await res.json();
-    const content = json?.result?.content?.[0];
-    if (content?.isError) return c.json({ error: { message: content.text?.slice(0, 150) } }, 502);
+    await erpUpdate('Alteration Ticket', ticketName, { due_date });
     return c.json({ data: { ok: true } });
   } catch (e: any) {
     return c.json({ error: { message: e.message } }, 502);
   }
 });
 
-// 10. PATCH /tickets/:name/transfer (change origin_location)
+// 10. PATCH /tickets/:name/transfer (location and/or at-home tailor)
 intakeAlterationsRouter.patch('/tickets/:name/transfer', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   const ticketName = c.req.param('name');
   const body = (await c.req.json()) as any;
-  const { location } = body; // 'NYC', 'HOU', 'Home'
+  const { location, tailorId, note } = body;
+
+  const doc: Record<string, any> = {};
+  if (location) doc.origin_location = location;
+  if (tailorId !== undefined) doc.assigned_tailor = tailorId || null;
+  if (note) doc.transfer_note = note;
+
+  if (!Object.keys(doc).length) {
+    return c.json({ error: { message: 'location or tailorId required' } }, 400);
+  }
 
   try {
-    const res = await fetch(`${MCP_BASE}/mcp`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, doc:{ origin_location: location } } } }),
-    });
-    const json: any = await res.json();
-    const content = json?.result?.content?.[0];
-    if (content?.isError) return c.json({ error: { message: content.text?.slice(0, 150) } }, 502);
-    return c.json({ data: { ok: true } });
+    await erpUpdate('Alteration Ticket', ticketName, doc);
+    return c.json({ data: { ok: true, ...doc } });
   } catch (e: any) {
     return c.json({ error: { message: e.message } }, 502);
   }
@@ -673,11 +644,7 @@ intakeAlterationsRouter.post('/tickets/:name/notify-ready', async (c) => {
   // Stamp notified_ready_at in ERPNext (non-fatal)
   const now = new Date().toISOString().replace('T', ' ').split('.')[0];
   try {
-    await fetch(`${MCP_BASE}/mcp`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc:'2.0', method:'tools/call', id:1, params:{ name:'erp_update', arguments:{ doctype:'Alteration Ticket', name:ticketName, doc:{ notified_ready_at: now } } } }),
-    });
+    await erpUpdate('Alteration Ticket', ticketName, { notified_ready_at: now });
   } catch { /* non-fatal */ }
 
   return c.json({ data: { ok: true, sid } });
@@ -826,12 +793,14 @@ intakeAlterationsRouter.post('/photos', async (c) => {
   const file = formData.get('file') as File | null;
   const path = formData.get('path') as string | null;
   const ticketName = formData.get('ticketName') as string | null;
+  const garmentRef = (formData.get('garmentRef') as string | null) || '';
 
   if (!file || !path) return c.json({ error: 'file and path required' }, 400);
 
   try {
     const buffer = new Uint8Array(await file.arrayBuffer());
-    const filename = path.split('/').pop() ?? file.name ?? 'photo.jpg';
+    const base = path.split('/').pop() ?? file.name ?? 'photo.jpg';
+    const filename = garmentRef ? `${garmentRef}-${base}` : base;
     const { fileUrl, fileId } = await uploadFile({
       file: buffer,
       filename,
@@ -846,11 +815,42 @@ intakeAlterationsRouter.post('/photos', async (c) => {
         url: erpFileAbsoluteUrl(fileUrl),
         path,
         fileId,
+        garmentRef,
       },
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Upload failed';
     return c.json({ error: message }, 500);
+  }
+});
+
+// GET /tickets/:name/photos — files attached to ticket
+intakeAlterationsRouter.get('/tickets/:name/photos', async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+  const ticketName = c.req.param('name');
+  try {
+    const rows = await mcpList<any>(
+      'File',
+      ['name', 'file_name', 'file_url', 'creation', 'file_size'],
+      [
+        ['attached_to_doctype', '=', 'Alteration Ticket'],
+        ['attached_to_name', '=', ticketName],
+      ],
+      100,
+      'creation desc',
+    );
+    const data = (rows ?? []).map((f: any) => ({
+      id: f.name,
+      name: f.file_name,
+      url: erpFileAbsoluteUrl(f.file_url),
+      creation: f.creation,
+      size: f.file_size,
+      garmentRef: (f.file_name || '').match(/^(G\d+)-/)?.[1] || null,
+    }));
+    return c.json({ data });
+  } catch (e: any) {
+    return c.json({ data: [], error: e.message });
   }
 });
 
