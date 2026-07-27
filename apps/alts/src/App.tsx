@@ -20,8 +20,9 @@ import Dispatch from "@alts/pages/Dispatch";
 import QuoteComposer from "@alts/pages/QuoteComposer";
 import TicketDetail from "@/pages/intake/TicketDetail";
 
-const AlterationTags = lazy(() => import("@/pages/intake/AlterationTags"));
+const AlterationTags = lazy(() => import("@alts/pages/print/GarmentTagPrint"));
 const AlterationReceipt = lazy(() => import("@/pages/intake/AlterationReceipt"));
+const ThermalTicketPrint = lazy(() => import("@alts/pages/print/ThermalTicketPrint"));
 const ETicket = lazy(() => import("@/pages/ETicket"));
 const Scanner = lazy(() => import("@/pages/Scanner"));
 const GarmentJobCard = lazy(() => import("@/pages/GarmentJobCard"));
@@ -30,7 +31,7 @@ const Customers = lazy(() => import("@/pages/Customers"));
 const CustomerDetail = lazy(() => import("@/pages/CustomerDetail"));
 const Deliveries = lazy(() => import("@/pages/Deliveries"));
 const DeliveryDetail = lazy(() => import("@/pages/DeliveryDetail"));
-const DeliveryLabel = lazy(() => import("@/pages/DeliveryLabel"));
+const DeliveryLabel = lazy(() => import("@alts/pages/print/DeliveryLabelPrint"));
 const GarmentTagRedirect = lazy(() => import("@/components/garment/GarmentTagRedirect"));
 
 const FOH = ["super_admin", "store_manager", "salesperson", "tailor"] as const;
@@ -77,6 +78,7 @@ export default function App() {
                 }
               />
               <Route path="/orders/alterations/:ticketName/tags" element={<AlterationTags />} />
+              <Route path="/orders/alterations/:ticketName/thermal" element={<ThermalTicketPrint />} />
               <Route path="/orders/alterations/:ticketName/receipt" element={<AlterationReceipt />} />
               <Route path="/deliveries/:id/label" element={<DeliveryLabel />} />
               <Route path="/g/:ticket/:garmentId" element={<GarmentJobCard />} />

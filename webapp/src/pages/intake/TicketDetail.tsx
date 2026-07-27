@@ -1388,6 +1388,18 @@ export default function TicketDetail() {
           </button>
 
           <Link
+            to={`/orders/alterations/${ticketName}/thermal`}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium',
+              'bg-forest-raised border border-brass/20 text-cream-muted',
+              'hover:border-brass/40 hover:text-cream transition-all'
+            )}
+          >
+            <Printer size={15} />
+            Thermal / Master
+          </Link>
+
+          <Link
             to={`/orders/alterations/${ticketName}/receipt`}
             className={cn(
               'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium',
@@ -1408,7 +1420,7 @@ export default function TicketDetail() {
             )}
           >
             <Tag size={15} />
-            Print Tags
+            Hang Tags 3×2
           </Link>
 
           <Link
