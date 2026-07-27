@@ -4,77 +4,31 @@ import { clearStoredToken } from "@/lib/authClient";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { cn } from "@ls/design/utils";
+import { useMemo, useState } from "react";
+import "@alts/styles/alts-pos.css";
 
-type Tile = {
-  to: string;
-  title: string;
-  sub: string;
-  primary?: boolean;
-  external?: boolean;
-  badgeKey?: "open" | "ready" | "due";
+type Loc = "NYC" | "HOU";
+
+type Stats = {
+  open: number;
+  ready: number;
+  dueToday: number;
+  overdue: number;
+  outToTailors: number;
+  parked: number;
+  syncedAt: number;
 };
 
-const TILES: Tile[] = [
-  {
-    to: "/intake/alterations",
-    title: "New Ticket",
-    sub: "Stepped intake · park · submit",
-    primary: true,
-  },
-  {
-    to: "/shop-floor",
-    title: "Shop Floor",
-    sub: "Board · due · unassigned",
-    badgeKey: "open",
-  },
-  {
-    to: "/pickup",
-    title: "Pickup",
-    sub: "Ready queue · pay · release",
-    badgeKey: "ready",
-  },
-  {
-    to: "/orders/alterations",
-    title: "Orders",
-    sub: "All tickets · search",
-    badgeKey: "due",
-  },
-  {
-    to: "/parked",
-    title: "Parked",
-    sub: "Resume carts · multi-piece waves",
-  },
-  {
-    to: "/transfers",
-    title: "Transfers",
-    sub: "At-home · NYC · HOU",
-  },
-  {
-    to: "/lookup",
-    title: "Lookup",
-    sub: "Ticket · client · quick find",
-  },
-  {
-    to: "/board",
-    title: "Board",
-    sub: "Pipeline view",
-  },
-  {
-    to: "/scanner",
-    title: "Scanner",
-    sub: "Scan garment tags",
-  },
-  {
-    to: "/customers",
-    title: "Customers",
-    sub: "Find or create",
-  },
-  {
-    to: "/deliveries",
-    title: "Deliveries",
-    sub: "Ship · hand deliver · POD",
-  },
-];
+const Arrow = ({ external }: { external?: boolean }) =>
+  external ? (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 16L16 6M9 6h7v7" />
+    </svg>
+  ) : (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 11h13M12 6l5 5-5 5" />
+    </svg>
+  );
 
 function greetingName(name?: string | null) {
   if (!name) return "there";
@@ -88,24 +42,56 @@ function timeGreeting() {
   return "Good evening";
 }
 
+function storeHoursLine(loc: Loc) {
+  const d = new Date();
+  const day = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const place = loc === "HOU" ? "Houston" : "East 61st Street";
+  return `${day} · ${place} · open until 6:00 PM`;
+}
+
 export default function HomeTiles() {
   const { data: me } = useMe();
   const nav = useNavigate();
   const qc = useQueryClient();
+  const meLoc = String(
+    typeof me?.location === "string"
+      ? me.location
+      : (me?.location as { name?: string } | undefined)?.name || me?.locationId || "NYC",
+  ).toUpperCase();
+  const [loc, setLoc] = useState<Loc>(meLoc.includes("HOU") || meLoc.includes("TEX") ? "HOU" : "NYC");
 
   const stats = useQuery({
-    queryKey: ["alts-home-stats"],
-    queryFn: async () => {
+    queryKey: ["alts-home-stats", loc],
+    queryFn: async (): Promise<Stats> => {
+      const empty: Stats = {
+        open: 0,
+        ready: 0,
+        dueToday: 0,
+        overdue: 0,
+        outToTailors: 0,
+        parked: 0,
+        syncedAt: Date.now(),
+      };
       try {
-        const rows = await api.get<
-          Array<{ workflow_state?: string; due_date?: string; name: string }>
-        >("/api/intake-alterations/tickets?limit=200");
+        const [rows, parked] = await Promise.all([
+          api.get<
+            Array<{
+              workflow_state?: string;
+              due_date?: string;
+              name: string;
+              origin_location?: string;
+              assigned_tailor?: string;
+            }>
+          >("/api/intake-alterations/tickets?limit=200"),
+          api.get<Array<unknown>>("/api/carts").catch(() => [] as unknown[]),
+        ]);
         const list = Array.isArray(rows) ? rows : (rows as any)?.tickets ?? [];
         const today = new Date().toISOString().slice(0, 10);
         let open = 0;
         let ready = 0;
         let dueToday = 0;
         let overdue = 0;
+        let outToTailors = 0;
         for (const t of list) {
           const st = t.workflow_state ?? "";
           if (st === "Ready") ready += 1;
@@ -115,17 +101,47 @@ export default function HomeTiles() {
               if (t.due_date < today) overdue += 1;
               else if (t.due_date === today) dueToday += 1;
             }
+            const ol = (t.origin_location || "").toLowerCase();
+            if (ol.includes("home") || (t.assigned_tailor && ol && ol !== "nyc" && ol !== "hou")) {
+              outToTailors += 1;
+            } else if (t.assigned_tailor && st !== "Ready") {
+              // assigned but still in shop counts as out when location says home only — skip
+            }
           }
         }
-        return { open, ready, dueToday, overdue };
+        return {
+          open,
+          ready,
+          dueToday,
+          overdue,
+          outToTailors,
+          parked: Array.isArray(parked) ? parked.length : 0,
+          syncedAt: Date.now(),
+        };
       } catch {
-        return { open: 0, ready: 0, dueToday: 0, overdue: 0 };
+        return empty;
       }
     },
-    staleTime: 60_000,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 
-  const s = stats.data ?? { open: 0, ready: 0, dueToday: 0, overdue: 0 };
+  const s = stats.data ?? {
+    open: 0,
+    ready: 0,
+    dueToday: 0,
+    overdue: 0,
+    outToTailors: 0,
+    parked: 0,
+    syncedAt: Date.now(),
+  };
+
+  const syncAge = useMemo(() => {
+    const sec = Math.max(0, Math.round((Date.now() - s.syncedAt) / 1000));
+    if (sec < 5) return "just now";
+    if (sec < 60) return `${sec}s ago`;
+    return `${Math.floor(sec / 60)}m ago`;
+  }, [s.syncedAt, stats.dataUpdatedAt]);
 
   const logout = () => {
     clearStoredToken();
@@ -140,143 +156,262 @@ export default function HomeTiles() {
     .slice(0, 2)
     .toUpperCase();
 
-  const badgeFor = (key?: Tile["badgeKey"]) => {
-    if (!key) return null;
-    if (key === "open") return s.open || null;
-    if (key === "ready") return s.ready || null;
-    if (key === "due") return s.dueToday || null;
-    return null;
-  };
+  const tiles: Array<{
+    key: string;
+    to?: string;
+    href?: string;
+    title: string;
+    sub: string;
+    primary?: boolean;
+    external?: boolean;
+    badge?: number | null;
+    badgeKind?: "warn" | "alert" | "neutral";
+    icon: React.ReactNode;
+  }> = [
+    {
+      key: "new",
+      to: "/intake/alterations",
+      title: "New Ticket",
+      sub: "Intake garments, price the work, take payment",
+      primary: true,
+      icon: (
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M28 5H11a3 3 0 0 0-3 3v36a3 3 0 0 0 3 3h24a3 3 0 0 0 3-3V15z" />
+          <path d="M28 5v10h10" />
+          <path d="M16 25h14M16 32h14M16 39h8" />
+          <circle cx="39" cy="38" r="9" strokeWidth="1.4" />
+          <path d="M39 34v8M35 38h8" strokeWidth="1.4" />
+        </svg>
+      ),
+    },
+    {
+      key: "floor",
+      to: "/shop-floor",
+      title: "Shop Floor",
+      sub: "Every garment, every station, what’s next",
+      badge: s.open || null,
+      badgeKind: s.overdue > 0 ? "alert" : "warn",
+      icon: (
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="5" y="9" width="12" height="34" rx="2.5" />
+          <rect x="20" y="9" width="12" height="34" rx="2.5" />
+          <rect x="35" y="9" width="12" height="34" rx="2.5" />
+          <path d="M8 16h6M23 16h6M38 16h6" strokeWidth="1.3" opacity=".75" />
+          <path d="M8 22h6M23 22h6" strokeWidth="1.3" opacity=".55" />
+          <path d="M8 28h6" strokeWidth="1.3" opacity=".4" />
+        </svg>
+      ),
+    },
+    {
+      key: "pickup",
+      to: "/pickup",
+      title: "Pickup",
+      sub: "Hand back finished work, settle the balance",
+      badge: s.ready || null,
+      badgeKind: "neutral",
+      icon: (
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M26 6a5 5 0 0 0-5 5c0 2.5 2 3.6 3.6 4.4L9 25.5a3 3 0 0 0-1.5 2.6V31a2 2 0 0 0 2 2h33a2 2 0 0 0 2-2v-2.9a3 3 0 0 0-1.5-2.6L27.4 15.4C29 14.6 31 13.5 31 11a5 5 0 0 0-5-5z" />
+          <path d="M14 38h24M14 44h16" strokeWidth="1.4" opacity=".7" />
+          <path d="M40 41l4 4 7-8" stroke="#4FBF8E" strokeWidth="2" />
+        </svg>
+      ),
+    },
+    {
+      key: "transfers",
+      to: "/transfers",
+      title: "Transfers",
+      sub: "Send work to at-home tailors · take it back in",
+      badge: s.outToTailors || null,
+      badgeKind: "neutral",
+      icon: (
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="4" y="14" width="19" height="15" rx="2.5" />
+          <rect x="29" y="26" width="19" height="15" rx="2.5" />
+          <path d="M27 10h13M35 5l5 5-5 5" />
+          <path d="M25 45H12M18 40l-5 5 5 5" opacity=".85" />
+        </svg>
+      ),
+    },
+    {
+      key: "lookup",
+      to: "/lookup",
+      title: "Find a Ticket",
+      sub: "Search by number, name, phone, or scan a tag",
+      icon: (
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="22" cy="22" r="14" />
+          <path d="M32.5 32.5L46 46" strokeWidth="2" />
+          <path d="M15 19h14M15 25h9" strokeWidth="1.3" opacity=".7" />
+        </svg>
+      ),
+    },
+    {
+      key: "admin",
+      href: "https://app.lstailors.com",
+      title: "Reports & Admin",
+      sub: "Workload, money, pricing, users",
+      external: true,
+      icon: (
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 44h40" strokeWidth="1.6" />
+          <rect x="10" y="28" width="8" height="16" rx="1.5" />
+          <rect x="22" y="18" width="8" height="26" rx="1.5" />
+          <rect x="34" y="24" width="8" height="20" rx="1.5" />
+          <path d="M10 12l10-4 10 6 12-6" strokeWidth="1.3" opacity=".6" />
+        </svg>
+      ),
+    },
+  ];
 
   return (
-    <div
-      className="min-h-screen flex flex-col px-5 py-4 md:px-7 md:py-5"
-      style={{
-        background: "radial-gradient(ellipse at 50% -12%, #17321F, #0D1A10 58%)",
-      }}
-    >
-      {/* header */}
-      <header className="flex items-center gap-3.5 pb-4 border-b border-brass/20">
-        <div className="w-10 h-10 rounded-full border border-brass grid place-items-center font-display italic text-xl text-brass-light shrink-0 shadow-[inset_0_0_18px_rgba(176,141,87,0.14)]">
-          LS
-        </div>
+    <div className="alts-root home-007 flex flex-col h-[100dvh] overflow-hidden px-[26px] pt-[18px] pb-4">
+      <header className="flex items-center gap-3.5 pb-4 border-b border-brass/15 shrink-0">
+        <div className="seal">LS</div>
         <div className="min-w-0">
-          <div className="font-display italic text-[22px] font-semibold leading-tight">L&S House</div>
-          <div className="text-[9.5px] tracking-[0.18em] uppercase text-cream-dim">
+          <div className="display text-[22px] leading-tight">L&S House</div>
+          <div className="text-[9.5px] tracking-[0.18em] uppercase text-[var(--cd)]">
             Alterations · alts.lstailors.com
           </div>
         </div>
         <div className="flex-1" />
         <div className="hidden sm:flex gap-1 rounded-full border border-brass/20 bg-black/30 p-1">
-          <span className="px-4 py-2.5 rounded-full text-[11px] font-bold tracking-widest uppercase bg-brass text-forest-deep">
-            {typeof me?.location === "string"
-              ? me.location
-              : (me?.location as { name?: string } | undefined)?.name ||
-                me?.locationId ||
-                "NYC"}
-          </span>
+          {(["NYC", "HOU"] as const).map((l) => (
+            <button
+              key={l}
+              type="button"
+              onClick={() => setLoc(l)}
+              className={cn(
+                "px-[18px] py-[11px] rounded-full text-[11px] font-bold tracking-[0.14em] uppercase transition-colors",
+                loc === l ? "bg-brass text-forest-deep" : "text-[var(--cd)]",
+              )}
+            >
+              {l === "HOU" ? "Texas" : "NYC"}
+            </button>
+          ))}
         </div>
         <button
           type="button"
           onClick={logout}
           className="flex items-center gap-2.5 rounded-full border border-brass/20 bg-white/[0.04] pl-2 pr-3.5 py-1.5 hover:border-brass/40 transition-colors"
         >
-          <span className="w-8 h-8 rounded-full bg-forest-raised border border-brass/30 grid place-items-center text-[11px] font-bold text-brass-light">
+          <span className="w-8 h-8 rounded-full bg-forest-raised border border-brass/30 grid place-items-center text-[11.5px] font-bold text-brass-light">
             {initials}
           </span>
           <span className="text-left hidden md:block">
             <span className="block text-xs font-semibold leading-tight">{me?.name ?? "Staff"}</span>
-            <span className="block text-[9.5px] text-cream-dim capitalize">{me?.role?.replace("_", " ")}</span>
+            <span className="block text-[9.5px] text-[var(--cd)] capitalize">
+              {me?.role?.replace(/_/g, " ") || "Front of house"}
+            </span>
           </span>
         </button>
       </header>
 
-      {/* greeting */}
-      <div className="flex flex-wrap items-end gap-3 py-5">
+      <div className="flex flex-wrap items-end gap-3 py-5 shrink-0">
         <div>
-          <h1 className="font-display italic text-3xl md:text-[34px] font-semibold leading-none">
+          <h1 className="display text-[34px] leading-none">
             {timeGreeting()}, {greetingName(me?.name)}
           </h1>
-          <p className="text-xs text-cream-dim mt-1.5">
-            {new Date().toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
-            {" · "}
-            Front of house
-          </p>
+          <p className="text-xs text-[var(--cd)] mt-1.5">{storeHoursLine(loc)}</p>
         </div>
         <div className="flex-1" />
+        {s.parked > 0 && (
+          <Link
+            to="/parked"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-brass/35 bg-brass/10 text-[11.5px] text-cream hover:border-brass/55"
+          >
+            <b className="text-brass-light font-bold">{s.parked}</b> parked
+          </Link>
+        )}
         {s.overdue > 0 && (
-          <div className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-signal-rose/40 bg-signal-rose/10 text-[11.5px]">
-            <b className="text-signal-rose font-bold">{s.overdue}</b> overdue
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-[rgba(217,123,108,0.42)] bg-[rgba(217,123,108,0.12)] text-[11.5px]">
+            <b className="text-[var(--ro)] font-bold">{s.overdue}</b> overdue
           </div>
         )}
         {s.dueToday > 0 && (
-          <div className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-signal-amber/40 bg-signal-amber/10 text-[11.5px]">
-            <b className="text-signal-amber font-bold">{s.dueToday}</b> due today
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-[rgba(232,168,92,0.4)] bg-[rgba(232,168,92,0.12)] text-[11.5px]">
+            <b className="text-[var(--am)] font-bold">{s.dueToday}</b> due today
           </div>
         )}
       </div>
 
-      {/* tiles */}
-      <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-3.5 min-h-0 content-start">
-        {TILES.map((t) => {
-          const badge = badgeFor(t.badgeKey);
-          return (
-            <Link
-              key={t.to + t.title}
-              to={t.to}
-              className={cn(
-                "relative rounded-[22px] border p-5 md:p-6 flex flex-col min-h-[140px] md:min-h-[160px]",
-                "transition-all duration-150 active:scale-[0.988]",
-                "bg-gradient-to-br from-white/[0.045] to-white/[0.012]",
-                "border-brass/25 hover:border-brass/50 hover:-translate-y-0.5 hover:shadow-glass-lg",
-                t.primary &&
-                  "from-brass/20 to-brass/5 border-brass/50 hover:from-brass/28 hover:to-brass/8",
-              )}
-            >
-              {badge != null && badge > 0 && (
+      <div className="flex-1 min-h-0 grid grid-cols-2 lg:grid-cols-3 grid-rows-3 lg:grid-rows-2 gap-[15px]">
+        {tiles.map((t) => {
+          const className = cn(
+            "relative rounded-[22px] border p-[22px] flex flex-col min-h-0 overflow-hidden",
+            "transition-all duration-150 active:scale-[0.988] cursor-pointer group",
+            "bg-gradient-to-br from-white/[0.045] to-white/[0.012]",
+            "border-brass/25 hover:border-brass/50 hover:-translate-y-0.5 hover:shadow-[var(--sl)] hover:from-white/[0.085] hover:to-white/[0.025]",
+            t.primary &&
+              "from-brass/20 to-brass/5 border-brass/50 hover:from-brass/28 hover:to-brass/8",
+            t.external && "border-dashed border-brass/40",
+          );
+
+          const body = (
+            <>
+              {t.badge != null && t.badge > 0 && (
                 <span
                   className={cn(
-                    "absolute top-4 right-4 min-w-[34px] h-[34px] px-2.5 rounded-full grid place-items-center",
-                    "text-sm font-bold border",
-                    t.badgeKey === "ready"
-                      ? "bg-signal-amber/90 border-transparent text-forest-deep"
-                      : "bg-white/[0.07] border-brass/30 text-cream",
+                    "absolute top-[18px] right-[18px] min-w-[34px] h-[34px] px-[11px] rounded-full grid place-items-center text-sm font-bold border",
+                    t.badgeKind === "alert" && "bg-[rgba(217,123,108,0.9)] border-transparent text-white",
+                    t.badgeKind === "warn" && "bg-[rgba(232,168,92,0.9)] border-transparent text-forest-deep",
+                    (!t.badgeKind || t.badgeKind === "neutral") && "bg-white/[0.07] border-brass/30 text-cream",
                   )}
                 >
-                  {badge}
+                  {t.badge}
                 </span>
               )}
-              <h2 className="font-display italic text-2xl md:text-[26px] font-semibold leading-tight mt-auto">
+              <div className={cn("text-brass-light opacity-90 mb-auto", t.primary && "text-[#E3C48F] opacity-100")}>
+                {t.icon}
+              </div>
+              <h2 className={cn("display mt-3.5 leading-tight", t.external ? "text-[23px]" : "text-[26px]")}>
                 {t.title}
               </h2>
-              <p className="text-[11px] text-cream-dim mt-1.5 leading-snug pr-6">{t.sub}</p>
-              <span className="absolute bottom-5 right-5 text-brass-dark opacity-50">→</span>
+              <p className="text-[11px] text-[var(--cd)] mt-1.5 leading-snug pr-8">{t.sub}</p>
+              {t.external && (
+                <div className="font-mono text-[9px] text-[var(--bd)] tracking-wide mt-2">app.lstailors.com ↗</div>
+              )}
+              <span className="absolute bottom-5 right-[22px] text-[var(--bd)] opacity-55 group-hover:opacity-100 group-hover:text-brass-light transition-opacity">
+                <Arrow external={t.external} />
+              </span>
+            </>
+          );
+
+          if (t.href) {
+            return (
+              <a key={t.key} href={t.href} target="_blank" rel="noreferrer" className={className}>
+                {body}
+              </a>
+            );
+          }
+          return (
+            <Link key={t.key} to={t.to!} className={className}>
+              {body}
             </Link>
           );
         })}
       </div>
 
-      {/* footer strip */}
-      <div className="mt-4 rounded-[15px] border border-brass/15 bg-black/25 flex flex-wrap overflow-hidden">
-        <div className="flex-1 min-w-[120px] px-4 py-3 flex items-baseline gap-2 border-r border-brass/10">
-          <span className="text-[9.5px] font-bold tracking-widest uppercase text-cream-dim">Open</span>
-          <span className="font-display text-2xl font-semibold ml-auto text-signal-emerald">{s.open}</span>
+      <div className="mt-[15px] rounded-[15px] border border-brass/15 bg-black/25 flex flex-wrap overflow-hidden shrink-0">
+        <div className="flex-1 min-w-[110px] px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
+          <span className="text-[9.5px] font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Open tickets</span>
+          <span className="display text-2xl ml-auto">{s.open}</span>
         </div>
-        <div className="flex-1 min-w-[120px] px-4 py-3 flex items-baseline gap-2 border-r border-brass/10">
-          <span className="text-[9.5px] font-bold tracking-widest uppercase text-cream-dim">Ready</span>
-          <span className="font-display text-2xl font-semibold ml-auto text-signal-amber">{s.ready}</span>
+        <div className="flex-1 min-w-[110px] px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
+          <span className="text-[9.5px] font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Ready for pickup</span>
+          <span className="display text-2xl ml-auto text-[var(--em)]">{s.ready}</span>
         </div>
-        <div className="flex-1 min-w-[120px] px-4 py-3 flex items-baseline gap-2">
-          <span className="text-[9.5px] font-bold tracking-widest uppercase text-cream-dim">Due today</span>
-          <span className="font-display text-2xl font-semibold ml-auto">{s.dueToday}</span>
+        <div className="flex-1 min-w-[110px] px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
+          <span className="text-[9.5px] font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Out to tailors</span>
+          <span className="display text-2xl ml-auto text-[var(--am)]">{s.outToTailors}</span>
         </div>
-        <div className="flex items-center gap-2 px-4 py-3 text-[10px] text-cream-dim">
-          <span className="w-1.5 h-1.5 rounded-full bg-signal-emerald shadow-[0_0_8px_rgba(79,191,142,0.7)]" />
-          API · app.lstailors.com
+        <div className="flex-1 min-w-[110px] px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
+          <span className="text-[9.5px] font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Overdue</span>
+          <span className="display text-2xl ml-auto text-[var(--ro)]">{s.overdue}</span>
+        </div>
+        <div className="flex items-center gap-2 px-[18px] py-[13px] text-[10px] text-[var(--cd)]">
+          <span className="w-[7px] h-[7px] rounded-full bg-[var(--em)] shadow-[0_0_8px_rgba(79,191,142,0.7)]" />
+          ERPNext live · synced {syncAge}
         </div>
       </div>
     </div>

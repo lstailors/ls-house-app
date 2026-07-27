@@ -710,73 +710,181 @@ async function erpFetch(path: string, method = 'GET', body?: object) {
   return res.json() as Promise<any>;
 }
 
-// GET /customers/:id — full customer with primary contact + address + notes
+// GET /customers/:id — multi phones, emails, addresses, contacts (client + assistants)
 intakeAlterationsRouter.get('/customers/:id', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   const id = c.req.param('id');
+  const linkFilter = JSON.stringify([
+    ['Dynamic Link', 'link_doctype', '=', 'Customer'],
+    ['Dynamic Link', 'link_name', '=', id],
+  ]);
 
   try {
     const { data: cust } = await erpFetch(
       `/api/resource/Customer/${encodeURIComponent(id)}`
     );
 
-    // Fetch primary contact (has phone + email)
-    let contact: any = null;
-    if (cust.customer_primary_contact) {
+    // All linked contacts (client + assistants)
+    const { data: contactRows } = await erpFetch(
+      `/api/resource/Contact?filters=${encodeURIComponent(linkFilter)}&fields=${encodeURIComponent(JSON.stringify(['name','first_name','last_name','full_name','mobile_no','phone','email_id','designation','is_primary_contact']))}&limit_page_length=20`
+    ).catch(() => ({ data: [] as any[] }));
+
+    const people: any[] = [];
+    const phones: any[] = [];
+    const emails: any[] = [];
+    let primaryContact: any = null;
+
+    for (const row of contactRows ?? []) {
+      let full: any = row;
       try {
-        const { data: ct } = await erpFetch(
-          `/api/resource/Contact/${encodeURIComponent(cust.customer_primary_contact)}`
-        );
-        contact = ct;
-      } catch { /* no contact */ }
-    } else {
-      // Search for any contact linked to this customer
-      try {
-        const { data: contacts } = await erpFetch(
-          `/api/resource/Contact?filters=${encodeURIComponent(JSON.stringify([['Dynamic Link','link_doctype','=','Customer'],['Dynamic Link','link_name','=',id]]))}&fields=${encodeURIComponent(JSON.stringify(['name','first_name','last_name','mobile_no','phone','email_id']))}&limit_page_length=1`
-        );
-        if (contacts?.length) contact = contacts[0];
-      } catch { /* no contact */ }
+        const got = await erpFetch(`/api/resource/Contact/${encodeURIComponent(row.name)}`);
+        full = got.data ?? got.message ?? row;
+      } catch { /* keep list row */ }
+
+      const name =
+        full.full_name ||
+        [full.first_name, full.last_name].filter(Boolean).join(' ') ||
+        row.name;
+      const roleRaw = String(full.designation || '').trim();
+      const isPrimary =
+        !!full.is_primary_contact ||
+        full.name === cust.customer_primary_contact ||
+        (!cust.customer_primary_contact && people.length === 0 && !roleRaw);
+      const role =
+        isPrimary && !/assistant/i.test(roleRaw)
+          ? 'Client'
+          : roleRaw || (isPrimary ? 'Client' : 'Other');
+
+      people.push({
+        id: full.name,
+        name,
+        role,
+        phone: full.mobile_no || full.phone || '',
+        email: full.email_id || '',
+        isPrimary,
+      });
+
+      if (isPrimary || full.name === cust.customer_primary_contact) primaryContact = full;
+
+      // Child table phone_nos
+      const phoneRows = Array.isArray(full.phone_nos) ? full.phone_nos : [];
+      for (const p of phoneRows) {
+        const num = String(p.phone || '').trim();
+        if (!num) continue;
+        phones.push({
+          id: p.name || undefined,
+          number: num,
+          label: p.is_primary_mobile ? 'Mobile' : p.is_primary_phone ? 'Phone' : 'Other',
+          isPrimary: !!(p.is_primary_mobile || p.is_primary_phone),
+          contactId: full.name,
+        });
+      }
+      // Top-level fields if not already in child table
+      if (full.mobile_no && !phones.some((p) => p.number === full.mobile_no && p.contactId === full.name)) {
+        phones.push({
+          number: full.mobile_no,
+          label: isPrimary ? 'Mobile' : role === 'Assistant' ? 'Assistant' : 'Mobile',
+          isPrimary: isPrimary && !phones.some((p) => p.isPrimary),
+          contactId: full.name,
+        });
+      }
+      if (full.phone && full.phone !== full.mobile_no && !phones.some((p) => p.number === full.phone && p.contactId === full.name)) {
+        phones.push({
+          number: full.phone,
+          label: isPrimary ? 'Work' : role === 'Assistant' ? 'Assistant' : 'Phone',
+          isPrimary: false,
+          contactId: full.name,
+        });
+      }
+
+      const emailRows = Array.isArray(full.email_ids) ? full.email_ids : [];
+      for (const e of emailRows) {
+        const em = String(e.email_id || '').trim();
+        if (!em) continue;
+        emails.push({
+          id: e.name || undefined,
+          email: em,
+          isPrimary: !!e.is_primary,
+          contactId: full.name,
+        });
+      }
+      if (full.email_id && !emails.some((e) => e.email === full.email_id && e.contactId === full.name)) {
+        emails.push({
+          email: full.email_id,
+          isPrimary: isPrimary && !emails.some((e) => e.isPrimary),
+          contactId: full.name,
+        });
+      }
     }
 
-    // Fetch primary address
-    let address: any = null;
-    if (cust.customer_primary_address) {
-      try {
-        const { data: addr } = await erpFetch(
-          `/api/resource/Address/${encodeURIComponent(cust.customer_primary_address)}`
-        );
-        address = addr;
-      } catch { /* no address */ }
-    } else {
-      // Search for any address linked to this customer
-      try {
-        const { data: addrs } = await erpFetch(
-          `/api/resource/Address?filters=${encodeURIComponent(JSON.stringify([['Dynamic Link','link_doctype','=','Customer'],['Dynamic Link','link_name','=',id]]))}&fields=${encodeURIComponent(JSON.stringify(['name','address_line1','address_line2','city','state','pincode','country','phone','email_id']))}&limit_page_length=1`
-        );
-        if (addrs?.length) address = addrs[0];
-      } catch { /* no address */ }
-    }
+    // All linked addresses (residences, billing, shipping, …)
+    const { data: addrRows } = await erpFetch(
+      `/api/resource/Address?filters=${encodeURIComponent(linkFilter)}&fields=${encodeURIComponent(JSON.stringify([
+        'name','address_title','address_type','address_line1','address_line2','city','state','pincode','country',
+        'is_primary_address','is_shipping_address','disabled','phone','email_id',
+      ]))}&limit_page_length=20`
+    ).catch(() => ({ data: [] as any[] }));
+
+    const addresses = (addrRows ?? [])
+      .filter((a: any) => !a.disabled)
+      .map((a: any) => ({
+        id: a.name,
+        title: a.address_title || a.address_type || '',
+        type: a.address_type || 'Personal',
+        line1: a.address_line1 || '',
+        line2: a.address_line2 || '',
+        city: a.city || '',
+        state: a.state || '',
+        zip: a.pincode || '',
+        country: a.country || 'United States',
+        isBilling: !!a.is_primary_address || a.name === cust.customer_primary_address,
+        isShipping: !!a.is_shipping_address,
+      }));
+
+    const primaryAddr =
+      addresses.find((a: any) => a.isBilling) ||
+      addresses.find((a: any) => a.isShipping) ||
+      addresses[0] ||
+      null;
+
+    const mobile =
+      phones.find((p) => p.isPrimary)?.number ||
+      primaryContact?.mobile_no ||
+      primaryContact?.phone ||
+      cust.mobile_no ||
+      '';
+    const email =
+      emails.find((e) => e.isPrimary)?.email ||
+      primaryContact?.email_id ||
+      cust.email_id ||
+      '';
 
     return c.json({
       data: {
         id: cust.name,
         name: cust.customer_name,
-        mobile: contact?.mobile_no || contact?.phone || cust.mobile_no || '',
-        email: contact?.email_id || cust.email_id || '',
+        mobile,
+        email,
         notes: cust.customer_details || '',
-        contactName: cust.customer_primary_contact || contact?.name || null,
-        address: address ? {
-          id: address.name,
-          line1: address.address_line1 || '',
-          line2: address.address_line2 || '',
-          city: address.city || '',
-          state: address.state || '',
-          zip: address.pincode || '',
-          country: address.country || '',
-        } : null,
+        contactName: cust.customer_primary_contact || primaryContact?.name || null,
+        // backward-compat single address
+        address: primaryAddr
+          ? {
+              id: primaryAddr.id,
+              line1: primaryAddr.line1,
+              line2: primaryAddr.line2,
+              city: primaryAddr.city,
+              state: primaryAddr.state,
+              zip: primaryAddr.zip,
+              country: primaryAddr.country,
+            }
+          : null,
+        phones,
+        emails,
+        addresses,
+        people,
       },
     });
   } catch (e: any) {
@@ -854,7 +962,7 @@ intakeAlterationsRouter.get('/tickets/:name/photos', async (c) => {
   }
 });
 
-// PATCH /customers/:id — update phone, email, address, notes in ERPNext
+// PATCH /customers/:id — multi phones, emails, addresses, people (assistants) + notes
 intakeAlterationsRouter.patch('/customers/:id', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
@@ -864,94 +972,227 @@ intakeAlterationsRouter.patch('/customers/:id', async (c) => {
     mobile?: string;
     email?: string;
     notes?: string;
-    address?: { line1?: string; line2?: string; city?: string; state?: string; zip?: string; country?: string };
+    address?: { line1?: string; line2?: string; city?: string; state?: string; zip?: string; country?: string; title?: string; type?: string };
+    phones?: Array<{ number: string; label?: string; isPrimary?: boolean }>;
+    emails?: Array<{ email: string; isPrimary?: boolean }>;
+    addresses?: Array<{
+      id?: string;
+      title?: string;
+      type?: string;
+      line1?: string;
+      line2?: string;
+      city?: string;
+      state?: string;
+      zip?: string;
+      country?: string;
+      isBilling?: boolean;
+      isShipping?: boolean;
+      _delete?: boolean;
+    }>;
+    people?: Array<{
+      id?: string;
+      name: string;
+      role?: string;
+      phone?: string;
+      email?: string;
+      isPrimary?: boolean;
+      _delete?: boolean;
+    }>;
   };
 
+  const linkFilter = JSON.stringify([
+    ['Dynamic Link', 'link_doctype', '=', 'Customer'],
+    ['Dynamic Link', 'link_name', '=', id],
+  ]);
+
   try {
-    // 1. Update customer_details (notes) on the Customer record
+    const custWrap = await erpFetch(`/api/resource/Customer/${encodeURIComponent(id)}`);
+    const cust = custWrap.data ?? custWrap.message;
+    const custName = cust?.customer_name || id;
+    const nameParts = String(custName).split(' ');
+    const firstName = nameParts[0] || custName;
+    const lastName = nameParts.slice(1).join(' ') || '';
+
+    // 1. Notes
     if (body.notes !== undefined) {
       await erpFetch(`/api/resource/Customer/${encodeURIComponent(id)}`, 'PUT', {
         customer_details: body.notes,
       });
     }
 
-    // 2. Update/create Contact for phone + email
-    if (body.mobile !== undefined || body.email !== undefined) {
-      // Find existing contact
+    // Resolve / ensure primary client contact
+    async function ensurePrimaryContact(): Promise<string> {
+      if (cust.customer_primary_contact) return cust.customer_primary_contact;
       const { data: contacts } = await erpFetch(
-        `/api/resource/Contact?filters=${encodeURIComponent(JSON.stringify([['Dynamic Link','link_doctype','=','Customer'],['Dynamic Link','link_name','=',id]]))}&fields=${encodeURIComponent(JSON.stringify(['name','first_name']))}&limit_page_length=1`
-      ).catch(() => ({ data: [] }));
+        `/api/resource/Contact?filters=${encodeURIComponent(linkFilter)}&fields=${encodeURIComponent(JSON.stringify(['name','is_primary_contact']))}&limit_page_length=5`
+      ).catch(() => ({ data: [] as any[] }));
+      const hit = (contacts ?? []).find((x: any) => x.is_primary_contact) || contacts?.[0];
+      if (hit?.name) {
+        await erpFetch(`/api/resource/Customer/${encodeURIComponent(id)}`, 'PUT', {
+          customer_primary_contact: hit.name,
+        });
+        return hit.name;
+      }
+      const created = await erpFetch('/api/resource/Contact', 'POST', {
+        first_name: firstName,
+        last_name: lastName,
+        is_primary_contact: 1,
+        links: [{ link_doctype: 'Customer', link_name: id }],
+      });
+      const cname = created?.data?.name || created?.message?.name;
+      if (cname) {
+        await erpFetch(`/api/resource/Customer/${encodeURIComponent(id)}`, 'PUT', {
+          customer_primary_contact: cname,
+        });
+      }
+      return cname;
+    }
 
-      const custResp = await erpFetch(`/api/resource/Customer/${encodeURIComponent(id)}`);
-      const cust = custResp.message;
-      const nameParts = (cust.customer_name || id).split(' ');
-      const firstName = nameParts[0];
-      const lastName = nameParts.slice(1).join(' ') || '';
+    // Build phone list: multi array or legacy single mobile
+    let phoneList = body.phones;
+    if (!phoneList && body.mobile !== undefined) {
+      phoneList = body.mobile.trim()
+        ? [{ number: body.mobile.trim(), label: 'Mobile', isPrimary: true }]
+        : [];
+    }
+    let emailList = body.emails;
+    if (!emailList && body.email !== undefined) {
+      emailList = body.email.trim()
+        ? [{ email: body.email.trim(), isPrimary: true }]
+        : [];
+    }
 
-      if (contacts?.length) {
-        // Update existing
+    if (phoneList || emailList) {
+      const contactId = await ensurePrimaryContact();
+      if (contactId) {
         const patch: any = {};
-        if (body.mobile !== undefined) patch.mobile_no = body.mobile;
-        if (body.email !== undefined) patch.email_id = body.email;
-        if (Object.keys(patch).length) {
-          await erpFetch(`/api/resource/Contact/${contacts[0].name}`, 'PUT', patch);
+        if (phoneList) {
+          const cleaned = phoneList
+            .map((p) => ({ number: String(p.number || '').trim(), label: p.label || 'Mobile', isPrimary: !!p.isPrimary }))
+            .filter((p) => p.number);
+          if (!cleaned.some((p) => p.isPrimary) && cleaned[0]) cleaned[0].isPrimary = true;
+          const primary = cleaned.find((p) => p.isPrimary) || cleaned[0];
+          patch.mobile_no = primary?.number || '';
+          patch.phone = cleaned.find((p) => !p.isPrimary)?.number || '';
+          patch.phone_nos = cleaned.map((p) => ({
+            phone: p.number,
+            is_primary_mobile: p.isPrimary || /mobile/i.test(p.label) ? 1 : 0,
+            is_primary_phone: !p.isPrimary && /work|office|phone/i.test(p.label) ? 1 : 0,
+          }));
         }
-      } else {
-        // Create new contact
-        const newContact: any = {
-          first_name: firstName,
-          last_name: lastName,
-          links: [{ link_doctype: 'Customer', link_name: id }],
-        };
-        if (body.mobile) newContact.mobile_no = body.mobile;
-        if (body.email) newContact.email_id = body.email;
-        const created = await erpFetch('/api/resource/Contact', 'POST', newContact);
-        // Set as primary contact on customer
-        if (created?.message?.name) {
-          await erpFetch(`/api/resource/Customer/${encodeURIComponent(id)}`, 'PUT', {
-            customer_primary_contact: created.message.name,
-          });
+        if (emailList) {
+          const cleaned = emailList
+            .map((e) => ({ email: String(e.email || '').trim(), isPrimary: !!e.isPrimary }))
+            .filter((e) => e.email);
+          if (!cleaned.some((e) => e.isPrimary) && cleaned[0]) cleaned[0].isPrimary = true;
+          patch.email_id = cleaned.find((e) => e.isPrimary)?.email || cleaned[0]?.email || '';
+          patch.email_ids = cleaned.map((e) => ({
+            email_id: e.email,
+            is_primary: e.isPrimary ? 1 : 0,
+          }));
         }
+        await erpFetch(`/api/resource/Contact/${encodeURIComponent(contactId)}`, 'PUT', patch);
       }
     }
 
-    // 3. Update/create Address
-    if (body.address) {
-      const { data: addrs } = await erpFetch(
-        `/api/resource/Address?filters=${encodeURIComponent(JSON.stringify([['Dynamic Link','link_doctype','=','Customer'],['Dynamic Link','link_name','=',id]]))}&fields=${encodeURIComponent(JSON.stringify(['name']))}&limit_page_length=1`
-      ).catch(() => ({ data: [] }));
+    // 2. Addresses — multi residences / billing / shipping
+    let addressList = body.addresses;
+    if (!addressList && body.address) {
+      addressList = [{ ...body.address, type: body.address.type || 'Personal', isBilling: true }];
+    }
+    if (addressList) {
+      let primaryAddrName: string | null = null;
+      for (const a of addressList) {
+        if (a._delete && a.id) {
+          await erpFetch(`/api/resource/Address/${encodeURIComponent(a.id)}`, 'PUT', { disabled: 1 }).catch(() => {});
+          continue;
+        }
+        if (!(a.line1 || '').trim() && !(a.city || '').trim()) continue;
 
-      const addrPayload: any = {};
-      if (body.address.line1 !== undefined) addrPayload.address_line1 = body.address.line1;
-      if (body.address.line2 !== undefined) addrPayload.address_line2 = body.address.line2;
-      if (body.address.city  !== undefined) addrPayload.city          = body.address.city;
-      if (body.address.state !== undefined) addrPayload.state         = body.address.state;
-      if (body.address.zip   !== undefined) addrPayload.pincode       = body.address.zip;
-      if (body.address.country !== undefined) addrPayload.country     = body.address.country;
-
-      if (addrs?.length) {
-        await erpFetch(`/api/resource/Address/${addrs[0].name}`, 'PUT', addrPayload);
-      } else {
-        // Create
-        const custResp2 = await erpFetch(`/api/resource/Customer/${encodeURIComponent(id)}`);
-        const addrCreate = {
-          ...addrPayload,
-          address_title: custResp2.message?.customer_name || id,
-          address_type: 'Billing',
+        const addrPayload: any = {
+          address_title: (a.title || a.type || custName).trim() || custName,
+          address_type: a.type || 'Personal',
+          address_line1: a.line1 || '',
+          address_line2: a.line2 || '',
+          city: a.city || 'New York',
+          state: a.state || '',
+          pincode: a.zip || '',
+          country: a.country || 'United States',
+          is_primary_address: a.isBilling ? 1 : 0,
+          is_shipping_address: a.isShipping ? 1 : 0,
           links: [{ link_doctype: 'Customer', link_name: id }],
         };
-        const createdAddr = await erpFetch('/api/resource/Address', 'POST', addrCreate);
-        if (createdAddr?.message?.name) {
-          await erpFetch(`/api/resource/Customer/${encodeURIComponent(id)}`, 'PUT', {
-            customer_primary_address: createdAddr.message.name,
-          });
+
+        if (a.id) {
+          await erpFetch(`/api/resource/Address/${encodeURIComponent(a.id)}`, 'PUT', addrPayload);
+          if (a.isBilling) primaryAddrName = a.id;
+        } else {
+          const created = await erpFetch('/api/resource/Address', 'POST', addrPayload);
+          const aname = created?.data?.name || created?.message?.name;
+          if (a.isBilling && aname) primaryAddrName = aname;
+        }
+      }
+      if (primaryAddrName) {
+        await erpFetch(`/api/resource/Customer/${encodeURIComponent(id)}`, 'PUT', {
+          customer_primary_address: primaryAddrName,
+        });
+      }
+    }
+
+    // 3. People — assistants / extra contacts (non-primary)
+    if (body.people) {
+      for (const person of body.people) {
+        if (person._delete && person.id) {
+          // Soft-unlink: clear designation not delete Contact (safer)
+          await erpFetch(`/api/resource/Contact/${encodeURIComponent(person.id)}`, 'PUT', {
+            status: 'Passive',
+          }).catch(() => {});
+          continue;
+        }
+        const pName = String(person.name || '').trim();
+        if (!pName) continue;
+        const parts = pName.split(/\s+/);
+        const pFirst = parts[0];
+        const pLast = parts.slice(1).join(' ') || '';
+        const role = (person.role || 'Assistant').trim() || 'Assistant';
+        const isPrimary = !!person.isPrimary || role === 'Client';
+
+        if (isPrimary) {
+          // Update primary client contact names/phones rather than creating a second primary
+          const cid = await ensurePrimaryContact();
+          if (cid) {
+            await erpFetch(`/api/resource/Contact/${encodeURIComponent(cid)}`, 'PUT', {
+              first_name: pFirst,
+              last_name: pLast,
+              mobile_no: person.phone || undefined,
+              email_id: person.email || undefined,
+              designation: '',
+              is_primary_contact: 1,
+            });
+          }
+          continue;
+        }
+
+        const payload: any = {
+          first_name: pFirst,
+          last_name: pLast,
+          designation: role,
+          mobile_no: person.phone || '',
+          email_id: person.email || '',
+          is_primary_contact: 0,
+          links: [{ link_doctype: 'Customer', link_name: id }],
+        };
+        if (person.id) {
+          await erpFetch(`/api/resource/Contact/${encodeURIComponent(person.id)}`, 'PUT', payload);
+        } else {
+          await erpFetch('/api/resource/Contact', 'POST', payload);
         }
       }
     }
 
     return c.json({ data: { ok: true } });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    return c.json({ error: { message: e.message || String(e) } }, 500);
   }
 });
 

@@ -53,14 +53,21 @@ export async function saveCart(input: {
   id?: string;
   createdBy: string;
   location: string;
+  /** Required staff label — never silently "Walk-in" when a real label was typed. */
+  label?: string;
   customer: Partial<CustomerInput>;
   customerRef?: string | null;
   cart: CartPayload;
 }): Promise<ParkedCart> {
+  const label =
+    (input.label || "").trim() ||
+    input.customer.fullName ||
+    (input.customer as any).name ||
+    "Walk-in";
   const doc = {
     location: input.location,
     created_by: input.createdBy,
-    label: input.customer.fullName ?? (input.customer as any).name ?? "Walk-in",
+    label,
     customer_ref: input.customerRef ?? null,
     customer_snapshot: JSON.stringify(input.customer),
     cart_json: JSON.stringify(input.cart),
