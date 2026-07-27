@@ -4,9 +4,9 @@ import {
   CartesianGrid, ResponsiveContainer, ComposedChart, Line,
 } from "recharts";
 import { TrendingUp, TrendingDown, DollarSign } from "lucide-react";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { formatUSD } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { GlassCard } from "@ls/design";
+import { formatUSD } from "@ls/design/format";
+import { cn } from "@ls/design/utils";
 
 const ChartTip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;

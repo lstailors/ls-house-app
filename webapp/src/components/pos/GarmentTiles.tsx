@@ -1,8 +1,8 @@
 import { Shirt, Scissors, Wind } from "lucide-react";
-import type { GarmentType } from "@/lib/types";
+import type { GarmentType } from "@ls/types";
 import { CONSTRUCTION_LABOR, GARMENT_LABEL } from "@/lib/pricing";
-import { formatUSD } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { formatUSD } from "@ls/design/format";
+import { cn } from "@ls/design/utils";
 
 interface Props {
   value: GarmentType | undefined;

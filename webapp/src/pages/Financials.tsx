@@ -19,14 +19,14 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { KpiCard } from "@/components/glass/KpiCard";
+import { SectionHeader } from "@ls/design";
+import { GlassCard } from "@ls/design";
+import { KpiCard } from "@ls/design";
 import { useState } from "react";
 import { useFinancials } from "@/lib/queries";
 import { useMe } from "@/lib/session";
-import { formatUSD } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { formatUSD } from "@ls/design/format";
+import { cn } from "@ls/design/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

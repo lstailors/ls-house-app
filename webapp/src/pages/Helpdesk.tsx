@@ -5,26 +5,26 @@ import {
   ChevronRight, ExternalLink, Filter, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { KpiCard } from "@/components/glass/KpiCard";
-import { EmptyState } from "@/components/glass/EmptyState";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { SectionHeader } from "@ls/design";
+import { GlassCard } from "@ls/design";
+import { KpiCard } from "@ls/design";
+import { EmptyState } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
+import { Badge } from "@ls/design/ui/badge";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+} from "@ls/design/ui/dialog";
+import { Input } from "@ls/design/ui/input";
+import { Textarea } from "@ls/design/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+} from "@ls/design/ui/select";
 import {
   useHelpdeskTickets, useHelpdeskOpenCount, useHelpdeskCreateTicket,
 } from "@/lib/queries";
 import { useMe } from "@/lib/session";
-import { cn } from "@/lib/utils";
-import type { HDTicket } from "@/lib/types";
+import { cn } from "@ls/design/utils";
+import type { HDTicket } from "@ls/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 

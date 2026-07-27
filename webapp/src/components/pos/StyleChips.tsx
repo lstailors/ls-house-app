@@ -1,4 +1,4 @@
-import type { GarmentType, StyleOption } from "@/lib/types";
+import type { GarmentType, StyleOption } from "@ls/types";
 import {
   SPEC_KEY_BY_CATEGORY,
   STYLE_GROUP_ORDER,
@@ -6,8 +6,8 @@ import {
   type SpecChoices,
   groupStyles,
 } from "@/lib/pricing";
-import { formatUSD } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { formatUSD } from "@ls/design/format";
+import { cn } from "@ls/design/utils";
 
 interface Props {
   garment: GarmentType | undefined;

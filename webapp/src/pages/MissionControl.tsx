@@ -8,18 +8,18 @@ import {
   TrendingUp, ToggleLeft, ToggleRight, MessageSquare,
   Scissors, ChevronRight, Circle,
 } from "lucide-react";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { Button } from "@/components/ui/button";
+import { SectionHeader } from "@ls/design";
+import { GlassCard } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
 import {
   useAgents, usePendingApprovals, useApproveAction,
   useAgentCosts, useCronJobs, useToggleCronJob,
   useAuditLog, useLiveFeed, useSofiaConversations,
   useAgentBriefs,
 } from "@/lib/queries";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
-import { formatRelative } from "@/lib/format";
+import { formatRelative } from "@ls/design/format";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

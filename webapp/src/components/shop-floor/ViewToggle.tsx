@@ -1,5 +1,5 @@
 import { LayoutGrid, CalendarDays, Table2, type LucideIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 
 export type ShopFloorView = "kanban" | "calendar" | "table";
 

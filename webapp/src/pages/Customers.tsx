@@ -4,13 +4,13 @@ import {
   Search, Plus, Star, Phone, Mail, Building2,
   MapPin, Filter, ChevronRight, Users
 } from "lucide-react";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { StatusPill } from "@/components/glass/StatusPill";
-import { EmptyState } from "@/components/glass/EmptyState";
-import { Button } from "@/components/ui/button";
+import { SectionHeader } from "@ls/design";
+import { StatusPill } from "@ls/design";
+import { EmptyState } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
 import { api } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface Customer {

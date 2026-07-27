@@ -1,6 +1,6 @@
 import { Ban } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { TimeBlock } from "../../../../backend/src/types";
+import { cn } from "@ls/design/utils";
+import type { TimeBlock } from "@ls/types";
 
 const AGENT_COLORS: Record<string, { dot: string; text: string }> = {
   "carl@lstailors.com": { dot: "bg-emerald-400", text: "text-emerald-300" },

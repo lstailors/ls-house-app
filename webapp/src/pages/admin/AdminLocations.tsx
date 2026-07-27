@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Building2, MapPin, Plus, Power, Pencil, Phone, Wifi, DollarSign, Settings } from "lucide-react";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { StatusPill } from "@/components/glass/StatusPill";
-import { EmptyState } from "@/components/glass/EmptyState";
-import { Button } from "@/components/ui/button";
+import { SectionHeader } from "@ls/design";
+import { GlassCard } from "@ls/design";
+import { StatusPill } from "@ls/design";
+import { EmptyState } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
 import { useLocations, useCreateLocation, useUpdateLocation } from "@/lib/queries";
 import { toast } from "sonner";
-import type { Location } from "@/lib/types";
+import type { Location } from "@ls/types";
 
 const INPUT = "w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50";
 const LABEL = "ui-label block mb-1";

@@ -1,0 +1,152 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Montserrat:wght@400;500;600&display=swap');
+
+.invoice-page {
+  font-family: 'Montserrat', sans-serif;
+  color: #0D1A10;
+  background: #F1E9D6;
+  padding: 48px 56px;
+  max-width: 8.5in;
+}
+
+.invoice-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 2px solid #B08D57;
+  padding-bottom: 24px;
+  margin-bottom: 32px;
+}
+
+.brand .logotype {
+  font-family: 'Cormorant Garamond', serif;
+  font-style: italic;
+  font-size: 48px;
+  color: #1F3A2E;
+  margin: 0;
+  line-height: 1;
+}
+
+.brand .tagline {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #B08D57;
+  margin-top: 8px;
+}
+
+.invoice-meta { text-align: right; }
+.invoice-meta .label {
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: #B08D57;
+  margin: 0;
+}
+.invoice-meta .invoice-number {
+  font-family: 'Cormorant Garamond', serif;
+  font-style: italic;
+  font-size: 24px;
+  color: #1F3A2E;
+  margin: 4px 0;
+}
+.invoice-meta .date {
+  font-size: 11px;
+  color: #1F3A2E;
+}
+
+.customer-block { margin-bottom: 32px; }
+.customer-block .label {
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: #B08D57;
+}
+.customer-block .customer-name {
+  font-family: 'Cormorant Garamond', serif;
+  font-style: italic;
+  font-size: 22px;
+  color: #1F3A2E;
+  margin: 4px 0;
+}
+.customer-block .ticket-ref {
+  font-size: 11px;
+  color: #1F3A2E;
+}
+
+.items-block table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 24px;
+}
+.items-block th {
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #B08D57;
+  text-align: left;
+  padding: 12px 0;
+  border-bottom: 1px solid #B08D57;
+}
+.items-block th.qty, .items-block th.price { text-align: right; }
+.items-block td {
+  padding: 14px 0;
+  font-size: 12px;
+  color: #0D1A10;
+  border-bottom: 1px solid rgba(176, 141, 87, 0.2);
+}
+.items-block td.qty, .items-block td.price { text-align: right; }
+
+.total-block {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 2px solid #1F3A2E;
+}
+.total-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.total-line .label {
+  font-family: 'Cormorant Garamond', serif;
+  font-style: italic;
+  font-size: 24px;
+  color: #1F3A2E;
+}
+.total-line .amount {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 32px;
+  color: #B08D57;
+}
+.outstanding {
+  margin-top: 8px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #D97B6C;
+  text-align: right;
+}
+.paid-stamp {
+  margin-top: 8px;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #4FBF8E;
+  text-align: right;
+}
+
+.invoice-footer {
+  margin-top: 64px;
+  padding-top: 24px;
+  border-top: 1px solid rgba(176, 141, 87, 0.3);
+  text-align: center;
+  font-size: 10px;
+  color: #1F3A2E;
+  line-height: 1.6;
+}
+.invoice-footer .thanks {
+  font-family: 'Cormorant Garamond', serif;
+  font-style: italic;
+  font-size: 13px;
+  color: #B08D57;
+  margin-top: 8px;
+}

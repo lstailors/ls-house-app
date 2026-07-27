@@ -1,6 +1,6 @@
 import { LifeBuoy, AlertTriangle, ExternalLink, Inbox } from "lucide-react";
-import { GlassCard } from "@/components/glass/GlassCard";
-import type { YZTicket } from "@/lib/types";
+import { GlassCard } from "@ls/design";
+import type { YZTicket } from "@ls/types";
 
 interface Props {
   data: YZTicket[];

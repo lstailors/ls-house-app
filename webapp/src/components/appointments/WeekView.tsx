@@ -1,6 +1,6 @@
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 import { BlockCard } from "./BlockCard";
-import type { StaffAppointment, TimeBlock } from "../../../../backend/src/types";
+import type { StaffAppointment, TimeBlock } from "@ls/types";
 
 const AGENT_COLORS: Record<string, { dot: string; border: string }> = {
   "carl@lstailors.com": { dot: "bg-emerald-400", border: "border-l-emerald-500" },

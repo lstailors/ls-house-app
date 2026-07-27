@@ -1,9 +1,9 @@
 import { useState, useMemo } from "react";
 import { MessageSquare, Search, Mic, Eye, UserCheck, Star } from "lucide-react";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { EmptyState } from "@/components/glass/EmptyState";
-import { Button } from "@/components/ui/button";
+import { SectionHeader } from "@ls/design";
+import { GlassCard } from "@ls/design";
+import { EmptyState } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
 import {
   useCommunications,
   useCustomers,
@@ -12,9 +12,9 @@ import {
   useSofiaHandoff,
   useSofiaVoiceApprovals,
 } from "@/lib/queries";
-import { formatDateTime } from "@/lib/format";
-import type { Communication, Customer } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { formatDateTime } from "@ls/design/format";
+import type { Communication, Customer } from "@ls/types";
+import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
 
 // ─── Tab types ───────────────────────────────────────────────────────────────

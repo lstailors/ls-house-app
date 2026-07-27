@@ -1,12 +1,12 @@
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { StaffBookingRequest, LSHAgent, LSHAppointmentType } from "../../../../backend/src/types";
+import { Button } from "@ls/design/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@ls/design/ui/dialog";
+import { Input } from "@ls/design/ui/input";
+import { Label } from "@ls/design/ui/label";
+import { Textarea } from "@ls/design/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ls/design/ui/select";
+import type { StaffBookingRequest, LSHAgent, LSHAppointmentType } from "@ls/types";
 
 interface Props {
   open: boolean;

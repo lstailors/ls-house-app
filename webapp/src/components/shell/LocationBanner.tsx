@@ -6,11 +6,11 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@ls/design/ui/dropdown-menu";
 import { useActiveLocation } from "@/lib/locationContext";
 import { useLocations } from "@/lib/queries";
-import type { Profile } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import type { Profile } from "@ls/types";
+import { cn } from "@ls/design/utils";
 
 interface Props {
   user: Profile;

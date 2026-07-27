@@ -1,9 +1,9 @@
 import { User, Phone, Mail, Star } from "lucide-react";
 import { useState } from "react";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import type { Customer } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { Input } from "@ls/design/ui/input";
+import { Label } from "@ls/design/ui/label";
+import type { Customer } from "@ls/types";
+import { cn } from "@ls/design/utils";
 
 export interface CustomerDraft {
   name: string;

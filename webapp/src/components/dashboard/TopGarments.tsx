@@ -1,6 +1,6 @@
 import { Scissors } from "lucide-react";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { formatUSD } from "@/lib/format";
+import { GlassCard } from "@ls/design";
+import { formatUSD } from "@ls/design/format";
 
 interface Garment { type: string; units: number; revenue: number; avgPrice: number }
 interface Props { data: Garment[] }

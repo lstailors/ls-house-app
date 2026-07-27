@@ -1,0 +1,28 @@
+{
+  "name": "@ls/erp-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./erp": "./src/erp.ts",
+    "./doctypes": "./src/erpnext/doctypes.ts",
+    "./alterations-data": "./src/erpnext/alterations-data.ts",
+    "./parked-carts": "./src/erpnext/parked-carts.ts",
+    "./customer": "./src/erpnext/customer.ts",
+    "./customers": "./src/erpnext/customers.ts",
+    "./files": "./src/erpnext/files.ts",
+    "./locations": "./src/erpnext/locations.ts",
+    "./store": "./src/erpnext/store.ts",
+    "./agents": "./src/erpnext/agents.ts",
+    "./custom-orders": "./src/erpnext/custom-orders.ts",
+    "./email-drafts": "./src/erpnext/email-drafts.ts",
+    "./reference": "./src/erpnext/reference.ts",
+    "./erpnext/*": "./src/erpnext/*.ts"
+  },
+  "dependencies": {
+    "@ls/types": "workspace:*"
+  }
+}

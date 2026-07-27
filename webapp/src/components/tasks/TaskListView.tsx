@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 import { type GroupKey, type Todo, LIST_GROUPS, groupTasks } from "@/lib/tasks";
 import { TaskCard } from "./TaskCard";
 

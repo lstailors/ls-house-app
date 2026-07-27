@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitAny": false,
+    "baseUrl": ".",
+    "paths": {
+      "@alts/*": ["./src/*"],
+      "@/*": ["../../webapp/src/*"],
+      "@ls/types": ["../../packages/types/src/index.ts"],
+      "@ls/api-client": ["../../packages/api-client/src/index.ts"],
+      "@ls/auth": ["../../packages/auth/src/index.ts"],
+      "@ls/auth/*": ["../../packages/auth/src/*"],
+      "@ls/design": ["../../packages/design/src/index.ts"],
+      "@ls/design/*": ["../../packages/design/*"]
+    }
+  },
+  "include": ["src", "../../webapp/src"]
+}

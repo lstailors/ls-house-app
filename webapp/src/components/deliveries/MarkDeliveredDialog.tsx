@@ -12,21 +12,21 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+} from "@ls/design/ui/dialog";
+import { Button } from "@ls/design/ui/button";
+import { Input } from "@ls/design/ui/input";
+import { Label } from "@ls/design/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@ls/design/ui/select";
 import { api } from "@/lib/api";
 import { useMarkDelivered } from "@/lib/queries";
-import { cn } from "@/lib/utils";
-import type { Delivery } from "@/lib/types";
+import { cn } from "@ls/design/utils";
+import type { Delivery } from "@ls/types";
 
 const schema = z.object({
   pod_method: z.string().min(1, "POD method is required"),

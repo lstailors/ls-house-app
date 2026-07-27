@@ -3,17 +3,17 @@ import {
   ExternalLink, Copy, Flame, Truck, Check, ChevronUp, ChevronDown, Ruler,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { YZOrder } from "@/lib/types";
+import type { YZOrder } from "@ls/types";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
-} from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
+} from "@ls/design/ui/sheet";
+import { Button } from "@ls/design/ui/button";
 import { StatusBadge } from "./StatusBadge";
 import { GarmentBreakdown } from "./GarmentIcons";
 import {
   formatFullDate, shipTone, shipToneClass, isRush, trackingLink,
 } from "@/lib/shopFloor";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 
 const ERP_MTMPRO_BASE = "https://erp.lstailors.com/app/mtmpro-order";
 

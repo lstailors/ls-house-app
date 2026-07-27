@@ -1,0 +1,37 @@
+[
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-27 15:22:37.467708",
+  "name": "Start Work",
+  "workflow_action_name": "Start Work"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-27 15:22:37.473057",
+  "name": "Mark Ready",
+  "workflow_action_name": "Mark Ready"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-27 15:22:37.474600",
+  "name": "Mark Picked Up",
+  "workflow_action_name": "Mark Picked Up"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-27 15:22:37.476228",
+  "name": "Cancel",
+  "workflow_action_name": "Cancel"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-27 15:22:37.477778",
+  "name": "Reopen",
+  "workflow_action_name": "Reopen"
+ }
+]

@@ -4,13 +4,13 @@ import {
   CheckCheck, Clock, ClipboardList, CheckCircle2, AlertCircle,
   Phone, RefreshCw
 } from "lucide-react";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { EmptyState } from "@/components/glass/EmptyState";
-import { Button } from "@/components/ui/button";
+import { SectionHeader } from "@ls/design";
+import { EmptyState } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
 import { api } from "@/lib/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { cn } from "@/lib/utils";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { cn } from "@ls/design/utils";
+import { useIsMobile } from "@ls/design/hooks/use-mobile";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface Conversation {

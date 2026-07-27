@@ -1,6 +1,6 @@
 import { DoorOpen } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { StaffAppointment } from "../../../../backend/src/types";
+import { cn } from "@ls/design/utils";
+import type { StaffAppointment } from "@ls/types";
 
 const AGENT_COLORS: Record<string, { bg: string; border: string; text: string; dot: string }> = {
   "carl@lstailors.com": { bg: "bg-emerald-900/40", border: "border-emerald-600/50", text: "text-emerald-300", dot: "bg-emerald-400" },

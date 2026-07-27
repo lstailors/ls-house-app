@@ -1,6 +1,6 @@
 import { Crown } from "lucide-react";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { formatUSD } from "@/lib/format";
+import { GlassCard } from "@ls/design";
+import { formatUSD } from "@ls/design/format";
 
 interface Customer { name: string; orders: number; revenue: number }
 interface Props { data: Customer[] }

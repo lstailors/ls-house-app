@@ -3,11 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { Html5Qrcode } from "html5-qrcode";
 import { toast } from "sonner";
 import { X, Keyboard, ArrowRight, CameraOff } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { Button } from "@ls/design/ui/button";
+import { Input } from "@ls/design/ui/input";
+import { cn } from "@ls/design/utils";
 import { api } from "@/lib/api";
-import type { ScannerResult, ScannerActionResult } from "@/lib/types";
+import type { ScannerResult, ScannerActionResult } from "@ls/types";
 import { ScannerResultSheet } from "@/components/scanner/ScannerResultSheet";
 
 const VIDEO_ID = "ls-scanner-video";

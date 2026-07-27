@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import type { YZOrder } from "@/lib/types";
+import type { YZOrder } from "@ls/types";
 import { statusMeta, isRush, todayStr, byShipDate } from "@/lib/shopFloor";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Button } from "@ls/design/ui/button";
+import { cn } from "@ls/design/utils";
 
 interface Props {
   orders: YZOrder[];

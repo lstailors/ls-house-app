@@ -1,6 +1,6 @@
 import { GraduationCap } from "lucide-react";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { GlassCard } from "@/components/glass/GlassCard";
+import { SectionHeader } from "@ls/design";
+import { GlassCard } from "@ls/design";
 
 export default function Academy() {
   return (

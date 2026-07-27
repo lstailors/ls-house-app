@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Search, MessageSquare, User } from "lucide-react";
 import { api } from "@/lib/api";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { cn } from "@/lib/utils";
-import type { DispatchCustomer, DispatchRecentThread } from "../../../../backend/src/types";
+import { GlassCard } from "@ls/design";
+import { cn } from "@ls/design/utils";
+import type { DispatchCustomer, DispatchRecentThread } from "@ls/types";
 
 export interface DispatchSelection {
   customerId: string | null;

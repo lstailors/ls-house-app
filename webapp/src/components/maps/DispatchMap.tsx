@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import type { Delivery } from "@/lib/types";
+import type { Delivery } from "@ls/types";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 

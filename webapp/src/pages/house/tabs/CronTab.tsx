@@ -2,10 +2,10 @@ import { useState } from "react";
 import { Plus, Play, Calendar, Clock, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
-import { Switch } from "@/components/ui/switch";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+} from "@ls/design/ui/dialog";
+import { Switch } from "@ls/design/ui/switch";
+import { Button } from "@ls/design/ui/button";
+import { cn } from "@ls/design/utils";
 import { CRON_JOBS, type CronJob, type RunStatus } from "../mockData";
 import { SkeletonRows, useFakeLoading, comingSoon } from "../components/shared";
 

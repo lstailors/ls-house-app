@@ -5,18 +5,18 @@ import {
   Mail, ChevronDown, Headphones, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { GlassCard } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
+import { Textarea } from "@ls/design/ui/textarea";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@ls/design/ui/dropdown-menu";
 import {
   useHelpdeskTicket, useHelpdeskReply, useHelpdeskUpdateStatus,
 } from "@/lib/queries";
 import { useMe } from "@/lib/session";
-import { cn } from "@/lib/utils";
-import type { HDCommunication } from "@/lib/types";
+import { cn } from "@ls/design/utils";
+import type { HDCommunication } from "@ls/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 

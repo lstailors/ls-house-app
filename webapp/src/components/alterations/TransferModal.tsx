@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, CheckCircle2, ArrowUp, ArrowDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn } from "@ls/design/utils"
 
 // ── Types ──────────────────────────────────────────────────────────────────
 

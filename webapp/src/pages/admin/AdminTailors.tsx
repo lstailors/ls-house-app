@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
 import { Scissors, Plus, Building2 } from "lucide-react";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { FilterBar } from "@/components/glass/FilterBar";
-import { StatusPill } from "@/components/glass/StatusPill";
-import { EmptyState } from "@/components/glass/EmptyState";
-import { Button } from "@/components/ui/button";
+import { SectionHeader } from "@ls/design";
+import { GlassCard } from "@ls/design";
+import { FilterBar } from "@ls/design";
+import { StatusPill } from "@ls/design";
+import { EmptyState } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
 import { useTailors, useLocations } from "@/lib/queries";
-import { initials, formatDate } from "@/lib/format";
+import { initials, formatDate } from "@ls/design/format";
 
 export default function AdminTailors() {
   const { data: tailors = [], isLoading } = useTailors();

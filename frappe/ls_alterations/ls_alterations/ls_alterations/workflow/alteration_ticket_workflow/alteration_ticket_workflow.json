@@ -1,0 +1,107 @@
+{
+ "docstatus": 0,
+ "doctype": "Workflow",
+ "document_type": "Alteration Ticket",
+ "is_active": 1,
+ "modified": "2026-05-27 09:00:00.000000",
+ "name": "Alteration Ticket Workflow",
+ "override_status": 0,
+ "send_email_alert": 0,
+ "states": [
+  {
+   "allow_edit": "Sales User",
+   "doc_status": "0",
+   "state": "Received",
+   "update_field": "workflow_state",
+   "update_value": "Received"
+  },
+  {
+   "allow_edit": "Sales User",
+   "doc_status": "0",
+   "state": "In Progress",
+   "update_field": "workflow_state",
+   "update_value": "In Progress"
+  },
+  {
+   "allow_edit": "Sales User",
+   "doc_status": "0",
+   "state": "Ready",
+   "update_field": "workflow_state",
+   "update_value": "Ready"
+  },
+  {
+   "allow_edit": "Sales Manager",
+   "doc_status": "0",
+   "state": "Picked Up",
+   "update_field": "workflow_state",
+   "update_value": "Picked Up"
+  },
+  {
+   "allow_edit": "Sales Manager",
+   "doc_status": "0",
+   "state": "Cancelled",
+   "update_field": "workflow_state",
+   "update_value": "Cancelled"
+  }
+ ],
+ "transitions": [
+  {
+   "action": "Start Work",
+   "allow_self_approval": 1,
+   "allowed": "Sales User",
+   "condition": "",
+   "next_state": "In Progress",
+   "state": "Received"
+  },
+  {
+   "action": "Mark Ready",
+   "allow_self_approval": 1,
+   "allowed": "Sales User",
+   "condition": "",
+   "next_state": "Ready",
+   "state": "In Progress"
+  },
+  {
+   "action": "Mark Picked Up",
+   "allow_self_approval": 1,
+   "allowed": "Sales User",
+   "condition": "",
+   "next_state": "Picked Up",
+   "state": "Ready"
+  },
+  {
+   "action": "Cancel",
+   "allow_self_approval": 1,
+   "allowed": "Sales Manager",
+   "condition": "",
+   "next_state": "Cancelled",
+   "state": "Received"
+  },
+  {
+   "action": "Cancel",
+   "allow_self_approval": 1,
+   "allowed": "Sales Manager",
+   "condition": "",
+   "next_state": "Cancelled",
+   "state": "In Progress"
+  },
+  {
+   "action": "Cancel",
+   "allow_self_approval": 1,
+   "allowed": "Sales Manager",
+   "condition": "",
+   "next_state": "Cancelled",
+   "state": "Ready"
+  },
+  {
+   "action": "Reopen",
+   "allow_self_approval": 1,
+   "allowed": "Sales Manager",
+   "condition": "",
+   "next_state": "Received",
+   "state": "Cancelled"
+  }
+ ],
+ "workflow_name": "Alteration Ticket Workflow",
+ "workflow_state_field": "workflow_state"
+}

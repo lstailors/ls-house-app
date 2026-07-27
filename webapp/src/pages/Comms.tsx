@@ -15,8 +15,8 @@ import {
   Lock,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { cn } from "@/lib/utils";
+import { GlassCard } from "@ls/design";
+import { cn } from "@ls/design/utils";
 import { useComms, useSmsThread } from "@/lib/queries";
 
 // ── Helpers ────────────────────────────────────────────────────────────────

@@ -1,9 +1,9 @@
 import { Sparkles, Search } from "lucide-react";
 import { useState, useMemo } from "react";
-import type { FabricPricing } from "@/lib/types";
-import { formatUSD } from "@/lib/format";
-import { cn } from "@/lib/utils";
-import { Input } from "@/components/ui/input";
+import type { FabricPricing } from "@ls/types";
+import { formatUSD } from "@ls/design/format";
+import { cn } from "@ls/design/utils";
+import { Input } from "@ls/design/ui/input";
 
 interface Props {
   fabrics: FabricPricing[];

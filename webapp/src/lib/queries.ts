@@ -23,7 +23,7 @@ import type {
   YZTicket,
   YZOrder,
   YZProductionBrief,
-} from "./types";
+} from "@ls/types";
 
 export interface DepositReceipt {
   provider: string;

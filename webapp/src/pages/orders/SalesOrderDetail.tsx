@@ -21,11 +21,11 @@ import {
   Check,
   Factory,
 } from "lucide-react"
-import { GlassCard } from "@/components/glass/GlassCard"
-import { StatusPill } from "@/components/glass/StatusPill"
+import { GlassCard } from "@ls/design"
+import { StatusPill } from "@ls/design"
 import { api } from "@/lib/api"
-import { formatUSD, formatDate } from "@/lib/format"
-import { cn } from "@/lib/utils"
+import { formatUSD, formatDate } from "@ls/design/format"
+import { cn } from "@ls/design/utils"
 import { ChargeTerminalButton } from "@/components/payments/ChargeTerminalButton"
 
 // ── Types ────────────────────────────────────────────────────────────────────

@@ -1,0 +1,15 @@
+[
+  {
+    "doctype": "Custom Field",
+    "name": "Sales Invoice-alteration_ticket_ref",
+    "dt": "Sales Invoice",
+    "fieldname": "alteration_ticket_ref",
+    "label": "Alteration Ticket",
+    "fieldtype": "Link",
+    "options": "Alteration Ticket",
+    "insert_after": "customer",
+    "read_only": 1,
+    "in_list_view": 1,
+    "module": "LS Alterations"
+  }
+]

@@ -12,10 +12,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { StatusPill } from "@/components/glass/StatusPill";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { GlassCard } from "@ls/design";
+import { StatusPill } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
+import { Skeleton } from "@ls/design/ui/skeleton";
 import { GarmentDetailsCard } from "@/components/garment/GarmentDetailsCard";
 import { WorkToDoList } from "@/components/garment/WorkToDoList";
 import { MeasurementsList } from "@/components/garment/MeasurementsList";
@@ -27,7 +27,7 @@ import {
   isCompleted,
   statusVariant,
 } from "@/components/garment/garmentFormat";
-import type { GarmentJobCard, GarmentActionResult } from "../../../backend/src/types";
+import type { GarmentJobCard, GarmentActionResult } from "@ls/types";
 
 export default function GarmentJobCardPage() {
   const { ticket, garmentId } = useParams<{ ticket: string; garmentId: string }>();

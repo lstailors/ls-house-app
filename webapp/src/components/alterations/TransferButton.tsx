@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ArrowLeftRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 import { TransferModal } from "./TransferModal";
 
 export function TransferButton() {

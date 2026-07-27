@@ -2,8 +2,8 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Ban, Check, Send, Users, X } from "lucide-react";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
-import type { DispatchTemplate } from "../../../../backend/src/types";
+import { cn } from "@ls/design/utils";
+import type { DispatchTemplate } from "@ls/types";
 import type { DispatchSelection } from "./CustomerPicker";
 import { selectionKey } from "./CustomerPicker";
 

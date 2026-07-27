@@ -1,14 +1,14 @@
 import { useMemo, useState, useRef, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { FileText, Scissors } from "lucide-react";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { DataTable, type Column } from "@/components/glass/DataTable";
-import { FilterBar } from "@/components/glass/FilterBar";
-import { StatusPill } from "@/components/glass/StatusPill";
-import { EmptyState } from "@/components/glass/EmptyState";
+import { SectionHeader } from "@ls/design";
+import { DataTable, type Column } from "@ls/design";
+import { FilterBar } from "@ls/design";
+import { StatusPill } from "@ls/design";
+import { EmptyState } from "@ls/design";
 import { useInvoices } from "@/lib/queries";
-import { formatUSD, formatDate } from "@/lib/format";
-import type { Invoice } from "@/lib/types";
+import { formatUSD, formatDate } from "@ls/design/format";
+import type { Invoice } from "@ls/types";
 
 // Use lowercase status values to match backend normalization
 const FILTERS = [

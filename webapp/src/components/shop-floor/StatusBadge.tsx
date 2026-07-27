@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 import { statusMeta } from "@/lib/shopFloor";
 
 interface Props {

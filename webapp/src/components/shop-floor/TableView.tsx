@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ArrowUp, ArrowDown, ChevronsUpDown, ExternalLink, Truck, AlertTriangle } from "lucide-react";
-import type { YZOrder } from "@/lib/types";
+import type { YZOrder } from "@ls/types";
 import {
   formatFullDate,
   shipTone,
@@ -12,7 +12,7 @@ import {
   ATTENTION_COLOR,
 } from "@/lib/shopFloor";
 import { StatusBadge } from "./StatusBadge";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 
 // Every column is sortable. Keys map to a comparable value via getVal().
 type SortKey =

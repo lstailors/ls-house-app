@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
 import { Sparkles, Palette } from "lucide-react";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { EmptyState } from "@/components/glass/EmptyState";
+import { SectionHeader } from "@ls/design";
+import { GlassCard } from "@ls/design";
+import { EmptyState } from "@ls/design";
 import { useStyleOptions } from "@/lib/queries";
 import { STYLE_UPCHARGE } from "@/lib/pricing";
-import type { StyleCategory, StyleOption } from "@/lib/types";
-import { formatUSD } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import type { StyleCategory, StyleOption } from "@ls/types";
+import { formatUSD } from "@ls/design/format";
+import { cn } from "@ls/design/utils";
 
 const CATEGORY_LABEL: Record<StyleCategory, string> = {
   lapel: "Lapel",

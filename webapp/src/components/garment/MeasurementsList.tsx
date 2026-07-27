@@ -1,6 +1,6 @@
 import { Ruler } from "lucide-react";
-import { GlassCard } from "@/components/glass/GlassCard";
-import type { GarmentMeasurement } from "../../../../backend/src/types";
+import { GlassCard } from "@ls/design";
+import type { GarmentMeasurement } from "@ls/types";
 
 interface Props {
   measurements?: GarmentMeasurement[] | null;

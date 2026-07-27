@@ -1,18 +1,18 @@
 import { useMemo, useState } from "react";
 import { Plus, Sparkles, Star } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { DataTable, type Column } from "@/components/glass/DataTable";
-import { FilterBar } from "@/components/glass/FilterBar";
-import { StatusPill } from "@/components/glass/StatusPill";
-import { EmptyState } from "@/components/glass/EmptyState";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { Button } from "@/components/ui/button";
+import { SectionHeader } from "@ls/design";
+import { DataTable, type Column } from "@ls/design";
+import { FilterBar } from "@ls/design";
+import { StatusPill } from "@ls/design";
+import { EmptyState } from "@ls/design";
+import { GlassCard } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
 import { useCustomOrders } from "@/lib/queries";
 import { GARMENT_LABEL } from "@/lib/pricing";
-import { formatUSD, formatDate, statusToLabel } from "@/lib/format";
-import type { CustomOrder } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { formatUSD, formatDate, statusToLabel } from "@ls/design/format";
+import type { CustomOrder } from "@ls/types";
+import { cn } from "@ls/design/utils";
 
 const FILTERS = [
   { value: "all", label: "All" },

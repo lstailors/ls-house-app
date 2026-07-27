@@ -1,0 +1,137 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:preset_name",
+ "creation": "2026-05-27 09:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "preset_name",
+  "garment_type",
+  "alteration_category",
+  "column_break_pricing",
+  "default_price",
+  "default_price_hou",
+  "estimated_minutes",
+  "section_break_meta",
+  "is_active",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "preset_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Preset Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "garment_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Garment Type",
+   "options": "Jacket\nTrouser\nShirt\nDress\nCoat\nSkirt\nVest\nOther",
+   "reqd": 1
+  },
+  {
+   "fieldname": "alteration_category",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Category",
+   "options": "Length\nWaist\nSleeve\nShoulder\nChest\nSeat\nHem\nRepair\nOther",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_pricing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "default_price",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Default Price (USD)",
+   "options": "USD",
+   "reqd": 1
+  },
+  {
+   "fieldname": "default_price_hou",
+   "fieldtype": "Currency",
+   "label": "Default Price HOU (USD)",
+   "options": "USD"
+  },
+  {
+   "fieldname": "estimated_minutes",
+   "fieldtype": "Int",
+   "label": "Est. Minutes"
+  },
+  {
+   "fieldname": "section_break_meta",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Active"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-05-27 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "LS Alterations",
+ "name": "Alteration Preset",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales User",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "garment_type",
+ "sort_order": "ASC",
+ "states": [],
+ "track_changes": 1
+}

@@ -1,0 +1,87 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-27 09:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "garment_ref",
+  "preset",
+  "description",
+  "price",
+  "tailor",
+  "line_status",
+  "line_notes"
+ ],
+ "fields": [
+  {
+   "columns": 1,
+   "fieldname": "garment_ref",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Garment",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "preset",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Preset",
+   "options": "Alteration Preset"
+  },
+  {
+   "columns": 3,
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Description",
+   "reqd": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "price",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Price (USD)",
+   "options": "USD",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "tailor",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Assigned Tailor",
+   "options": "Employee"
+  },
+  {
+   "columns": 1,
+   "default": "Pending",
+   "fieldname": "line_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Pending\nIn Progress\nDone"
+  },
+  {
+   "fieldname": "line_notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-05-27 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "LS Alterations",
+ "name": "Alteration Ticket Line",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

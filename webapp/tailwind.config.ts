@@ -1,13 +1,16 @@
 import type { Config } from "tailwindcss";
 import tailwindcssAnimate from "tailwindcss-animate";
+import lsPreset from "@ls/design/tailwind.preset";
 
 export default {
   darkMode: ["class"],
+  presets: [lsPreset],
   content: [
     "./pages/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
     "./app/**/*.{ts,tsx}",
     "./src/**/*.{ts,tsx}",
+    "../packages/design/src/**/*.{ts,tsx}",
   ],
   prefix: "",
   theme: {

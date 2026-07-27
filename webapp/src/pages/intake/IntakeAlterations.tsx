@@ -8,7 +8,7 @@ import {
   Camera
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn } from "@ls/design/utils"
 import { useMe } from '@/lib/session'
 import { CustomerEditSheet } from '@/components/pos/CustomerEditSheet'
 import { SaveCartControls } from '@/components/alterations/SaveCartControls'

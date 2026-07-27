@@ -1,7 +1,7 @@
 import { useSearchParams } from "react-router-dom";
 import { Bot, Cpu, Calendar, Brain, Radio } from "lucide-react";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { cn } from "@/lib/utils";
+import { SectionHeader } from "@ls/design";
+import { cn } from "@ls/design/utils";
 import AgentsTab from "./tabs/AgentsTab";
 import ProfilesTab from "./tabs/ProfilesTab";
 import CronTab from "./tabs/CronTab";

@@ -1,33 +1,45 @@
 {
   "compilerOptions": {
-    // Environment setup & latest features
     "lib": ["ESNext", "DOM"],
-    "types": ["bun-types"],
+    "types": ["bun"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",
     "jsx": "react-jsx",
     "allowJs": true,
-
-    // Bundler mode
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
-
-    // Best practices
     "strict": true,
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
-
-    // Some stricter flags (disabled by default)
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
+    "noPropertyAccessFromIndexSignature": false,
+    "baseUrl": ".",
+    "paths": {
+      "@ls/types": ["../packages/types/src/index.ts"],
+      "@ls/erp-client": ["../packages/erp-client/src/index.ts"],
+      "@ls/erp-client/*": ["../packages/erp-client/src/*"],
+      "@ls/erp-client/erp": ["../packages/erp-client/src/erp.ts"],
+      "@ls/erp-client/doctypes": ["../packages/erp-client/src/erpnext/doctypes.ts"],
+      "@ls/erp-client/alterations-data": ["../packages/erp-client/src/erpnext/alterations-data.ts"],
+      "@ls/erp-client/parked-carts": ["../packages/erp-client/src/erpnext/parked-carts.ts"],
+      "@ls/erp-client/customer": ["../packages/erp-client/src/erpnext/customer.ts"],
+      "@ls/erp-client/customers": ["../packages/erp-client/src/erpnext/customers.ts"],
+      "@ls/erp-client/files": ["../packages/erp-client/src/erpnext/files.ts"],
+      "@ls/erp-client/locations": ["../packages/erp-client/src/erpnext/locations.ts"],
+      "@ls/erp-client/store": ["../packages/erp-client/src/erpnext/store.ts"],
+      "@ls/erp-client/agents": ["../packages/erp-client/src/erpnext/agents.ts"],
+      "@ls/erp-client/custom-orders": ["../packages/erp-client/src/erpnext/custom-orders.ts"],
+      "@ls/erp-client/email-drafts": ["../packages/erp-client/src/erpnext/email-drafts.ts"],
+      "@ls/erp-client/reference": ["../packages/erp-client/src/erpnext/reference.ts"],
+      "@ls/auth": ["../packages/auth/src/index.ts"],
+      "@ls/auth/*": ["../packages/auth/src/*"]
+    }
   },
-  "exclude": [
-    "scripts/migrate-deliveries-to-erp.ts"
-  ]
+  "exclude": ["scripts/migrate-deliveries-to-erp.ts"]
 }

@@ -5,12 +5,12 @@ import {
   DialogContent,
   DialogTitle,
   DialogDescription,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { formatUSD, formatDateTime } from "@/lib/format";
-import { Monogram } from "@/components/glass/Monogram";
+} from "@ls/design/ui/dialog";
+import { Button } from "@ls/design/ui/button";
+import { formatUSD, formatDateTime } from "@ls/design/format";
+import { Monogram } from "@ls/design";
 import { GARMENT_LABEL, type PriceBreakdown } from "@/lib/pricing";
-import type { CustomOrder } from "@/lib/types";
+import type { CustomOrder } from "@ls/types";
 import type { DepositReceipt as ReceiptT } from "@/lib/queries";
 
 interface Props {

@@ -10,17 +10,17 @@ import QRCode from "qrcode";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useUpdateDelivery, useCustomerSearch, useDeliveryProofUrls } from "@/lib/queries";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { StatusPill } from "@/components/glass/StatusPill";
-import { formatDateTime } from "@/lib/format";
+import { Button } from "@ls/design/ui/button";
+import { Input } from "@ls/design/ui/input";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@ls/design/ui/alert-dialog";
+import { GlassCard } from "@ls/design";
+import { StatusPill } from "@ls/design";
+import { formatDateTime } from "@ls/design/format";
 import { MarkDeliveredDialog } from "@/components/deliveries/MarkDeliveredDialog";
 import { DeliveryPinMap } from "@/components/maps/DeliveryPinMap";
 import { AiInsightsCard } from "@/components/deliveries/AiInsightsCard";
 import { GenerateMessageDialog } from "@/components/deliveries/GenerateMessageDialog";
-import type { Delivery } from "@/lib/types";
+import type { Delivery } from "@ls/types";
 
 // Delivery extended with fields added to serializeDelivery
 interface DeliveryDetail extends Delivery {

@@ -1,7 +1,7 @@
 import { CalendarX } from "lucide-react";
 import { AppointmentCard } from "./AppointmentCard";
 import { BlockCard } from "./BlockCard";
-import type { StaffAppointment, TimeBlock } from "../../../../backend/src/types";
+import type { StaffAppointment, TimeBlock } from "@ls/types";
 
 interface Props {
   appointments: StaffAppointment[];

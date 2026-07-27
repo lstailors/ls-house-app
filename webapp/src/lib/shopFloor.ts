@@ -2,7 +2,7 @@
 // Dates from ERPNext are "YYYY-MM-DD" strings; we compare them as strings
 // (lexicographic order == chronological for that format) to sidestep timezones.
 
-import type { YZOrder, YZProductionStatus, YZAttentionFlag } from "./types";
+import type { YZOrder, YZProductionStatus, YZAttentionFlag } from "@ls/types";
 
 // ─── Status metadata ────────────────────────────────────────────────────────
 

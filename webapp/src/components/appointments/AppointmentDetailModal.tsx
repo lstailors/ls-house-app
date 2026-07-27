@@ -1,9 +1,9 @@
 import { Copy, DoorOpen, X } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import type { StaffAppointment } from "../../../../backend/src/types";
+import { cn } from "@ls/design/utils";
+import { Button } from "@ls/design/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@ls/design/ui/dialog";
+import type { StaffAppointment } from "@ls/types";
 
 const AGENT_COLORS: Record<string, { dot: string; text: string }> = {
   "carl@lstailors.com": { dot: "bg-emerald-400", text: "text-emerald-300" },

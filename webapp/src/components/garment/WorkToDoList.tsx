@@ -1,7 +1,7 @@
 import { Scissors, Clock, User } from "lucide-react";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { StatusPill } from "@/components/glass/StatusPill";
-import type { GarmentJobLine } from "../../../../backend/src/types";
+import { GlassCard } from "@ls/design";
+import { StatusPill } from "@ls/design";
+import type { GarmentJobLine } from "@ls/types";
 import { formatCurrency, statusVariant } from "./garmentFormat";
 
 interface Props {

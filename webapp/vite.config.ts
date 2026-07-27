@@ -33,8 +33,25 @@ export default defineConfig(({ mode }) => ({
     },
   },
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
+    alias: [
+      // Order matters: more specific subpath aliases must precede the bare
+      // package alias, otherwise "@ls/design" swallows "@ls/design/ui/button".
+      { find: /^@ls\/types$/, replacement: path.resolve(__dirname, "../packages/types/src/index.ts") },
+      { find: /^@ls\/api-client$/, replacement: path.resolve(__dirname, "../packages/api-client/src/index.ts") },
+      { find: /^@ls\/auth$/, replacement: path.resolve(__dirname, "../packages/auth/src/index.ts") },
+      { find: /^@ls\/auth\/(.*)$/, replacement: path.resolve(__dirname, "../packages/auth/src") + "/$1" },
+      { find: /^@ls\/design\/index\.css$/, replacement: path.resolve(__dirname, "../packages/design/src/index.css") },
+      { find: /^@ls\/design\/src\/index\.css$/, replacement: path.resolve(__dirname, "../packages/design/src/index.css") },
+      { find: /^@ls\/design\/tailwind\.preset$/, replacement: path.resolve(__dirname, "../packages/design/tailwind.preset.ts") },
+      { find: /^@ls\/design\/format$/, replacement: path.resolve(__dirname, "../packages/design/src/format.ts") },
+      { find: /^@ls\/design\/utils$/, replacement: path.resolve(__dirname, "../packages/design/src/utils.ts") },
+      { find: /^@ls\/design\/tokens$/, replacement: path.resolve(__dirname, "../packages/design/src/tokens.ts") },
+      { find: /^@ls\/design\/ui\/(.*)$/, replacement: path.resolve(__dirname, "../packages/design/src/ui") + "/$1" },
+      { find: /^@ls\/design\/hooks\/(.*)$/, replacement: path.resolve(__dirname, "../packages/design/src/hooks") + "/$1" },
+      { find: /^@ls\/design\/glass\/(.*)$/, replacement: path.resolve(__dirname, "../packages/design/src/glass") + "/$1" },
+      { find: /^@ls\/design$/, replacement: path.resolve(__dirname, "../packages/design/src/index.ts") },
+      { find: "@", replacement: path.resolve(__dirname, "./src") },
+    ],
+    dedupe: ["react", "react-dom", "@tanstack/react-query", "clsx", "tailwind-merge"],
   },
 }));

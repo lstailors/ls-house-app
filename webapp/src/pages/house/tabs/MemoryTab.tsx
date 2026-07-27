@@ -2,8 +2,8 @@ import { useState } from "react";
 import { Plus, Pencil, User, Brain, Sparkles, Tag } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+} from "@ls/design/ui/dialog";
+import { Button } from "@ls/design/ui/button";
 import {
   USER_PROFILE, MEMORY_NOTES, SKILLS, type HouseSkill,
 } from "../mockData";

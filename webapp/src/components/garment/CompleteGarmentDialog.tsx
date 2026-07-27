@@ -8,19 +8,19 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@/components/ui/dialog";
+} from "@ls/design/ui/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
+} from "@ls/design/ui/select";
+import { Input } from "@ls/design/ui/input";
+import { Label } from "@ls/design/ui/label";
+import { Button } from "@ls/design/ui/button";
 import { api } from "@/lib/api";
-import type { GarmentWorker } from "../../../../backend/src/types";
+import type { GarmentWorker } from "@ls/types";
 
 interface Props {
   open: boolean;

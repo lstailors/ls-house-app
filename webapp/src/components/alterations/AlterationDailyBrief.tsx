@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, RotateCcw, Briefcase } from "lucide-react";
 import { api } from "@/lib/api";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { cn } from "@/lib/utils";
+import { GlassCard } from "@ls/design";
+import { cn } from "@ls/design/utils";
 
 interface AlterationKpis {
   active: number;

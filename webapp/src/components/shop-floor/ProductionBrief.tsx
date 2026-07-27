@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Sparkles, ChevronDown, ChevronUp, RefreshCw, AlertTriangle } from "lucide-react";
-import { GlassCard } from "@/components/glass/GlassCard";
+import { GlassCard } from "@ls/design";
 import { useYzProductionBrief } from "@/lib/queries";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 
 interface Props {
   onOpenOrder: (orderNo: string) => void;

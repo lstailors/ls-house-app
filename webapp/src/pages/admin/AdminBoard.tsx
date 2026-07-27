@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { SectionHeader } from "@/components/glass/SectionHeader";
+import { SectionHeader } from "@ls/design";
 import { AlterationsBoard, type AlterationRow } from "@/components/alterations/AlterationsBoard";
 import { api } from "@/lib/api";
 

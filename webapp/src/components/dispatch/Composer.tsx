@@ -2,8 +2,8 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Ban, Send, Sparkles, Type } from "lucide-react";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
-import type { DispatchTemplate } from "../../../../backend/src/types";
+import { cn } from "@ls/design/utils";
+import type { DispatchTemplate } from "@ls/types";
 
 export type ComposerMode = "template" | "custom" | "sofia";
 

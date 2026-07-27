@@ -1,0 +1,9 @@
+{
+  "buildCommand": "cd .. && bun install && cd apps/alts && bun run build",
+  "outputDirectory": "alts/dist",
+  "installCommand": "cd .. && bun install",
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/((?!assets/).*)", "destination": "/index.html" }
+  ]
+}

@@ -5,20 +5,20 @@ import {
   AlertTriangle, CheckSquare, Zap, Clock, ChevronRight, QrCode, Activity,
   Headphones,
 } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@ls/design/ui/avatar";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@ls/design/ui/dropdown-menu";
 import { signOut } from "@/lib/authClient";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import type { Profile } from "@/lib/types";
-import { initials, formatDate } from "@/lib/format";
+import type { Profile } from "@ls/types";
+import { initials, formatDate } from "@ls/design/format";
 import { LocationBanner } from "./LocationBanner";
 import { api } from "@/lib/api";
 import { useState, useEffect, useRef } from "react";
 import { UnifiedFeed } from "@/components/UnifiedFeed";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 
 const ROLE_LABEL: Record<string, string> = {
   super_admin: "Super Admin",

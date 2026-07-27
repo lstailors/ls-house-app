@@ -8,12 +8,12 @@ import {
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { useMe } from "@/lib/session";
 import { useDashboardKpis, useDailyEspresso, useFinancials, useOpenYZTickets } from "@/lib/queries";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { KpiCard } from "@/components/glass/KpiCard";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { Button } from "@/components/ui/button";
-import { formatUSD, statusToLabel } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { SectionHeader } from "@ls/design";
+import { KpiCard } from "@ls/design";
+import { GlassCard } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
+import { formatUSD, statusToLabel } from "@ls/design/format";
+import { cn } from "@ls/design/utils";
 import { RevenueTrend } from "@/components/dashboard/RevenueTrend";
 import { SalesLeaderboard } from "@/components/dashboard/SalesLeaderboard";
 import { TopCustomers } from "@/components/dashboard/TopCustomers";

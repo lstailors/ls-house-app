@@ -1,8 +1,8 @@
 import { Navigate, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useMe } from "@/lib/session";
-import type { UserRole } from "@/lib/types";
-import { Monogram } from "../glass/Monogram";
+import type { UserRole } from "@ls/types";
+import { Monogram } from "@ls/design";
 
 interface Props {
   allow: UserRole[];

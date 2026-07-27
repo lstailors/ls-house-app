@@ -5,9 +5,9 @@ import {
   AlertTriangle, Info, ChevronDown, ChevronUp, XCircle, Eye, Bot,
   ToggleLeft, ToggleRight, RefreshCw, ListTodo,
 } from "lucide-react";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { KpiCard } from "@/components/glass/KpiCard";
-import { Button } from "@/components/ui/button";
+import { GlassCard } from "@ls/design";
+import { KpiCard } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
 import {
   useAgent,
   useAgentEvents,
@@ -18,11 +18,11 @@ import {
   useAgentMessages,
   useSendAgentMessage,
 } from "@/lib/queries";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
-import { formatRelative, formatDateTime } from "@/lib/format";
+import { formatRelative, formatDateTime } from "@ls/design/format";
 import { useMe } from "@/lib/session";
-import { canSeeFinancials } from "@/lib/scope";
+import { canSeeFinancials } from "@ls/auth";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

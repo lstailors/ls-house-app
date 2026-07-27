@@ -3,7 +3,7 @@
 // For non-super_admin users, this is fixed to their own locationId.
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import type { Profile } from "./types";
+import type { Profile } from "@ls/types";
 
 interface LocationContextValue {
   activeLocationId: string | null; // null = "All" (super_admin only)

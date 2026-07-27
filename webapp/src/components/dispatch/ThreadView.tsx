@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { AlertTriangle, Check, Pencil, Send, Trash2 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { DispatchMessage } from "../../../../backend/src/types";
+import { cn } from "@ls/design/utils";
+import type { DispatchMessage } from "@ls/types";
 
 function fmtTime(iso: string | null | undefined) {
   if (!iso) return "";

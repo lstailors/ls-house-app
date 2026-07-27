@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react";
 import { Layers, Sparkles } from "lucide-react";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { DataTable, type Column } from "@/components/glass/DataTable";
-import { FilterBar } from "@/components/glass/FilterBar";
-import { EmptyState } from "@/components/glass/EmptyState";
+import { SectionHeader } from "@ls/design";
+import { GlassCard } from "@ls/design";
+import { DataTable, type Column } from "@ls/design";
+import { FilterBar } from "@ls/design";
+import { EmptyState } from "@ls/design";
 import { useFabrics } from "@/lib/queries";
-import { formatUSD } from "@/lib/format";
-import type { FabricPricing } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { formatUSD } from "@ls/design/format";
+import type { FabricPricing } from "@ls/types";
+import { cn } from "@ls/design/utils";
 
 const TIER_ACCENT: Record<string, { dot: string; text: string }> = {
   Standard: { dot: "bg-cream-dim", text: "text-cream-muted" },

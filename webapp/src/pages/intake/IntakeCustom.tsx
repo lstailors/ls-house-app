@@ -1,15 +1,15 @@
 import { useMemo, useState } from "react";
 import { Sparkles, AlertCircle, CreditCard, FileText } from "lucide-react";
 import { toast } from "sonner";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { GlassCard } from "@/components/glass/GlassCard";
+import { SectionHeader } from "@ls/design";
+import { GlassCard } from "@ls/design";
 import { GarmentTiles } from "@/components/pos/GarmentTiles";
 import { FabricTiles } from "@/components/pos/FabricTiles";
 import { StyleChips } from "@/components/pos/StyleChips";
 import { PriceCard, TAX_TEMPLATES } from "@/components/pos/PriceCard";
 import { DepositReceipt } from "@/components/pos/DepositReceipt";
 import { CustomerField, type CustomerDraft } from "@/components/pos/CustomerField";
-import { Button } from "@/components/ui/button";
+import { Button } from "@ls/design/ui/button";
 import {
   useFabrics,
   useLocations,
@@ -21,12 +21,12 @@ import {
 import { useMe } from "@/lib/session";
 import { useActiveLocation } from "@/lib/locationContext";
 import { computePrice, suggestedDeposit, type SpecChoices } from "@/lib/pricing";
-import type { CustomOrder, GarmentType } from "@/lib/types";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { formatUSD } from "@/lib/format";
+import type { CustomOrder, GarmentType } from "@ls/types";
+import { Textarea } from "@ls/design/ui/textarea";
+import { Label } from "@ls/design/ui/label";
+import { formatUSD } from "@ls/design/format";
 import { api } from "@/lib/api";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@ls/design/ui/dialog";
 
 const STEPS = [
   { n: 1, label: "Customer" },

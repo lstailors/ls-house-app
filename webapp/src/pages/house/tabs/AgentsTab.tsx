@@ -2,9 +2,9 @@ import { useState } from "react";
 import { Bot, Clock, ListTodo, Cloud, Activity, Sparkles, Brain } from "lucide-react";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
-} from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+} from "@ls/design/ui/sheet";
+import { Button } from "@ls/design/ui/button";
+import { cn } from "@ls/design/utils";
 import { AGENTS, type HouseAgent } from "../mockData";
 import {
   AgentAvatar, StatusDot, STATUS_TEXT, STATUS_LABEL,

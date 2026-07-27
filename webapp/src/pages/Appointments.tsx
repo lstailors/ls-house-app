@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, CalendarDays, Ban, Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { SectionHeader } from "@/components/glass/SectionHeader";
+import { cn } from "@ls/design/utils";
+import { Button } from "@ls/design/ui/button";
+import { SectionHeader } from "@ls/design";
 import { useMe } from "@/lib/session";
 import { AgendaView } from "@/components/appointments/AgendaView";
 import { WeekView } from "@/components/appointments/WeekView";
@@ -20,7 +20,7 @@ import {
   useBookAppointment,
   useSetAppointmentStatus,
 } from "@/hooks/useAppointments";
-import type { StaffAppointment, BlockTimeRequest, StaffBookingRequest } from "../../../backend/src/types";
+import type { StaffAppointment, BlockTimeRequest, StaffBookingRequest } from "@ls/types";
 
 function toDateStr(d: Date): string {
   return d.toISOString().split("T")[0];

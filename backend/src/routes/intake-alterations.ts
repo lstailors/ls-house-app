@@ -488,7 +488,117 @@ intakeAlterationsRouter.patch('/tickets/:name/status', async (c) => {
       }
     }
 
-    return c.json({ data: { ok: true } });
+    // Pickup allowed WITHOUT payment. If still unpaid → Sofia/Twilio SMS
+    // (released + balance + pay links, v5 multi-bubble).
+    let unpaid_release_sms: { sent: boolean; sids?: string[]; reason?: string } | undefined;
+    if (status === "Picked Up") {
+      unpaid_release_sms = await notifyUnpaidRelease(ticketName).catch((e: any) => ({
+        sent: false,
+        reason: e?.message ?? "sms_failed",
+      }));
+    }
+
+    return c.json({ data: { ok: true, unpaid_release_sms } });
+  } catch (e: any) {
+    return c.json({ error: { message: e.message } }, 502);
+  }
+});
+
+/** Multi-bubble unpaid-release SMS. No-op if paid / N/A / no phone / zero balance. */
+async function notifyUnpaidRelease(
+  ticketName: string,
+): Promise<{ sent: boolean; sids?: string[]; reason?: string }> {
+  const ticket = await mcpGet<any>("Alteration Ticket", ticketName);
+  const payStatus = String(ticket.payment_status ?? "");
+  if (payStatus === "Paid" || payStatus === "N/A") {
+    return { sent: false, reason: "paid_or_na" };
+  }
+
+  let outstanding = Number(ticket.ticket_total ?? 0);
+  let invoiceName = ticket.sales_invoice as string | undefined;
+  let squareLink = "";
+  if (invoiceName) {
+    try {
+      const inv = await mcpGet<any>("Sales Invoice", invoiceName);
+      outstanding = Number(inv.outstanding_amount ?? outstanding);
+      squareLink = String(inv.lsh_square_payment_link ?? "");
+      if (Number(inv.docstatus) === 2 || String(inv.status) === "Paid") {
+        return { sent: false, reason: "invoice_paid" };
+      }
+    } catch {
+      /* use ticket totals */
+    }
+  }
+  if (!(outstanding > 0.001)) {
+    return { sent: false, reason: "zero_balance" };
+  }
+
+  const phone = String(ticket.customer_phone || ticket.customer_mobile || "").trim();
+  if (!phone) return { sent: false, reason: "no_phone" };
+
+  const first = String(ticket.customer_name || "there").split(/\s+/)[0] || "there";
+  const amt = outstanding.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  const payUrl = invoiceName
+    ? `${APP_URL}/pay/${encodeURIComponent(invoiceName)}`
+    : `${APP_URL}/e-ticket/${encodeURIComponent(ticketName)}`;
+
+  // Bubble 1 prose only; 2 app pay; 3 Square if present (SMS v5 shape).
+  const b1 = `Hi ${first}, your alterations were released from L&S Custom Tailors. Balance due ${amt} — pay anytime when convenient.`;
+  const sids: string[] = [];
+
+  const sid1 = await sendSms(phone, b1);
+  if (!sid1) return { sent: false, reason: "twilio_failed" };
+  sids.push(sid1);
+
+  const sid2 = await sendSms(phone, payUrl);
+  if (sid2) sids.push(sid2);
+
+  if (squareLink) {
+    const sid3 = await sendSms(phone, squareLink);
+    if (sid3) sids.push(sid3);
+  }
+
+  try {
+    const now = new Date().toISOString().replace("T", " ").split(".")[0];
+    await fetch(`${MCP_BASE}/mcp`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${MCP_TOKEN}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "tools/call",
+        id: 1,
+        params: {
+          name: "erp_add_comment",
+          arguments: {
+            doctype: "Alteration Ticket",
+            name: ticketName,
+            text: `Unpaid release SMS sent (${sids.length} bubbles). Balance ${amt}. ${now}`,
+          },
+        },
+      }),
+    });
+  } catch {
+    /* non-fatal */
+  }
+
+  return { sent: true, sids };
+}
+
+// 9b. POST /tickets/:name/notify-unpaid-release — manual resend
+intakeAlterationsRouter.post("/tickets/:name/notify-unpaid-release", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const ticketName = c.req.param("name");
+  try {
+    const result = await notifyUnpaidRelease(ticketName);
+    if (!result.sent) {
+      return c.json({ error: { message: result.reason ?? "not_sent" }, data: result }, 400);
+    }
+    return c.json({ data: result });
   } catch (e: any) {
     return c.json({ error: { message: e.message } }, 502);
   }

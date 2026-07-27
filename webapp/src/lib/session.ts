@@ -3,7 +3,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
-import type { Profile } from "./types";
+import type { Profile } from "@ls/types";
 
 export const ME_KEY = ["me"];
 

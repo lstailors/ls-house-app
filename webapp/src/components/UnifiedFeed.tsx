@@ -4,8 +4,8 @@ import {
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { formatRelative } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { formatRelative } from "@ls/design/format";
+import { cn } from "@ls/design/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

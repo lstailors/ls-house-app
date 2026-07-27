@@ -1,5 +1,5 @@
 import { Layers, Flame, Truck, AlertTriangle } from "lucide-react";
-import { KpiCard } from "@/components/glass/KpiCard";
+import { KpiCard } from "@ls/design";
 import type { ShopFloorStats } from "@/lib/shopFloor";
 
 interface Props {

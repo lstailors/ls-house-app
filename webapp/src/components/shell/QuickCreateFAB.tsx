@@ -4,8 +4,8 @@ import { Plus, X } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { cn } from "@ls/design/utils";
+import { Button } from "@ls/design/ui/button";
 
 interface QuickCreateFABProps {
   userEmail: string;

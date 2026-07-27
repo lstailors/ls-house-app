@@ -3,7 +3,7 @@ import {
   MessageSquare, X, ArrowLeft, Send, Hash, Bot, ChevronRight, Camera,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 import { useMe } from "@/lib/session";
 import { toast } from "sonner";
 

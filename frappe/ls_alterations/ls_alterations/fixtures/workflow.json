@@ -1,0 +1,167 @@
+[
+ {
+  "docstatus": 0,
+  "doctype": "Workflow",
+  "document_type": "Alteration Ticket",
+  "enable_action_confirmation": 0,
+  "is_active": 1,
+  "modified": "2026-05-27 09:00:00",
+  "name": "Alteration Ticket Workflow",
+  "override_status": 0,
+  "send_email_alert": 0,
+  "states": [
+   {
+    "allow_edit": "Sales User",
+    "avoid_status_override": 0,
+    "doc_status": "0",
+    "evaluate_as_expression": 0,
+    "is_optional_state": 0,
+    "message": null,
+    "next_action_email_template": null,
+    "send_email": 0,
+    "state": "Received",
+    "update_field": "workflow_state",
+    "update_value": "Received",
+    "workflow_builder_id": null
+   },
+   {
+    "allow_edit": "Sales User",
+    "avoid_status_override": 0,
+    "doc_status": "0",
+    "evaluate_as_expression": 0,
+    "is_optional_state": 0,
+    "message": null,
+    "next_action_email_template": null,
+    "send_email": 0,
+    "state": "In Progress",
+    "update_field": "workflow_state",
+    "update_value": "In Progress",
+    "workflow_builder_id": null
+   },
+   {
+    "allow_edit": "Sales User",
+    "avoid_status_override": 0,
+    "doc_status": "0",
+    "evaluate_as_expression": 0,
+    "is_optional_state": 0,
+    "message": null,
+    "next_action_email_template": null,
+    "send_email": 0,
+    "state": "Ready",
+    "update_field": "workflow_state",
+    "update_value": "Ready",
+    "workflow_builder_id": null
+   },
+   {
+    "allow_edit": "Sales Manager",
+    "avoid_status_override": 0,
+    "doc_status": "0",
+    "evaluate_as_expression": 0,
+    "is_optional_state": 0,
+    "message": null,
+    "next_action_email_template": null,
+    "send_email": 0,
+    "state": "Picked Up",
+    "update_field": "workflow_state",
+    "update_value": "Picked Up",
+    "workflow_builder_id": null
+   },
+   {
+    "allow_edit": "Sales Manager",
+    "avoid_status_override": 0,
+    "doc_status": "0",
+    "evaluate_as_expression": 0,
+    "is_optional_state": 0,
+    "message": null,
+    "next_action_email_template": null,
+    "send_email": 0,
+    "state": "Cancelled",
+    "update_field": "workflow_state",
+    "update_value": "Cancelled",
+    "workflow_builder_id": null
+   }
+  ],
+  "transitions": [
+   {
+    "action": "Start Work",
+    "allow_self_approval": 1,
+    "allowed": "Sales User",
+    "condition": "",
+    "next_state": "In Progress",
+    "send_email_to_creator": 0,
+    "state": "Received",
+    "transition_tasks": null,
+    "workflow_builder_id": null
+   },
+   {
+    "action": "Mark Ready",
+    "allow_self_approval": 1,
+    "allowed": "Sales User",
+    "condition": "",
+    "next_state": "Ready",
+    "send_email_to_creator": 0,
+    "state": "In Progress",
+    "transition_tasks": null,
+    "workflow_builder_id": null
+   },
+   {
+    "action": "Mark Picked Up",
+    "allow_self_approval": 1,
+    "allowed": "Sales User",
+    "condition": "",
+    "next_state": "Picked Up",
+    "send_email_to_creator": 0,
+    "state": "Ready",
+    "transition_tasks": null,
+    "workflow_builder_id": null
+   },
+   {
+    "action": "Cancel",
+    "allow_self_approval": 1,
+    "allowed": "Sales Manager",
+    "condition": "",
+    "next_state": "Cancelled",
+    "send_email_to_creator": 0,
+    "state": "Received",
+    "transition_tasks": null,
+    "workflow_builder_id": null
+   },
+   {
+    "action": "Cancel",
+    "allow_self_approval": 1,
+    "allowed": "Sales Manager",
+    "condition": "",
+    "next_state": "Cancelled",
+    "send_email_to_creator": 0,
+    "state": "In Progress",
+    "transition_tasks": null,
+    "workflow_builder_id": null
+   },
+   {
+    "action": "Cancel",
+    "allow_self_approval": 1,
+    "allowed": "Sales Manager",
+    "condition": "",
+    "next_state": "Cancelled",
+    "send_email_to_creator": 0,
+    "state": "Ready",
+    "transition_tasks": null,
+    "workflow_builder_id": null
+   },
+   {
+    "action": "Reopen",
+    "allow_self_approval": 1,
+    "allowed": "Sales Manager",
+    "condition": "",
+    "next_state": "Received",
+    "send_email_to_creator": 0,
+    "state": "Cancelled",
+    "transition_tasks": null,
+    "workflow_builder_id": null
+   }
+  ],
+  "workflow_data": null,
+  "workflow_name": "Alteration Ticket Workflow",
+  "workflow_state_field": "workflow_state"
+ }
+]

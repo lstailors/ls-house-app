@@ -8,8 +8,8 @@ import {
   Scissors, Receipt, ExternalLink, DollarSign
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Button } from "@ls/design/ui/button";
+import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
 
 // ── Types ─────────────────────────────────────────────────────────────────────

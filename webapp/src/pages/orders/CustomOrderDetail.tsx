@@ -4,19 +4,19 @@ import {
   ArrowLeft, Sparkles, User, Phone, Mail, Calendar, CreditCard, Star, FileText, Printer, Truck, Copy, Check, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { StatusPill } from "@/components/glass/StatusPill";
-import { Button } from "@/components/ui/button";
+import { SectionHeader } from "@ls/design";
+import { GlassCard } from "@ls/design";
+import { StatusPill } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
 import { useCustomOrder } from "@/lib/queries";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { CustomOrder } from "@/lib/types";
+import type { CustomOrder } from "@ls/types";
 import { GARMENT_LABEL } from "@/lib/pricing";
-import { formatUSD, formatDateTime } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { formatUSD, formatDateTime } from "@ls/design/format";
+import { cn } from "@ls/design/utils";
 import { ChargeTerminalButton } from "@/components/payments/ChargeTerminalButton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@ls/design/ui/dialog";
 
 const STAGES: CustomOrder["status"][] = [
   "quote",

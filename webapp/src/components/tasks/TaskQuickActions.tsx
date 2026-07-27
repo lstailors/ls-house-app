@@ -9,8 +9,8 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
+} from "@ls/design/ui/dropdown-menu";
+import { cn } from "@ls/design/utils";
 import { type Priority, type Todo, STAFF_ROSTER, isoShift, isoToday } from "@/lib/tasks";
 import { isClosed } from "./TaskBadges";
 

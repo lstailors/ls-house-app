@@ -4,7 +4,7 @@
 // — nothing is hard-coded except the construction labor table (which would
 // move to a "Workmanship" reference table in production).
 
-import type { FabricPricing, GarmentType, StyleOption } from "./types";
+import type { FabricPricing, GarmentType, StyleOption } from "@ls/types";
 
 export const GARMENT_LABEL: Record<GarmentType, string> = {
   jacket: "Jacket",

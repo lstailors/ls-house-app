@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { YZOrder } from "@/lib/types";
+import type { YZOrder } from "@ls/types";
 import { KANBAN_STATUSES, statusMeta, byShipDate } from "@/lib/shopFloor";
 import { KanbanCard } from "./KanbanCard";
 

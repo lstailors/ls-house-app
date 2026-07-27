@@ -1,6 +1,6 @@
 import { AlertTriangle } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { StaffAppointment } from "../../../../backend/src/types";
+import { cn } from "@ls/design/utils";
+import type { StaffAppointment } from "@ls/types";
 
 interface Props {
   appointments: StaffAppointment[];

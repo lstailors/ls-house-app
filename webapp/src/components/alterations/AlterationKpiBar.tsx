@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { cn } from "@/lib/utils";
+import { GlassCard } from "@ls/design";
+import { cn } from "@ls/design/utils";
 
 interface AlterationKpis {
   active: number;

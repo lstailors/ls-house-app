@@ -2,7 +2,7 @@ import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn } from "@ls/design/utils"
 
 interface PublicTicket {
   name: string

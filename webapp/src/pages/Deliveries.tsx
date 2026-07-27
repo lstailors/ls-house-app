@@ -2,13 +2,13 @@ import { useMemo, useState } from "react";
 import { Truck, MapPin, Clock, CheckCircle2, Phone, Camera, QrCode, Plus, Printer, ChevronDown, ChevronUp, Package, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { KpiCard } from "@/components/glass/KpiCard";
-import { StatusPill } from "@/components/glass/StatusPill";
-import { FilterBar } from "@/components/glass/FilterBar";
-import { EmptyState } from "@/components/glass/EmptyState";
-import { Button } from "@/components/ui/button";
+import { SectionHeader } from "@ls/design";
+import { GlassCard } from "@ls/design";
+import { KpiCard } from "@ls/design";
+import { StatusPill } from "@ls/design";
+import { FilterBar } from "@ls/design";
+import { EmptyState } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
 import { DriverRoute } from "@/components/deliveries/DriverRoute";
 import { NewDeliveryDialog } from "@/components/deliveries/NewDeliveryDialog";
 import { MarkDeliveredDialog } from "@/components/deliveries/MarkDeliveredDialog";
@@ -18,10 +18,10 @@ import { AnomaliesCard } from "@/components/deliveries/AnomaliesCard";
 import { DispatchMap } from "@/components/maps/DispatchMap";
 import { useNavigate } from "react-router-dom";
 import { useMe } from "@/lib/session";
-import { formatDateTime } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { formatDateTime } from "@ls/design/format";
+import { cn } from "@ls/design/utils";
 import { api } from "@/lib/api";
-import type { Delivery } from "@/lib/types";
+import type { Delivery } from "@ls/types";
 
 const FILTERS = [
   { value: "all", label: "All" },

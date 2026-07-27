@@ -8,7 +8,7 @@ import type {
   LSHAppointmentType,
   BlockTimeRequest,
   StaffBookingRequest,
-} from "../../../backend/src/types";
+} from "@ls/types";
 
 export function useAppointmentsData(dateFrom: string, dateTo: string, agentUser?: string) {
   const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });

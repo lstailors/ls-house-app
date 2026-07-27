@@ -1,7 +1,7 @@
 import { Shirt, MapPin, CheckCircle2, User } from "lucide-react";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { StatusPill } from "@/components/glass/StatusPill";
-import type { GarmentDetail } from "../../../../backend/src/types";
+import { GlassCard } from "@ls/design";
+import { StatusPill } from "@ls/design";
+import type { GarmentDetail } from "@ls/types";
 import { statusVariant, formatDateTime } from "./garmentFormat";
 
 interface Props {

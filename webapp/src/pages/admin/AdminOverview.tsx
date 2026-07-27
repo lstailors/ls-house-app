@@ -1,7 +1,7 @@
 import { Users, Building2, UserCircle2, Sparkles, Scissors, Truck, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { GlassCard } from "@/components/glass/GlassCard";
+import { SectionHeader } from "@ls/design";
+import { GlassCard } from "@ls/design";
 import { useAdminOverview } from "@/lib/queries";
 
 export default function AdminOverview() {

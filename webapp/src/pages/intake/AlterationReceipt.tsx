@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Printer, ArrowLeft, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn } from "@ls/design/utils"
 
 interface AlterationTicketDoc {
   name: string

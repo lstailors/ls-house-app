@@ -12,7 +12,7 @@ import {
   Lock,
   ExternalLink,
 } from "lucide-react";
-import { formatUSD, formatDate } from "@/lib/format";
+import { formatUSD, formatDate } from "@ls/design/format";
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || "";
 

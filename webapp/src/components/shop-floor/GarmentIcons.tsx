@@ -1,7 +1,7 @@
 import { Shirt, type LucideIcon } from "lucide-react";
-import type { YZOrder } from "@/lib/types";
+import type { YZOrder } from "@ls/types";
 import { garmentLines } from "@/lib/shopFloor";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 
 // Simple label→icon mapping. lucide has no vest/pant/coat glyphs, so we lean on
 // a small set of tailoring-appropriate marks and fall back to Shirt.

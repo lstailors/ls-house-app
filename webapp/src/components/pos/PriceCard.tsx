@@ -1,11 +1,11 @@
 import { Sparkles, FileText, CreditCard, CheckCircle } from "lucide-react";
 import type { PriceBreakdown } from "@/lib/pricing";
-import { formatUSD } from "@/lib/format";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { formatUSD } from "@ls/design/format";
+import { GlassCard } from "@ls/design";
+import { Switch } from "@ls/design/ui/switch";
+import { Label } from "@ls/design/ui/label";
+import { Button } from "@ls/design/ui/button";
+import { cn } from "@ls/design/utils";
 
 // Tax templates per location
 export const TAX_TEMPLATES: Record<string, string> = {

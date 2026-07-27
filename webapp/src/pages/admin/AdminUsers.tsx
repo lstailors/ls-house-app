@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
 import { Users, Plus, Shield, UserCheck, UserX, Pencil } from "lucide-react";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { DataTable, type Column } from "@/components/glass/DataTable";
-import { FilterBar } from "@/components/glass/FilterBar";
-import { StatusPill } from "@/components/glass/StatusPill";
-import { EmptyState } from "@/components/glass/EmptyState";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { SectionHeader } from "@ls/design";
+import { DataTable, type Column } from "@ls/design";
+import { FilterBar } from "@ls/design";
+import { StatusPill } from "@ls/design";
+import { EmptyState } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@ls/design/ui/avatar";
 import {
   useAdminUsers,
   useCreateUser,
@@ -14,8 +14,8 @@ import {
   useResetUserPassword,
   useLocations,
 } from "@/lib/queries";
-import { initials } from "@/lib/format";
-import type { Profile } from "@/lib/types";
+import { initials } from "@ls/design/format";
+import type { Profile } from "@ls/types";
 import { toast } from "sonner";
 
 const FILTERS = [

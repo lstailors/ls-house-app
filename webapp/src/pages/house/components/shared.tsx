@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bot } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 import type { AgentStatus } from "../mockData";
 
 // ─── Fake loading — shows the skeleton pattern even though data is static, ─────

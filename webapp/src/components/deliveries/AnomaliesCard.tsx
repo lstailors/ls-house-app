@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { ShieldAlert, RefreshCw, Loader2, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { Button } from "@/components/ui/button";
+import { GlassCard } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
 import { useDeliveryAnomalies } from "@/lib/queries";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 
 const SEVERITY_STYLES = {
   high:   { dot: "bg-signal-rose",  text: "text-signal-rose",  badge: "bg-signal-rose/10 text-signal-rose border-signal-rose/20" },

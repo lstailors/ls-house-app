@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 import { staffMeta } from "@/lib/tasks";
 
 interface Props {

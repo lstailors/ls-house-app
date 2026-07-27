@@ -4,9 +4,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
 import { signIn } from "@/lib/authClient";
 import { useMe, ME_KEY } from "@/lib/session";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@ls/design/ui/button";
+import { Input } from "@ls/design/ui/input";
+import { Label } from "@ls/design/ui/label";
 import { toast } from "sonner";
 
 export default function Login() {

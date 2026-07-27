@@ -1,5 +1,5 @@
 import { Truck, Flame, Sparkles, AlertTriangle } from "lucide-react";
-import type { YZOrder } from "@/lib/types";
+import type { YZOrder } from "@ls/types";
 import {
   formatShipDate,
   shipTone,
@@ -9,7 +9,7 @@ import {
   attentionLabel,
   ATTENTION_COLOR,
 } from "@/lib/shopFloor";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 
 interface Props {
   order: YZOrder;

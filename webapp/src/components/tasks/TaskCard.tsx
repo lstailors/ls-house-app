@@ -1,6 +1,6 @@
 import { CheckCircle2 } from "lucide-react";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { cn } from "@/lib/utils";
+import { GlassCard } from "@ls/design";
+import { cn } from "@ls/design/utils";
 import { type Todo, isOverdue, staffMeta, stripHtml } from "@/lib/tasks";
 import { TaskAvatar } from "./TaskAvatar";
 import { TaskQuickActions } from "./TaskQuickActions";

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { cn } from "@/lib/utils";
-import type { StaffAppointment, TimeBlock } from "../../../../backend/src/types";
+import { cn } from "@ls/design/utils";
+import type { StaffAppointment, TimeBlock } from "@ls/types";
 
 const AGENT_DOT: Record<string, string> = {
   "carl@lstailors.com":   "bg-emerald-400",

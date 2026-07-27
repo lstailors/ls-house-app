@@ -7,9 +7,9 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
-import { GlassCard } from "@/components/glass/GlassCard"
-import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+import { GlassCard } from "@ls/design"
+import { Button } from "@ls/design/ui/button"
+import { cn } from "@ls/design/utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

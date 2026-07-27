@@ -1,0 +1,57 @@
+<div class="invoice-page">
+  <header class="invoice-header">
+    <div class="brand">
+      <h1 class="logotype">L&amp;S</h1>
+      <p class="tagline">Custom Tailors &middot; NYC &middot; Houston</p>
+    </div>
+    <div class="invoice-meta">
+      <p class="label">Invoice</p>
+      <p class="invoice-number">{{ doc.name }}</p>
+      <p class="date">{{ frappe.utils.formatdate(doc.posting_date, "MMMM d, yyyy") }}</p>
+    </div>
+  </header>
+
+  <section class="customer-block">
+    <p class="label">Prepared for</p>
+    <p class="customer-name">{{ doc.customer_name }}</p>
+    {% set ticket = frappe.db.get_value("Alteration Ticket", {"sales_invoice": doc.name}, ["name", "due_date", "origin_location"], as_dict=True) %}
+    {% if ticket %}
+      <p class="ticket-ref">Ticket {{ ticket.name }} &middot; Ready by {{ frappe.utils.formatdate(ticket.due_date, "MMM d") }}</p>
+    {% endif %}
+  </section>
+
+  <section class="items-block">
+    <table>
+      <thead>
+        <tr><th class="item">Service</th><th class="qty">Qty</th><th class="price">Price</th></tr>
+      </thead>
+      <tbody>
+        {% for item in doc.items %}
+        <tr>
+          <td class="item">{{ item.description }}</td>
+          <td class="qty">{{ item.qty }}</td>
+          <td class="price">${{ "%.2f"|format(item.amount) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="total-block">
+    <div class="total-line">
+      <span class="label">Total</span>
+      <span class="amount">${{ "%.2f"|format(doc.grand_total) }}</span>
+    </div>
+    {% if doc.outstanding_amount > 0 %}
+      <div class="outstanding">Balance Due: ${{ "%.2f"|format(doc.outstanding_amount) }}</div>
+    {% else %}
+      <div class="paid-stamp">Paid in Full</div>
+    {% endif %}
+  </section>
+
+  <footer class="invoice-footer">
+    <p class="address">138 East 61st Street, Suite 201 &middot; New York, NY 10065</p>
+    <p class="contact">concierge@lstailors.com &middot; lstailors.com</p>
+    <p class="thanks">A tradition of bespoke craftsmanship since 1974.</p>
+  </footer>
+</div>

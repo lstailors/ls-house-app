@@ -64,6 +64,7 @@ const allowed = [
   /^https:\/\/[a-z0-9-]+\.vercel\.app$/,
   /^https:\/\/app\.lstailors\.com$/,
   /^https:\/\/book\.lstailors\.com$/,
+  /^https:\/\/alts\.lstailors\.com$/,
 ];
 
 app.use(

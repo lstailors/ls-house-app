@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Sparkles, RefreshCw, Loader2, AlertCircle, Clock } from "lucide-react";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { Button } from "@/components/ui/button";
+import { GlassCard } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
 import { useDeliveryAiSuggest, useDeliveryAiSummary, useDeliveryEstimateTime } from "@/lib/queries";
 
 // Maps ERP-side status labels to UI colors

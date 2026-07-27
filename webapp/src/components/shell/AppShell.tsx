@@ -4,13 +4,13 @@ import { Sidebar, type SidebarMode } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { useMe } from "@/lib/session";
 import { LocationProvider } from "@/lib/locationContext";
-import { Monogram } from "../glass/Monogram";
+import { Monogram } from "@ls/design";
 import {
   Sheet,
   SheetContent,
   SheetTitle,
   SheetDescription,
-} from "@/components/ui/sheet";
+} from "@ls/design/ui/sheet";
 import { QuickCreateFAB } from "./QuickCreateFAB";
 
 export function AppShell() {

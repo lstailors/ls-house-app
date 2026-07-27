@@ -46,6 +46,11 @@ import { appointmentsRouter } from "./routes/appointments";
 import { bookingRouter, publicBookingRouter } from "./routes/booking";
 import { scannerRouter } from "./routes/scanner";
 import { garmentRouter } from "./routes/garment";
+import { qrRouter } from "./routes/qr";
+import { squareRouter } from "./routes/square-terminal";
+import { filesRouter } from "./routes/files";
+import { outreachRouter } from "./routes/outreach";
+import { erpnextCustomersRouter } from "./routes/erpnext-customers";
 import { sofiaBridgeRouter } from "./routes/sofia-bridge";
 import { dispatchRouter } from "./routes/dispatch";
 
@@ -68,6 +73,7 @@ const BASE_ALLOWED = [
   /^https:\/\/[a-z0-9-]+\.vercel\.app$/,
   /^https:\/\/app\.lstailors\.com$/,
   /^https:\/\/book\.lstailors\.com$/,
+  /^https:\/\/alts\.lstailors\.com$/,
 ];
 
 const extraOrigins: RegExp[] = (process.env.ALLOWED_ORIGINS ?? "")
@@ -139,7 +145,11 @@ app.route("/api/helpdesk", helpdeskRouter);
 app.route("/api/appointments", appointmentsRouter);
 app.route("/api/scanner", scannerRouter);
 app.route("/api/garment", garmentRouter);
-
+app.route("/api/qr", qrRouter);
+app.route("/api/square", squareRouter);
+app.route("/api/files", filesRouter);
+app.route("/api/outreach", outreachRouter);
+app.route("/api/erpnext-customers", erpnextCustomersRouter);
 
 app.route("/api/dispatch", dispatchRouter);
 app.route("/api/booking", bookingRouter);

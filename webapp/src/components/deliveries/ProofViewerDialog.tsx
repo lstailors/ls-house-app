@@ -4,9 +4,9 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@ls/design/ui/dialog";
 import { useDeliveryProofUrls } from "@/lib/queries";
-import type { Delivery } from "@/lib/types";
+import type { Delivery } from "@ls/types";
 
 interface Props {
   delivery: Delivery | null;

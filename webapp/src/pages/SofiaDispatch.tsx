@@ -3,14 +3,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ExternalLink, Phone, RefreshCw, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { GlassCard } from "@/components/glass/GlassCard";
+import { SectionHeader } from "@ls/design";
+import { GlassCard } from "@ls/design";
 import { CustomerPicker, selectionKey, type DispatchSelection } from "@/components/dispatch/CustomerPicker";
 import { ThreadView, type PendingDraft } from "@/components/dispatch/ThreadView";
 import { Composer } from "@/components/dispatch/Composer";
 import { BatchPanel } from "@/components/dispatch/BatchPanel";
-import { cn } from "@/lib/utils";
-import type { DispatchThread } from "../../../../backend/src/types";
+import { cn } from "@ls/design/utils";
+import type { DispatchThread } from "@ls/types";
 
 const ERP_URL = "https://erp.lstailors.com";
 

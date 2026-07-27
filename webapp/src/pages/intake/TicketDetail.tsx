@@ -23,7 +23,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn } from "@ls/design/utils"
 import { useMe } from '@/lib/session'
 import type { CartPayload } from '@/lib/cart/parked'
 import { ChargeTerminalButton } from '@/components/payments/ChargeTerminalButton'
@@ -34,10 +34,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/textarea'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+} from "@ls/design/ui/dialog"
+import { Textarea } from "@ls/design/ui/textarea"
+import { Button } from "@ls/design/ui/button"
+import { Input } from "@ls/design/ui/input"
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -964,9 +964,18 @@ export default function TicketDetail() {
 
   const updateStatusMutation = useMutation({
     mutationFn: (status: string) =>
-      api.patch(`/api/intake-alterations/tickets/${ticketName}/status`, { status }),
-    onSuccess: async (_data, status) => {
+      api.patch<{ ok: boolean; unpaid_release_sms?: { sent?: boolean; reason?: string } }>(
+        `/api/intake-alterations/tickets/${ticketName}/status`,
+        { status },
+      ),
+    onSuccess: async (data, status) => {
       toast.success(`Status updated to "${status}"`)
+      const sms = data?.unpaid_release_sms
+      if (status === 'Picked Up' && sms?.sent) {
+        toast.success('Unpaid release SMS sent (balance + pay link)')
+      } else if (status === 'Picked Up' && sms && !sms.sent && sms.reason && sms.reason !== 'paid_or_na' && sms.reason !== 'zero_balance' && sms.reason !== 'invoice_paid') {
+        toast.error(`Released — SMS not sent (${sms.reason})`)
+      }
       // Immediately update the progress bar without waiting for refetch
       queryClient.setQueryData(['ticket', ticketName], (old: any) =>
         old ? { ...old, workflow_state: status } : old
@@ -1174,7 +1183,20 @@ export default function TicketDetail() {
           current={ticket.workflow_state}
           isPending={updateStatusMutation.isPending}
           onStep={(step) => {
-            if (step !== ticket.workflow_state) updateStatusMutation.mutate(step)
+            if (step !== ticket.workflow_state) {
+              const unpaid =
+                step === 'Picked Up' &&
+                ticket.payment_status !== 'Paid' &&
+                ticket.payment_status !== 'N/A' &&
+                (ticket.ticket_total ?? 0) > 0
+              if (unpaid) {
+                const ok = window.confirm(
+                  'Release without payment?\n\nClient can pick up now. An SMS will be sent that the work was released with balance due + pay link.',
+                )
+                if (!ok) return
+              }
+              updateStatusMutation.mutate(step)
+            }
           }}
         />
 
@@ -1246,7 +1268,11 @@ export default function TicketDetail() {
               </Button>
             </div>
           ) : ticket.payment_status !== 'Paid' && (ticket.ticket_total ?? 0) > 0 ? (
-            <div className="mt-3 flex flex-wrap items-center gap-3">
+            <div className="mt-3 flex flex-col items-stretch gap-2">
+              <p className="text-xs text-cream-dim text-right">
+                Pickup allowed unpaid — client gets balance SMS on release.
+              </p>
+              <div className="flex flex-wrap items-center gap-3 justify-end">
               <ChargeTerminalButton
                 invoiceId={ticket.name}
                 amountCents={Math.round((ticket.ticket_total ?? 0) * 100)}
@@ -1271,6 +1297,24 @@ export default function TicketDetail() {
                 )}
                 Send Payment Link
               </Button>
+              {(ticket.workflow_state === 'Picked Up' || ticket.workflow_state === 'Ready') && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      await api.post(`/api/intake-alterations/tickets/${ticketName}/notify-unpaid-release`, {})
+                      toast.success('Unpaid release SMS sent')
+                    } catch {
+                      toast.error('Could not send unpaid release SMS')
+                    }
+                  }}
+                  className="border-amber-500/30 text-amber-200 hover:bg-amber-900/20"
+                >
+                  SMS unpaid balance
+                </Button>
+              )}
+              </div>
             </div>
           ) : null}
         </section>
@@ -1302,7 +1346,19 @@ export default function TicketDetail() {
           {(ticket?.workflow_state === 'Ready' || ticket?.workflow_state === 'Complete') && (
             <button
               type="button"
-              onClick={() => handDeliverMutation.mutate()}
+              onClick={() => {
+                const unpaid =
+                  ticket.payment_status !== 'Paid' &&
+                  ticket.payment_status !== 'N/A' &&
+                  (ticket.ticket_total ?? 0) > 0
+                if (unpaid) {
+                  const ok = window.confirm(
+                    'Hand deliver without payment?\n\nClient takes the garment now. SMS will note release + unpaid balance + pay link.',
+                  )
+                  if (!ok) return
+                }
+                handDeliverMutation.mutate()
+              }}
               disabled={handDeliverMutation.isPending}
               className={cn(
                 'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium',

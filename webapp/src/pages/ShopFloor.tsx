@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { RefreshCw, AlertTriangle, Factory, PackageSearch } from "lucide-react";
-import { SectionHeader } from "@/components/glass/SectionHeader";
-import { EmptyState } from "@/components/glass/EmptyState";
-import { Button } from "@/components/ui/button";
+import { SectionHeader } from "@ls/design";
+import { EmptyState } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
 import { useYzProduction } from "@/lib/queries";
-import type { YZOrder } from "@/lib/types";
+import type { YZOrder } from "@ls/types";
 import { matchesQuery, computeStats, byShipDate, hasAttention, attentionCount } from "@/lib/shopFloor";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 import { StatsBar } from "@/components/shop-floor/StatsBar";
 import { ProductionBrief } from "@/components/shop-floor/ProductionBrief";
 import { ViewToggle, type ShopFloorView } from "@/components/shop-floor/ViewToggle";

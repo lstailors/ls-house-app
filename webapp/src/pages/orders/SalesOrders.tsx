@@ -9,13 +9,13 @@ import {
   ChevronRight,
 } from "lucide-react"
 import { useSalesOrders, useAlterations } from "@/lib/queries"
-import { formatUSD, formatDate } from "@/lib/format"
-import { GlassCard } from "@/components/glass/GlassCard"
-import { DataTable, type Column } from "@/components/glass/DataTable"
-import { StatusPill } from "@/components/glass/StatusPill"
-import { SectionHeader } from "@/components/glass/SectionHeader"
-import { cn } from "@/lib/utils"
-import type { Alteration } from "@/lib/types"
+import { formatUSD, formatDate } from "@ls/design/format"
+import { GlassCard } from "@ls/design"
+import { DataTable, type Column } from "@ls/design"
+import { StatusPill } from "@ls/design"
+import { SectionHeader } from "@ls/design"
+import { cn } from "@ls/design/utils"
+import type { Alteration } from "@ls/types"
 
 type TabId = "custom" | "alt"
 

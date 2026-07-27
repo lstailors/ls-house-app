@@ -1,0 +1,86 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-27 09:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "garment_id",
+  "garment_type",
+  "color",
+  "fabric_notes",
+  "garment_description",
+  "garment_total",
+  "garment_status"
+ ],
+ "fields": [
+  {
+   "columns": 1,
+   "fieldname": "garment_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Garment ID",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "garment_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Garment Type",
+   "options": "Jacket\nTrouser\nShirt\nDress\nCoat\nSkirt\nVest\nSuit (2pc)\nSuit (3pc)\nOther",
+   "reqd": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "color",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Color"
+  },
+  {
+   "fieldname": "fabric_notes",
+   "fieldtype": "Data",
+   "label": "Fabric Notes"
+  },
+  {
+   "columns": 3,
+   "fieldname": "garment_description",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Description"
+  },
+  {
+   "columns": 2,
+   "fieldname": "garment_total",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Garment Total",
+   "options": "USD",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "default": "Received",
+   "fieldname": "garment_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Received\nIn Progress\nReady\nPicked Up"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-05-27 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "LS Alterations",
+ "name": "Alteration Ticket Garment",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

@@ -6,7 +6,7 @@ import {
   AlertTriangle,
   X,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@ls/design/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,8 +16,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { cn } from "@/lib/utils";
+} from "@ls/design/ui/alert-dialog";
+import { cn } from "@ls/design/utils";
 import { api } from "@/lib/api";
 
 type Stage =

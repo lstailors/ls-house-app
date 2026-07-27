@@ -2,12 +2,12 @@ import { useState } from "react";
 import { Plus, Check, Pencil, Cpu, Calendar } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
+} from "@ls/design/ui/dialog";
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
-} from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+} from "@ls/design/ui/select";
+import { Button } from "@ls/design/ui/button";
+import { cn } from "@ls/design/utils";
 import {
   PROFILES, MODEL_OPTIONS, PROVIDER_OPTIONS, SKILL_OPTIONS, type HouseProfile,
 } from "../mockData";

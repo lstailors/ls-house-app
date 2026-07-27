@@ -5,10 +5,10 @@ import {
 } from "lucide-react";
 import {
   Sheet, SheetContent, SheetTitle, SheetDescription,
-} from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import type { ScannerResult, ScannerType } from "@/lib/types";
+} from "@ls/design/ui/sheet";
+import { Button } from "@ls/design/ui/button";
+import { cn } from "@ls/design/utils";
+import type { ScannerResult, ScannerType } from "@ls/types";
 
 // ── Icon + accent per scanner type ──────────────────────────────────────────
 

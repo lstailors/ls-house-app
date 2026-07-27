@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Users } from "lucide-react";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { formatUSD } from "@/lib/format";
+import { GlassCard } from "@ls/design";
+import { formatUSD } from "@ls/design/format";
 
 const MEDAL_COLORS = ["#D4B27A", "#C9C0AB", "#B08D57", "#8A8474"];
 

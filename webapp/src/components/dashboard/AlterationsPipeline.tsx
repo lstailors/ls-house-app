@@ -1,8 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { Clock, Zap, CheckCircle2, ArrowRight, Inbox } from "lucide-react";
-import { GlassCard } from "@/components/glass/GlassCard";
+import { GlassCard } from "@ls/design";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
-import { cn } from "@/lib/utils";
+import { cn } from "@ls/design/utils";
 
 const ChartTip = ({ active, payload }: any) => {
   if (!active || !payload?.length) return null;

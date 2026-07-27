@@ -13,21 +13,21 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
-import { GlassCard } from "@/components/glass/GlassCard";
-import { Button } from "@/components/ui/button";
-import { StatusPill } from "@/components/glass/StatusPill";
-import { EmptyState } from "@/components/glass/EmptyState";
+import { GlassCard } from "@ls/design";
+import { Button } from "@ls/design/ui/button";
+import { StatusPill } from "@ls/design";
+import { EmptyState } from "@ls/design";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@/components/ui/dialog";
-import type { Delivery } from "@/lib/types";
+} from "@ls/design/ui/dialog";
+import type { Delivery } from "@ls/types";
 import { useUpdateDelivery } from "@/lib/queries";
-import { formatDateTime } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { formatDateTime } from "@ls/design/format";
+import { cn } from "@ls/design/utils";
 
 interface Props {
   deliveries: Delivery[];

@@ -5,18 +5,18 @@ import {
   Palette, Layers, Shield, Building2, Settings, Bell,
   ChevronLeft, ChevronRight, FileText, Calendar, Headphones, CalendarCheck, Factory, Send, type LucideIcon,
 } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@ls/design/ui/avatar";
 import { useMaestroApprovalCount, useTaskCount, useHelpdeskOpenCount } from "@/lib/queries";
 import { useMe } from "@/lib/session";
-import type { UserRole } from "@/lib/types";
-import { cn } from "@/lib/utils";
-import { initials } from "@/lib/format";
+import type { UserRole } from "@ls/types";
+import { cn } from "@ls/design/utils";
+import { initials } from "@ls/design/format";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip";
+} from "@ls/design/ui/tooltip";
 
 interface NavItem {
   to: string;

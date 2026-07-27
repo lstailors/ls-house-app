@@ -23,7 +23,13 @@
 
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@ls/types": ["../packages/types/src/index.ts"],
+      "@ls/api-client": ["../packages/api-client/src/index.ts"],
+      "@ls/auth": ["../packages/auth/src/index.ts"],
+      "@ls/auth/*": ["../packages/auth/src/*"],
+      "@ls/design": ["../packages/design/src/index.ts"],
+      "@ls/design/*": ["../packages/design/*"]
     }
   },
   "include": ["src"]

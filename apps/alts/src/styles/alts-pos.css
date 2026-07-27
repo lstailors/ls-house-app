@@ -1,0 +1,111 @@
+/* Shared Liquid Glass tokens for mock-faithful alts FOH screens */
+.alts-root {
+  --fd: #0d1a10;
+  --fr: #1f3a2e;
+  --cr: #f1e9d6;
+  --cm: #c9c0ab;
+  --cd: #8a8474;
+  --bd: #8c6f42;
+  --br: #b08d57;
+  --bl: #d4b27a;
+  --em: #4fbf8e;
+  --am: #e8a85c;
+  --ro: #d97b6c;
+  --glass: linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012));
+  --gh: linear-gradient(135deg, rgba(255, 255, 255, 0.085), rgba(255, 255, 255, 0.025));
+  --sl: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(212, 178, 122, 0.12);
+  min-height: 100vh;
+  color: var(--cr);
+  font-family: Montserrat, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: radial-gradient(ellipse at 50% -12%, #17321f, var(--fd) 58%);
+}
+.alts-root .caps {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--cd);
+}
+.alts-root .seal {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--br);
+  display: grid;
+  place-items: center;
+  font-family: "Cormorant Garamond", serif;
+  font-style: italic;
+  font-size: 19px;
+  color: var(--bl);
+  flex: none;
+  box-shadow: inset 0 0 18px rgba(176, 141, 87, 0.14);
+}
+.alts-root .display {
+  font-family: "Cormorant Garamond", serif;
+  font-style: italic;
+  font-weight: 600;
+}
+.alts-root .btn-brass {
+  background: linear-gradient(135deg, #c9a46a, var(--br));
+  color: var(--fd);
+  border: 0;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border-radius: 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.alts-root .btn-ghost {
+  background: var(--glass);
+  border: 1px solid rgba(176, 141, 87, 0.28);
+  color: var(--cm);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border-radius: 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.alts-root .btn-ghost:hover {
+  color: var(--cr);
+  border-color: rgba(176, 141, 87, 0.5);
+}
+.alts-root .chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: rgba(176, 141, 87, 0.15);
+  border: 1px solid rgba(176, 141, 87, 0.3);
+  color: var(--bl);
+}
+.alts-root .badge-late {
+  background: rgba(217, 123, 108, 0.9);
+  color: #fff;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.alts-root .badge-soon {
+  background: rgba(232, 168, 92, 0.9);
+  color: var(--fd);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.alts-root .card-glass {
+  background: var(--glass);
+  border: 1px solid rgba(176, 141, 87, 0.22);
+  border-radius: 16px;
+}
+.alts-root .card-glass:hover {
+  background: var(--gh);
+  border-color: rgba(176, 141, 87, 0.45);
+}

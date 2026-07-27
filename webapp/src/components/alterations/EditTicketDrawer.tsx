@@ -3,23 +3,23 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn } from "@ls/design/utils"
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui/sheet'
+} from "@ls/design/ui/sheet"
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
+} from "@ls/design/ui/select"
+import { Input } from "@ls/design/ui/input"
+import { Button } from "@ls/design/ui/button"
+import { Label } from "@ls/design/ui/label"
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
