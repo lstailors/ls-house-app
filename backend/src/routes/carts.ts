@@ -13,18 +13,22 @@ cartsRouter.post("/", async (c) => {
   try {
     const body = await c.req.json() as {
       id?: string;
-      createdBy: string;
+      createdBy?: string;
       location: string;
+      label?: string;
       customer: Partial<CustomerInput>;
       customerRef?: string | null;
       cart: CartPayload;
     };
 
-    if (!body.createdBy || !body.location) {
-      return c.json({ error: { message: "createdBy and location are required" } }, 400);
-    }
+    const location = body.location || "NYC";
+    const createdBy = body.createdBy || user.id || user.email || "staff";
 
-    const result = await saveCart(body);
+    const result = await saveCart({
+      ...body,
+      createdBy,
+      location,
+    });
     return c.json({ data: result }, 201);
   } catch (e: any) {
     console.error("[carts] save failed:", e?.message);

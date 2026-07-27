@@ -45,6 +45,16 @@ const TILES: Tile[] = [
     sub: "Resume carts · multi-piece waves",
   },
   {
+    to: "/transfers",
+    title: "Transfers",
+    sub: "At-home · NYC · HOU",
+  },
+  {
+    to: "/lookup",
+    title: "Lookup",
+    sub: "Ticket · client · quick find",
+  },
+  {
     to: "/board",
     title: "Board",
     sub: "Pipeline view",

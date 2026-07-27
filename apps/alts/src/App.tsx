@@ -11,7 +11,10 @@ import IntakeStepped from "@alts/pages/IntakeStepped";
 import ShopFloorBoard from "@alts/pages/ShopFloorBoard";
 import PickupCounter from "@alts/pages/PickupCounter";
 import ParkedTray from "@alts/pages/ParkedTray";
-import OrdersAlterations from "@/pages/orders/OrdersAlterations";
+import Transfers from "@alts/pages/Transfers";
+import OrdersGlass from "@alts/pages/OrdersGlass";
+import Lookup from "@alts/pages/Lookup";
+import TicketPhotos from "@alts/pages/TicketPhotos";
 import TicketDetail from "@/pages/intake/TicketDetail";
 
 const AlterationTags = lazy(() => import("@/pages/intake/AlterationTags"));
@@ -76,7 +79,6 @@ export default function App() {
               <Route path="/g/:ticket/:garmentId" element={<GarmentJobCard />} />
               <Route path="/garments/:token" element={<GarmentTagRedirect />} />
 
-              {/* Full-bleed mock screens — no slim chrome */}
               <Route
                 path="/intake/alterations"
                 element={
@@ -109,6 +111,38 @@ export default function App() {
                   </RoleGuard>
                 }
               />
+              <Route
+                path="/transfers"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <Transfers />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/orders/alterations"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <OrdersGlass />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/lookup"
+                element={
+                  <RoleGuard allow={[...FOH, "driver"]}>
+                    <Lookup />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/orders/alterations/:ticketName/photos"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <TicketPhotos />
+                  </RoleGuard>
+                }
+              />
 
               <Route element={<AltsShell />}>
                 <Route
@@ -116,14 +150,6 @@ export default function App() {
                   element={
                     <RoleGuard allow={[...FOH, "driver"]}>
                       <HomeTiles />
-                    </RoleGuard>
-                  }
-                />
-                <Route
-                  path="/orders/alterations"
-                  element={
-                    <RoleGuard allow={[...FOH]}>
-                      <OrdersAlterations />
                     </RoleGuard>
                   }
                 />
@@ -140,14 +166,6 @@ export default function App() {
                   element={
                     <RoleGuard allow={[...FOH]}>
                       <AdminBoard />
-                    </RoleGuard>
-                  }
-                />
-                <Route
-                  path="/transfers"
-                  element={
-                    <RoleGuard allow={[...FOH]}>
-                      <OrdersAlterations />
                     </RoleGuard>
                   }
                 />

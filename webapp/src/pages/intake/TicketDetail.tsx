@@ -1411,6 +1411,17 @@ export default function TicketDetail() {
             Print Tags
           </Link>
 
+          <Link
+            to={`/orders/alterations/${ticketName}/photos`}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium',
+              'bg-forest-raised border border-brass/20 text-cream-muted',
+              'hover:border-brass/40 hover:text-cream transition-all'
+            )}
+          >
+            Photos
+          </Link>
+
           <button
             onClick={() => navigate(-1)}
             className={cn(
