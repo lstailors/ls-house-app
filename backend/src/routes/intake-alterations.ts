@@ -317,6 +317,16 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
   const ticketDateStr = ticket_date ?? today;
   const defaultDue = new Date(new Date(ticketDateStr).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
+  const billingStatus: string =
+    body.billing_status === 'Included in Custom Order' || body.billing_status === 'Warranty' || body.billing_status === 'Billable'
+      ? body.billing_status
+      : body.included_in_custom
+        ? 'Included in Custom Order'
+        : 'Billable';
+  const linkedSo = body.linked_sales_order || body.linkedSalesOrder || null;
+  const includedInCustom =
+    billingStatus === 'Included in Custom Order' || body.included_in_custom === 1 || body.included_in_custom === true ? 1 : 0;
+
   const payload: Record<string, any> = {
     origin_location: origin ?? 'NYC',
     is_rush: isRush ? 1 : 0,
@@ -374,10 +384,114 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
       return c.json({ error: { message: 'Ticket may have been created in ERPNext but no ticket number was returned. Please check ERPNext.' } }, 502);
     }
 
+    // Apply billing intent after create (create_ticket API doesn't take these yet).
+    // For Warranty / Included: force payment_status N/A and clear/cancel any auto invoice.
+    try {
+      const patch: Record<string, any> = {
+        billing_status: billingStatus,
+        included_in_custom: includedInCustom,
+      };
+      if (linkedSo) patch.linked_sales_order = linkedSo;
+      if (billingStatus === 'Warranty' || billingStatus === 'Included in Custom Order') {
+        patch.payment_status = 'N/A';
+      }
+      await erpUpdate('Alteration Ticket', ticketName, patch);
+
+      if (billingStatus === 'Warranty' || billingStatus === 'Included in Custom Order') {
+        const t = await erpGet<any>('Alteration Ticket', ticketName).catch(() => null);
+        const inv = t?.sales_invoice;
+        if (inv) {
+          try {
+            // Best-effort: cancel draft/submitted SI so client is never charged.
+            await erpRunMethod('frappe.client.cancel', { doctype: 'Sales Invoice', name: inv }).catch(async () => {
+              await erpUpdate('Sales Invoice', inv, { docstatus: 2 }).catch(() => {});
+            });
+          } catch { /* non-fatal */ }
+          await erpUpdate('Alteration Ticket', ticketName, {
+            sales_invoice: null,
+            payment_status: 'N/A',
+          }).catch(() => {});
+        }
+      }
+    } catch (e: any) {
+      console.error('[intake-alterations] billing patch after create failed:', e?.message);
+    }
+
     return c.json({ data: { ticketName } });
   } catch (e: any) {
     console.error('[intake-alterations] ticket create error:', e?.message);
     return c.json({ error: { message: e?.message || 'Failed to create ticket' } }, 502);
+  }
+});
+
+// FOH-safe Sales Order search (no financials role required)
+intakeAlterationsRouter.get('/sales-orders/search', async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+  const q = (c.req.query('q') || '').trim();
+  const limit = Math.min(Number(c.req.query('limit') || 12), 30);
+
+  try {
+    const fields = [
+      'name', 'customer', 'customer_name', 'status', 'make_type',
+      'grand_total', 'transaction_date', 'delivery_date', 'delivery_status',
+    ];
+
+    let rows: any[] = [];
+    if (q.length >= 2) {
+      const like = `%${q}%`;
+      // name match
+      const byName = await mcpList<any>(
+        'Sales Order',
+        fields,
+        [['name', 'like', like], ['status', 'not in', ['Cancelled', 'Closed']]],
+        limit,
+        'modified desc',
+      );
+      const byCust = await mcpList<any>(
+        'Sales Order',
+        fields,
+        [['customer_name', 'like', like], ['status', 'not in', ['Cancelled', 'Closed', 'Completed']]],
+        limit,
+        'modified desc',
+      );
+      const seen = new Set<string>();
+      for (const r of [...byName, ...byCust]) {
+        if (!seen.has(r.name)) {
+          seen.add(r.name);
+          rows.push(r);
+        }
+      }
+      rows = rows.slice(0, limit);
+    } else {
+      // Recent open orders for "fitting stage this week" panel
+      rows = await mcpList<any>(
+        'Sales Order',
+        fields,
+        [['status', 'not in', ['Cancelled', 'Closed', 'Completed']]],
+        limit,
+        'modified desc',
+      );
+    }
+
+    return c.json({
+      data: rows.map((r) => ({
+        name: r.name,
+        id: r.name,
+        customer: r.customer,
+        customer_name: r.customer_name,
+        status: r.status,
+        make_type: r.make_type,
+        grand_total: r.grand_total,
+        transaction_date: r.transaction_date,
+        delivery_date: r.delivery_date,
+        delivery_status: r.delivery_status,
+      })),
+    });
+  } catch (e: any) {
+    console.error('[so-search]', e?.message);
+    return c.json({ data: [], error: e?.message });
   }
 });
 
@@ -776,8 +890,8 @@ intakeAlterationsRouter.get('/customers/:id', async (c) => {
         phones.push({
           id: p.name || undefined,
           number: num,
-          label: p.is_primary_mobile ? 'Mobile' : p.is_primary_phone ? 'Phone' : 'Other',
-          isPrimary: !!(p.is_primary_mobile || p.is_primary_phone),
+          label: p.is_primary_mobile_no ? 'Mobile' : p.is_primary_phone ? 'Phone' : 'Other',
+          isPrimary: !!(p.is_primary_mobile_no || p.is_primary_phone),
           contactId: full.name,
         });
       }
@@ -1076,7 +1190,7 @@ intakeAlterationsRouter.patch('/customers/:id', async (c) => {
           patch.phone = cleaned.find((p) => !p.isPrimary)?.number || '';
           patch.phone_nos = cleaned.map((p) => ({
             phone: p.number,
-            is_primary_mobile: p.isPrimary || /mobile/i.test(p.label) ? 1 : 0,
+            is_primary_mobile_no: p.isPrimary || /mobile/i.test(p.label) ? 1 : 0,
             is_primary_phone: !p.isPrimary && /work|office|phone/i.test(p.label) ? 1 : 0,
           }));
         }
