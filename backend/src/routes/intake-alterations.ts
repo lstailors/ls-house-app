@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { getAuthedUser } from '../lib/scope';
 import { uploadFile, erpFileAbsoluteUrl } from '../lib/erpnext/files';
-import { erpList, erpPdf } from '../lib/erp';
+import { erpList, erpGet, erpUpdate, erpPdf, erpRunMethod } from '../lib/erp';
 import { sendSms } from '../lib/twilio';
 
 // ---------------------------------------------------------------------------
@@ -18,32 +18,15 @@ function eTicketQrUrl(ticketName: string): string {
   return `https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=20&format=png&data=${encodeURIComponent(link)}`;
 }
 
-// Query via MCP server (works without direct ERP API key)
+// Unified @ls/erp-client path (STAGE_PLAN rule #3) — replaces prior ad-hoc MCP calls.
 async function mcpList<T>(doctype: string, fields: string[], filters: any[] = [], limit = 200, orderBy = ''): Promise<T[]> {
-  const args: any = { doctype, fields, filters, limit };
-  if (orderBy) args.order_by = orderBy;
-  const res = await fetch(`${MCP_BASE}/mcp`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', id: 1, params: { name: 'erp_list', arguments: args } }),
-  });
-  if (!res.ok) throw new Error(`MCP ${res.status}`);
-  const json: any = await res.json();
-  const text = json?.result?.content?.[0]?.text ?? '{}';
-  const data = JSON.parse(text);
-  return (data?.documents ?? []) as T[];
+  return erpList<T>(doctype, { fields, filters, limit, order_by: orderBy || undefined });
 }
 
 async function mcpGet<T>(doctype: string, name: string): Promise<T> {
-  const res = await fetch(`${MCP_BASE}/mcp`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${MCP_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', id: 1, params: { name: 'erp_get', arguments: { doctype, name } } }),
-  });
-  if (!res.ok) throw new Error(`MCP ${res.status}`);
-  const json: any = await res.json();
-  const text = json?.result?.content?.[0]?.text ?? '{}';
-  return JSON.parse(text) as T;
+  const doc = await erpGet<T>(doctype, name);
+  if (!doc) throw new Error(`${doctype} ${name} not found`);
+  return doc;
 }
 
 function erpHeaders() {
