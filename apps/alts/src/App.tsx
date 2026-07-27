@@ -8,6 +8,7 @@ import Login from "@/pages/Login";
 import HomeTiles from "@alts/pages/HomeTiles";
 import AltsShell from "@alts/components/AltsShell";
 import IntakeStepped from "@alts/pages/IntakeStepped";
+import TicketKind from "@alts/pages/TicketKind";
 import ShopFloorBoard from "@alts/pages/ShopFloorBoard";
 import PickupCounter from "@alts/pages/PickupCounter";
 import ParkedTray from "@alts/pages/ParkedTray";
@@ -79,6 +80,14 @@ export default function App() {
               <Route path="/g/:ticket/:garmentId" element={<GarmentJobCard />} />
               <Route path="/garments/:token" element={<GarmentTagRedirect />} />
 
+              <Route
+                path="/intake/kind"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <TicketKind />
+                  </RoleGuard>
+                }
+              />
               <Route
                 path="/intake/alterations"
                 element={

@@ -170,9 +170,9 @@ export default function HomeTiles() {
   }> = [
     {
       key: "new",
-      to: "/intake/alterations",
+      to: "/intake/kind",
       title: "New Ticket",
-      sub: "Intake garments, price the work, take payment",
+      sub: "Walk-in, custom order, or re-do — then intake",
       primary: true,
       icon: (
         <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

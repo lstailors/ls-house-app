@@ -95,6 +95,17 @@ export default function IntakeStepped() {
   const qc = useQueryClient();
   const [params] = useSearchParams();
   const resumeId = params.get("parked");
+  const kindParam = params.get("kind"); // walk_in | on_order | redo
+  const soParam = params.get("so");
+  const customerParam = params.get("customer");
+  const customerNameParam = params.get("customerName");
+
+  const initialBilling =
+    kindParam === "on_order" || kindParam === "custom"
+      ? "on_order"
+      : kindParam === "redo" || kindParam === "warranty"
+        ? "redo"
+        : "billable";
 
   const [step, setStep] = useState(0);
   const [origin, setOrigin] = useState<"NYC" | "HOU">("NYC");
@@ -117,7 +128,8 @@ export default function IntakeStepped() {
   const [activeRef, setActiveRef] = useState<string | null>(null);
   const [notifyReady, setNotifyReady] = useState(true);
   const [cartOpen, setCartOpen] = useState(false);
-  const [billing, setBilling] = useState<"billable" | "on_order" | "redo">("billable");
+  const [billing, setBilling] = useState<"billable" | "on_order" | "redo">(initialBilling);
+  const [linkedSo, setLinkedSo] = useState<string | null>(soParam);
 
   // park drawer
   const [parkOpen, setParkOpen] = useState(false);
@@ -174,6 +186,7 @@ export default function IntakeStepped() {
         });
         if (intake.origin === "HOU" || intake.origin === "NYC") setOrigin(intake.origin);
         if (intake.billing) setBilling(intake.billing);
+        if (intake.linkedSo) setLinkedSo(intake.linkedSo);
         if (Array.isArray(intake.garments)) {
           setGarments(intake.garments);
           setActiveRef(intake.garments[0]?.ref ?? null);
@@ -191,6 +204,29 @@ export default function IntakeStepped() {
       cancelled = true;
     };
   }, [resumeId]);
+
+  // Prefill from ticket-kind gate (SO + customer)
+  useEffect(() => {
+    if (resumeId) return;
+    if (customerParam && customerNameParam) {
+      setCustomer({
+        id: customerParam,
+        name: customerNameParam,
+        phone: "",
+        email: "",
+      });
+      // jump past empty search once we know the client from SO
+      setStep(1);
+    } else if (customerNameParam && !customerParam) {
+      setQ(customerNameParam);
+    }
+    if (soParam) setLinkedSo(soParam);
+    if (kindParam === "on_order" || kindParam === "redo" || kindParam === "walk_in") {
+      setBilling(
+        kindParam === "on_order" ? "on_order" : kindParam === "redo" ? "redo" : "billable",
+      );
+    }
+  }, [resumeId, customerParam, customerNameParam, soParam, kindParam]);
 
   const total = useMemo(
     () => garments.reduce((s, g) => s + g.lines.reduce((a, l) => a + (Number(l.price) || 0), 0), 0),
@@ -332,6 +368,7 @@ export default function IntakeStepped() {
         notes: g.notes,
         lines: g.lines.map((l) => ({
           description: l.description,
+          // Re-do is always $0 client charge. On-order keeps $ for COGS ledger.
           price: billing === "redo" ? 0 : l.price,
           estMinutes: l.estMinutes,
         })),
@@ -339,6 +376,7 @@ export default function IntakeStepped() {
       billing_status:
         billing === "on_order" ? "Included in Custom Order" : billing === "redo" ? "Warranty" : "Billable",
       included_in_custom: billing === "on_order" ? 1 : 0,
+      linked_sales_order: billing === "on_order" ? linkedSo || undefined : undefined,
     };
     if (customer?.id) body.customer = { id: customer.id, name: customer.name };
     else
@@ -399,6 +437,7 @@ export default function IntakeStepped() {
         intake: {
           origin,
           billing,
+          linkedSo,
           garments,
           notifyReady,
           total,
@@ -542,7 +581,7 @@ export default function IntakeStepped() {
               </p>
             </div>
 
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap items-center">
               {(
                 [
                   ["billable", "Billable"],
@@ -562,7 +601,22 @@ export default function IntakeStepped() {
                   {lab}
                 </button>
               ))}
+              <Link to="/intake/kind" className="ml-auto text-[10px] font-bold tracking-widest uppercase text-brass-light">
+                Change kind →
+              </Link>
             </div>
+            {linkedSo && billing === "on_order" && (
+              <div className="card-glass px-4 py-3 flex items-center gap-3 text-sm">
+                <span className="caps text-[var(--vi,#9B8BC4)]">Linked order</span>
+                <span className="font-mono text-[var(--vi,#9B8BC4)]">{linkedSo}</span>
+                <span className="text-cream-dim text-xs">· client pays $0 · COGS on order</span>
+              </div>
+            )}
+            {billing === "redo" && (
+              <div className="card-glass px-4 py-3 text-sm text-signal-emerald border-signal-emerald/30">
+                Re-do / Warranty — client pays $0. No invoice.
+              </div>
+            )}
 
             {customer ? (
               <SelectedCustomerCard
