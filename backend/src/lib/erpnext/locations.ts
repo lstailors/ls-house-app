@@ -116,8 +116,27 @@ export async function updateLocation(code: string, body: Record<string, unknown>
   return updated;
 }
 
-export async function getLocationCompany(code: string) {
+export interface ErpCompanyRow {
+  abbr?: string;
+  default_currency?: string;
+  country?: string;
+  tax_id?: string;
+  email?: string;
+  website?: string;
+  phone_no?: string;
+  default_bank_account?: string;
+  default_cash_account?: string;
+  default_receivable_account?: string;
+  default_income_account?: string;
+  default_expense_account?: string;
+  cost_center?: string;
+  monthly_sales_target?: number;
+  total_monthly_sales?: number;
+  parent_company?: string;
+}
+
+export async function getLocationCompany(code: string): Promise<ErpCompanyRow | null> {
   const loc = await getLocationByCode(code);
   if (!loc?.erpnext_company) return null;
-  return erpGet("Company", loc.erpnext_company);
+  return erpGet<ErpCompanyRow>("Company", loc.erpnext_company);
 }

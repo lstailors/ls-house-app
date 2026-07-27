@@ -49,7 +49,7 @@ squareRouter.get("/terminal-checkout/:checkoutId", async (c) => {
 
   if (!squareRes.ok) {
     const detail = squareData.errors?.[0]?.detail ?? "Square API error";
-    return c.json({ error: detail }, squareRes.status);
+    return c.json({ error: detail }, (squareRes.status || 500) as any);
   }
 
   const checkout = squareData.checkout ?? {};
