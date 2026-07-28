@@ -223,7 +223,7 @@ export default function IntakeStepped() {
     };
   }, [resumeId]);
 
-  // Prefill from ticket-kind gate (SO + customer)
+  // Prefill from ticket-kind gate (SO + customer + pieces cart)
   useEffect(() => {
     if (resumeId) return;
     if (customerParam && customerNameParam) {
@@ -233,7 +233,6 @@ export default function IntakeStepped() {
         phone: "",
         email: "",
       });
-      // jump past empty search once we know the client from SO
       setStep(1);
     } else if (customerNameParam && !customerParam) {
       setQ(customerNameParam);
@@ -243,6 +242,37 @@ export default function IntakeStepped() {
       setBilling(
         kindParam === "on_order" ? "on_order" : kindParam === "redo" ? "redo" : "billable",
       );
+    }
+
+    // Seed garments from SO order cart (TicketKind right rail)
+    if (kindParam === "on_order" && garments.length === 0) {
+      try {
+        const raw = sessionStorage.getItem("alts_so_cart_v1");
+        if (raw) {
+          const cart = JSON.parse(raw) as {
+            so?: string;
+            pieces?: Array<{ garmentType: string; label: string; sourceItem: string }>;
+          };
+          if (cart.so && soParam && cart.so !== soParam) {
+            /* stale cart from another SO — ignore */
+          } else if (Array.isArray(cart.pieces) && cart.pieces.length) {
+            const seeded: Garment[] = cart.pieces.map((p, i) => ({
+              ref: `G${i + 1}`,
+              garmentType: p.garmentType || "Other",
+              color: "",
+              notes: p.sourceItem ? `From SO · ${p.sourceItem}` : "",
+              lines: [],
+            }));
+            setGarments(seeded);
+            setActiveRef(seeded[0]?.ref ?? null);
+            setExpectedGarments(seeded.length);
+            setStep(2); // jump to work — garments already known
+            toast.message(`${seeded.length} piece${seeded.length === 1 ? "" : "s"} from order cart`);
+          }
+        }
+      } catch {
+        /* ignore */
+      }
     }
   }, [resumeId, customerParam, customerNameParam, soParam, kindParam]);
 
@@ -970,37 +1000,56 @@ export default function IntakeStepped() {
 
         {/* ── Work (Lucia 030) ── */}
         {step === 2 && (
-          <div className="max-w-4xl mx-auto">
+          <div className={cn("mx-auto", billing === "on_order" ? "max-w-6xl" : "max-w-4xl")}>
             <h2 className="display text-[34px] mb-1">What needs doing?</h2>
             <p className="text-[12.5px] text-cream-dim mb-4">
-              Presets · custom lines · notes. Prices stay for internal value even on Re-do / custom order.
+              {billing === "on_order"
+                ? "Pieces from the order cart are on the right — select one, price the work."
+                : "Presets · custom lines · notes. Prices stay for internal value even on Re-do / custom order."}
             </p>
-            <div className="flex gap-2.5 overflow-x-auto pb-4 mb-2">
-              {garments.map((g) => (
-                <button
-                  key={g.ref}
-                  type="button"
-                  onClick={() => setActiveRef(g.ref)}
-                  className={cn(
-                    "min-w-[174px] card-glass p-3.5 text-left",
-                    active?.ref === g.ref && "border-brass bg-brass/15",
-                  )}
-                >
-                  <span className="chip mb-2">{g.ref}</span>
-                  <div className="font-semibold text-[13px]">{g.garmentType}</div>
-                  <div className="display text-lg text-brass-light mt-1">
-                    {money(g.lines.reduce((s, l) => s + l.price, 0))}
+
+            <div className={cn(billing === "on_order" ? "grid lg:grid-cols-[1fr_280px] gap-4 items-start" : "")}>
+              <div className="min-w-0">
+                {billing !== "on_order" && (
+                  <div className="flex gap-2.5 overflow-x-auto pb-4 mb-2">
+                    {garments.map((g) => (
+                      <button
+                        key={g.ref}
+                        type="button"
+                        onClick={() => setActiveRef(g.ref)}
+                        className={cn(
+                          "min-w-[174px] card-glass p-3.5 text-left",
+                          active?.ref === g.ref && "border-brass bg-brass/15",
+                        )}
+                      >
+                        <span className="chip mb-2">{g.ref}</span>
+                        <div className="font-semibold text-[13px]">{g.garmentType}</div>
+                        <div className="display text-lg text-brass-light mt-1">
+                          {money(g.lines.reduce((s, l) => s + l.price, 0))}
+                        </div>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setStep(1)}
+                      className="min-w-[96px] rounded-[15px] border border-dashed border-brass/35 grid place-items-center text-2xl text-brass-light"
+                    >
+                      +
+                    </button>
                   </div>
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                className="min-w-[96px] rounded-[15px] border border-dashed border-brass/35 grid place-items-center text-2xl text-brass-light"
-              >
-                +
-              </button>
-            </div>
+                )}
+                {billing === "on_order" && active && (
+                  <div className="mb-4 card-glass px-4 py-3 flex items-center gap-3">
+                    <span className="chip bg-[rgba(155,139,196,0.25)] text-[var(--vi,#9B8BC4)] border-[rgba(155,139,196,0.45)]">
+                      {active.ref}
+                    </span>
+                    <span className="font-semibold">{active.garmentType}</span>
+                    {active.notes ? <span className="text-[11px] text-cream-dim truncate">{active.notes}</span> : null}
+                    <span className="ml-auto display text-xl text-brass-light">
+                      {money(active.lines.reduce((s, l) => s + l.price, 0))}
+                    </span>
+                  </div>
+                )}
 
             {/* Selected lines first (with note affordance) */}
             {active && active.lines.length > 0 && (
@@ -1213,6 +1262,59 @@ export default function IntakeStepped() {
             <button type="button" onClick={() => setStep(3)} className="btn-brass mt-6 h-14 px-8 text-[11px]">
               Review →
             </button>
+              </div>
+
+              {/* Right order cart — on custom-order path only */}
+              {billing === "on_order" && (
+                <aside className="lg:sticky lg:top-4 rounded-[20px] border border-[rgba(155,139,196,0.4)] bg-gradient-to-b from-[rgba(155,139,196,0.12)] to-black/35 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-[rgba(155,139,196,0.25)]">
+                    <div className="display text-[18px] italic">Order cart</div>
+                    <div className="font-mono text-[10px] text-[var(--vi,#9B8BC4)] mt-0.5">{linkedSo || "—"}</div>
+                  </div>
+                  <div className="p-3 space-y-2 max-h-[55vh] overflow-y-auto">
+                    {garments.map((g) => {
+                      const on = active?.ref === g.ref;
+                      const amt = g.lines.reduce((s, l) => s + l.price, 0);
+                      return (
+                        <button
+                          key={g.ref}
+                          type="button"
+                          onClick={() => setActiveRef(g.ref)}
+                          className={cn(
+                            "w-full text-left rounded-xl border px-3 py-3 transition-all",
+                            on
+                              ? "border-[var(--vi,#9B8BC4)] bg-[rgba(155,139,196,0.2)]"
+                              : "border-white/10 bg-black/25 hover:border-[rgba(155,139,196,0.35)]",
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="chip text-[8px]">{g.ref}</span>
+                            <span className="font-semibold text-[13px] flex-1">{g.garmentType}</span>
+                            <span className="display text-lg text-brass-light">{money(amt)}</span>
+                          </div>
+                          {g.notes ? <div className="text-[10px] text-cream-dim mt-1 truncate">{g.notes}</div> : null}
+                          <div className="text-[10px] text-cream-dim mt-1">
+                            {g.lines.length} line{g.lines.length === 1 ? "" : "s"}
+                            {on ? " · active" : " · tap to adjust"}
+                          </div>
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => setStep(1)}
+                      className="w-full rounded-xl border border-dashed border-[rgba(155,139,196,0.4)] py-3 text-[11px] text-[var(--vi,#9B8BC4)] font-semibold"
+                    >
+                      + Add piece
+                    </button>
+                  </div>
+                  <div className="px-4 py-3 border-t border-[rgba(155,139,196,0.25)] flex items-center justify-between">
+                    <span className="caps text-[8px] text-cream-dim">Ticket value</span>
+                    <span className="display text-xl text-brass-light">{money(total)}</span>
+                  </div>
+                </aside>
+              )}
+            </div>
           </div>
         )}
 

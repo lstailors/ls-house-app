@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { cn } from "@ls/design/utils";
+import { piecesFromSoDetail, writeSoCart, type SoPiece } from "@alts/lib/soCart";
 import "@alts/styles/alts-pos.css";
 
 type Kind = "walk_in" | "on_order" | "redo";
@@ -27,12 +28,12 @@ export default function TicketKind() {
   const [kind, setKind] = useState<Kind>("walk_in");
   const [q, setQ] = useState("");
   const [selectedSo, setSelectedSo] = useState<SoHit | null>(null);
+  const [cartPieces, setCartPieces] = useState<SoPiece[]>([]);
 
   const search = useQuery({
     queryKey: ["so-search-kind", q],
     enabled: kind === "on_order" && q.trim().length >= 2,
     queryFn: async () => {
-      // Prefer FOH intake search when live; fall back to universal search.
       try {
         const rows = await api.get<any[]>(
           `/api/intake-alterations/sales-orders/search?q=${encodeURIComponent(q.trim())}`,
@@ -97,21 +98,70 @@ export default function TicketKind() {
     },
   });
 
+  const soDetail = useQuery({
+    queryKey: ["so-detail-kind", selectedSo?.id],
+    enabled: kind === "on_order" && !!selectedSo?.id,
+    queryFn: async () => {
+      const d = await api.get<any>(`/api/intake-alterations/sales-orders/${encodeURIComponent(selectedSo!.id)}`);
+      return d;
+    },
+  });
+
+  // When detail loads, seed cart pieces (all selected)
+  useMemo(() => {
+    // useMemo misuse — use effect pattern below instead
+  }, []);
+
+  // Seed cart when SO detail arrives
+  if (kind === "on_order" && soDetail.data && selectedSo && cartPieces.length === 0 && !soDetail.isFetching) {
+    const pieces = piecesFromSoDetail(soDetail.data.items || []);
+    // schedule setState outside render
+    queueMicrotask(() => {
+      setCartPieces(pieces);
+    });
+  }
+
   const hits = useMemo(() => {
     if (q.trim().length >= 2) return search.data ?? [];
     return recent.data ?? [];
   }, [q, search.data, recent.data]);
 
+  const selectedCount = cartPieces.filter((p) => p.selected).length;
+
+  const pickSo = (so: SoHit) => {
+    setSelectedSo(so);
+    setCartPieces([]); // clear so detail reseed runs
+  };
+
+  const togglePiece = (id: string) => {
+    setCartPieces((prev) => prev.map((p) => (p.id === id ? { ...p, selected: !p.selected } : p)));
+  };
+
+  const selectAll = (on: boolean) => {
+    setCartPieces((prev) => prev.map((p) => ({ ...p, selected: on })));
+  };
+
   const continueWalkIn = () => nav("/intake/alterations?kind=walk_in");
   const continueRedo = () => nav("/intake/alterations?kind=redo");
   const continueOnOrder = () => {
-    if (!selectedSo) return;
+    if (!selectedSo || selectedCount === 0) return;
+    const d = soDetail.data;
+    writeSoCart({
+      so: selectedSo.id,
+      customerId: selectedSo.customerId || d?.customer,
+      customerName: selectedSo.customerName || d?.customer_name || selectedSo.title,
+      customerPhone: d?.customer_phone || "",
+      customerEmail: d?.customer_email || "",
+      pieces: cartPieces,
+    });
     const p = new URLSearchParams({
       kind: "on_order",
       so: selectedSo.id,
     });
-    if (selectedSo.customerId) p.set("customer", selectedSo.customerId);
-    if (selectedSo.customerName) p.set("customerName", selectedSo.customerName);
+    const cid = selectedSo.customerId || d?.customer;
+    const cname = selectedSo.customerName || d?.customer_name || selectedSo.title;
+    if (cid) p.set("customer", cid);
+    if (cname) p.set("customerName", cname);
     nav(`/intake/alterations?${p.toString()}`);
   };
 
@@ -140,7 +190,7 @@ export default function TicketKind() {
         </div>
       </header>
 
-      <div className="flex-1 grid lg:grid-cols-[400px_1fr] min-h-0">
+      <div className="flex-1 grid lg:grid-cols-[360px_1fr] min-h-0">
         {/* left — kind choice */}
         <aside className="border-r border-brass/15 p-5 flex flex-col overflow-y-auto">
           <h2 className="display text-[27px] leading-tight">What kind of ticket?</h2>
@@ -153,6 +203,7 @@ export default function TicketKind() {
             onClick={() => {
               setKind("walk_in");
               setSelectedSo(null);
+              setCartPieces([]);
             }}
             className={cn(
               "w-full text-left rounded-[18px] p-[18px] mb-3 border transition-all",
@@ -191,17 +242,14 @@ export default function TicketKind() {
               <span className={cn(kind === "on_order" ? "text-[var(--vi,#9B8BC4)]" : "text-brass/70")}>→</span>
             </div>
             <p className="text-[11px] text-[var(--cd)] mt-2 leading-relaxed">
-              Adjustments to something we made. Fitting changes on an MTM or bespoke order — work lands on order cost.
+              Adjustments to something we made. Pull the order — pieces land in the cart on the right.
             </p>
             <div className="flex flex-wrap gap-1.5 mt-3">
               <span className="chip border-[rgba(155,139,196,0.5)] text-[var(--vi,#9B8BC4)] bg-[rgba(155,139,196,0.12)]">
-                Client pays $0
+                Valued · no SI
               </span>
               <span className="chip border-[rgba(155,139,196,0.5)] text-[var(--vi,#9B8BC4)] bg-[rgba(155,139,196,0.12)]">
-                Goes to order cost
-              </span>
-              <span className="chip border-[rgba(155,139,196,0.5)] text-[var(--vi,#9B8BC4)] bg-[rgba(155,139,196,0.12)]">
-                No invoice
+                Order cart
               </span>
             </div>
           </button>
@@ -211,6 +259,7 @@ export default function TicketKind() {
             onClick={() => {
               setKind("redo");
               setSelectedSo(null);
+              setCartPieces([]);
             }}
             className={cn(
               "w-full text-left rounded-[18px] p-[18px] mb-3 border transition-all",
@@ -225,10 +274,9 @@ export default function TicketKind() {
               <span className="text-brass/70">→</span>
             </div>
             <p className="text-[11px] text-[var(--cd)] mt-2 leading-relaxed">
-              Warranty / re-do — a fix on work we already did. Our cost to put right; client never charged twice.
+              Warranty / re-do — full shop prices for tailor stats; client never charged twice.
             </p>
             <div className="flex flex-wrap gap-1.5 mt-3">
-              <span className="chip border-signal-emerald/40 text-signal-emerald bg-signal-emerald/10">Client pays $0</span>
               <span className="chip border-signal-emerald/40 text-signal-emerald bg-signal-emerald/10">Warranty · Re-do</span>
               <span className="chip border-signal-emerald/40 text-signal-emerald bg-signal-emerald/10">No invoice</span>
             </div>
@@ -243,9 +291,9 @@ export default function TicketKind() {
         </aside>
 
         {/* right — action panel */}
-        <main className="overflow-y-auto p-5 bg-black/15 min-w-0">
+        <main className="overflow-hidden min-w-0 flex flex-col bg-black/15">
           {kind === "walk_in" && (
-            <div className="max-w-xl mx-auto pt-8 text-center">
+            <div className="max-w-xl mx-auto pt-8 text-center p-5">
               <h2 className="display text-3xl mb-2">Walk-in alteration</h2>
               <p className="text-sm text-cream-dim mb-8">
                 Client garments, normal pricing. Invoice will be created when the ticket is submitted.
@@ -257,11 +305,11 @@ export default function TicketKind() {
           )}
 
           {kind === "redo" && (
-            <div className="max-w-xl mx-auto pt-8 text-center">
+            <div className="max-w-xl mx-auto pt-8 text-center p-5">
               <h2 className="display text-3xl mb-2">Re-do</h2>
               <p className="text-sm text-cream-dim mb-8">
-                Warranty / re-do — full shop prices stay on the ticket for tailor stats & internal value.
-                Tagged <b className="text-cream">Warranty</b> in ERPNext: no client invoice, no AR.
+                Warranty / re-do — full shop prices stay on the ticket for tailor stats & internal value. Tagged{" "}
+                <b className="text-cream">Warranty</b> in ERPNext: no client invoice, no AR.
               </p>
               <button
                 type="button"
@@ -274,98 +322,183 @@ export default function TicketKind() {
           )}
 
           {kind === "on_order" && (
-            <div className="max-w-3xl mx-auto">
-              <h2 className="display text-[27px] leading-tight">Pull the custom order</h2>
-              <p className="text-[11.5px] text-[var(--cd)] mt-2 mb-4">
-                Find the order this work belongs to. The ticket links to it so cost lands in the right place.
-              </p>
+            <div className="flex-1 grid lg:grid-cols-[1fr_340px] min-h-0">
+              {/* SO search list */}
+              <div className="overflow-y-auto p-5 min-w-0 border-r border-brass/10">
+                <h2 className="display text-[27px] leading-tight">Pull the custom order</h2>
+                <p className="text-[11.5px] text-[var(--cd)] mt-2 mb-4">
+                  Find the order — garments load into the <b className="text-[var(--vi,#9B8BC4)]">cart on the right</b>. Toggle
+                  what needs adjusting.
+                </p>
 
-              <div className="relative mb-2">
-                <span className="absolute left-5 top-1/2 -translate-y-1/2 text-brass/70 text-lg">⌕</span>
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Client name, order number, or fabric"
-                  className="w-full h-[70px] rounded-2xl bg-black/35 border border-brass/30 pl-14 pr-5 text-lg text-cream outline-none focus:border-[rgba(155,139,196,0.7)] focus:shadow-[0_0_0_3px_rgba(155,139,196,0.16)] placeholder:text-[var(--cd)]"
-                  autoFocus
-                />
+                <div className="relative mb-2">
+                  <span className="absolute left-5 top-1/2 -translate-y-1/2 text-brass/70 text-lg">⌕</span>
+                  <input
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="Client name, order number, or fabric"
+                    className="w-full h-[70px] rounded-2xl bg-black/35 border border-brass/30 pl-14 pr-5 text-lg text-cream outline-none focus:border-[rgba(155,139,196,0.7)] focus:shadow-[0_0_0_3px_rgba(155,139,196,0.16)] placeholder:text-[var(--cd)]"
+                    autoFocus
+                  />
+                </div>
+                <p className="text-[10.5px] text-[var(--cd)] mb-4 pl-1">
+                  Open <b className="text-brass-light font-semibold">Sales Orders</b> · try{" "}
+                  <b className="text-brass-light">SO-00472</b>, a last name, or fabric
+                </p>
+
+                <div className="caps mb-3">
+                  {q.trim().length >= 2
+                    ? search.isFetching
+                      ? "Searching…"
+                      : `${hits.length} result${hits.length === 1 ? "" : "s"}`
+                    : "Recent open orders"}
+                </div>
+
+                <div className="space-y-2.5">
+                  {hits.map((so) => {
+                    const on = selectedSo?.id === so.id;
+                    return (
+                      <button
+                        key={so.id}
+                        type="button"
+                        onClick={() => pickSo(so)}
+                        className={cn(
+                          "w-full flex items-center gap-4 p-4 rounded-2xl border text-left transition-all",
+                          on
+                            ? "border-[var(--vi,#9B8BC4)] bg-gradient-to-br from-[rgba(155,139,196,0.19)] to-[rgba(155,139,196,0.04)] ring-1 ring-[rgba(155,139,196,0.3)]"
+                            : "border-brass/20 bg-black/20 hover:border-[rgba(155,139,196,0.45)]",
+                        )}
+                      >
+                        <div className="w-9 h-11 rounded-lg border border-brass/25 grid place-items-center text-brass-light shrink-0 text-lg">
+                          ♠
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold text-[15px] truncate">
+                            {so.customerName || so.title}
+                            {so.subtitle ? <span className="text-cream-dim font-normal"> · {so.subtitle}</span> : null}
+                          </div>
+                          <div className="flex flex-wrap gap-2 mt-1 text-[11px] text-[var(--cd)] items-center">
+                            <span className="font-mono text-[var(--vi,#9B8BC4)]">{so.id}</span>
+                            {so.meta && (
+                              <span className="px-2 py-0.5 rounded-md border border-[rgba(155,139,196,0.45)] text-[var(--vi,#9B8BC4)] text-[8.5px] font-bold tracking-wider uppercase">
+                                {so.meta}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="display text-xl">{money(so.amount)}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {!hits.length && !search.isFetching && q.trim().length >= 2 && (
+                    <p className="text-cream-dim text-sm italic p-4">No open sales orders match.</p>
+                  )}
+                </div>
               </div>
-              <p className="text-[10.5px] text-[var(--cd)] mb-4 pl-1">
-                Searches open <b className="text-brass-light font-semibold">Sales Orders</b> · try{" "}
-                <b className="text-brass-light">SO-00472</b>, a last name, or fabric
-              </p>
 
-              <div className="caps mb-3">
-                {q.trim().length >= 2
-                  ? search.isFetching
-                    ? "Searching…"
-                    : `${hits.length} result${hits.length === 1 ? "" : "s"}`
-                  : "Recent open orders"}
-              </div>
+              {/* RIGHT CART */}
+              <aside className="flex flex-col min-h-0 bg-black/30 border-l border-[rgba(155,139,196,0.2)]">
+                <div className="px-4 py-3.5 border-b border-brass/15">
+                  <div className="caps text-[var(--vi,#9B8BC4)] mb-1">Order cart</div>
+                  {selectedSo ? (
+                    <>
+                      <div className="font-semibold text-[14px] truncate">{selectedSo.customerName || selectedSo.title}</div>
+                      <div className="font-mono text-[11px] text-[var(--vi,#9B8BC4)] mt-0.5">{selectedSo.id}</div>
+                    </>
+                  ) : (
+                    <p className="text-[12px] text-cream-dim">Select an order — pieces appear here.</p>
+                  )}
+                </div>
 
-              <div className="space-y-2.5">
-                {hits.map((so) => {
-                  const on = selectedSo?.id === so.id;
-                  return (
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                  {soDetail.isFetching && selectedSo && (
+                    <p className="text-cream-dim text-sm p-3 animate-pulse">Loading order lines…</p>
+                  )}
+                  {soDetail.isError && (
+                    <p className="text-signal-amber text-sm p-3">Could not load items. Try again or continue and add garments manually.</p>
+                  )}
+                  {!selectedSo && (
+                    <div className="rounded-2xl border border-dashed border-brass/25 p-6 text-center text-[12px] text-cream-dim">
+                      Cart is empty
+                      <div className="text-[10px] mt-2 opacity-70">Like checkout — pick the order, then the pieces to alter</div>
+                    </div>
+                  )}
+                  {cartPieces.length > 0 && (
+                    <div className="flex gap-2 mb-2">
+                      <button type="button" className="text-[9px] font-bold tracking-widest uppercase text-brass-light" onClick={() => selectAll(true)}>
+                        All
+                      </button>
+                      <button type="button" className="text-[9px] font-bold tracking-widest uppercase text-cream-dim" onClick={() => selectAll(false)}>
+                        None
+                      </button>
+                      <span className="ml-auto text-[10px] text-cream-dim">
+                        {selectedCount}/{cartPieces.length} pieces
+                      </span>
+                    </div>
+                  )}
+                  {cartPieces.map((p) => (
                     <button
-                      key={so.id}
+                      key={p.id}
                       type="button"
-                      onClick={() => setSelectedSo(so)}
+                      onClick={() => togglePiece(p.id)}
                       className={cn(
-                        "w-full flex items-center gap-4 p-4 rounded-2xl border text-left transition-all",
-                        on
-                          ? "border-[var(--vi,#9B8BC4)] bg-gradient-to-br from-[rgba(155,139,196,0.19)] to-[rgba(155,139,196,0.04)] ring-1 ring-[rgba(155,139,196,0.3)]"
-                          : "border-brass/20 bg-black/20 hover:border-[rgba(155,139,196,0.45)]",
+                        "w-full text-left rounded-xl border px-3 py-3 flex gap-3 transition-all",
+                        p.selected
+                          ? "border-[var(--vi,#9B8BC4)] bg-[rgba(155,139,196,0.14)]"
+                          : "border-brass/15 bg-black/20 opacity-55",
                       )}
                     >
-                      <div className="w-9 h-11 rounded-lg border border-brass/25 grid place-items-center text-brass-light shrink-0 text-lg">
-                        ♠
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-[15px] truncate">
-                          {so.customerName || so.title}
-                          {so.subtitle ? <span className="text-cream-dim font-normal"> · {so.subtitle}</span> : null}
-                        </div>
-                        <div className="flex flex-wrap gap-2 mt-1 text-[11px] text-[var(--cd)] items-center">
-                          <span className="font-mono text-[var(--vi,#9B8BC4)]">{so.id}</span>
-                          {so.meta && (
-                            <span className="px-2 py-0.5 rounded-md border border-[rgba(155,139,196,0.45)] text-[var(--vi,#9B8BC4)] text-[8.5px] font-bold tracking-wider uppercase">
-                              {so.meta}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="display text-xl">{money(so.amount)}</div>
-                      </div>
+                      <span
+                        className={cn(
+                          "w-6 h-6 rounded-md border grid place-items-center text-[11px] font-bold shrink-0 mt-0.5",
+                          p.selected ? "bg-[var(--vi,#9B8BC4)] text-[#120E1C] border-transparent" : "border-brass/40 text-transparent",
+                        )}
+                      >
+                        ✓
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[10px] font-bold tracking-widest uppercase text-[var(--vi,#9B8BC4)]">
+                          {p.garmentType}
+                        </span>
+                        <span className="block text-[13px] font-semibold leading-snug">{p.label}</span>
+                        {p.description ? (
+                          <span className="block text-[10px] text-cream-dim mt-1 line-clamp-2">{p.description}</span>
+                        ) : null}
+                      </span>
                     </button>
-                  );
-                })}
-                {!hits.length && !search.isFetching && q.trim().length >= 2 && (
-                  <p className="text-cream-dim text-sm italic p-4">No open sales orders match.</p>
-                )}
-              </div>
+                  ))}
+                  {selectedSo && !soDetail.isFetching && cartPieces.length === 0 && !soDetail.isError && (
+                    <p className="text-cream-dim text-sm p-3">No line items on this order — add garments on the next screen.</p>
+                  )}
+                </div>
 
-              <button
-                type="button"
-                disabled={!selectedSo}
-                onClick={continueOnOrder}
-                className="mt-5 w-full min-h-[80px] rounded-[17px] border-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-1.5"
-                style={{
-                  background: "linear-gradient(135deg,#A797CE,#7D6DA8)",
-                  color: "#120E1C",
-                  boxShadow: "0 12px 30px rgba(155,139,196,.3), inset 0 1px 0 rgba(255,255,255,.28)",
-                }}
-              >
-                <span className="text-[13.5px] font-bold tracking-[0.12em] uppercase">
-                  {selectedSo ? `Continue with ${selectedSo.id.replace(/^.*SO-/, "SO-")}` : "Select an order"}
-                </span>
-                {selectedSo && (
-                  <span className="text-[9px] tracking-[0.14em] uppercase opacity-75">
-                    {(selectedSo.customerName || selectedSo.title || "").toUpperCase()} · NON-BILLABLE TICKET
-                  </span>
-                )}
-              </button>
+                <div className="p-3 border-t border-brass/15">
+                  <button
+                    type="button"
+                    disabled={!selectedSo || selectedCount === 0}
+                    onClick={continueOnOrder}
+                    className="w-full min-h-[72px] rounded-[17px] border-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-1"
+                    style={{
+                      background: "linear-gradient(135deg,#A797CE,#7D6DA8)",
+                      color: "#120E1C",
+                      boxShadow: "0 12px 30px rgba(155,139,196,.3), inset 0 1px 0 rgba(255,255,255,.28)",
+                    }}
+                  >
+                    <span className="text-[12.5px] font-bold tracking-[0.12em] uppercase">
+                      {!selectedSo
+                        ? "Select an order"
+                        : selectedCount === 0
+                          ? "Select pieces"
+                          : `Continue · ${selectedCount} piece${selectedCount === 1 ? "" : "s"}`}
+                    </span>
+                    {selectedSo && selectedCount > 0 && (
+                      <span className="text-[9px] tracking-[0.14em] uppercase opacity-75">NON-BILLABLE · FULL PRICES KEPT</span>
+                    )}
+                  </button>
+                </div>
+              </aside>
             </div>
           )}
         </main>
