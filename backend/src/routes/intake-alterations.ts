@@ -504,6 +504,89 @@ intakeAlterationsRouter.get('/sales-orders/search', async (c) => {
   }
 });
 
+/** Map SO line → garment piece chips for alteration cart (suit expands). */
+function expandSoItemToPieces(it: any): Array<{ garmentType: string; label: string; sourceItem: string }> {
+  const code = String(it.item_code || '').toUpperCase();
+  const name = String(it.item_name || '').toUpperCase();
+  const blob = `${code} ${name}`;
+  const src = it.item_name || it.item_code || 'Item';
+  if (/3\s*-?\s*PC|3PC|THREE.?PIECE|SUIT.?3/.test(blob)) {
+    return [
+      { garmentType: 'Jacket', label: `${src} · Jacket`, sourceItem: src },
+      { garmentType: 'Trouser', label: `${src} · Trouser`, sourceItem: src },
+      { garmentType: 'Vest', label: `${src} · Vest`, sourceItem: src },
+    ];
+  }
+  if (/SUIT|2\s*-?\s*PC|2PC|TWO.?PIECE|BESPOKE-SUIT|MTM-SUIT/.test(blob) && !/TROUSER|JACKET|VEST|SHIRT|JEAN/.test(blob.replace(/SUIT/g, ''))) {
+    return [
+      { garmentType: 'Jacket', label: `${src} · Jacket`, sourceItem: src },
+      { garmentType: 'Trouser', label: `${src} · Trouser`, sourceItem: src },
+    ];
+  }
+  if (/JEAN|DENIM|TROUSER|PANT|SLACK/.test(blob)) return [{ garmentType: 'Trouser', label: src, sourceItem: src }];
+  if (/JACKET|BLAZER|SPORT.?COAT/.test(blob)) return [{ garmentType: 'Jacket', label: src, sourceItem: src }];
+  if (/COAT|OVERCOAT|TOPCOAT|TRENCH/.test(blob)) return [{ garmentType: 'Coat', label: src, sourceItem: src }];
+  if (/VEST|WAISTCOAT/.test(blob)) return [{ garmentType: 'Vest', label: src, sourceItem: src }];
+  if (/SHIRT/.test(blob)) return [{ garmentType: 'Shirt', label: src, sourceItem: src }];
+  if (/DRESS/.test(blob)) return [{ garmentType: 'Dress', label: src, sourceItem: src }];
+  if (/SKIRT/.test(blob)) return [{ garmentType: 'Skirt', label: src, sourceItem: src }];
+  return [{ garmentType: 'Other', label: src, sourceItem: src }];
+}
+
+// FOH-safe Sales Order detail + line items → seed alteration cart
+// Must stay after /sales-orders/search so "search" is not captured as :name
+intakeAlterationsRouter.get('/sales-orders/:name', async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+  const name = c.req.param('name');
+  try {
+    const doc = await mcpGet<any>('Sales Order', name);
+    let customerPhone = '';
+    let customerEmail = '';
+    try {
+      if (doc.customer) {
+        const cust = await mcpGet<any>('Customer', doc.customer);
+        customerPhone = cust.mobile_no || cust.phone || '';
+        customerEmail = cust.email_id || '';
+      }
+    } catch { /* non-fatal */ }
+
+    const items = (doc.items || []).map((it: any, idx: number) => ({
+      id: it.name || `row-${idx}`,
+      key: it.name || `row-${idx}`,
+      idx: it.idx || idx + 1,
+      item_code: it.item_code,
+      item_name: it.item_name,
+      description: String(it.description || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
+      qty: Number(it.qty) || 1,
+      rate: Number(it.rate) || 0,
+      amount: Number(it.amount) || 0,
+      item_group: it.item_group,
+      pieces: expandSoItemToPieces(it),
+    }));
+
+    return c.json({
+      data: {
+        name: doc.name,
+        customer: doc.customer,
+        customer_name: doc.customer_name,
+        customer_phone: customerPhone || doc.contact_mobile || doc.contact_phone || '',
+        customer_email: customerEmail || doc.contact_email || '',
+        status: doc.status,
+        make_type: doc.make_type,
+        grand_total: doc.grand_total,
+        delivery_date: doc.delivery_date,
+        yz_order_no: doc.yz_order_no,
+        mtmpro_order: doc.mtmpro_order,
+        items,
+      },
+    });
+  } catch (e: any) {
+    console.error('[so-get]', e?.message);
+    return c.json({ error: { message: e?.message || 'Failed to load sales order' } }, 502);
+  }
+});
+
 // 7. PATCH /tickets/:name/tailor
 intakeAlterationsRouter.patch('/tickets/:name/tailor', async (c) => {
   const user = await getAuthedUser(c);
