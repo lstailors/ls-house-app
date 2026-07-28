@@ -567,21 +567,23 @@ intakeAlterationsRouter.get('/sales-orders/:name', async (c) => {
 
     return c.json({
       data: {
-        name: doc.name,
-        customer: doc.customer,
-        customer_name: doc.customer_name,
-        customer_phone: customerPhone || doc.contact_mobile || doc.contact_phone || '',
-        customer_email: customerEmail || doc.contact_email || '',
-        status: doc.status,
-        make_type: doc.make_type,
-        grand_total: doc.grand_total,
-        delivery_date: doc.delivery_date,
-        yz_order_no: doc.yz_order_no,
-        mtmpro_order: doc.mtmpro_order,
-        items,
-      },
-    });
-  } catch (e: any) {
+        return c.json({
+          data: {
+            name: doc.name,
+            customer: doc.customer,
+            customer_name: doc.customer_name,
+            customer_phone: doc.contact_mobile || doc.mobile_no || '',
+            customer_email: doc.contact_email || '',
+            status: doc.status,
+            make_type: doc.make_type,
+            grand_total: doc.grand_total,
+            delivery_date: doc.delivery_date,
+            yz_order_no: doc.yz_order_no,
+            mtmpro_order: doc.mtmpro_order,
+            items,
+          },
+        });
+
     console.error('[so-get]', e?.message);
     return c.json({ error: { message: e?.message || 'Failed to load sales order' } }, 502);
   }

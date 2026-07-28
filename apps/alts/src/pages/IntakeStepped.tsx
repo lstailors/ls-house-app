@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { cn } from "@ls/design/utils";
 import ParkDrawer from "@alts/components/ParkDrawer";
 import CustomerEditSheet, { SelectedCustomerCard } from "@alts/components/CustomerEditSheet";
+import { clearSoCart, readSoCart, soCartToGarments } from "@alts/lib/soCart";
 import "@alts/styles/alts-pos.css";
 
 const GARMENT_TYPES = [
@@ -33,7 +34,15 @@ type Line = {
   photoFiles?: File[];
   photoPreviewUrls?: string[];
 };
-type Garment = { ref: string; garmentType: string; color: string; notes: string; lines: Line[] };
+type Garment = {
+  ref: string;
+  garmentType: string;
+  color: string;
+  notes: string;
+  lines: Line[];
+  soItemKey?: string;
+  soItemName?: string;
+};
 type CustomerHit = {
   id?: string;
   name: string;
@@ -246,32 +255,34 @@ export default function IntakeStepped() {
 
     // Seed garments from SO order cart (TicketKind right rail)
     if (kindParam === "on_order" && garments.length === 0) {
-      try {
-        const raw = sessionStorage.getItem("alts_so_cart_v1");
-        if (raw) {
-          const cart = JSON.parse(raw) as {
-            so?: string;
-            pieces?: Array<{ garmentType: string; label: string; sourceItem: string }>;
-          };
-          if (cart.so && soParam && cart.so !== soParam) {
-            /* stale cart from another SO — ignore */
-          } else if (Array.isArray(cart.pieces) && cart.pieces.length) {
-            const seeded: Garment[] = cart.pieces.map((p, i) => ({
-              ref: `G${i + 1}`,
-              garmentType: p.garmentType || "Other",
-              color: "",
-              notes: p.sourceItem ? `From SO · ${p.sourceItem}` : "",
-              lines: [],
-            }));
-            setGarments(seeded);
-            setActiveRef(seeded[0]?.ref ?? null);
-            setExpectedGarments(seeded.length);
-            setStep(2); // jump to work — garments already known
-            toast.message(`${seeded.length} piece${seeded.length === 1 ? "" : "s"} from order cart`);
+      const cart = readSoCart();
+      if (cart && (!soParam || cart.so === soParam)) {
+        const seeded = soCartToGarments(cart).map((g) => ({
+          ref: g.ref,
+          garmentType: g.garmentType,
+          color: g.color,
+          notes: g.notes,
+          lines: g.lines as Line[],
+        }));
+        if (seeded.length) {
+          setGarments(seeded);
+          setActiveRef(seeded[0]?.ref ?? null);
+          setExpectedGarments(seeded.length);
+          if (cart.customerPhone || cart.customerEmail) {
+            setCustomer((c) =>
+              c
+                ? {
+                    ...c,
+                    phone: c.phone || cart.customerPhone || "",
+                    email: c.email || cart.customerEmail || "",
+                  }
+                : c,
+            );
           }
+          setStep(2);
+          toast.message(`${seeded.length} piece${seeded.length === 1 ? "" : "s"} from order cart`);
+          clearSoCart();
         }
-      } catch {
-        /* ignore */
       }
     }
   }, [resumeId, customerParam, customerNameParam, soParam, kindParam]);
