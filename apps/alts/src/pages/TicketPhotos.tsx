@@ -20,7 +20,8 @@ const API = import.meta.env.VITE_BACKEND_URL || "";
 export default function TicketPhotos() {
   const { ticketName = "" } = useParams();
   const qc = useQueryClient();
-  const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const libraryRef = useRef<HTMLInputElement>(null);
   const [garmentRef, setGarmentRef] = useState("G1");
   const [preview, setPreview] = useState<string | null>(null);
 
@@ -50,7 +51,7 @@ export default function TicketPhotos() {
         body: fd,
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || json?.error?.message || "Upload failed");
+      if (!res.ok) throw new Error(json?.error?.message || json?.error || "Upload failed");
       return json.data;
     },
     onSuccess: () => {
@@ -61,7 +62,16 @@ export default function TicketPhotos() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const onPick = (file: File | undefined) => {
+    if (!file) return;
+    setPreview(URL.createObjectURL(file));
+    upload.mutate(file);
+  };
+
   const garments = ticket.data?.garments ?? [];
+  const refs: string[] = garments.length
+    ? garments.map((g: any, i: number) => g.garment_id || `G${i + 1}`)
+    : ["G1", "G2", "G3"];
 
   return (
     <div className="alts-root min-h-screen flex flex-col">
@@ -77,14 +87,11 @@ export default function TicketPhotos() {
 
       <div className="p-5 max-w-3xl mx-auto w-full space-y-5">
         <p className="text-sm text-cream-dim">
-          Repair evidence, fittings, stains — saved on the ticket (internal).
+          Condition at intake, stains, fittings — saved on the ticket (internal). Prefer camera on the floor.
         </p>
 
         <div className="flex flex-wrap gap-2">
-          {(garments.length
-            ? garments.map((g: any, i: number) => g.garment_id || `G${i + 1}`)
-            : ["G1", "G2", "G3"]
-          ).map((ref: string) => (
+          {refs.map((ref) => (
             <button
               key={ref}
               type="button"
@@ -99,24 +106,42 @@ export default function TicketPhotos() {
           ))}
         </div>
 
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          className="btn-brass w-full h-14 text-[11px]"
-        >
-          {upload.isPending ? "Uploading…" : `Add photo · ${garmentRef}`}
-        </button>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <button
+            type="button"
+            disabled={upload.isPending}
+            onClick={() => cameraRef.current?.click()}
+            className="btn-brass h-16 text-[11px] disabled:opacity-50"
+          >
+            {upload.isPending ? "Uploading…" : `📷 Take photo · ${garmentRef}`}
+          </button>
+          <button
+            type="button"
+            disabled={upload.isPending}
+            onClick={() => libraryRef.current?.click()}
+            className="h-16 rounded-2xl border border-brass/35 bg-black/25 text-[11px] font-bold tracking-widest uppercase text-cream-muted disabled:opacity-50"
+          >
+            Choose from library
+          </button>
+        </div>
         <input
-          ref={fileRef}
+          ref={cameraRef}
           type="file"
           accept="image/*"
           capture="environment"
           className="hidden"
           onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (!f) return;
-            setPreview(URL.createObjectURL(f));
-            upload.mutate(f);
+            onPick(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+        <input
+          ref={libraryRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            onPick(e.target.files?.[0]);
             e.target.value = "";
           }}
         />

@@ -42,6 +42,9 @@ type Garment = {
   lines: Line[];
   soItemKey?: string;
   soItemName?: string;
+  /** intake condition photos (Lucia 023) — upload after ticket create */
+  photoFiles?: File[];
+  photoPreviewUrls?: string[];
 };
 type CustomerHit = {
   id?: string;
@@ -84,6 +87,62 @@ function remindAtIso(remind: Remind): string | null {
   }
   d.setDate(d.getDate() + 14);
   return d.toISOString();
+}
+
+/** Compact take-photo / library strip for one garment (Lucia 023). */
+function GarmentPhotoStrip({
+  garment,
+  onAdd,
+  onRemove,
+}: {
+  garment: Garment;
+  onAdd: (file: File) => void;
+  onRemove: (idx: number) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2 items-center">
+      {(garment.photoPreviewUrls || []).map((src, i) => (
+        <div key={i} className="relative w-12 h-12 rounded-lg overflow-hidden border border-brass/30">
+          <img src={src} alt="" className="w-full h-full object-cover" />
+          <button
+            type="button"
+            onClick={() => onRemove(i)}
+            className="absolute top-0 right-0 w-4 h-4 rounded-bl bg-black/70 text-[9px] text-cream grid place-items-center"
+            aria-label="Remove photo"
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+      <label className="h-12 px-3 rounded-lg border border-brass/40 bg-brass/15 text-brass-light text-[9px] font-bold tracking-wider uppercase grid place-items-center cursor-pointer">
+        📷 Take photo
+        <input
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onAdd(f);
+            e.target.value = "";
+          }}
+        />
+      </label>
+      <label className="h-12 px-3 rounded-lg border border-dashed border-brass/35 text-cream-dim text-[9px] font-bold tracking-wider uppercase grid place-items-center cursor-pointer">
+        Library
+        <input
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onAdd(f);
+            e.target.value = "";
+          }}
+        />
+      </label>
+    </div>
+  );
 }
 
 function garmentIcon(type: string) {
@@ -235,6 +294,56 @@ export default function IntakeStepped() {
   // Prefill from ticket-kind gate (SO + customer + pieces cart)
   useEffect(() => {
     if (resumeId) return;
+
+    if (soParam) setLinkedSo(soParam);
+    if (kindParam === "on_order" || kindParam === "redo" || kindParam === "walk_in") {
+      setBilling(
+        kindParam === "on_order" ? "on_order" : kindParam === "redo" ? "redo" : "billable",
+      );
+    }
+
+    // Seed garments from SO order cart (TicketKind right rail) — first priority
+    if ((kindParam === "on_order" || soParam) && garments.length === 0) {
+      const cart = readSoCart();
+      if (cart && (!soParam || cart.so === soParam)) {
+        if (cart.so) setLinkedSo(cart.so);
+        if (cart.customerId || cart.customerName) {
+          setCustomer({
+            id: cart.customerId || customerParam || undefined,
+            name: cart.customerName || customerNameParam || "Client",
+            phone: cart.customerPhone || "",
+            email: cart.customerEmail || "",
+          });
+        } else if (customerParam && customerNameParam) {
+          setCustomer({
+            id: customerParam,
+            name: customerNameParam,
+            phone: "",
+            email: "",
+          });
+        }
+        const seeded = soCartToGarments(cart).map((g) => ({
+          ref: g.ref,
+          garmentType: g.garmentType,
+          color: g.color,
+          notes: g.notes,
+          lines: g.lines as Line[],
+          soItemKey: g.soItemKey,
+          soItemName: g.soItemName,
+        }));
+        if (seeded.length) {
+          setGarments(seeded);
+          setActiveRef(seeded[0]?.ref ?? null);
+          setExpectedGarments(seeded.length);
+          setStep(2);
+          toast.message(`${seeded.length} piece${seeded.length === 1 ? "" : "s"} from order cart`);
+          clearSoCart();
+          return;
+        }
+        clearSoCart();
+      }
+    }
+
     if (customerParam && customerNameParam) {
       setCustomer({
         id: customerParam,
@@ -245,45 +354,6 @@ export default function IntakeStepped() {
       setStep(1);
     } else if (customerNameParam && !customerParam) {
       setQ(customerNameParam);
-    }
-    if (soParam) setLinkedSo(soParam);
-    if (kindParam === "on_order" || kindParam === "redo" || kindParam === "walk_in") {
-      setBilling(
-        kindParam === "on_order" ? "on_order" : kindParam === "redo" ? "redo" : "billable",
-      );
-    }
-
-    // Seed garments from SO order cart (TicketKind right rail)
-    if (kindParam === "on_order" && garments.length === 0) {
-      const cart = readSoCart();
-      if (cart && (!soParam || cart.so === soParam)) {
-        const seeded = soCartToGarments(cart).map((g) => ({
-          ref: g.ref,
-          garmentType: g.garmentType,
-          color: g.color,
-          notes: g.notes,
-          lines: g.lines as Line[],
-        }));
-        if (seeded.length) {
-          setGarments(seeded);
-          setActiveRef(seeded[0]?.ref ?? null);
-          setExpectedGarments(seeded.length);
-          if (cart.customerPhone || cart.customerEmail) {
-            setCustomer((c) =>
-              c
-                ? {
-                    ...c,
-                    phone: c.phone || cart.customerPhone || "",
-                    email: c.email || cart.customerEmail || "",
-                  }
-                : c,
-            );
-          }
-          setStep(2);
-          toast.message(`${seeded.length} piece${seeded.length === 1 ? "" : "s"} from order cart`);
-          clearSoCart();
-        }
-      }
     }
   }, [resumeId, customerParam, customerNameParam, soParam, kindParam]);
 
@@ -404,6 +474,37 @@ export default function IntakeStepped() {
               ),
             },
       ),
+    );
+  };
+
+  const addGarmentPhoto = (gRef: string, file: File) => {
+    const url = URL.createObjectURL(file);
+    setGarments((prev) =>
+      prev.map((g) =>
+        g.ref !== gRef
+          ? g
+          : {
+              ...g,
+              photoFiles: [...(g.photoFiles || []), file],
+              photoPreviewUrls: [...(g.photoPreviewUrls || []), url],
+            },
+      ),
+    );
+    toast.success("Photo attached to garment");
+  };
+
+  const removeGarmentPhoto = (gRef: string, idx: number) => {
+    setGarments((prev) =>
+      prev.map((g) => {
+        if (g.ref !== gRef) return g;
+        const files = [...(g.photoFiles || [])];
+        const urls = [...(g.photoPreviewUrls || [])];
+        const doomed = urls[idx];
+        if (doomed) URL.revokeObjectURL(doomed);
+        files.splice(idx, 1);
+        urls.splice(idx, 1);
+        return { ...g, photoFiles: files, photoPreviewUrls: urls };
+      }),
     );
   };
 
@@ -533,12 +634,19 @@ export default function IntakeStepped() {
       const body = buildTicketBody();
       const res = await api.post<{ ticketName: string }>("/api/intake-alterations/tickets", body);
       const ticketName = res.ticketName;
-      // Upload any line photos after ticket exists (Lucia 030 — reuse /photos)
+      // Upload garment + line photos after ticket exists (Lucia 023 / 030)
       if (ticketName) {
         for (const g of garments) {
+          for (const file of g.photoFiles || []) {
+            const fd = new FormData();
+            fd.append("file", file);
+            fd.append("path", `alts/${ticketName}/${g.ref}/intake-${Date.now()}-${file.name}`);
+            fd.append("ticketName", ticketName);
+            fd.append("garmentRef", g.ref);
+            await api.raw("/api/intake-alterations/photos", { method: "POST", body: fd }).catch(() => {});
+          }
           for (const l of g.lines) {
-            const files = l.photoFiles || [];
-            for (const file of files) {
+            for (const file of l.photoFiles || []) {
               const fd = new FormData();
               fd.append("file", file);
               fd.append("path", `alts/${ticketName}/${g.ref}/${l.id}/${file.name}`);
@@ -1001,6 +1109,78 @@ export default function IntakeStepped() {
                 );
               })}
             </div>
+
+            {/* Per-garment condition photos (Lucia 023) */}
+            {garments.length > 0 && (
+              <div className="mt-6 space-y-3">
+                <div className="flex items-end justify-between gap-3">
+                  <div>
+                    <div className="display text-[22px] italic">Photograph at intake</div>
+                    <p className="text-[11.5px] text-cream-dim mt-1">
+                      Take or attach photos before we touch the piece — damage claim proof.
+                    </p>
+                  </div>
+                </div>
+                {garments.map((g) => (
+                  <div
+                    key={g.ref}
+                    className="card-glass p-4 flex flex-col sm:flex-row gap-4 sm:items-center"
+                  >
+                    <div className="min-w-[120px]">
+                      <span className="chip mb-1.5">{g.ref}</span>
+                      <div className="font-semibold text-[14px]">{g.garmentType}</div>
+                      <div className="text-[10px] text-cream-dim mt-1">
+                        {(g.photoPreviewUrls || []).length} photo
+                        {(g.photoPreviewUrls || []).length === 1 ? "" : "s"}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 flex-1 items-center">
+                      {(g.photoPreviewUrls || []).map((src, i) => (
+                        <div key={i} className="relative w-16 h-16 rounded-xl overflow-hidden border border-brass/30">
+                          <img src={src} alt="" className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => removeGarmentPhoto(g.ref, i)}
+                            className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/70 text-[10px] text-cream grid place-items-center"
+                            aria-label="Remove photo"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                      <label className="h-16 min-w-[7.5rem] px-3 rounded-xl border border-brass/40 bg-brass/15 text-brass-light text-[10px] font-bold tracking-wider uppercase grid place-items-center text-center cursor-pointer hover:bg-brass/25">
+                        📷 Take photo
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) addGarmentPhoto(g.ref, f);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                      <label className="h-16 min-w-[7.5rem] px-3 rounded-xl border border-dashed border-brass/35 text-cream-dim text-[10px] font-bold tracking-wider uppercase grid place-items-center text-center cursor-pointer hover:border-brass/55 hover:text-brass-light">
+                        Library
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) addGarmentPhoto(g.ref, f);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {garments.length > 0 && (
               <button type="button" onClick={() => setStep(2)} className="btn-brass mt-6 h-14 px-8 text-[11px]">
                 Price the work →
@@ -1038,6 +1218,11 @@ export default function IntakeStepped() {
                         <div className="display text-lg text-brass-light mt-1">
                           {money(g.lines.reduce((s, l) => s + l.price, 0))}
                         </div>
+                        {(g.photoPreviewUrls || []).length > 0 && (
+                          <div className="text-[9px] text-cream-dim mt-1">
+                            📷 {(g.photoPreviewUrls || []).length}
+                          </div>
+                        )}
                       </button>
                     ))}
                     <button
@@ -1049,16 +1234,34 @@ export default function IntakeStepped() {
                     </button>
                   </div>
                 )}
+                {billing !== "on_order" && active && (
+                  <div className="mb-4">
+                    <GarmentPhotoStrip
+                      garment={active}
+                      onAdd={(file) => addGarmentPhoto(active.ref, file)}
+                      onRemove={(idx) => removeGarmentPhoto(active.ref, idx)}
+                    />
+                  </div>
+                )}
                 {billing === "on_order" && active && (
-                  <div className="mb-4 card-glass px-4 py-3 flex items-center gap-3">
-                    <span className="chip bg-[rgba(155,139,196,0.25)] text-[var(--vi,#9B8BC4)] border-[rgba(155,139,196,0.45)]">
-                      {active.ref}
-                    </span>
-                    <span className="font-semibold">{active.garmentType}</span>
-                    {active.notes ? <span className="text-[11px] text-cream-dim truncate">{active.notes}</span> : null}
-                    <span className="ml-auto display text-xl text-brass-light">
-                      {money(active.lines.reduce((s, l) => s + l.price, 0))}
-                    </span>
+                  <div className="mb-4 card-glass px-4 py-3 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <span className="chip bg-[rgba(155,139,196,0.25)] text-[var(--vi,#9B8BC4)] border-[rgba(155,139,196,0.45)]">
+                        {active.ref}
+                      </span>
+                      <span className="font-semibold">{active.garmentType}</span>
+                      {active.notes ? (
+                        <span className="text-[11px] text-cream-dim truncate flex-1">{active.notes}</span>
+                      ) : null}
+                      <span className="ml-auto display text-xl text-brass-light shrink-0">
+                        {money(active.lines.reduce((s, l) => s + l.price, 0))}
+                      </span>
+                    </div>
+                    <GarmentPhotoStrip
+                      garment={active}
+                      onAdd={(file) => addGarmentPhoto(active.ref, file)}
+                      onRemove={(idx) => removeGarmentPhoto(active.ref, idx)}
+                    />
                   </div>
                 )}
 
@@ -1286,6 +1489,7 @@ export default function IntakeStepped() {
                     {garments.map((g) => {
                       const on = active?.ref === g.ref;
                       const amt = g.lines.reduce((s, l) => s + l.price, 0);
+                      const photoN = g.photoPreviewUrls?.length || 0;
                       return (
                         <button
                           key={g.ref}
@@ -1299,13 +1503,28 @@ export default function IntakeStepped() {
                           )}
                         >
                           <div className="flex items-center gap-2">
+                            {photoN > 0 && g.photoPreviewUrls?.[0] ? (
+                              <img
+                                src={g.photoPreviewUrls[0]}
+                                alt=""
+                                className="w-9 h-9 rounded-lg object-cover border border-brass/30 shrink-0"
+                              />
+                            ) : (
+                              <span className="w-9 h-9 rounded-lg border border-dashed border-brass/30 grid place-items-center text-cream-dim text-sm shrink-0">
+                                📷
+                              </span>
+                            )}
                             <span className="chip text-[8px]">{g.ref}</span>
                             <span className="font-semibold text-[13px] flex-1">{g.garmentType}</span>
                             <span className="display text-lg text-brass-light">{money(amt)}</span>
                           </div>
                           {g.notes ? <div className="text-[10px] text-cream-dim mt-1 truncate">{g.notes}</div> : null}
+                          {g.soItemName ? (
+                            <div className="text-[9px] text-[var(--vi,#9B8BC4)] mt-0.5 truncate">{g.soItemName}</div>
+                          ) : null}
                           <div className="text-[10px] text-cream-dim mt-1">
                             {g.lines.length} line{g.lines.length === 1 ? "" : "s"}
+                            {photoN ? ` · ${photoN} photo${photoN === 1 ? "" : "s"}` : ""}
                             {on ? " · active" : " · tap to adjust"}
                           </div>
                         </button>
