@@ -1,6 +1,6 @@
 import { Outlet, Link, useNavigate, useLocation } from "react-router-dom";
 import { useMe } from "@/lib/session";
-import { clearStoredToken } from "@/lib/authClient";
+import { signOut } from "@/lib/authClient";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@ls/design/utils";
 
@@ -12,8 +12,9 @@ export default function AltsShell() {
   const qc = useQueryClient();
   const isHome = loc.pathname === "/";
 
-  const logout = () => {
-    clearStoredToken();
+  const logout = async () => {
+    // Clears HttpOnly lst_session cookie (SSO) + localStorage dual-write token
+    await signOut();
     qc.clear();
     nav("/login", { replace: true });
   };

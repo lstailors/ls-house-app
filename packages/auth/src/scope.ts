@@ -4,6 +4,7 @@
 
 import type { Context } from "hono";
 import { verifyToken } from "./jwt";
+import { readSessionToken } from "./session-cookie";
 import type { UserRole } from "../../types/src/index";
 export type { UserRole };
 
@@ -69,11 +70,11 @@ export async function enrichFromErp(email: string): Promise<ErpEnrichment> {
 }
 
 // ─── Main auth helper ─────────────────────────────────────────────────────────
-// Validates our JWT then enriches from ERPNext User.
+// Validates our JWT (session cookie preferred, Bearer fallback) then enriches.
 
 export async function getAuthedUser(c: Context): Promise<AuthedUser | null> {
-  const authHeader = c.req.header("Authorization");
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  // Cookie (SSO across *.lstailors.com) first; Authorization: Bearer for API/tool callers
+  const token = readSessionToken(c);
   if (!token) return null;
 
   const payload = await verifyToken(token);

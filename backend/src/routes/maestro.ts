@@ -121,10 +121,11 @@ const APPROVE_HANDLERS: Record<string, (item: any) => Promise<void>> = {
 // ── POST /api/maestro/brief ── Maestro webhook receiver
 // Destination: lsh.agent_briefs (Supabase service role)
 maestroRouter.post("/brief", async (c) => {
-  const secret = process.env.MAESTRO_WEBHOOK_SECRET;
-  if (secret) {
-    const provided = c.req.header("X-Maestro-Secret") ?? c.req.header("x-maestro-secret");
-    if (provided !== secret) return c.json({ error: { message: "Forbidden" } }, 403);
+  // D9 (HER-22): fail closed if secret unset or mismatch.
+  const secret = (process.env.MAESTRO_WEBHOOK_SECRET ?? "").trim();
+  const provided = c.req.header("X-Maestro-Secret") ?? c.req.header("x-maestro-secret");
+  if (!secret || provided !== secret) {
+    return c.json({ error: { message: "Forbidden" } }, 403);
   }
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: { message: "Invalid JSON" } }, 400);

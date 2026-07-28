@@ -150,6 +150,8 @@ invoicesRouter.post(
 invoicesRouter.post("/:id/mark-paid", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  // D10 (HER-22): match sibling invoice routes — financials role required.
+  if (!canSeeFinancials(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
   const id = decodeURIComponent(c.req.param("id"));
   const body = await c.req.json().catch(() => ({}));
 

@@ -85,6 +85,9 @@ function toClientResult(out: ErpPrintResult): { ok: boolean; error?: string } {
 
 // GET /api/print/config — read-only printer config for the Settings screen.
 printRouter.get("/config", async (c) => {
+  // D13 (HER-22): auth required — do not leak LAN printer IP/port publicly.
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   try {
     const row = await erpGet<Record<string, unknown>>("LSH Print Settings", "LSH Print Settings");
     if (!row) throw new Error("LSH Print Settings not found in ERPNext");

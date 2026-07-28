@@ -177,9 +177,14 @@ function FinancialsGate({ onUnlock }: { onUnlock: () => void }) {
     setLoading(true);
     setError("");
     try {
+      const token = localStorage.getItem("lst_token");
       const res = await fetch("/api/financials/unlock", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("lst_token")}` },
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ pin }),
       });
       const json = await res.json();

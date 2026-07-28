@@ -165,16 +165,44 @@ alterationsRouter.get("/kpis", async (c) => {
 
   const notDoneFilter: unknown[] = [["workflow_state", "not in", ["Picked Up", "Cancelled"]]];
 
-  const [active, dueToday, overdue, rush, unassigned, stellaWip, hugoWip, readyForPickup] = await Promise.all([
+  // Tailor WIP: look up Active Tailor/Master Tailor employees (same SoT as /transfers/tailors + /garment/workers)
+  const tailors = await erpList<{ name: string; employee_name: string }>("Employee", {
+    filters: [
+      ["status", "=", "Active"],
+      ["designation", "in", ["Tailor", "Master Tailor"]],
+    ],
+    fields: ["name", "employee_name"],
+    limit: 50,
+  }).catch(() => [] as Array<{ name: string; employee_name: string }>);
+
+  const [active, dueToday, overdue, rush, unassigned, readyForPickup, ...tailorWipLists] = await Promise.all([
     erpList("Alteration Ticket", { filters: [...locFilter, ["workflow_state", "in", ["Received", "In Progress"]]], fields: ["name"], limit: 500 }).catch(() => []),
     erpList("Alteration Ticket", { filters: [...locFilter, ...notDoneFilter, ["due_date", "=", today]], fields: ["name"], limit: 500 }).catch(() => []),
     erpList("Alteration Ticket", { filters: [...locFilter, ["workflow_state", "not in", ["Picked Up", "Ready", "Cancelled"]], ["due_date", "<", today]], fields: ["name"], limit: 500 }).catch(() => []),
     erpList("Alteration Ticket", { filters: [...locFilter, ...notDoneFilter, ["is_rush", "=", 1]], fields: ["name"], limit: 500 }).catch(() => []),
-    erpList("Alteration Ticket", { filters: [...locFilter, ...notDoneFilter, ["assigned_tailor", "=", ""]], fields: ["name"], limit: 500 }).catch(() => []),
-    erpList("Alteration Ticket", { filters: [...locFilter, ["assigned_tailor", "=", "HR-EMP-00020"], ["workflow_state", "=", "In Progress"]], fields: ["name"], limit: 500 }).catch(() => []),
-    erpList("Alteration Ticket", { filters: [...locFilter, ["assigned_tailor", "=", "HR-EMP-00021"], ["workflow_state", "=", "In Progress"]], fields: ["name"], limit: 500 }).catch(() => []),
+    erpList("Alteration Ticket", { filters: [...locFilter, ...notDoneFilter, ["assigned_tailor", "in", ["", null]]], fields: ["name"], limit: 500 }).catch(() => []),
     erpList("Alteration Ticket", { filters: [...locFilter, ["workflow_state", "=", "Ready"]], fields: ["name"], limit: 500 }).catch(() => []),
+    ...tailors.map((t) =>
+      erpList("Alteration Ticket", {
+        filters: [...locFilter, ["assigned_tailor", "=", t.name], ["workflow_state", "=", "In Progress"]],
+        fields: ["name"],
+        limit: 500,
+      }).catch(() => []),
+    ),
   ]);
+
+  // Keep legacy stellaWip/hugoWip keys for any UI still reading them; prefer tailorWip[]
+  const byName = (want: string) => {
+    const idx = tailors.findIndex((t) => (t.employee_name || "").toLowerCase() === want);
+    if (idx < 0) return 0;
+    return (tailorWipLists[idx] as unknown[] | undefined)?.length ?? 0;
+  };
+
+  const tailorWip = tailors.map((t, i) => ({
+    id: t.name,
+    name: t.employee_name || t.name,
+    wip: (tailorWipLists[i] as unknown[] | undefined)?.length ?? 0,
+  }));
 
   return c.json({ data: {
     active: active.length,
@@ -182,9 +210,10 @@ alterationsRouter.get("/kpis", async (c) => {
     overdue: overdue.length,
     rush: rush.length,
     unassigned: unassigned.length,
-    stellaWip: stellaWip.length,
-    hugoWip: hugoWip.length,
+    stellaWip: byName("stella"),
+    hugoWip: byName("hugo"),
     readyForPickup: readyForPickup.length,
+    tailorWip,
   }});
 });
 
@@ -572,8 +601,9 @@ alterationsRouter.patch("/:ticketId/garments/:garmentId/status", async (c) => {
 
 // ERPNext Server Script calls this when all garments are Ready
 alterationsRouter.post("/erp-webhook/ready", async (c) => {
-  const secret = process.env.ERP_WEBHOOK_SECRET;
-  if (secret && c.req.header("x-webhook-secret") !== secret) {
+  // D9 (HER-22): fail closed if secret unset or mismatch.
+  const secret = (process.env.ERP_WEBHOOK_SECRET ?? "").trim();
+  if (!secret || c.req.header("x-webhook-secret") !== secret) {
     return c.json({ error: { message: "Forbidden" } }, 403);
   }
 

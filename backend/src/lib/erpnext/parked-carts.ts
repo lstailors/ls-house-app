@@ -1,4 +1,4 @@
-import { erpList, erpGet, erpCreate, erpUpdate } from "../erp";
+import { erpList, erpGet, erpCreate, erpUpdate, erpRunMethod } from "../erp";
 import { upsertCustomerWithAddress, type CustomerInput } from "./customer";
 import { DT } from "./doctypes";
 
@@ -108,48 +108,58 @@ export async function commitParkedCart(id: string): Promise<{ ticket: string; cu
     customerName = res.name;
   }
 
-  const ERP_BASE = process.env.ERPNEXT_BASE_URL ?? "https://erp.lstailors.com";
-  const key = process.env.ERPNEXT_API_KEY ?? "";
-  const sec = process.env.ERPNEXT_API_SECRET ?? "";
+  // Same door as intake: ls_alterations.api.create_ticket (HER-14 / D3).
+  // Do NOT raw-POST Alteration Ticket — that bypasses naming series, garment_id
+  // assignment, and server-side ticket shape.
   const today = new Date().toISOString().slice(0, 10);
+  const defaultDue = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const ticketDoc = {
+  const payload = {
     customer: customerName,
-    customer_name: cart.customer_snapshot.fullName ?? customerName,
-    origin_location: cart.location,
+    origin_location: cart.location || "NYC",
     ticket_date: today,
-    due_date: cart.cart.dueDate ?? null,
+    due_date: cart.cart.dueDate ?? defaultDue,
     is_rush: cart.cart.isRush ? 1 : 0,
-    workflow_state: "Received",
-    delivery_method: cart.cart.deliveryMethod ?? "Pickup",
-    taxes_and_charges: "",
+    taxes_and_charges: "", // alterations are tax-exempt (services)
     garments: cart.cart.garments.map((g) => ({
-      garment_id: g.garmentId,
       garment_type: g.garmentType,
+      garment_description: g.garmentType,
       color: g.color ?? "",
-      garment_total: g.total,
-      garment_status: "Received",
     })),
     lines: cart.cart.lines.map((l) => ({
       garment_ref: l.garmentRef,
-      preset: l.preset,
+      preset: l.preset || null,
       description: l.description,
       price: l.price,
-      line_status: "Pending",
     })),
   };
 
-  const res = await fetch(`${ERP_BASE}/api/resource/Alteration Ticket`, {
-    method: "POST",
-    headers: {
-      Authorization: `token ${key}:${sec}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(ticketDoc),
-  });
-  const body = await res.json() as any;
-  if (!res.ok) throw new Error(body?.exception || body?.message || `ERPNext ${res.status}`);
-  const ticketName = body.data.name as string;
+  const result = (await erpRunMethod("ls_alterations.api.create_ticket", {
+    payload: JSON.stringify(payload),
+  })) as unknown;
+
+  const ticketName: string | undefined =
+    typeof result === "string"
+      ? result
+      : (result as any)?.name ??
+        (result as any)?.ticket_name ??
+        (result as any)?.docname ??
+        (result as any)?.ticket;
+
+  if (!ticketName) {
+    throw new Error(
+      `create_ticket returned unexpected shape: ${JSON.stringify(result)}`,
+    );
+  }
+
+  // Fields create_ticket does not set — patch after (mirrors intake belt-and-suspenders).
+  const patch: Record<string, unknown> = { taxes_and_charges: "" };
+  if (cart.cart.deliveryMethod) patch.delivery_method = cart.cart.deliveryMethod;
+  try {
+    await erpUpdate("Alteration Ticket", ticketName, patch);
+  } catch {
+    /* non-fatal — ticket already exists */
+  }
 
   await erpUpdate(DT.PARKED_CART, id, {
     status: "Committed",

@@ -116,6 +116,15 @@
    "reqd": 1
   },
   {
+   "fieldname": "assigned_tailor",
+   "fieldtype": "Link",
+   "label": "Assigned Tailor",
+   "options": "Employee",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Tailor responsible for this ticket. Link to HR Employee (designation Tailor / Master Tailor)."
+  },
+  {
    "fieldname": "promised_date",
    "fieldtype": "Date",
    "label": "Promised Date"

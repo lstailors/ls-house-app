@@ -94,53 +94,81 @@ function GarmentPhotoStrip({
   garment,
   onAdd,
   onRemove,
+  large = false,
 }: {
   garment: Garment;
   onAdd: (file: File) => void;
   onRemove: (idx: number) => void;
+  large?: boolean;
 }) {
+  const addFiles = (list: FileList | null) => {
+    if (!list?.length) return;
+    Array.from(list).forEach((f) => {
+      if (f.type.startsWith("image/") || !f.type) onAdd(f);
+    });
+  };
+  const thumb = large ? "w-[4.5rem] h-[4.5rem]" : "w-12 h-12";
+  const btn = large ? "h-[4.5rem] min-w-[8.5rem] px-4 text-[10px]" : "h-12 px-3 text-[9px]";
   return (
-    <div className="flex flex-wrap gap-2 items-center">
-      {(garment.photoPreviewUrls || []).map((src, i) => (
-        <div key={i} className="relative w-12 h-12 rounded-lg overflow-hidden border border-brass/30">
-          <img src={src} alt="" className="w-full h-full object-cover" />
-          <button
-            type="button"
-            onClick={() => onRemove(i)}
-            className="absolute top-0 right-0 w-4 h-4 rounded-bl bg-black/70 text-[9px] text-cream grid place-items-center"
-            aria-label="Remove photo"
-          >
-            ✕
-          </button>
-        </div>
-      ))}
-      <label className="h-12 px-3 rounded-lg border border-brass/40 bg-brass/15 text-brass-light text-[9px] font-bold tracking-wider uppercase grid place-items-center cursor-pointer">
-        📷 Take photo
-        <input
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) onAdd(f);
-            e.target.value = "";
-          }}
-        />
-      </label>
-      <label className="h-12 px-3 rounded-lg border border-dashed border-brass/35 text-cream-dim text-[9px] font-bold tracking-wider uppercase grid place-items-center cursor-pointer">
-        Library
-        <input
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) onAdd(f);
-            e.target.value = "";
-          }}
-        />
-      </label>
+    <div className={cn("rounded-2xl border border-brass/25 bg-black/25", large ? "p-3.5" : "p-2.5")}>
+      <div className="flex items-center gap-2 mb-2.5">
+        <span className="caps text-brass-light text-[8px]">Garment photos</span>
+        <span className="text-[10px] text-cream-dim">
+          {(garment.photoPreviewUrls || []).length} attached · camera or library
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2 items-center">
+        {(garment.photoPreviewUrls || []).map((src, i) => (
+          <div key={i} className={cn("relative rounded-xl overflow-hidden border border-brass/30", thumb)}>
+            <img src={src} alt="" className="w-full h-full object-cover" />
+            <button
+              type="button"
+              onClick={() => onRemove(i)}
+              className="absolute top-0 right-0 w-5 h-5 rounded-bl-lg bg-black/75 text-[10px] text-cream grid place-items-center"
+              aria-label="Remove photo"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+        <label
+          className={cn(
+            "rounded-xl border border-brass/45 bg-brass/20 text-brass-light font-bold tracking-wider uppercase grid place-items-center text-center cursor-pointer hover:bg-brass/30 active:scale-[0.98]",
+            btn,
+          )}
+        >
+          📷 Take photo
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              addFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <label
+          className={cn(
+            "rounded-xl border border-dashed border-brass/40 text-cream-muted font-bold tracking-wider uppercase grid place-items-center text-center cursor-pointer hover:border-brass/60 hover:text-brass-light active:scale-[0.98]",
+            btn,
+          )}
+        >
+          Upload
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              addFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </div>
     </div>
   );
 }
@@ -636,25 +664,52 @@ export default function IntakeStepped() {
       const ticketName = res.ticketName;
       // Upload garment + line photos after ticket exists (Lucia 023 / 030)
       if (ticketName) {
+        const uploads: Promise<unknown>[] = [];
         for (const g of garments) {
           for (const file of g.photoFiles || []) {
             const fd = new FormData();
             fd.append("file", file);
-            fd.append("path", `alts/${ticketName}/${g.ref}/intake-${Date.now()}-${file.name}`);
+            fd.append("path", `alts/${ticketName}/${g.ref}/intake-${Date.now()}-${file.name || "photo.jpg"}`);
             fd.append("ticketName", ticketName);
             fd.append("garmentRef", g.ref);
-            await api.raw("/api/intake-alterations/photos", { method: "POST", body: fd }).catch(() => {});
+            uploads.push(
+              api
+                .raw("/api/intake-alterations/photos", { method: "POST", body: fd })
+                .then(async (r) => {
+                  if (!r.ok) {
+                    const t = await r.text().catch(() => "");
+                    throw new Error(t.slice(0, 120) || `photo upload ${r.status}`);
+                  }
+                }),
+            );
           }
           for (const l of g.lines) {
             for (const file of l.photoFiles || []) {
               const fd = new FormData();
               fd.append("file", file);
-              fd.append("path", `alts/${ticketName}/${g.ref}/${l.id}/${file.name}`);
+              fd.append("path", `alts/${ticketName}/${g.ref}/${l.id}/${file.name || "photo.jpg"}`);
               fd.append("ticketName", ticketName);
               fd.append("garmentRef", g.ref);
               fd.append("lineRef", l.id);
-              await api.raw("/api/intake-alterations/photos", { method: "POST", body: fd }).catch(() => {});
+              uploads.push(
+                api
+                  .raw("/api/intake-alterations/photos", { method: "POST", body: fd })
+                  .then(async (r) => {
+                    if (!r.ok) {
+                      const t = await r.text().catch(() => "");
+                      throw new Error(t.slice(0, 120) || `photo upload ${r.status}`);
+                    }
+                  }),
+              );
             }
+          }
+        }
+        if (uploads.length) {
+          const results = await Promise.allSettled(uploads);
+          const failed = results.filter((r) => r.status === "rejected").length;
+          if (failed) {
+            console.error("[intake] photo upload failures", failed, "/", uploads.length);
+            toast.error(`${failed} photo${failed === 1 ? "" : "s"} failed to upload — ticket still created`);
           }
         }
       }
@@ -1154,23 +1209,25 @@ export default function IntakeStepped() {
                           type="file"
                           accept="image/*"
                           capture="environment"
+                          multiple
                           className="hidden"
                           onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) addGarmentPhoto(g.ref, f);
+                            const files = e.target.files;
+                            if (files) Array.from(files).forEach((f) => addGarmentPhoto(g.ref, f));
                             e.target.value = "";
                           }}
                         />
                       </label>
                       <label className="h-16 min-w-[7.5rem] px-3 rounded-xl border border-dashed border-brass/35 text-cream-dim text-[10px] font-bold tracking-wider uppercase grid place-items-center text-center cursor-pointer hover:border-brass/55 hover:text-brass-light">
-                        Library
+                        Upload
                         <input
                           type="file"
                           accept="image/*"
+                          multiple
                           className="hidden"
                           onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) addGarmentPhoto(g.ref, f);
+                            const files = e.target.files;
+                            if (files) Array.from(files).forEach((f) => addGarmentPhoto(g.ref, f));
                             e.target.value = "";
                           }}
                         />
@@ -1237,6 +1294,7 @@ export default function IntakeStepped() {
                 {billing !== "on_order" && active && (
                   <div className="mb-4">
                     <GarmentPhotoStrip
+                      large
                       garment={active}
                       onAdd={(file) => addGarmentPhoto(active.ref, file)}
                       onRemove={(idx) => removeGarmentPhoto(active.ref, idx)}
@@ -1258,6 +1316,7 @@ export default function IntakeStepped() {
                       </span>
                     </div>
                     <GarmentPhotoStrip
+                      large
                       garment={active}
                       onAdd={(file) => addGarmentPhoto(active.ref, file)}
                       onRemove={(idx) => removeGarmentPhoto(active.ref, idx)}
@@ -1579,6 +1638,22 @@ export default function IntakeStepped() {
                       {money(g.lines.reduce((s, l) => s + l.price, 0))}
                     </span>
                   </div>
+                  {(g.photoPreviewUrls || []).length > 0 && (
+                    <div className="flex flex-wrap gap-2 px-5 py-3 border-b border-brass/10 bg-black/15">
+                      {(g.photoPreviewUrls || []).map((src, i) => (
+                        <img
+                          key={i}
+                          src={src}
+                          alt=""
+                          className="w-14 h-14 rounded-lg object-cover border border-brass/30"
+                        />
+                      ))}
+                      <span className="self-center text-[10px] text-cream-dim">
+                        {(g.photoPreviewUrls || []).length} photo
+                        {(g.photoPreviewUrls || []).length === 1 ? "" : "s"} · uploads on submit
+                      </span>
+                    </div>
+                  )}
                   {g.lines.map((l) => (
                     <div key={l.id} className="flex flex-col gap-1 px-5 py-3.5 border-b border-brass/10 text-[13.5px]">
                       <div className="flex items-center gap-3">

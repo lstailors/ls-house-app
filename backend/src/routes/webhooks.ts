@@ -35,11 +35,10 @@ function parseUnifiPayload(body: any) {
 // (type param is optional — we auto-detect if not provided)
 
 webhooksRouter.post("/unifi", async (c) => {
-  const secret = process.env.UNIFI_WEBHOOK_SECRET;
-  if (secret) {
-    const token = c.req.header("X-Webhook-Token") ?? c.req.query("token");
-    if (token !== secret) return c.json({ ok: false }, 403);
-  }
+  // D9 (HER-22): fail closed if secret unset or mismatch.
+  const secret = (process.env.UNIFI_WEBHOOK_SECRET ?? "").trim();
+  const token = c.req.header("X-Webhook-Token") ?? c.req.query("token");
+  if (!secret || token !== secret) return c.json({ ok: false }, 403);
 
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ ok: false, error: "Invalid JSON" }, 400);

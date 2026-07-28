@@ -47,6 +47,7 @@ export default function TicketPhotos() {
       const token = getStoredToken();
       const res = await fetch(`${API}/api/intake-alterations/photos`, {
         method: "POST",
+        credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: fd,
       });

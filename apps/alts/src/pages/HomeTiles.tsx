@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useMe } from "@/lib/session";
-import { clearStoredToken } from "@/lib/authClient";
+import { signOut } from "@/lib/authClient";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { cn } from "@ls/design/utils";
@@ -143,8 +143,9 @@ export default function HomeTiles() {
     return `${Math.floor(sec / 60)}m ago`;
   }, [s.syncedAt, stats.dataUpdatedAt]);
 
-  const logout = () => {
-    clearStoredToken();
+  const logout = async () => {
+    // Clears HttpOnly lst_session cookie (SSO) + localStorage dual-write token
+    await signOut();
     qc.clear();
     nav("/login", { replace: true });
   };

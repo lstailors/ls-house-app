@@ -1,21 +1,81 @@
 import { Hono } from "hono"
 import { getAuthedUser } from "../lib/scope"
-import { erpCreate, erpUpdate, erpSubmit, erpList, erpGet } from "../lib/erp"
+import { erpCreate, erpUpdate, erpSubmit, erpList, erpGet, erpRunMethod } from "../lib/erp"
 
 export const transfersRouter = new Hono()
 
-const TAILORS = [
-  { id: "HR-EMP-00020", name: "Stella" },
-  { id: "HR-EMP-00021", name: "Hugo" },
-  { id: "HR-EMP-00004", name: "Altammhaddou Abderrahmane" },
-  { id: "HR-EMP-00011", name: "Gklantiola Papa" },
-]
+// Frappe Workflow: direct writes to workflow_state are reverted by the engine.
+// Named actions must match live "Alteration Ticket Workflow" transitions.
+const WF_FORWARD = ["Received", "In Progress", "Ready", "Picked Up"] as const
+const WF_DIRECT: Record<string, Record<string, string>> = {
+  Received: { "In Progress": "Start Work", Cancelled: "Cancel" },
+  "In Progress": { Ready: "Mark Ready", Cancelled: "Cancel" },
+  Ready: { "Picked Up": "Mark Picked Up", Cancelled: "Cancel" },
+  Cancelled: { Received: "Reopen" },
+}
+
+function workflowActionPath(from: string, to: string): string[] | null {
+  if (from === to) return []
+  const direct = WF_DIRECT[from]?.[to]
+  if (direct) return [direct]
+  const fi = WF_FORWARD.indexOf(from as (typeof WF_FORWARD)[number])
+  const ti = WF_FORWARD.indexOf(to as (typeof WF_FORWARD)[number])
+  if (fi >= 0 && ti > fi) {
+    const path: string[] = []
+    for (let i = fi; i < ti; i++) {
+      const cur = WF_FORWARD[i]
+      const next = WF_FORWARD[i + 1]
+      if (!cur || !next) return null
+      const a = WF_DIRECT[cur]?.[next]
+      if (!a) return null
+      path.push(a)
+    }
+    return path
+  }
+  return null
+}
+
+async function walkTicketWorkflow(ticketId: string, targetState: string): Promise<void> {
+  const ticket = await erpGet<{ workflow_state: string }>("Alteration Ticket", ticketId)
+  if (!ticket) throw new Error(`Alteration Ticket ${ticketId} not found`)
+  const path = workflowActionPath(ticket.workflow_state, targetState)
+  if (path === null) {
+    throw new Error(
+      `No workflow path from "${ticket.workflow_state}" to "${targetState}" on ${ticketId}`,
+    )
+  }
+  for (const action of path) {
+    await erpRunMethod("frappe.model.workflow.apply_workflow", {
+      doc: JSON.stringify({ doctype: "Alteration Ticket", name: ticketId }),
+      action,
+    })
+  }
+}
+
+/** Canonical tailor roster = ERPNext Employee (Active + Tailor / Master Tailor). HER-16. */
+async function listActiveTailors(): Promise<Array<{ id: string; name: string; designation?: string }>> {
+  const rows = await erpList<{ name: string; employee_name: string; designation?: string }>("Employee", {
+    filters: [
+      ["status", "=", "Active"],
+      ["designation", "in", ["Tailor", "Master Tailor"]],
+    ],
+    fields: ["name", "employee_name", "designation"],
+    limit: 200,
+    order_by: "employee_name asc",
+  })
+  return rows.map((r) => ({
+    id: r.name,
+    name: r.employee_name || r.name,
+    designation: r.designation,
+  }))
+}
 
 // GET /api/transfers/tailors
 transfersRouter.get("/tailors", async (c) => {
   const user = await getAuthedUser(c)
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401)
-  return c.json({ data: TAILORS })
+  const tailors = await listActiveTailors()
+  return c.json({ data: tailors })
 })
 
 // GET /api/transfers
@@ -75,18 +135,19 @@ transfersRouter.post("/", async (c) => {
     const transferName = (transfer as any)?.name
     await erpSubmit("Tailor Transfer", transferName)
 
-    // Update each alteration ticket
+    // Update each alteration ticket via workflow engine (HER-14 / D4).
+    // Never write workflow_state directly — engine reverts raw field writes.
     for (const item of body.items) {
       if (body.direction === "Out") {
         await erpUpdate("Alteration Ticket", item.ticketId, {
           assigned_tailor: body.tailor,
-          workflow_state: "In Progress",
         })
+        await walkTicketWorkflow(item.ticketId, "In Progress")
       } else {
         await erpUpdate("Alteration Ticket", item.ticketId, {
           assigned_tailor: "",
-          workflow_state: "Ready",
         })
+        await walkTicketWorkflow(item.ticketId, "Ready")
       }
     }
 

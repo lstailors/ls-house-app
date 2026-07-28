@@ -8,3 +8,4 @@ export * from "./jwt";
 export * from "./scope";
 export * from "./authClient";
 export * from "./session";
+export * from "./session-cookie";

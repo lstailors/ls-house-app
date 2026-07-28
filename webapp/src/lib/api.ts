@@ -20,6 +20,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
   const config: RequestInit = {
     ...options,
+    credentials: "include", // send HttpOnly lst_session cookie (SSO)
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -61,6 +62,7 @@ async function rawRequest(endpoint: string, options: RequestInit = {}): Promise<
 
   const config: RequestInit = {
     ...options,
+    credentials: "include",
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,

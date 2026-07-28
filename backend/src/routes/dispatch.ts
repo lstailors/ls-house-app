@@ -10,7 +10,8 @@ import { DispatchSendRequest, DispatchComposeRequest, DispatchPhoneRequest } fro
 // and server-side merge-field resolution.
 
 const N8N_WEBHOOK_BASE = process.env.N8N_WEBHOOK_BASE || "https://lstailors.app.n8n.cloud/webhook";
-const DISPATCH_KEY = process.env.DISPATCH_WEBHOOK_KEY || "lsd_dsp_9k2fQ7xWm4vT";
+// D8 (HER-22): no hardcoded fallback secret — fail closed if env unset.
+const DISPATCH_KEY = (process.env.DISPATCH_WEBHOOK_KEY ?? "").trim();
 const STORE_HOURS = "Tues-Fri 8:30am-5:30pm, Sat 8:30am-4pm";
 const BOOKING_LINK = "https://book.lstailors.com";
 
@@ -74,6 +75,9 @@ function resolveMergeFields(body: string, ctx: { firstName?: string | null; clie
 }
 
 async function callDispatchWebhook(path: "dispatch-send" | "dispatch-compose", payload: Record<string, unknown>): Promise<any> {
+  if (!DISPATCH_KEY) {
+    throw new Error("DISPATCH_WEBHOOK_KEY is not configured");
+  }
   const res = await fetch(`${N8N_WEBHOOK_BASE}/${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Dispatch-Key": DISPATCH_KEY },

@@ -41,7 +41,7 @@ function decodePayload(s: string): unknown {
 
 const HEADER = encodePayload({ alg: ALG, typ: "JWT" });
 
-export async function signToken(payload: { sub: string; name: string; role?: string; locationCode?: string }, expiresInSec = 60 * 60 * 24 * 30): Promise<string> {
+export async function signToken(payload: { sub: string; name: string; role?: string; locationCode?: string }, expiresInSec = 60 * 60 * 8 /* 8h; was 30d localStorage era */): Promise<string> {
   const secret = getSecret();
   const now = Math.floor(Date.now() / 1000);
   const body = encodePayload({ ...payload, iat: now, exp: now + expiresInSec });
