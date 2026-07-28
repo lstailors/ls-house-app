@@ -3,7 +3,11 @@
  * Path: PDF via system print → Share → LabelLife (no Web Bluetooth).
  * QR → alts /g/{ticket}/{garmentId}
  *
- * Legibility: large ticket short-code + surname, ≥13px body, high-contrast black.
+ * Rack hierarchy (classic purple slip):
+ *   A14937
+ *   Friday
+ *   04:00 PM
+ *   Customer Name
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -12,11 +16,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { ArrowLeft, Printer, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import {
-  garmentJobUrl,
-  parseDueRack,
-  shortTicketNo,
-} from "@alts/lib/printUrls";
+import { fmtDueRack, garmentJobUrl, shortTicketNo } from "@alts/lib/printUrls";
 
 interface TicketDoc {
   name: string;
@@ -111,6 +111,7 @@ export default function GarmentTagPrint() {
   }
 
   const short = shortTicketNo(ticket.name);
+  const due = fmtDueRack(ticket.due_date);
 
   return (
     <>
@@ -153,8 +154,6 @@ export default function GarmentTagPrint() {
       <div className="no-print px-4 py-3 text-[12px] text-cream-muted max-w-3xl mx-auto leading-relaxed">
         iPad: <b className="text-cream">Print → Save to Files / PDF</b>, then Share →{" "}
         <b className="text-cream">LabelLife</b> on the <b className="text-brass">3×2 D520BT</b>.
-        Not the 4×6 delivery printer. QR opens{" "}
-        <code className="text-brass">/g/ticket/garment</code> in alts.
         {" · "}
         <Link className="text-brass underline" to={`/orders/alterations/${ticket.name}/thermal`}>
           Thermal store/customer
@@ -170,7 +169,6 @@ export default function GarmentTagPrint() {
           const gm = [g.garment_type, g.garment_id].filter(Boolean).join(" · ");
           const meta = [g.color, g.brand || g.garment_description].filter(Boolean).join(" · ");
           const fullName = (ticket.customer_name || "—").trim();
-          const due = parseDueRack(ticket.due_date);
           return (
             <div
               key={g.name || g.garment_id || i}
@@ -189,37 +187,35 @@ export default function GarmentTagPrint() {
                 textAlign: "center",
               }}
             >
-              {/* Classic purple slip: # · Friday · 6:00 PM */}
-              <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1 }}>
+              {/* A14937 */}
+              <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1 }}>
                 {short}
               </div>
-              {due ? (
-                <>
-                  <div
-                    style={{
-                      marginTop: 4,
-                      fontSize: 26,
-                      fontWeight: 800,
-                      lineHeight: 1.05,
-                      letterSpacing: "0.01em",
-                    }}
-                  >
-                    {due.weekday}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 2,
-                      fontSize: 24,
-                      fontWeight: 800,
-                      lineHeight: 1.05,
-                    }}
-                  >
-                    {due.time}
-                  </div>
-                  <div style={{ marginTop: 2, fontSize: 12, fontWeight: 700, letterSpacing: "0.06em" }}>
-                    {due.dateShort}
-                  </div>
-                </>
+              {/* Friday */}
+              {due.day ? (
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontSize: 28,
+                    fontWeight: 800,
+                    lineHeight: 1.05,
+                  }}
+                >
+                  {due.day}
+                </div>
+              ) : null}
+              {/* 04:00 PM */}
+              {due.time ? (
+                <div
+                  style={{
+                    marginTop: 2,
+                    fontSize: 26,
+                    fontWeight: 800,
+                    lineHeight: 1.05,
+                  }}
+                >
+                  {due.time}
+                </div>
               ) : null}
 
               <div style={{ height: 2, background: "#000", margin: "6px 0" }} />
@@ -227,7 +223,7 @@ export default function GarmentTagPrint() {
               <div
                 style={{
                   fontSize: fullName.length > 18 ? 14 : 16,
-                  fontWeight: 800,
+                  fontWeight: 700,
                   lineHeight: 1.1,
                 }}
               >
