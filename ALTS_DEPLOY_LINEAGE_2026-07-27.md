@@ -1,5 +1,9 @@
 # ls-alts deploy lineage — 2026-07-27
 
+
+> **Update 2026-07-28 (HER-21):** `origin/main` rewritten to shipped tip `eccb400` (`arch/shipped-alts-fork`). Full map + execution log: [`ALTS_LINEAGE_RECONCILIATION_HER-21.md`](./ALTS_LINEAGE_RECONCILIATION_HER-21.md).
+
+
 Ground truth from Vercel API + git. Do not assume `origin/main` is what alts.lstailors.com runs.
 
 ## ls-alts project (prj_iUBcpWVvhxTQOmf5ZBb2jeFHAmyz)
