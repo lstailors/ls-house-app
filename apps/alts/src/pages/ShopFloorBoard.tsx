@@ -239,7 +239,7 @@ export default function ShopFloorBoard() {
             />
           </div>
         )}
-        <div className="flex gap-3 min-w-[900px] h-full min-h-[420px]">
+        <div className="shop-floor-board-cols flex gap-3 min-w-[900px] h-full min-h-[420px]">
           {COLS.map((col) => (
             <div key={col} className="flex-1 min-w-[210px] flex flex-col card-glass overflow-hidden">
               <div className="flex items-center gap-2 px-3 py-3 border-b border-brass/15">

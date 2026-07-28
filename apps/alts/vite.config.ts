@@ -6,20 +6,28 @@ import path from "path";
 const webapp = path.resolve(__dirname, "../../webapp/src");
 const pkgs = path.resolve(__dirname, "../../packages");
 
-/** 12 POS shell routes — precache navigations so floor survives wifi drops */
+/**  POS shell + phone-tier routes — precache so floor / iPhone survive wifi drops */
 const POS_ROUTES = [
   "/",
   "/login",
-  "/intake/kind",
-  "/intake/alterations",
+  "/lookup",
+  "/scanner",
   "/shop-floor",
   "/pickup",
+  "/parked",
+  "/orders/alterations",
+  "/intake/kind",
+  "/intake/alterations",
   "/dispatch",
   "/quote",
-  "/orders/alterations",
-  "/parked",
   "/transfers",
-  "/lookup",
+  "/e-ticket",
+];
+
+const NAV_EXTRA = [
+  /^\/e-ticket\/[^/]+\/?$/,
+  /^\/t\/[^/]+\/?$/,
+  /^\/orders\/alterations\/[^/]+\/photos\/?$/,
 ];
 
 export default defineConfig({
@@ -50,7 +58,8 @@ export default defineConfig({
         start_url: "/",
         scope: "/",
         display: "standalone",
-        orientation: "landscape",
+        // any — phones stay portrait-capable; tablet lock is CSS media only
+        orientation: "any",
         background_color: "#0D1A10",
         theme_color: "#1F3A2E",
         icons: [
@@ -61,9 +70,12 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: "/index.html",
-        navigateFallbackAllowlist: POS_ROUTES.map(
-          (r) => new RegExp(`^${r === "/" ? "/" : r.replace(/\//g, "\\/")}(\\/?|\\?.*)?$`),
-        ),
+        navigateFallbackAllowlist: [
+          ...POS_ROUTES.map(
+            (r) => new RegExp(`^${r === "/" ? "/" : r.replace(/\//g, "\\/")}(\\/?|\\?.*)?$`),
+          ),
+          ...NAV_EXTRA,
+        ],
         // Shell + hashed assets always; POS navigations via navigateFallback
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,webp}"],
         runtimeCaching: [

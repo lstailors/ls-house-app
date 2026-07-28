@@ -2,12 +2,13 @@ import { Toaster as Sonner } from "@ls/design/ui/sonner";
 import { TooltipProvider } from "@ls/design/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { RoleGuard } from "@/components/shell/RoleGuard";
 import Login from "@/pages/Login";
 import HomeTiles from "@alts/pages/HomeTiles";
 import AltsShell from "@alts/components/AltsShell";
 import LandscapeGate from "@alts/components/LandscapeGate";
+import TabletOnly from "@alts/components/TabletOnly";
 import IntakeStepped from "@alts/pages/IntakeStepped";
 import TicketKind from "@alts/pages/TicketKind";
 import ShopFloorBoard from "@alts/pages/ShopFloorBoard";
@@ -45,10 +46,15 @@ const queryClient = new QueryClient({
 
 function Spin() {
   return (
-    <div className="flex items-center justify-center min-h-screen bg-forest-deep">
+    <div className="flex items-center justify-center min-h-screen min-h-[100dvh] bg-forest-deep">
       <div className="h-6 w-6 rounded-full border-2 border-brass/40 border-t-brass animate-spin" />
     </div>
   );
+}
+
+/** Tablet-tier: wrap so phone widths get “open on shop tablet” card (CSS). */
+function tablet(node: ReactNode) {
+  return <TabletOnly>{node}</TabletOnly>;
 }
 
 export default function App() {
@@ -65,9 +71,14 @@ export default function App() {
           }}
         />
         <BrowserRouter>
-          <LandscapeGate>
+          {/*
+            Routes always stay mounted.
+            Tablet portrait → CSS LandscapeGate overlay (does not unmount).
+            Phone width + tablet-tier path → CSS TabletOnly card (not a rotate prompt).
+          */}
           <Suspense fallback={<Spin />}>
             <Routes>
+              {/* Phone-tier (portrait first-class) */}
               <Route path="/login" element={<Login />} />
               <Route path="/e-ticket/:ticketName" element={<ETicket />} />
               <Route path="/t/:ticketName" element={<ETicket />} />
@@ -76,29 +87,6 @@ export default function App() {
                 element={
                   <RoleGuard allow={[...FOH, "driver"]}>
                     <Scanner />
-                  </RoleGuard>
-                }
-              />
-              <Route path="/orders/alterations/:ticketName/tags" element={<AlterationTags />} />
-              <Route path="/orders/alterations/:ticketName/thermal" element={<ThermalTicketPrint />} />
-              <Route path="/orders/alterations/:ticketName/receipt" element={<AlterationReceipt />} />
-              <Route path="/deliveries/:id/label" element={<DeliveryLabel />} />
-              <Route path="/g/:ticket/:garmentId" element={<GarmentJobCard />} />
-              <Route path="/garments/:token" element={<GarmentTagRedirect />} />
-
-              <Route
-                path="/intake/kind"
-                element={
-                  <RoleGuard allow={[...FOH]}>
-                    <TicketKind />
-                  </RoleGuard>
-                }
-              />
-              <Route
-                path="/intake/alterations"
-                element={
-                  <RoleGuard allow={[...FOH]}>
-                    <IntakeStepped />
                   </RoleGuard>
                 }
               />
@@ -127,14 +115,6 @@ export default function App() {
                 }
               />
               <Route
-                path="/transfers"
-                element={
-                  <RoleGuard allow={[...FOH]}>
-                    <Transfers />
-                  </RoleGuard>
-                }
-              />
-              <Route
                 path="/orders/alterations"
                 element={
                   <RoleGuard allow={[...FOH]}>
@@ -151,10 +131,60 @@ export default function App() {
                 }
               />
               <Route
+                path="/orders/alterations/:ticketName/photos"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <TicketPhotos />
+                  </RoleGuard>
+                }
+              />
+
+              {/* Tablet-tier (landscape counter + phone → shop-tablet card) */}
+              <Route
+                path="/orders/alterations/:ticketName/tags"
+                element={tablet(<AlterationTags />)}
+              />
+              <Route
+                path="/orders/alterations/:ticketName/thermal"
+                element={tablet(<ThermalTicketPrint />)}
+              />
+              <Route
+                path="/orders/alterations/:ticketName/receipt"
+                element={tablet(<AlterationReceipt />)}
+              />
+              <Route path="/deliveries/:id/label" element={tablet(<DeliveryLabel />)} />
+              <Route path="/g/:ticket/:garmentId" element={tablet(<GarmentJobCard />)} />
+              <Route path="/garments/:token" element={<GarmentTagRedirect />} />
+
+              <Route
+                path="/intake/kind"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    {tablet(<TicketKind />)}
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/intake/alterations"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    {tablet(<IntakeStepped />)}
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/transfers"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    {tablet(<Transfers />)}
+                  </RoleGuard>
+                }
+              />
+              <Route
                 path="/dispatch"
                 element={
                   <RoleGuard allow={[...FOH]}>
-                    <Dispatch />
+                    {tablet(<Dispatch />)}
                   </RoleGuard>
                 }
               />
@@ -162,15 +192,7 @@ export default function App() {
                 path="/quote"
                 element={
                   <RoleGuard allow={[...FOH]}>
-                    <QuoteComposer />
-                  </RoleGuard>
-                }
-              />
-              <Route
-                path="/orders/alterations/:ticketName/photos"
-                element={
-                  <RoleGuard allow={[...FOH]}>
-                    <TicketPhotos />
+                    {tablet(<QuoteComposer />)}
                   </RoleGuard>
                 }
               />
@@ -245,7 +267,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
-          </LandscapeGate>
+          <LandscapeGate />
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>

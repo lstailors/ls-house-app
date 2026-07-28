@@ -261,7 +261,7 @@ export default function HomeTiles() {
         <button
           type="button"
           onClick={logout}
-          className="flex items-center gap-2.5 rounded-full border border-brass/20 bg-white/[0.04] pl-2 pr-3.5 py-1.5 hover:border-brass/40 transition-colors"
+          className="flex items-center gap-2.5 rounded-full border border-brass/20 bg-white/[0.04] pl-2 pr-3.5 py-1.5 min-h-[44px] hover:border-brass/40 transition-colors"
         >
           <span className="w-8 h-8 rounded-full bg-forest-raised border border-brass/30 grid place-items-center text-xs font-bold text-brass-light">
             {initials}

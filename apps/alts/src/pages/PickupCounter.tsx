@@ -177,7 +177,7 @@ export default function PickupCounter() {
         ))}
       </div>
 
-      <div className="flex-1 grid lg:grid-cols-[340px_1fr] min-h-0">
+      <div className="flex-1 grid lg:grid-cols-[340px_1fr] min-h-0 phone-stack">
         <aside className="border-r border-brass/15 overflow-y-auto p-3 space-y-2">
           <div className="caps px-2 py-2">
             Queue · {list.length}

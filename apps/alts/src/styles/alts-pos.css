@@ -14,21 +14,34 @@
   --glass: linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012));
   --gh: linear-gradient(135deg, rgba(255, 255, 255, 0.085), rgba(255, 255, 255, 0.025));
   --sl: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(212, 178, 122, 0.12);
+  /* iOS Safari: dvh + safe areas (notch / home indicator) */
   min-height: 100vh;
+  min-height: 100dvh;
   color: var(--cr);
   font-family: Montserrat, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  /* Bench distance: never go under 12px anywhere in FOH */
   font-size: 14px;
   background: radial-gradient(ellipse at 50% -12%, #17321f, var(--fd) 58%);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-sizing: border-box;
 }
+
+.alts-root *,
+.alts-root *::before,
+.alts-root *::after {
+  box-sizing: border-box;
+}
+
 .alts-root .caps {
   text-transform: uppercase;
   letter-spacing: 0.16em;
-  font-size: 12px; /* was 10 — legibility floor */
+  font-size: 12px;
   font-weight: 600;
   color: var(--cd);
 }
+
 .alts-root .seal {
   width: 40px;
   height: 40px;
@@ -43,11 +56,13 @@
   flex: none;
   box-shadow: inset 0 0 18px rgba(176, 141, 87, 0.14);
 }
+
 .alts-root .display {
   font-family: "Cormorant Garamond", serif;
   font-style: italic;
   font-weight: 600;
 }
+
 .alts-root .btn-brass {
   background: linear-gradient(135deg, #c9a46a, var(--br));
   color: var(--fd);
@@ -59,7 +74,9 @@
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
+  min-height: 44px;
 }
+
 .alts-root .btn-ghost {
   background: var(--glass);
   border: 1px solid rgba(176, 141, 87, 0.28);
@@ -71,23 +88,27 @@
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
+  min-height: 44px;
 }
+
 .alts-root .btn-ghost:hover {
   color: var(--cr);
   border-color: rgba(176, 141, 87, 0.5);
 }
+
 .alts-root .chip {
   display: inline-flex;
   align-items: center;
   padding: 4px 10px;
   border-radius: 6px;
-  font-size: 12px; /* was 10 — legibility floor */
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
   background: rgba(176, 141, 87, 0.15);
   border: 1px solid rgba(176, 141, 87, 0.3);
   color: var(--bl);
 }
+
 .alts-root .badge-late {
   background: rgba(217, 123, 108, 0.9);
   color: #fff;
@@ -96,6 +117,7 @@
   font-size: 12px;
   font-weight: 700;
 }
+
 .alts-root .badge-soon {
   background: rgba(232, 168, 92, 0.9);
   color: var(--fd);
@@ -104,17 +126,19 @@
   font-size: 12px;
   font-weight: 700;
 }
+
 .alts-root .card-glass {
   background: var(--glass);
   border: 1px solid rgba(176, 141, 87, 0.22);
   border-radius: 16px;
 }
+
 .alts-root .card-glass:hover {
   background: var(--gh);
   border-color: rgba(176, 141, 87, 0.45);
 }
 
-/* Tailwind arbitrary under-12 overrides inside alts FOH */
+/* Legibility floor — never under 12px in FOH */
 .alts-root .text-\[8px\],
 .alts-root .text-\[9px\],
 .alts-root .text-\[9\.5px\],
@@ -124,4 +148,236 @@
 .alts-root .text-\[11\.5px\] {
   font-size: 12px !important;
   line-height: 1.35;
+}
+
+/*
+ * TABLET landscape lock — CSS only.
+ * Trigger: (orientation: portrait) AND tablet+ (min-width: 768px).
+ * Never height/aspect-ratio — soft keyboard must not false-fire.
+ * Phones (<768px): NO rotate gate — portrait is first-class.
+ * Overlay does not unmount routes — rotate restores same step/state.
+ * No screen.orientation.lock() — no-op on iOS Safari.
+ */
+.alts-landscape-block {
+  display: none;
+}
+
+@media (orientation: portrait) and (min-width: 768px) {
+  .alts-landscape-block {
+    display: grid;
+    place-items: center;
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+    padding: 2rem;
+    text-align: center;
+    color: #f1e9d6;
+    background: radial-gradient(ellipse at 50% -12%, #17321f, #0d1a10 58%);
+    font-family: Montserrat, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .alts-landscape-block__line {
+    max-width: 22rem;
+    margin: 0;
+    font-family: "Cormorant Garamond", Georgia, serif;
+    font-style: italic;
+    font-weight: 600;
+    font-size: 1.75rem;
+    line-height: 1.25;
+    color: #f1e9d6;
+  }
+
+  .alts-landscape-block__hint {
+    margin: 0.75rem 0 0;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #b08d57;
+  }
+}
+@media print {
+  .alts-rotate-gate,
+  .alts-landscape-block,
+  .alts-tablet-route-block,
+  .alts-tablet-phone-card {
+    display: none !important;
+  }
+}
+
+/* Phone-tier layout fixes — no horizontal scroll on 390px */
+@media (max-width: 767px) {
+  .shop-floor-board-cols {
+    min-width: 0 !important;
+    flex-direction: column;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+  .shop-floor-board-cols > div {
+    min-width: 0 !important;
+    max-height: 280px;
+  }
+  .home-007 {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+  .home-007 .grid.grid-cols-2 {
+    gap: 10px;
+  }
+}
+
+/*
+ * TABLET-ONLY routes on phone — explicit card, not a broken two-column layout.
+ * Children stay in DOM (display:none) so rotating a foldable back to tablet width
+ * does not lose React state mid-flow.
+ */
+.alts-tablet-desk {
+  display: contents;
+}
+
+.alts-tablet-phone-card {
+  display: none;
+}
+
+@media (max-width: 767.98px) {
+  .alts-tablet-desk {
+    display: none !important;
+  }
+
+  .alts-tablet-phone-card {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 1rem;
+    min-height: 100dvh;
+    padding: calc(1.25rem + env(safe-area-inset-top, 0px)) 1.25rem
+      calc(1.25rem + env(safe-area-inset-bottom, 0px));
+    background: radial-gradient(ellipse at 50% -12%, #17321f, #0d1a10 58%);
+    color: #f1e9d6;
+    font-family: Montserrat, system-ui, sans-serif;
+  }
+
+  .alts-tablet-phone-card__title {
+    margin: 0;
+    font-family: "Cormorant Garamond", Georgia, serif;
+    font-style: italic;
+    font-weight: 600;
+    font-size: 1.75rem;
+    line-height: 1.2;
+    color: #f1e9d6;
+  }
+
+  .alts-tablet-phone-card__body {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #8a8474;
+  }
+
+  .alts-tablet-phone-card__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+  }
+
+  .alts-tablet-phone-card__actions a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    padding: 0 1.25rem;
+    border-radius: 14px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    text-decoration: none;
+  }
+
+  .alts-tablet-phone-card__actions a.primary {
+    background: linear-gradient(135deg, #c9a46a, #b08d57);
+    color: #0d1a10;
+  }
+
+  .alts-tablet-phone-card__actions a.ghost {
+    background: transparent;
+    border: 1px solid rgba(176, 141, 87, 0.35);
+    color: #d4b27a;
+  }
+}
+
+/*
+ * PHONE TIER — portrait first-class @ ≤767px (390×844 baseline).
+ * No rotate prompt. Touch ≥44px. Inputs ≥16px (Safari zoom lock).
+ */
+@media (max-width: 767.98px) {
+  .alts-root {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  /* Safari focus zoom lock */
+  .alts-root input,
+  .alts-root textarea,
+  .alts-root select {
+    font-size: 16px !important;
+  }
+
+  .alts-root button,
+  .alts-root a.btn-brass,
+  .alts-root a.btn-ghost,
+  .alts-root label[class*="rounded"],
+  .alts-root .chip {
+    min-height: 44px;
+  }
+
+  .alts-root header {
+    padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+  }
+
+  /* Home tiles: single column stack */
+  .home-007 .grid {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: none !important;
+    overflow-y: auto;
+    gap: 12px !important;
+  }
+
+  .home-007 {
+    height: auto !important;
+    min-height: 100dvh;
+    overflow: auto !important;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  /* Shop floor: horizontal board becomes scroll snap columns */
+  .shop-floor-board-cols {
+    min-width: 0 !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+  }
+
+  .shop-floor-board-cols > * {
+    scroll-snap-align: start;
+    min-width: min(86vw, 280px) !important;
+    flex: 0 0 min(86vw, 280px) !important;
+  }
+
+  /* Two-column FOH pages → stack */
+  .phone-stack {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .phone-stack > aside,
+  .phone-stack > main {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 0;
+  }
 }
