@@ -94,14 +94,14 @@ export default function GarmentTagPrint() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-forest-deep grid place-items-center text-brass text-[11px] tracking-[0.2em] uppercase font-ui">
+      <div className="min-h-dvh bg-forest-deep grid place-items-center text-brass text-[12px] tracking-[0.2em] uppercase font-ui">
         Loading tags…
       </div>
     );
   }
   if (isError || !ticket) {
     return (
-      <div className="min-h-screen bg-forest-deep grid place-items-center gap-4">
+      <div className="min-h-dvh bg-forest-deep grid place-items-center gap-4">
         <p className="display italic text-cream text-xl">Ticket not found</p>
         <button type="button" onClick={() => navigate(-1)} className="text-brass text-xs tracking-widest uppercase">
           Back
@@ -127,7 +127,7 @@ export default function GarmentTagPrint() {
         </button>
         <div className="text-center min-w-0">
           <div className="text-cream text-sm font-medium truncate">{ticket.name}</div>
-          <div className="text-[10px] text-brass/80 tracking-widest uppercase">
+          <div className="text-[12px] text-brass/80 tracking-widest uppercase">
             {garments.length} tag{garments.length !== 1 ? "s" : ""} · 3×2 · LabelLife
           </div>
         </div>
@@ -151,7 +151,7 @@ export default function GarmentTagPrint() {
         </div>
       </div>
 
-      <div className="no-print px-4 py-3 text-[11px] text-cream-muted max-w-3xl mx-auto leading-relaxed">
+      <div className="no-print px-4 py-3 text-[12px] text-cream-muted max-w-3xl mx-auto leading-relaxed">
         iPad: <b className="text-cream">Print → Save to Files / PDF</b>, then Share →{" "}
         <b className="text-cream">LabelLife</b> on the <b className="text-brass">3×2 D520BT</b>.
         Not the 4×6 delivery printer. QR opens{" "}

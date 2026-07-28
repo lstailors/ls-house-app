@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { cn } from "@ls/design/utils";
+import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 
 type Ticket = {
@@ -64,7 +65,7 @@ export default function OrdersGlass() {
   }, [tickets.data, tab, q]);
 
   return (
-    <div className="alts-root min-h-screen flex flex-col">
+    <div className="alts-root min-h-dvh flex flex-col">
       <header className="flex items-center gap-3 px-5 py-4 border-b border-brass/20">
         <Link to="/" className="seal">
           LS
@@ -74,7 +75,7 @@ export default function OrdersGlass() {
           <div className="caps">Tickets · due · unpaid</div>
         </div>
         <div className="flex-1" />
-        <Link to="/intake/kind" className="btn-brass h-11 px-4 text-[11px] inline-flex items-center">
+        <Link to="/intake/kind" className="btn-brass h-11 px-4 text-xs inline-flex items-center">
           New
         </Link>
       </header>
@@ -110,42 +111,50 @@ export default function OrdersGlass() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-8 space-y-2">
-        {rows.map((t) => {
-          const late = daysLate(t.due_date);
-          return (
-            <button
-              key={t.name}
-              type="button"
-              onClick={() => nav(`/orders/alterations/${t.name}`)}
-              className={cn(
-                "w-full text-left card-glass px-4 py-3.5 flex items-center gap-3",
-                late > 0 && "border-l-2 border-l-signal-rose",
-              )}
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono text-[11px] text-brass-light">{t.name}</span>
-                  <span className="chip">{t.workflow_state}</span>
-                  {late > 0 && <span className="badge-late">{late}d late</span>}
-                  {t.payment_status && t.payment_status !== "Paid" && t.payment_status !== "N/A" && (
-                    <span className="text-[10px] text-signal-amber font-bold uppercase">{t.payment_status}</span>
-                  )}
-                </div>
-                <div className="font-semibold mt-0.5 truncate">{t.customer_name}</div>
-                <div className="text-xs text-cream-dim mt-0.5">
-                  {t.origin_location || "NYC"}
-                  {t.due_date ? ` · due ${t.due_date}` : ""}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="display text-xl text-brass-light">{money(Number(t.ticket_total) || 0)}</div>
-                <div className="text-[10px] text-cream-dim">→</div>
-              </div>
-            </button>
-          );
-        })}
+        {tickets.isError && (
+          <QueryErrorPanel
+            title="Could not load orders"
+            message="Ticket list failed. Retry — do not treat this as an empty filter."
+            onRetry={() => tickets.refetch()}
+          />
+        )}
         {tickets.isLoading && <p className="text-cream-dim p-4">Loading…</p>}
-        {!tickets.isLoading && !rows.length && (
+        {!tickets.isError &&
+          rows.map((t) => {
+            const late = daysLate(t.due_date);
+            return (
+              <button
+                key={t.name}
+                type="button"
+                onClick={() => nav(`/orders/alterations/${t.name}`)}
+                className={cn(
+                  "w-full text-left card-glass px-4 py-3.5 flex items-center gap-3",
+                  late > 0 && "border-l-2 border-l-signal-rose",
+                )}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-xs text-brass-light">{t.name}</span>
+                    <span className="chip">{t.workflow_state}</span>
+                    {late > 0 && <span className="badge-late">{late}d late</span>}
+                    {t.payment_status && t.payment_status !== "Paid" && t.payment_status !== "N/A" && (
+                      <span className="text-xs text-signal-amber font-bold uppercase">{t.payment_status}</span>
+                    )}
+                  </div>
+                  <div className="font-semibold mt-0.5 truncate">{t.customer_name}</div>
+                  <div className="text-xs text-cream-dim mt-0.5">
+                    {t.origin_location || "NYC"}
+                    {t.due_date ? ` · due ${t.due_date}` : ""}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="display text-xl text-brass-light">{money(Number(t.ticket_total) || 0)}</div>
+                  <div className="text-xs text-cream-dim">→</div>
+                </div>
+              </button>
+            );
+          })}
+        {!tickets.isLoading && !tickets.isError && !rows.length && (
           <p className="text-cream-dim p-8 text-center italic">No tickets in this filter</p>
         )}
       </div>

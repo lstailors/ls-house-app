@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -168,7 +169,14 @@ export default function Dispatch() {
   );
 
   return (
-    <div className="alts-root flex flex-col min-h-screen">
+    <div className="alts-root flex flex-col min-h-dvh">
+        {ready.isError && (
+          <QueryErrorPanel
+            title="Could not load"
+            onRetry={() => ready.refetch()}
+            className="mx-4 mt-3"
+          />
+        )}
       <header className="flex items-center gap-3 px-5 py-3.5 border-b border-brass/20 bg-black/20">
         <Link
           to={selected ? `/orders/alterations/${selected}` : "/"}
@@ -178,12 +186,12 @@ export default function Dispatch() {
         </Link>
         <h1 className="display text-[23px]">Charge & dispatch</h1>
         {selected && (
-          <span className="font-mono text-[10.5px] text-brass-light px-3 py-2 rounded-lg border border-brass/25 bg-brass/10">
+          <span className="font-mono text-[12px] text-brass-light px-3 py-2 rounded-lg border border-brass/25 bg-brass/10">
             {selected}
           </span>
         )}
         <div className="flex-1" />
-        <span className="hidden sm:flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase text-signal-emerald px-3 py-2 rounded-full border border-signal-emerald/40 bg-signal-emerald/10">
+        <span className="hidden sm:flex items-center gap-2 text-[12px] font-bold tracking-widest uppercase text-signal-emerald px-3 py-2 rounded-full border border-signal-emerald/40 bg-signal-emerald/10">
           Ready queue · {list.length}
         </span>
       </header>
@@ -209,7 +217,7 @@ export default function Dispatch() {
                       u && "border-l-2 border-l-signal-amber",
                     )}
                   >
-                    <div className="font-mono text-[11px] text-brass-light">{row.name}</div>
+                    <div className="font-mono text-[12px] text-brass-light">{row.name}</div>
                     <div className="font-semibold mt-0.5">{row.customer_name}</div>
                     <div className="flex justify-between text-xs mt-1">
                       <span className={u ? "text-signal-amber" : "text-signal-emerald"}>
@@ -220,8 +228,17 @@ export default function Dispatch() {
                   </button>
                 );
               })}
-              {!list.length && !ready.isLoading && (
+              {!list.length && !ready.isLoading && !ready.isError && (
                 <p className="text-cream-dim text-sm col-span-2 italic">No Ready tickets</p>
+              )}
+              {ready.isError && (
+                <div className="col-span-2">
+                  <QueryErrorPanel
+                    compact
+                    title="Could not load dispatch queue"
+                    onRetry={() => ready.refetch()}
+                  />
+                </div>
               )}
             </div>
           </div>
@@ -244,8 +261,8 @@ export default function Dispatch() {
                       )}
                     >
                       <div className="display text-[21px] mb-1">{w.title}</div>
-                      <p className="text-[10.5px] text-[var(--cd)] leading-relaxed">{w.sub}</p>
-                      <div className="mt-3 pt-2 border-t border-brass/15 text-[9px] font-bold tracking-wider uppercase text-brass/70">
+                      <p className="text-[12px] text-[var(--cd)] leading-relaxed">{w.sub}</p>
+                      <div className="mt-3 pt-2 border-t border-brass/15 text-[12px] font-bold tracking-wider uppercase text-brass/70">
                         {w.pod}
                       </div>
                     </button>
@@ -311,10 +328,10 @@ export default function Dispatch() {
                 <div className="flex flex-wrap gap-2">
                   {(t.garments ?? []).map((g, i) => (
                     <div key={i} className="card-glass px-3 py-2 text-sm flex items-center gap-2">
-                      <span className="w-4 h-4 rounded bg-signal-emerald/90 text-forest-deep text-[10px] grid place-items-center">
+                      <span className="w-4 h-4 rounded bg-signal-emerald/90 text-forest-deep text-[12px] grid place-items-center">
                         ✓
                       </span>
-                      <span className="font-mono text-[10px] text-brass-light">{g.garment_id || `G${i + 1}`}</span>
+                      <span className="font-mono text-[12px] text-brass-light">{g.garment_id || `G${i + 1}`}</span>
                       <span>
                         {g.garment_type}
                         {g.color ? ` · ${g.color}` : ""}
@@ -345,18 +362,18 @@ export default function Dispatch() {
               <div className="text-xs text-cream-dim mb-1">
                 {t.payment_status === "Paid" ? "Paid in full" : unpaid ? "Collect before / at release" : t.payment_status}
               </div>
-              <p className="text-[10px] text-cream-dim mb-4">No tax · service</p>
+              <p className="text-[12px] text-cream-dim mb-4">No tax · service</p>
 
               {unpaid && (
                 <div className="space-y-2 mb-4">
                   <div className="caps text-signal-amber">Charge at Ready</div>
-                  <button type="button" onClick={() => payLink.mutate()} className="btn-brass w-full h-12 text-[11px]">
+                  <button type="button" onClick={() => payLink.mutate()} className="btn-brass w-full h-12 text-[12px]">
                     {payLink.isPending ? "…" : "Send pay link"}
                   </button>
                   <button
                     type="button"
                     onClick={() => nav(`/orders/alterations/${selected}`)}
-                    className="btn-ghost w-full h-11 text-[11px]"
+                    className="btn-ghost w-full h-11 text-[12px]"
                   >
                     Terminal / full ticket
                   </button>
@@ -367,7 +384,7 @@ export default function Dispatch() {
                 type="button"
                 onClick={() => notifyReady.mutate()}
                 disabled={notifyReady.isPending}
-                className="btn-ghost w-full h-12 text-[11px] mb-2"
+                className="btn-ghost w-full h-12 text-[12px] mb-2"
               >
                 {notifyReady.isPending ? "…" : "SMS ready + e-ticket"}
               </button>
@@ -376,7 +393,7 @@ export default function Dispatch() {
                 type="button"
                 onClick={() => setDelivery.mutate()}
                 disabled={setDelivery.isPending || (method !== "Pickup" && !addr1.trim())}
-                className="btn-brass w-full h-14 text-[11px] mb-2 disabled:opacity-40"
+                className="btn-brass w-full h-14 text-[12px] mb-2 disabled:opacity-40"
               >
                 {setDelivery.isPending
                   ? "…"
@@ -405,14 +422,14 @@ export default function Dispatch() {
                 </button>
               )}
 
-              <p className="text-[10px] text-cream-dim mt-4 text-center leading-relaxed">
+              <p className="text-[12px] text-cream-dim mt-4 text-center leading-relaxed">
                 POD never charges. Money is card-on-file · Terminal · pay link only.
               </p>
 
               <button
                 type="button"
                 onClick={() => nav(`/orders/alterations/${selected}`)}
-                className="mt-auto pt-6 text-[10px] font-bold tracking-widest uppercase text-brass-light"
+                className="mt-auto pt-6 text-[12px] font-bold tracking-widest uppercase text-brass-light"
               >
                 Open full ticket →
               </button>

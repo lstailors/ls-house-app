@@ -178,14 +178,14 @@ export default function ThermalTicketPrint() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-forest-deep grid place-items-center text-brass text-[11px] tracking-[0.2em] uppercase">
+      <div className="min-h-dvh bg-forest-deep grid place-items-center text-brass text-[12px] tracking-[0.2em] uppercase">
         Loading ticket…
       </div>
     );
   }
   if (isError || !ticket) {
     return (
-      <div className="min-h-screen bg-forest-deep grid place-items-center">
+      <div className="min-h-dvh bg-forest-deep grid place-items-center">
         <p className="display italic text-cream text-xl">Ticket not found</p>
       </div>
     );
@@ -209,7 +209,7 @@ export default function ThermalTicketPrint() {
         </button>
         <div className="text-center">
           <div className="text-cream text-sm font-medium">{ticket.name}</div>
-          <div className="text-[10px] text-brass/80 tracking-widest uppercase">
+          <div className="text-[12px] text-brass/80 tracking-widest uppercase">
             022 thermal · Epson · SMS preferred
           </div>
         </div>
@@ -246,7 +246,7 @@ export default function ThermalTicketPrint() {
         </div>
       </div>
 
-      <div className="no-print px-4 py-3 text-[11px] text-cream-muted max-w-4xl mx-auto">
+      <div className="no-print px-4 py-3 text-[12px] text-cream-muted max-w-4xl mx-auto">
         Store master always for the file. Client:{" "}
         <b className="text-cream">text e-ticket</b> preferred; print customer copy on request.
         {" · "}
@@ -255,7 +255,7 @@ export default function ThermalTicketPrint() {
         </Link>
       </div>
 
-      <div className="cols flex flex-wrap gap-8 justify-center p-6 bg-[#13291C] min-h-screen">
+      <div className="cols flex flex-wrap gap-8 justify-center p-6 bg-[#13291C] min-h-dvh">
         {/* STORE MASTER */}
         <div className="paper master">
           <div className="mhead">STORE MASTER</div>

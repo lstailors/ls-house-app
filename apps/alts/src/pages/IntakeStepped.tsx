@@ -7,6 +7,13 @@ import { cn } from "@ls/design/utils";
 import ParkDrawer from "@alts/components/ParkDrawer";
 import CustomerEditSheet, { SelectedCustomerCard } from "@alts/components/CustomerEditSheet";
 import { clearSoCart, readSoCart, soCartToGarments } from "@alts/lib/soCart";
+import {
+  clearIntakeDraft,
+  intakeDraftHasWork,
+  readIntakeDraft,
+  writeIntakeDraft,
+} from "@alts/lib/intakeDraft";
+import { REDO_DISPLAY } from "@alts/lib/billingLabels";
 import "@alts/styles/alts-pos.css";
 
 const GARMENT_TYPES = [
@@ -108,12 +115,12 @@ function GarmentPhotoStrip({
     });
   };
   const thumb = large ? "w-[4.5rem] h-[4.5rem]" : "w-12 h-12";
-  const btn = large ? "h-[4.5rem] min-w-[8.5rem] px-4 text-[10px]" : "h-12 px-3 text-[9px]";
+  const btn = large ? "h-[4.5rem] min-w-[8.5rem] px-4 text-xs" : "h-12 px-3 text-xs";
   return (
     <div className={cn("rounded-2xl border border-brass/25 bg-black/25", large ? "p-3.5" : "p-2.5")}>
       <div className="flex items-center gap-2 mb-2.5">
-        <span className="caps text-brass-light text-[8px]">Garment photos</span>
-        <span className="text-[10px] text-cream-dim">
+        <span className="caps text-brass-light">Garment photos</span>
+        <span className="text-xs text-cream-dim">
           {(garment.photoPreviewUrls || []).length} attached · camera or library
         </span>
       </div>
@@ -124,7 +131,7 @@ function GarmentPhotoStrip({
             <button
               type="button"
               onClick={() => onRemove(i)}
-              className="absolute top-0 right-0 w-5 h-5 rounded-bl-lg bg-black/75 text-[10px] text-cream grid place-items-center"
+              className="absolute top-0 right-0 w-5 h-5 rounded-bl-lg bg-black/75 text-xs text-cream grid place-items-center"
               aria-label="Remove photo"
             >
               ✕
@@ -252,6 +259,8 @@ export default function IntakeStepped() {
   const [noteOpenFor, setNoteOpenFor] = useState<string | null>(null);
   const [ticketNote, setTicketNote] = useState("");
   const [ticketNoteKind, setTicketNoteKind] = useState<"internal" | "customer">("internal");
+  /** gates draft writes until hydrate + SO seed settle */
+  const [draftReady, setDraftReady] = useState(false);
 
   const search = useQuery({
     queryKey: ["cust-search", q],
@@ -319,9 +328,14 @@ export default function IntakeStepped() {
     };
   }, [resumeId]);
 
-  // Prefill from ticket-kind gate (SO + customer + pieces cart)
+  // Prefill: SO cart first, then localStorage draft (walk-in survival). Parked handled above.
   useEffect(() => {
-    if (resumeId) return;
+    if (resumeId) {
+      setDraftReady(true);
+      return;
+    }
+
+    let usedSoCart = false;
 
     if (soParam) setLinkedSo(soParam);
     if (kindParam === "on_order" || kindParam === "redo" || kindParam === "walk_in") {
@@ -331,7 +345,7 @@ export default function IntakeStepped() {
     }
 
     // Seed garments from SO order cart (TicketKind right rail) — first priority
-    if ((kindParam === "on_order" || soParam) && garments.length === 0) {
+    if (kindParam === "on_order" || soParam) {
       const cart = readSoCart();
       if (cart && (!soParam || cart.so === soParam)) {
         if (cart.so) setLinkedSo(cart.so);
@@ -365,25 +379,148 @@ export default function IntakeStepped() {
           setExpectedGarments(seeded.length);
           setStep(2);
           toast.message(`${seeded.length} piece${seeded.length === 1 ? "" : "s"} from order cart`);
-          clearSoCart();
-          return;
+          usedSoCart = true;
         }
         clearSoCart();
       }
     }
 
-    if (customerParam && customerNameParam) {
-      setCustomer({
-        id: customerParam,
-        name: customerNameParam,
-        phone: "",
-        email: "",
-      });
-      setStep(1);
-    } else if (customerNameParam && !customerParam) {
-      setQ(customerNameParam);
+    if (!usedSoCart) {
+      const draft = readIntakeDraft();
+      if (intakeDraftHasWork(draft)) {
+        const draftKind = draft!.kind;
+        const urlKind = kindParam || null;
+        const kindClash =
+          urlKind &&
+          draftKind &&
+          urlKind !== draftKind &&
+          !(urlKind === "warranty" && draftKind === "redo");
+        if (!kindClash) {
+          if (draft!.billing) setBilling(draft!.billing);
+          if (draft!.linkedSo) setLinkedSo(draft!.linkedSo);
+          if (draft!.customer) setCustomer(draft!.customer);
+          if (draft!.q) setQ(draft!.q);
+          if (draft!.newName) setNewName(draft!.newName);
+          if (draft!.newPhone) setNewPhone(draft!.newPhone);
+          if (draft!.newEmail) setNewEmail(draft!.newEmail);
+          if (draft!.newLine1) setNewLine1(draft!.newLine1);
+          if (draft!.newLine2) setNewLine2(draft!.newLine2);
+          if (draft!.newCity) setNewCity(draft!.newCity);
+          if (draft!.newState) setNewState(draft!.newState);
+          if (draft!.newZip) setNewZip(draft!.newZip);
+          if (draft!.showNewForm) setShowNewForm(true);
+          if (draft!.garments?.length) {
+            setGarments(
+              draft!.garments.map((g) => ({
+                ...g,
+                lines: (g.lines || []).map((l) => ({ ...l })),
+              })),
+            );
+            setActiveRef(draft!.activeRef || draft!.garments[0]?.ref || null);
+          }
+          if (typeof draft!.notifyReady === "boolean") setNotifyReady(draft!.notifyReady);
+          if (draft!.ticketNote) setTicketNote(draft!.ticketNote);
+          if (draft!.ticketNoteKind) setTicketNoteKind(draft!.ticketNoteKind);
+          if (draft!.expectedGarments) setExpectedGarments(draft!.expectedGarments);
+          if (draft!.parkLabel) setParkLabel(draft!.parkLabel);
+          if (draft!.parkNote) setParkNote(draft!.parkNote);
+          if (draft!.parkedCartId) setParkedCartId(draft!.parkedCartId);
+          if (draft!.customDesc) setCustomDesc(draft!.customDesc);
+          if (draft!.customPrice) setCustomPrice(draft!.customPrice);
+          if (typeof draft!.step === "number") setStep(Math.min(3, Math.max(0, draft!.step)));
+          toast.message("Restored unfinished intake", {
+            description: "Recovered from a refresh or dropped connection.",
+            action: {
+              label: "Discard & start fresh",
+              onClick: () => {
+                clearIntakeDraft();
+                window.location.reload();
+              },
+            },
+          });
+        }
+      } else if (customerParam && customerNameParam) {
+        setCustomer({
+          id: customerParam,
+          name: customerNameParam,
+          phone: "",
+          email: "",
+        });
+        setStep(1);
+      } else if (customerNameParam && !customerParam) {
+        setQ(customerNameParam);
+      }
     }
+
+    setDraftReady(true);
+    // once per URL gate — not on garments
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeId, customerParam, customerNameParam, soParam, kindParam]);
+
+  // Persist intake to localStorage (debounced) — wifi drop / refresh safe
+  useEffect(() => {
+    if (!draftReady || resumeId) return;
+    const t = window.setTimeout(() => {
+      writeIntakeDraft({
+        kind: kindParam || (billing === "on_order" ? "on_order" : billing === "redo" ? "redo" : "walk_in"),
+        step,
+        billing,
+        linkedSo,
+        customer,
+        q,
+        newName,
+        newPhone,
+        newEmail,
+        newLine1,
+        newLine2,
+        newCity,
+        newState,
+        newZip,
+        showNewForm,
+        garments,
+        activeRef,
+        notifyReady,
+        ticketNote,
+        ticketNoteKind,
+        expectedGarments,
+        parkLabel,
+        parkNote,
+        parkedCartId,
+        customDesc,
+        customPrice,
+      });
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [
+    draftReady,
+    resumeId,
+    kindParam,
+    step,
+    billing,
+    linkedSo,
+    customer,
+    q,
+    newName,
+    newPhone,
+    newEmail,
+    newLine1,
+    newLine2,
+    newCity,
+    newState,
+    newZip,
+    showNewForm,
+    garments,
+    activeRef,
+    notifyReady,
+    ticketNote,
+    ticketNoteKind,
+    expectedGarments,
+    parkLabel,
+    parkNote,
+    parkedCartId,
+    customDesc,
+    customPrice,
+  ]);
 
   const total = useMemo(
     () => garments.reduce((s, g) => s + g.lines.reduce((a, l) => a + (Number(l.price) || 0), 0), 0),
@@ -719,6 +856,8 @@ export default function IntakeStepped() {
       return res;
     },
     onSuccess: (res) => {
+      clearIntakeDraft();
+      clearSoCart();
       toast.success(`Ticket ${res.ticketName} created`);
       qc.invalidateQueries({ queryKey: ["alts-home-stats"] });
       qc.invalidateQueries({ queryKey: ["parked-carts"] });
@@ -812,7 +951,7 @@ export default function IntakeStepped() {
   const displayName = customer?.name || newName || "";
 
   return (
-    <div className="alts-root flex flex-col min-h-screen">
+    <div className="alts-root flex flex-col min-h-dvh">
       <header className="px-5 pt-4 pb-0 border-b border-brass/20 bg-black/20 backdrop-blur-xl sticky top-0 z-30">
         <div className="flex items-center gap-3 mb-3">
           <Link to="/" className="seal">
@@ -821,7 +960,7 @@ export default function IntakeStepped() {
           <div>
             <div className="display text-lg">Alteration Intake</div>
             <div className="caps">
-              {billing === "billable" ? "Client billable" : billing === "on_order" ? "On custom · valued · no SI" : "Re-do · valued · no SI"}
+              {billing === "billable" ? "Client billable" : billing === "on_order" ? "On custom · valued · no SI" : REDO_DISPLAY.intakeStrip}
               {" · "}
               draft
             </div>
@@ -834,12 +973,12 @@ export default function IntakeStepped() {
               className="hidden md:flex items-center gap-2 rounded-full border border-brass/25 bg-black/25 px-3 py-1.5 hover:border-brass/45"
               title="Edit customer"
             >
-              <span className="w-8 h-8 rounded-full bg-forest-raised border border-brass/30 grid place-items-center text-[11px] font-bold text-brass-light">
+              <span className="w-8 h-8 rounded-full bg-forest-raised border border-brass/30 grid place-items-center text-[12px] font-bold text-brass-light">
                 {customer.name.slice(0, 2).toUpperCase()}
               </span>
               <span className="text-left">
                 <span className="block text-sm font-semibold leading-tight">{customer.name}</span>
-                <span className="block text-[10px] text-cream-dim">
+                <span className="block text-[12px] text-cream-dim">
                   {[customer.phone, customer.email].filter(Boolean).join(" · ") || "Tap to edit details"}
                 </span>
               </span>
@@ -852,7 +991,7 @@ export default function IntakeStepped() {
                 type="button"
                 onClick={() => setOrigin(loc)}
                 className={cn(
-                  "px-3 py-2 rounded-full text-[11px] font-bold tracking-widest uppercase",
+                  "px-3 py-2 rounded-full text-[12px] font-bold tracking-widest uppercase",
                   origin === loc ? "bg-brass text-forest-deep" : "text-cream-dim",
                 )}
               >
@@ -876,7 +1015,7 @@ export default function IntakeStepped() {
             >
               <span
                 className={cn(
-                  "w-6 h-6 rounded-full grid place-items-center text-[11px] font-bold",
+                  "w-6 h-6 rounded-full grid place-items-center text-[12px] font-bold",
                   i === step && "bg-brass text-forest-deep",
                   i < step && "bg-signal-emerald/90 text-forest-deep",
                   i > step && "bg-white/[0.07] text-cream-dim",
@@ -921,7 +1060,7 @@ export default function IntakeStepped() {
                   {lab}
                 </button>
               ))}
-              <Link to="/intake/kind" className="ml-auto text-[10px] font-bold tracking-widest uppercase text-brass-light">
+              <Link to="/intake/kind" className="ml-auto text-[12px] font-bold tracking-widest uppercase text-brass-light">
                 Change kind →
               </Link>
             </div>
@@ -934,7 +1073,7 @@ export default function IntakeStepped() {
             )}
             {billing === "redo" && (
               <div className="card-glass px-4 py-3 text-sm text-signal-emerald border-signal-emerald/30">
-                Re-do / Warranty — keep full prices for internal value & tailor stats. No SI / no AR.
+                {REDO_DISPLAY.intakeHelper}
               </div>
             )}
 
@@ -961,7 +1100,7 @@ export default function IntakeStepped() {
                     autoFocus
                   />
                 </div>
-                <p className="text-[10.5px] text-cream-dim">
+                <p className="text-[12px] text-cream-dim">
                   Matches <b className="text-brass-light font-semibold">name · mobile · email</b> in ERPNext
                 </p>
 
@@ -978,7 +1117,7 @@ export default function IntakeStepped() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block font-semibold text-base">{c.name}</span>
-                        <span className="text-[11.5px] text-cream-dim flex flex-wrap gap-x-2">
+                        <span className="text-[12px] text-cream-dim flex flex-wrap gap-x-2">
                           <span>{c.phone || "No phone"}</span>
                           {c.email ? <span>· {c.email}</span> : null}
                           {c.addressLine ? <span>· {c.addressLine}</span> : null}
@@ -1003,13 +1142,13 @@ export default function IntakeStepped() {
                     </span>
                     <span>
                       <span className="block font-semibold">New customer</span>
-                      <span className="text-[11px] text-cream-dim">Name, mobile, email, delivery address</span>
+                      <span className="text-[12px] text-cream-dim">Name, mobile, email, delivery address</span>
                     </span>
                   </button>
                 ) : (
                   <div className="card-glass p-5 space-y-3">
                     <div className="display text-[21px]">New customer</div>
-                    <p className="text-[10.5px] text-cream-dim -mt-1 mb-1">
+                    <p className="text-[12px] text-cream-dim -mt-1 mb-1">
                       Saved to ERPNext before intake continues — so delivery has phone, email, and address.
                     </p>
                     <label className="block">
@@ -1100,11 +1239,11 @@ export default function IntakeStepped() {
                         type="button"
                         disabled={!newName.trim() || !newPhone.trim() || createCustomer.isPending}
                         onClick={() => createCustomer.mutate()}
-                        className="btn-brass flex-1 h-14 text-[11px] disabled:opacity-40"
+                        className="btn-brass flex-1 h-14 text-[12px] disabled:opacity-40"
                       >
                         {createCustomer.isPending ? "Saving…" : "Save & continue →"}
                       </button>
-                      <button type="button" onClick={() => setShowNewForm(false)} className="btn-ghost h-14 px-4 text-[11px]">
+                      <button type="button" onClick={() => setShowNewForm(false)} className="btn-ghost h-14 px-4 text-[12px]">
                         Cancel
                       </button>
                     </div>
@@ -1114,7 +1253,7 @@ export default function IntakeStepped() {
             )}
 
             {customer && (
-              <button type="button" onClick={() => setStep(1)} className="btn-brass h-14 px-8 text-[11px]">
+              <button type="button" onClick={() => setStep(1)} className="btn-brass h-14 px-8 text-[12px]">
                 Continue to garments →
               </button>
             )}
@@ -1171,7 +1310,7 @@ export default function IntakeStepped() {
                 <div className="flex items-end justify-between gap-3">
                   <div>
                     <div className="display text-[22px] italic">Photograph at intake</div>
-                    <p className="text-[11.5px] text-cream-dim mt-1">
+                    <p className="text-[12px] text-cream-dim mt-1">
                       Take or attach photos before we touch the piece — damage claim proof.
                     </p>
                   </div>
@@ -1184,7 +1323,7 @@ export default function IntakeStepped() {
                     <div className="min-w-[120px]">
                       <span className="chip mb-1.5">{g.ref}</span>
                       <div className="font-semibold text-[14px]">{g.garmentType}</div>
-                      <div className="text-[10px] text-cream-dim mt-1">
+                      <div className="text-[12px] text-cream-dim mt-1">
                         {(g.photoPreviewUrls || []).length} photo
                         {(g.photoPreviewUrls || []).length === 1 ? "" : "s"}
                       </div>
@@ -1196,14 +1335,14 @@ export default function IntakeStepped() {
                           <button
                             type="button"
                             onClick={() => removeGarmentPhoto(g.ref, i)}
-                            className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/70 text-[10px] text-cream grid place-items-center"
+                            className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/70 text-[12px] text-cream grid place-items-center"
                             aria-label="Remove photo"
                           >
                             ✕
                           </button>
                         </div>
                       ))}
-                      <label className="h-16 min-w-[7.5rem] px-3 rounded-xl border border-brass/40 bg-brass/15 text-brass-light text-[10px] font-bold tracking-wider uppercase grid place-items-center text-center cursor-pointer hover:bg-brass/25">
+                      <label className="h-16 min-w-[7.5rem] px-3 rounded-xl border border-brass/40 bg-brass/15 text-brass-light text-[12px] font-bold tracking-wider uppercase grid place-items-center text-center cursor-pointer hover:bg-brass/25">
                         📷 Take photo
                         <input
                           type="file"
@@ -1218,7 +1357,7 @@ export default function IntakeStepped() {
                           }}
                         />
                       </label>
-                      <label className="h-16 min-w-[7.5rem] px-3 rounded-xl border border-dashed border-brass/35 text-cream-dim text-[10px] font-bold tracking-wider uppercase grid place-items-center text-center cursor-pointer hover:border-brass/55 hover:text-brass-light">
+                      <label className="h-16 min-w-[7.5rem] px-3 rounded-xl border border-dashed border-brass/35 text-cream-dim text-[12px] font-bold tracking-wider uppercase grid place-items-center text-center cursor-pointer hover:border-brass/55 hover:text-brass-light">
                         Upload
                         <input
                           type="file"
@@ -1239,7 +1378,7 @@ export default function IntakeStepped() {
             )}
 
             {garments.length > 0 && (
-              <button type="button" onClick={() => setStep(2)} className="btn-brass mt-6 h-14 px-8 text-[11px]">
+              <button type="button" onClick={() => setStep(2)} className="btn-brass mt-6 h-14 px-8 text-[12px]">
                 Price the work →
               </button>
             )}
@@ -1276,7 +1415,7 @@ export default function IntakeStepped() {
                           {money(g.lines.reduce((s, l) => s + l.price, 0))}
                         </div>
                         {(g.photoPreviewUrls || []).length > 0 && (
-                          <div className="text-[9px] text-cream-dim mt-1">
+                          <div className="text-[12px] text-cream-dim mt-1">
                             📷 {(g.photoPreviewUrls || []).length}
                           </div>
                         )}
@@ -1309,7 +1448,7 @@ export default function IntakeStepped() {
                       </span>
                       <span className="font-semibold">{active.garmentType}</span>
                       {active.notes ? (
-                        <span className="text-[11px] text-cream-dim truncate flex-1">{active.notes}</span>
+                        <span className="text-[12px] text-cream-dim truncate flex-1">{active.notes}</span>
                       ) : null}
                       <span className="ml-auto display text-xl text-brass-light shrink-0">
                         {money(active.lines.reduce((s, l) => s + l.price, 0))}
@@ -1352,7 +1491,7 @@ export default function IntakeStepped() {
                               </span>
                             ) : null}
                           </span>
-                          <span className="text-[11px] text-cream-dim">
+                          <span className="text-[12px] text-cream-dim">
                             {custom ? "Out of scope · priced on the spot" : l.estMinutes ? `${l.estMinutes} min` : "—"}
                           </span>
                         </span>
@@ -1370,13 +1509,13 @@ export default function IntakeStepped() {
                         <button
                           type="button"
                           onClick={() => setNoteOpenFor(l.id)}
-                          className="mt-2 inline-flex items-center gap-1.5 text-[9px] font-bold tracking-widest uppercase text-cream-dim border border-brass/25 bg-black/20 rounded-md px-2.5 py-1.5 hover:border-brass/50 hover:text-brass-light"
+                          className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-bold tracking-widest uppercase text-cream-dim border border-brass/25 bg-black/20 rounded-md px-2.5 py-1.5 hover:border-brass/50 hover:text-brass-light"
                         >
                           ✎ Note / photo
                         </button>
                       ) : (
                         <div className="mt-2 border-l-2 border-brass pl-3 py-2">
-                          <span className="caps text-[8px] text-brass block mb-1.5">Note on this line</span>
+                          <span className="caps text-[12px] text-brass block mb-1.5">Note on this line</span>
                           <textarea
                             value={l.notes || ""}
                             onChange={(e) => updateLineNotes(active.ref, l.id, e.target.value)}
@@ -1410,7 +1549,7 @@ export default function IntakeStepped() {
                             {!l.notes?.trim() && !(l.photoPreviewUrls?.length) && (
                               <button
                                 type="button"
-                                className="text-[10px] text-cream-dim ml-auto"
+                                className="text-[12px] text-cream-dim ml-auto"
                                 onClick={() => setNoteOpenFor(null)}
                               >
                                 Collapse
@@ -1442,7 +1581,7 @@ export default function IntakeStepped() {
                     </span>
                     <span className="flex-1 min-w-0">
                       <span className="block font-semibold text-sm">{p.preset_name}</span>
-                      <span className="text-[11px] text-cream-dim">{p.est_minutes ? `${p.est_minutes} min` : "—"}</span>
+                      <span className="text-[12px] text-cream-dim">{p.est_minutes ? `${p.est_minutes} min` : "—"}</span>
                     </span>
                     <span className="display text-2xl text-brass-light shrink-0">{money(Number(p.price) || 0)}</span>
                   </button>
@@ -1457,7 +1596,7 @@ export default function IntakeStepped() {
             <div className="mt-4 rounded-[17px] border border-dashed border-brass/40 bg-brass/[0.05] p-4">
               <div className="flex items-center gap-2 mb-3">
                 <span className="display text-[19px] italic">Custom alteration line</span>
-                <span className="text-[8px] font-bold tracking-wider uppercase px-2 py-0.5 rounded border border-signal-amber/50 text-signal-amber bg-signal-amber/10">
+                <span className="text-[12px] font-bold tracking-wider uppercase px-2 py-0.5 rounded border border-signal-amber/50 text-signal-amber bg-signal-amber/10">
                   out of scope
                 </span>
               </div>
@@ -1477,7 +1616,7 @@ export default function IntakeStepped() {
                 />
               </div>
               <div className="flex flex-wrap gap-3 mt-3 items-center">
-                <p className="text-[9.5px] text-cream-dim flex-1 leading-relaxed min-w-[180px]">
+                <p className="text-[12px] text-cream-dim flex-1 leading-relaxed min-w-[180px]">
                   Normal line with <b className="text-cream-muted">no preset</b>. Full shop price kept for tailor
                   stats — never $0 (use Re-do for free work).
                 </p>
@@ -1485,7 +1624,7 @@ export default function IntakeStepped() {
                   type="button"
                   onClick={addCustomLine}
                   disabled={!customDesc.trim() || !(Number(customPrice.replace(/[^0-9.]/g, "")) > 0)}
-                  className="btn-brass h-11 px-6 text-[10px] disabled:opacity-40"
+                  className="btn-brass h-11 px-6 text-[12px] disabled:opacity-40"
                 >
                   Add line
                 </button>
@@ -1501,7 +1640,7 @@ export default function IntakeStepped() {
                     type="button"
                     onClick={() => setTicketNoteKind("internal")}
                     className={cn(
-                      "px-3 py-1.5 text-[8.5px] font-bold tracking-wider uppercase",
+                      "px-3 py-1.5 text-[12px] font-bold tracking-wider uppercase",
                       ticketNoteKind === "internal" ? "bg-brass/20 text-brass-light" : "text-cream-dim",
                     )}
                   >
@@ -1511,7 +1650,7 @@ export default function IntakeStepped() {
                     type="button"
                     onClick={() => setTicketNoteKind("customer")}
                     className={cn(
-                      "px-3 py-1.5 text-[8.5px] font-bold tracking-wider uppercase",
+                      "px-3 py-1.5 text-[12px] font-bold tracking-wider uppercase",
                       ticketNoteKind === "customer" ? "bg-brass/20 text-brass-light" : "text-cream-dim",
                     )}
                   >
@@ -1526,13 +1665,13 @@ export default function IntakeStepped() {
                 rows={3}
                 className="w-full rounded-[13px] bg-black/40 border border-brass/30 px-4 py-3 text-[13px] text-cream-muted resize-none placeholder:text-cream-dim"
               />
-              <p className="text-[9.5px] text-cream-dim mt-2 leading-relaxed">
+              <p className="text-[12px] text-cream-dim mt-2 leading-relaxed">
                 <b className="text-signal-amber">Internal</b> is staff-only.{" "}
                 <b className="text-cream-muted">On the receipt</b> appears on thermal + e-ticket — deliberate tap.
               </p>
             </div>
 
-            <button type="button" onClick={() => setStep(3)} className="btn-brass mt-6 h-14 px-8 text-[11px]">
+            <button type="button" onClick={() => setStep(3)} className="btn-brass mt-6 h-14 px-8 text-[12px]">
               Review →
             </button>
               </div>
@@ -1542,7 +1681,7 @@ export default function IntakeStepped() {
                 <aside className="lg:sticky lg:top-4 rounded-[20px] border border-[rgba(155,139,196,0.4)] bg-gradient-to-b from-[rgba(155,139,196,0.12)] to-black/35 overflow-hidden">
                   <div className="px-4 py-3 border-b border-[rgba(155,139,196,0.25)]">
                     <div className="display text-[18px] italic">Order cart</div>
-                    <div className="font-mono text-[10px] text-[var(--vi,#9B8BC4)] mt-0.5">{linkedSo || "—"}</div>
+                    <div className="font-mono text-[12px] text-[var(--vi,#9B8BC4)] mt-0.5">{linkedSo || "—"}</div>
                   </div>
                   <div className="p-3 space-y-2 max-h-[55vh] overflow-y-auto">
                     {garments.map((g) => {
@@ -1573,15 +1712,15 @@ export default function IntakeStepped() {
                                 📷
                               </span>
                             )}
-                            <span className="chip text-[8px]">{g.ref}</span>
+                            <span className="chip text-[12px]">{g.ref}</span>
                             <span className="font-semibold text-[13px] flex-1">{g.garmentType}</span>
                             <span className="display text-lg text-brass-light">{money(amt)}</span>
                           </div>
-                          {g.notes ? <div className="text-[10px] text-cream-dim mt-1 truncate">{g.notes}</div> : null}
+                          {g.notes ? <div className="text-[12px] text-cream-dim mt-1 truncate">{g.notes}</div> : null}
                           {g.soItemName ? (
-                            <div className="text-[9px] text-[var(--vi,#9B8BC4)] mt-0.5 truncate">{g.soItemName}</div>
+                            <div className="text-[12px] text-[var(--vi,#9B8BC4)] mt-0.5 truncate">{g.soItemName}</div>
                           ) : null}
-                          <div className="text-[10px] text-cream-dim mt-1">
+                          <div className="text-[12px] text-cream-dim mt-1">
                             {g.lines.length} line{g.lines.length === 1 ? "" : "s"}
                             {photoN ? ` · ${photoN} photo${photoN === 1 ? "" : "s"}` : ""}
                             {on ? " · active" : " · tap to adjust"}
@@ -1592,13 +1731,13 @@ export default function IntakeStepped() {
                     <button
                       type="button"
                       onClick={() => setStep(1)}
-                      className="w-full rounded-xl border border-dashed border-[rgba(155,139,196,0.4)] py-3 text-[11px] text-[var(--vi,#9B8BC4)] font-semibold"
+                      className="w-full rounded-xl border border-dashed border-[rgba(155,139,196,0.4)] py-3 text-[12px] text-[var(--vi,#9B8BC4)] font-semibold"
                     >
                       + Add piece
                     </button>
                   </div>
                   <div className="px-4 py-3 border-t border-[rgba(155,139,196,0.25)] flex items-center justify-between">
-                    <span className="caps text-[8px] text-cream-dim">Ticket value</span>
+                    <span className="caps text-[12px] text-cream-dim">Ticket value</span>
                     <span className="display text-xl text-brass-light">{money(total)}</span>
                   </div>
                 </aside>
@@ -1648,7 +1787,7 @@ export default function IntakeStepped() {
                           className="w-14 h-14 rounded-lg object-cover border border-brass/30"
                         />
                       ))}
-                      <span className="self-center text-[10px] text-cream-dim">
+                      <span className="self-center text-[12px] text-cream-dim">
                         {(g.photoPreviewUrls || []).length} photo
                         {(g.photoPreviewUrls || []).length === 1 ? "" : "s"} · uploads on submit
                       </span>
@@ -1671,7 +1810,7 @@ export default function IntakeStepped() {
                         </button>
                       </div>
                       {l.notes?.trim() ? (
-                        <p className="text-[11px] text-cream-dim border-l border-brass/40 ml-0.5 pl-2">{l.notes}</p>
+                        <p className="text-[12px] text-cream-dim border-l border-brass/40 ml-0.5 pl-2">{l.notes}</p>
                       ) : null}
                     </div>
                   ))}
@@ -1687,7 +1826,7 @@ export default function IntakeStepped() {
                 <p className="text-xs text-signal-amber px-5 py-3">
                   {billing === "on_order"
                     ? "On custom order — full prices kept for value; no client invoice."
-                    : "Re-do / Warranty — full prices kept for value; no SI / no AR."}
+                    : "Re-do — full prices kept for value; no SI / no AR."}
                 </p>
               )}
             </div>
@@ -1702,7 +1841,7 @@ export default function IntakeStepped() {
               <span className="text-lg">✉</span>
               <span className="flex-1">
                 <span className="block font-semibold text-[13px]">Text when ready</span>
-                <span className="text-[10.5px] text-cream-dim">
+                <span className="text-[12px] text-cream-dim">
                   SMS to {customer?.phone || newPhone || "phone on file"}
                 </span>
               </span>
@@ -1726,7 +1865,7 @@ export default function IntakeStepped() {
               <path d="M4 8h16l-1.2 12H5.2L4 8Z" />
               <path d="M9 8V6a3 3 0 0 1 6 0v2" />
             </svg>
-            <span className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] rounded-full bg-brass text-forest-deep text-[11px] font-bold grid place-items-center">
+            <span className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] rounded-full bg-brass text-forest-deep text-[12px] font-bold grid place-items-center">
               {lineCount}
             </span>
           </span>
@@ -1782,7 +1921,7 @@ export default function IntakeStepped() {
             ))}
             <p className="text-xs text-cream-dim mt-3">No tax — alterations are a service, not goods.</p>
             <div className="display text-3xl text-brass-light mt-4">{money(total)}</div>
-            <button type="button" onClick={() => { setCartOpen(false); openPark(); }} className="btn-ghost w-full h-12 mt-4 text-[11px]">
+            <button type="button" onClick={() => { setCartOpen(false); openPark(); }} className="btn-ghost w-full h-12 mt-4 text-[12px]">
               Park this ticket…
             </button>
           </div>

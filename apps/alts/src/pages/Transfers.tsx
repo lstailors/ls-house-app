@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -73,7 +74,7 @@ export default function Transfers() {
   const sel = list.find((t) => t.name === selected);
 
   return (
-    <div className="alts-root min-h-screen flex flex-col">
+    <div className="alts-root min-h-dvh flex flex-col">
       <header className="flex items-center gap-3 px-5 py-4 border-b border-brass/20">
         <Link to="/" className="seal">
           LS
@@ -91,6 +92,14 @@ export default function Transfers() {
         />
       </header>
 
+      {tickets.isError && (
+        <QueryErrorPanel
+          title="Could not load tickets"
+          onRetry={() => tickets.refetch()}
+          className="mx-5 mt-3"
+        />
+      )}
+
       <div className="flex-1 grid lg:grid-cols-[1fr_360px] min-h-0">
         <div className="overflow-y-auto p-4 space-y-2">
           <div className="caps px-1 mb-2">Open tickets · {list.length}</div>
@@ -105,7 +114,7 @@ export default function Transfers() {
               )}
             >
               <div className="flex items-center gap-2">
-                <span className="font-mono text-[11px] text-brass-light">{t.name}</span>
+                <span className="font-mono text-[12px] text-brass-light">{t.name}</span>
                 <span className="chip">{t.workflow_state}</span>
                 <span className="ml-auto text-xs text-cream-dim">{t.origin_location || "NYC"}</span>
               </div>
@@ -160,14 +169,14 @@ export default function Transfers() {
                 type="button"
                 disabled={transfer.isPending}
                 onClick={() => transfer.mutate()}
-                className="btn-brass w-full h-14 text-[11px]"
+                className="btn-brass w-full h-14 text-[12px]"
               >
                 {transfer.isPending ? "Saving…" : "Confirm transfer"}
               </button>
               <button
                 type="button"
                 onClick={() => nav(`/orders/alterations/${selected}`)}
-                className="btn-ghost w-full h-11 mt-2 text-[11px]"
+                className="btn-ghost w-full h-11 mt-2 text-[12px]"
               >
                 Open ticket
               </button>
@@ -184,7 +193,7 @@ export default function Transfers() {
                   onClick={() => setSelected(t.name)}
                   className="w-full text-left text-sm card-glass px-3 py-2"
                 >
-                  <span className="font-mono text-[10px] text-brass-light">{t.name}</span>
+                  <span className="font-mono text-[12px] text-brass-light">{t.name}</span>
                   <div className="font-semibold">{t.customer_name}</div>
                 </button>
               ))}

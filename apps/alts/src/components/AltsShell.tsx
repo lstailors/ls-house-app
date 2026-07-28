@@ -21,14 +21,14 @@ export default function AltsShell() {
 
   if (isHome) {
     return (
-      <div className="min-h-screen bg-forest-deep text-cream">
+      <div className="min-h-dvh bg-forest-deep text-cream">
         <Outlet />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-forest-deep text-cream flex flex-col">
+    <div className="min-h-dvh bg-forest-deep text-cream flex flex-col">
       <header
         className={cn(
           "flex items-center gap-3 px-4 py-3 border-b border-brass/20",
@@ -41,7 +41,7 @@ export default function AltsShell() {
           </span>
           <span className="truncate">
             <span className="font-display italic text-lg block leading-tight">Alterations</span>
-            <span className="text-[10px] uppercase tracking-[0.18em] text-cream-dim">Home</span>
+            <span className="text-[12px] uppercase tracking-[0.18em] text-cream-dim">Home</span>
           </span>
         </Link>
         <div className="flex-1" />

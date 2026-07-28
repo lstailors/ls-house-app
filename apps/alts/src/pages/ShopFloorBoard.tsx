@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { cn } from "@ls/design/utils";
+import { billingStatusLabel } from "@alts/lib/billingLabels";
+import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 
 type Ticket = {
@@ -132,7 +134,7 @@ export default function ShopFloorBoard() {
   }, [list]);
 
   return (
-    <div className="alts-root flex flex-col min-h-screen">
+    <div className="alts-root flex flex-col min-h-dvh">
       <header className="flex items-center gap-3 px-5 py-4 border-b border-brass/20">
         <Link to="/" className="seal">
           LS
@@ -158,7 +160,7 @@ export default function ShopFloorBoard() {
               type="button"
               onClick={() => setLoc(l)}
               className={cn(
-                "px-3 py-2 rounded-full text-[11px] font-bold tracking-widest uppercase",
+                "px-3 py-2 rounded-full text-[12px] font-bold tracking-widest uppercase",
                 loc === l ? "bg-brass text-forest-deep" : "text-cream-dim",
               )}
             >
@@ -219,16 +221,25 @@ export default function ShopFloorBoard() {
             {lab}
           </button>
         ))}
-        <Link to="/pickup" className="ml-auto btn-brass h-10 px-4 text-[11px] inline-flex items-center">
+        <Link to="/pickup" className="ml-auto btn-brass h-10 px-4 text-[12px] inline-flex items-center">
           Pickup counter
         </Link>
-        <Link to="/intake/kind" className="btn-ghost h-10 px-4 text-[11px] inline-flex items-center">
+        <Link to="/intake/kind" className="btn-ghost h-10 px-4 text-[12px] inline-flex items-center">
           + New ticket
         </Link>
       </div>
 
       <div className="flex-1 overflow-x-auto px-5 pb-6">
-        <div className="flex gap-3 min-w-[900px] h-full min-h-[420px]">
+        {tickets.isError && (
+          <div className="mb-3">
+            <QueryErrorPanel
+              title="Could not load shop floor"
+              message="Ticket board failed to load. Retry — empty columns are not the same as an outage."
+              onRetry={() => tickets.refetch()}
+            />
+          </div>
+        )}
+        <div className="shop-floor-board-cols flex gap-3 min-w-[900px] h-full min-h-[420px]">
           {COLS.map((col) => (
             <div key={col} className="flex-1 min-w-[210px] flex flex-col card-glass overflow-hidden">
               <div className="flex items-center gap-2 px-3 py-3 border-b border-brass/15">
@@ -266,12 +277,12 @@ export default function ShopFloorBoard() {
                         className="w-full text-left"
                       >
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[11px] font-mono text-brass-light truncate">{t.name}</span>
+                          <span className="text-[12px] font-mono text-brass-light truncate">{t.name}</span>
                           {due.kind === "late" && <span className="badge-late">{due.text}</span>}
                           {due.kind === "soon" && <span className="badge-soon">{due.text}</span>}
                         </div>
                         <div className="font-semibold text-sm truncate">{t.customer_name || "—"}</div>
-                        <div className="flex items-center gap-2 mt-2 text-[11px] text-cream-dim">
+                        <div className="flex items-center gap-2 mt-2 text-[12px] text-cream-dim">
                           <span>
                             {t.assigned_tailor ? (
                               t.assigned_tailor
@@ -284,13 +295,13 @@ export default function ShopFloorBoard() {
                           <span className="ml-auto">{due.label}</span>
                         </div>
                         {nonBill && (
-                          <div className="text-[10px] text-[var(--vi,#9B8BC4)] mt-1">
-                            {t.billing_status}
+                          <div className="text-xs text-[var(--vi,#9B8BC4)] mt-1">
+                            {billingStatusLabel(t.billing_status)}
                             {t.linked_sales_order ? ` · ${t.linked_sales_order}` : ""}
                           </div>
                         )}
                         {t.payment_status && t.payment_status !== "Paid" && t.payment_status !== "N/A" && col === "Ready" && (
-                          <div className="text-[10px] text-signal-amber mt-1">{t.payment_status}</div>
+                          <div className="text-[12px] text-signal-amber mt-1">{t.payment_status}</div>
                         )}
                       </button>
                       {next && (
@@ -301,7 +312,7 @@ export default function ShopFloorBoard() {
                             e.stopPropagation();
                             advance.mutate({ name: t.name, status: next.status });
                           }}
-                          className="mt-2 w-full h-9 rounded-lg border border-brass/30 text-[10px] font-bold tracking-widest uppercase text-brass-light hover:bg-brass/15 disabled:opacity-40"
+                          className="mt-2 w-full h-9 rounded-lg border border-brass/30 text-[12px] font-bold tracking-widest uppercase text-brass-light hover:bg-brass/15 disabled:opacity-40"
                         >
                           {next.label} →
                         </button>
