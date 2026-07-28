@@ -328,8 +328,6 @@
     min-height: 44px;
   }
 
-  }
-
   .alts-root header {
     padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
   }

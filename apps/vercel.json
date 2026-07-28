@@ -5,6 +5,24 @@
   "framework": "vite",
   "rewrites": [
     { "source": "/api/:path*", "destination": "https://app.lstailors.com/api/:path*" },
-    { "source": "/((?!assets/).*)", "destination": "/index.html" }
+    {
+      "source": "/((?!assets/|sw\\.js$|workbox-[^/]+\\.js$|registerSW\\.js$|manifest\\.webmanifest$|manifest-alts\\.json$).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
+        { "key": "Service-Worker-Allowed", "value": "/" }
+      ]
+    },
+    {
+      "source": "/workbox-(.*).js",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    }
   ]
 }
