@@ -18,12 +18,14 @@
   color: var(--cr);
   font-family: Montserrat, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* Bench distance: never go under 12px anywhere in FOH */
+  font-size: 14px;
   background: radial-gradient(ellipse at 50% -12%, #17321f, var(--fd) 58%);
 }
 .alts-root .caps {
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 10px;
+  letter-spacing: 0.16em;
+  font-size: 12px; /* was 10 — legibility floor */
   font-weight: 600;
   color: var(--cd);
 }
@@ -56,6 +58,7 @@
   border-radius: 14px;
   cursor: pointer;
   font-family: inherit;
+  font-size: 12px;
 }
 .alts-root .btn-ghost {
   background: var(--glass);
@@ -67,6 +70,7 @@
   border-radius: 14px;
   cursor: pointer;
   font-family: inherit;
+  font-size: 12px;
 }
 .alts-root .btn-ghost:hover {
   color: var(--cr);
@@ -75,11 +79,11 @@
 .alts-root .chip {
   display: inline-flex;
   align-items: center;
-  padding: 3px 9px;
+  padding: 4px 10px;
   border-radius: 6px;
-  font-size: 10px;
+  font-size: 12px; /* was 10 — legibility floor */
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   background: rgba(176, 141, 87, 0.15);
   border: 1px solid rgba(176, 141, 87, 0.3);
   color: var(--bl);
@@ -88,16 +92,16 @@
   background: rgba(217, 123, 108, 0.9);
   color: #fff;
   border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 10px;
+  padding: 4px 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 .alts-root .badge-soon {
   background: rgba(232, 168, 92, 0.9);
   color: var(--fd);
   border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 10px;
+  padding: 4px 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 .alts-root .card-glass {
@@ -108,4 +112,16 @@
 .alts-root .card-glass:hover {
   background: var(--gh);
   border-color: rgba(176, 141, 87, 0.45);
+}
+
+/* Tailwind arbitrary under-12 overrides inside alts FOH */
+.alts-root .text-\[8px\],
+.alts-root .text-\[9px\],
+.alts-root .text-\[9\.5px\],
+.alts-root .text-\[10px\],
+.alts-root .text-\[10\.5px\],
+.alts-root .text-\[11px\],
+.alts-root .text-\[11\.5px\] {
+  font-size: 12px !important;
+  line-height: 1.35;
 }

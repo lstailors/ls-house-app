@@ -41,7 +41,7 @@ export default function AltsShell() {
           </span>
           <span className="truncate">
             <span className="font-display italic text-lg block leading-tight">Alterations</span>
-            <span className="text-[10px] uppercase tracking-[0.18em] text-cream-dim">Home</span>
+            <span className="text-[12px] uppercase tracking-[0.18em] text-cream-dim">Home</span>
           </span>
         </Link>
         <div className="flex-1" />

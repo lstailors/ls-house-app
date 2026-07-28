@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { cn } from "@ls/design/utils";
 import { piecesFromSoDetail, writeSoCart, type SoPiece } from "@alts/lib/soCart";
+import { REDO_DISPLAY } from "@alts/lib/billingLabels";
+import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 
 type Kind = "walk_in" | "on_order" | "redo";
@@ -171,7 +173,7 @@ export default function TicketKind() {
         </Link>
         <h1 className="display text-[23px]">New ticket</h1>
         <div className="flex-1" />
-        <div className="hidden sm:flex items-center gap-2 text-[11px] font-semibold tracking-widest uppercase text-cream-dim">
+        <div className="hidden sm:flex items-center gap-2 text-[12px] font-semibold tracking-widest uppercase text-cream-dim">
           <span className="flex items-center gap-2 text-cream">
             <span className="w-[26px] h-[26px] rounded-full bg-brass text-forest-deep grid place-items-center font-bold">1</span>
             Kind
@@ -189,7 +191,7 @@ export default function TicketKind() {
         {/* left — kind choice */}
         <aside className="border-r border-brass/15 p-5 flex flex-col overflow-y-auto">
           <h2 className="display text-[27px] leading-tight">What kind of ticket?</h2>
-          <p className="text-[11.5px] text-[var(--cd)] mt-2 mb-5 leading-relaxed">
+          <p className="text-[12px] text-[var(--cd)] mt-2 mb-5 leading-relaxed">
             This decides whether anyone gets charged. Pick before you touch a garment.
           </p>
 
@@ -212,7 +214,7 @@ export default function TicketKind() {
               <span className="display text-[22px] flex-1">Walk-in alteration</span>
               <span className="text-brass/70">→</span>
             </div>
-            <p className="text-[11px] text-[var(--cd)] mt-2 leading-relaxed">
+            <p className="text-[12px] text-[var(--cd)] mt-2 leading-relaxed">
               Client brings in their own garments. Normal pricing, client pays.
             </p>
             <div className="flex flex-wrap gap-1.5 mt-3">
@@ -236,7 +238,7 @@ export default function TicketKind() {
               <span className="display text-[22px] flex-1">Custom order work</span>
               <span className={cn(kind === "on_order" ? "text-[var(--vi,#9B8BC4)]" : "text-brass/70")}>→</span>
             </div>
-            <p className="text-[11px] text-[var(--cd)] mt-2 leading-relaxed">
+            <p className="text-[12px] text-[var(--cd)] mt-2 leading-relaxed">
               Adjustments to something we made. Pull the order — pieces land in the cart on the right.
             </p>
             <div className="flex flex-wrap gap-1.5 mt-3">
@@ -265,20 +267,20 @@ export default function TicketKind() {
           >
             <div className="flex items-center gap-3">
               <span className="text-signal-emerald text-xl">✓</span>
-              <span className="display text-[22px] flex-1">Re-do</span>
+              <span className="display text-[22px] flex-1">{REDO_DISPLAY.kindTitle}</span>
               <span className="text-brass/70">→</span>
             </div>
-            <p className="text-[11px] text-[var(--cd)] mt-2 leading-relaxed">
-              Warranty / re-do — full shop prices for tailor stats; client never charged twice.
+            <p className="text-xs text-[var(--cd)] mt-2 leading-relaxed">
+              {REDO_DISPLAY.kindBody}
             </p>
             <div className="flex flex-wrap gap-1.5 mt-3">
-              <span className="chip border-signal-emerald/40 text-signal-emerald bg-signal-emerald/10">Warranty · Re-do</span>
+              <span className="chip border-signal-emerald/40 text-signal-emerald bg-signal-emerald/10">{REDO_DISPLAY.kindChip}</span>
               <span className="chip border-signal-emerald/40 text-signal-emerald bg-signal-emerald/10">No invoice</span>
             </div>
           </button>
 
           <div className="mt-auto pt-4">
-            <div className="rounded-xl border border-brass/20 bg-brass/10 px-4 py-3 text-[10px] leading-relaxed text-cream-muted">
+            <div className="rounded-xl border border-brass/20 bg-brass/10 px-4 py-3 text-[12px] leading-relaxed text-cream-muted">
               <div className="caps text-brass-light mb-1">Why this is step one</div>
               Billing intent is the one thing that cannot be fixed cleanly afterwards. Choosing up front costs one tap.
             </div>
@@ -301,10 +303,9 @@ export default function TicketKind() {
 
           {kind === "redo" && (
             <div className="max-w-xl mx-auto pt-8 text-center p-5">
-              <h2 className="display text-3xl mb-2">Re-do</h2>
+              <h2 className="display text-3xl mb-2">{REDO_DISPLAY.kindTitle}</h2>
               <p className="text-sm text-cream-dim mb-8">
-                Warranty / re-do — full shop prices stay on the ticket for tailor stats & internal value. Tagged{" "}
-                <b className="text-cream">Warranty</b> in ERPNext: no client invoice, no AR.
+                {REDO_DISPLAY.kindBody} ERP tag stays non-billable — no client invoice, no AR.
               </p>
               <button
                 type="button"
@@ -321,7 +322,7 @@ export default function TicketKind() {
               {/* SO search list */}
               <div className="overflow-y-auto p-5 min-w-0 border-r border-brass/10">
                 <h2 className="display text-[27px] leading-tight">Pull the custom order</h2>
-                <p className="text-[11.5px] text-[var(--cd)] mt-2 mb-4">
+                <p className="text-[12px] text-[var(--cd)] mt-2 mb-4">
                   Find the order — garments load into the <b className="text-[var(--vi,#9B8BC4)]">cart on the right</b>. Toggle
                   what needs adjusting.
                 </p>
@@ -336,7 +337,7 @@ export default function TicketKind() {
                     autoFocus
                   />
                 </div>
-                <p className="text-[10.5px] text-[var(--cd)] mb-4 pl-1">
+                <p className="text-[12px] text-[var(--cd)] mb-4 pl-1">
                   Open <b className="text-brass-light font-semibold">Sales Orders</b> · try{" "}
                   <b className="text-brass-light">SO-00472</b>, a last name, or fabric
                 </p>
@@ -372,10 +373,10 @@ export default function TicketKind() {
                             {so.customerName || so.title}
                             {so.subtitle ? <span className="text-cream-dim font-normal"> · {so.subtitle}</span> : null}
                           </div>
-                          <div className="flex flex-wrap gap-2 mt-1 text-[11px] text-[var(--cd)] items-center">
+                          <div className="flex flex-wrap gap-2 mt-1 text-[12px] text-[var(--cd)] items-center">
                             <span className="font-mono text-[var(--vi,#9B8BC4)]">{so.id}</span>
                             {so.meta && (
-                              <span className="px-2 py-0.5 rounded-md border border-[rgba(155,139,196,0.45)] text-[var(--vi,#9B8BC4)] text-[8.5px] font-bold tracking-wider uppercase">
+                              <span className="px-2 py-0.5 rounded-md border border-[rgba(155,139,196,0.45)] text-[var(--vi,#9B8BC4)] text-[12px] font-bold tracking-wider uppercase">
                                 {so.meta}
                               </span>
                             )}
@@ -400,7 +401,7 @@ export default function TicketKind() {
                   {selectedSo ? (
                     <>
                       <div className="font-semibold text-[14px] truncate">{selectedSo.customerName || selectedSo.title}</div>
-                      <div className="font-mono text-[11px] text-[var(--vi,#9B8BC4)] mt-0.5">{selectedSo.id}</div>
+                      <div className="font-mono text-[12px] text-[var(--vi,#9B8BC4)] mt-0.5">{selectedSo.id}</div>
                     </>
                   ) : (
                     <p className="text-[12px] text-cream-dim">Select an order — pieces appear here.</p>
@@ -412,23 +413,28 @@ export default function TicketKind() {
                     <p className="text-cream-dim text-sm p-3 animate-pulse">Loading order lines…</p>
                   )}
                   {soDetail.isError && (
-                    <p className="text-signal-amber text-sm p-3">Could not load items. Try again or continue and add garments manually.</p>
+                    <QueryErrorPanel
+                      compact
+                      title="Could not load order items"
+                      message="Try again or continue and add garments manually."
+                      onRetry={() => soDetail.refetch()}
+                    />
                   )}
                   {!selectedSo && (
                     <div className="rounded-2xl border border-dashed border-brass/25 p-6 text-center text-[12px] text-cream-dim">
                       Cart is empty
-                      <div className="text-[10px] mt-2 opacity-70">Like checkout — pick the order, then the pieces to alter</div>
+                      <div className="text-[12px] mt-2 opacity-70">Like checkout — pick the order, then the pieces to alter</div>
                     </div>
                   )}
                   {cartPieces.length > 0 && (
                     <div className="flex gap-2 mb-2">
-                      <button type="button" className="text-[9px] font-bold tracking-widest uppercase text-brass-light" onClick={() => selectAll(true)}>
+                      <button type="button" className="text-[12px] font-bold tracking-widest uppercase text-brass-light" onClick={() => selectAll(true)}>
                         All
                       </button>
-                      <button type="button" className="text-[9px] font-bold tracking-widest uppercase text-cream-dim" onClick={() => selectAll(false)}>
+                      <button type="button" className="text-[12px] font-bold tracking-widest uppercase text-cream-dim" onClick={() => selectAll(false)}>
                         None
                       </button>
-                      <span className="ml-auto text-[10px] text-cream-dim">
+                      <span className="ml-auto text-[12px] text-cream-dim">
                         {selectedCount}/{cartPieces.length} pieces
                       </span>
                     </div>
@@ -447,19 +453,19 @@ export default function TicketKind() {
                     >
                       <span
                         className={cn(
-                          "w-6 h-6 rounded-md border grid place-items-center text-[11px] font-bold shrink-0 mt-0.5",
+                          "w-6 h-6 rounded-md border grid place-items-center text-[12px] font-bold shrink-0 mt-0.5",
                           p.selected ? "bg-[var(--vi,#9B8BC4)] text-[#120E1C] border-transparent" : "border-brass/40 text-transparent",
                         )}
                       >
                         ✓
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-[10px] font-bold tracking-widest uppercase text-[var(--vi,#9B8BC4)]">
+                        <span className="block text-[12px] font-bold tracking-widest uppercase text-[var(--vi,#9B8BC4)]">
                           {p.garmentType}
                         </span>
                         <span className="block text-[13px] font-semibold leading-snug">{p.label}</span>
                         {p.description ? (
-                          <span className="block text-[10px] text-cream-dim mt-1 line-clamp-2">{p.description}</span>
+                          <span className="block text-[12px] text-cream-dim mt-1 line-clamp-2">{p.description}</span>
                         ) : null}
                       </span>
                     </button>
@@ -489,7 +495,7 @@ export default function TicketKind() {
                           : `Continue · ${selectedCount} piece${selectedCount === 1 ? "" : "s"}`}
                     </span>
                     {selectedSo && selectedCount > 0 && (
-                      <span className="text-[9px] tracking-[0.14em] uppercase opacity-75">NON-BILLABLE · FULL PRICES KEPT</span>
+                      <span className="text-[12px] tracking-[0.14em] uppercase opacity-75">NON-BILLABLE · FULL PRICES KEPT</span>
                     )}
                   </button>
                 </div>

@@ -115,7 +115,7 @@ export default function DeliveryLabelPrint() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-forest-deep grid place-items-center text-brass text-[11px] tracking-[0.2em] uppercase">
+      <div className="min-h-screen bg-forest-deep grid place-items-center text-brass text-[12px] tracking-[0.2em] uppercase">
         Loading label…
       </div>
     );
@@ -146,7 +146,7 @@ export default function DeliveryLabelPrint() {
         </button>
         <div className="text-center min-w-0">
           <div className="text-cream text-sm font-medium truncate">{delNo}</div>
-          <div className="text-[10px] text-brass/80 tracking-widest uppercase">4×6 · LabelLife · {band}</div>
+          <div className="text-[12px] text-brass/80 tracking-widest uppercase">4×6 · LabelLife · {band}</div>
         </div>
         <div className="flex gap-2">
           <button
@@ -169,7 +169,7 @@ export default function DeliveryLabelPrint() {
         </div>
       </div>
 
-      <div className="no-print px-4 py-3 max-w-xl mx-auto text-[11px] text-cream-muted space-y-2">
+      <div className="no-print px-4 py-3 max-w-xl mx-auto text-[12px] text-cream-muted space-y-2">
         <p>
           Use the <b className="text-brass">4×6 delivery D520BT</b>, not the garment 3×2. Solid black band —
           no greyscale. POD is proof only — no charge UI on this label.
@@ -179,7 +179,7 @@ export default function DeliveryLabelPrint() {
             <a
               key={b}
               href={`?band=${b}`}
-              className={`px-2 py-1 rounded border text-[10px] tracking-wide ${
+              className={`px-2 py-1 rounded border text-[12px] tracking-wide ${
                 band === b ? "border-brass text-brass bg-brass/10" : "border-white/15 text-cream-muted"
               }`}
             >

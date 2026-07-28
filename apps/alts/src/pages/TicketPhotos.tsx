@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -76,6 +77,13 @@ export default function TicketPhotos() {
 
   return (
     <div className="alts-root min-h-screen flex flex-col">
+        {ticket.isError && (
+          <QueryErrorPanel
+            title="Could not load"
+            onRetry={() => ticket.refetch()}
+            className="mx-4 mt-3"
+          />
+        )}
       <header className="flex items-center gap-3 px-5 py-4 border-b border-brass/20">
         <Link to={`/orders/alterations/${ticketName}`} className="text-cream-dim p-2">
           ←
@@ -112,7 +120,7 @@ export default function TicketPhotos() {
             type="button"
             disabled={upload.isPending}
             onClick={() => cameraRef.current?.click()}
-            className="btn-brass h-16 text-[11px] disabled:opacity-50"
+            className="btn-brass h-16 text-[12px] disabled:opacity-50"
           >
             {upload.isPending ? "Uploading…" : `📷 Take photo · ${garmentRef}`}
           </button>
@@ -120,7 +128,7 @@ export default function TicketPhotos() {
             type="button"
             disabled={upload.isPending}
             onClick={() => libraryRef.current?.click()}
-            className="h-16 rounded-2xl border border-brass/35 bg-black/25 text-[11px] font-bold tracking-widest uppercase text-cream-muted disabled:opacity-50"
+            className="h-16 rounded-2xl border border-brass/35 bg-black/25 text-[12px] font-bold tracking-widest uppercase text-cream-muted disabled:opacity-50"
           >
             Choose from library
           </button>
@@ -161,7 +169,7 @@ export default function TicketPhotos() {
               className="card-glass overflow-hidden block"
             >
               <img src={p.url} alt={p.name} className="w-full aspect-square object-cover bg-black/40" />
-              <div className="px-2 py-1.5 text-[10px] text-cream-dim truncate">
+              <div className="px-2 py-1.5 text-[12px] text-cream-dim truncate">
                 {p.garmentRef || "—"} · {p.name}
               </div>
             </a>

@@ -300,7 +300,7 @@ export default function CustomerEditSheet({ customerId, customerName, onClose, o
           <div className="min-w-0 flex-1">
             <div className="caps text-brass-light">Edit customer</div>
             <h2 className="display text-[26px] leading-tight truncate">{name || customerName || "Client"}</h2>
-            <p className="text-[11px] text-[var(--cd)] mt-1">
+            <p className="text-[12px] text-[var(--cd)] mt-1">
               Multiple numbers, residences, and assistants — saved to ERPNext
             </p>
           </div>
@@ -319,7 +319,7 @@ export default function CustomerEditSheet({ customerId, customerName, onClose, o
                 <div className="caps text-brass-light flex-1">Phone numbers</div>
                 <button
                   type="button"
-                  className="text-[10px] font-bold tracking-widest uppercase text-brass-light"
+                  className="text-[12px] font-bold tracking-widest uppercase text-brass-light"
                   onClick={() => setPhones((prev) => [...prev, { key: uid(), number: "", label: "Work", isPrimary: false }])}
                 >
                   + Add number
@@ -350,7 +350,7 @@ export default function CustomerEditSheet({ customerId, customerName, onClose, o
                       )
                     }
                     className={cn(
-                      "h-11 px-3 rounded-xl border text-[10px] font-bold tracking-wide uppercase",
+                      "h-11 px-3 rounded-xl border text-[12px] font-bold tracking-wide uppercase",
                       p.isPrimary ? "border-brass bg-brass/20 text-brass-light" : "border-brass/25 text-cream-dim",
                     )}
                   >
@@ -375,7 +375,7 @@ export default function CustomerEditSheet({ customerId, customerName, onClose, o
                 <div className="caps text-brass-light flex-1">Emails</div>
                 <button
                   type="button"
-                  className="text-[10px] font-bold tracking-widest uppercase text-brass-light"
+                  className="text-[12px] font-bold tracking-widest uppercase text-brass-light"
                   onClick={() => setEmails((prev) => [...prev, { key: uid(), email: "", isPrimary: false }])}
                 >
                   + Add email
@@ -395,7 +395,7 @@ export default function CustomerEditSheet({ customerId, customerName, onClose, o
                     type="button"
                     onClick={() => setEmails((rows) => rows.map((r, j) => ({ ...r, isPrimary: j === i })))}
                     className={cn(
-                      "h-11 px-3 rounded-xl border text-[10px] font-bold tracking-wide uppercase",
+                      "h-11 px-3 rounded-xl border text-[12px] font-bold tracking-wide uppercase",
                       e.isPrimary ? "border-brass bg-brass/20 text-brass-light" : "border-brass/25 text-cream-dim",
                     )}
                   >
@@ -422,7 +422,7 @@ export default function CustomerEditSheet({ customerId, customerName, onClose, o
                 <div className="caps text-brass-light flex-1">Addresses / residences</div>
                 <button
                   type="button"
-                  className="text-[10px] font-bold tracking-widest uppercase text-brass-light"
+                  className="text-[12px] font-bold tracking-widest uppercase text-brass-light"
                   onClick={() =>
                     setAddresses((prev) => [
                       ...prev,
@@ -500,7 +500,7 @@ export default function CustomerEditSheet({ customerId, customerName, onClose, o
                           )
                         }
                         className={cn(
-                          "h-10 px-3 rounded-xl border text-[10px] font-bold tracking-wide uppercase",
+                          "h-10 px-3 rounded-xl border text-[12px] font-bold tracking-wide uppercase",
                           a.isBilling ? "border-brass bg-brass/20 text-brass-light" : "border-brass/25 text-cream-dim",
                         )}
                       >
@@ -512,7 +512,7 @@ export default function CustomerEditSheet({ customerId, customerName, onClose, o
                           setAddresses((rows) => rows.map((r, j) => (j === i ? { ...r, isShipping: !r.isShipping } : r)))
                         }
                         className={cn(
-                          "h-10 px-3 rounded-xl border text-[10px] font-bold tracking-wide uppercase",
+                          "h-10 px-3 rounded-xl border text-[12px] font-bold tracking-wide uppercase",
                           a.isShipping ? "border-brass bg-brass/20 text-brass-light" : "border-brass/25 text-cream-dim",
                         )}
                       >
@@ -520,7 +520,7 @@ export default function CustomerEditSheet({ customerId, customerName, onClose, o
                       </button>
                       <button
                         type="button"
-                        className="ml-auto h-10 px-3 rounded-xl border border-[rgba(217,123,108,0.4)] text-[10px] font-bold tracking-wide uppercase text-[var(--ro)]"
+                        className="ml-auto h-10 px-3 rounded-xl border border-[rgba(217,123,108,0.4)] text-[12px] font-bold tracking-wide uppercase text-[var(--ro)]"
                         onClick={() =>
                           setAddresses((rows) =>
                             rows.map((r, j) => (j === i ? (r.id ? { ...r, _delete: true } : r) : r)).filter((r, j) => !(j === i && !r.id)),
@@ -543,7 +543,7 @@ export default function CustomerEditSheet({ customerId, customerName, onClose, o
                 <div className="caps text-brass-light flex-1">Assistants & people</div>
                 <button
                   type="button"
-                  className="text-[10px] font-bold tracking-widest uppercase text-brass-light"
+                  className="text-[12px] font-bold tracking-widest uppercase text-brass-light"
                   onClick={() =>
                     setPeople((prev) => [
                       ...prev,
@@ -554,7 +554,7 @@ export default function CustomerEditSheet({ customerId, customerName, onClose, o
                   + Add person
                 </button>
               </div>
-              <p className="text-[11px] text-cream-dim -mt-1">
+              <p className="text-[12px] text-cream-dim -mt-1">
                 EA, house manager, spouse — separate contact on the client file. SMS still defaults to primary mobile unless you change it later.
               </p>
               {visiblePeople.length === 0 && (
@@ -595,7 +595,7 @@ export default function CustomerEditSheet({ customerId, customerName, onClose, o
                     </div>
                     <button
                       type="button"
-                      className="h-10 px-3 rounded-xl border border-[rgba(217,123,108,0.4)] text-[10px] font-bold tracking-wide uppercase text-[var(--ro)]"
+                      className="h-10 px-3 rounded-xl border border-[rgba(217,123,108,0.4)] text-[12px] font-bold tracking-wide uppercase text-[var(--ro)]"
                       onClick={() =>
                         setPeople((rows) =>
                           rows
@@ -627,10 +627,10 @@ export default function CustomerEditSheet({ customerId, customerName, onClose, o
             <div className="flex gap-3 pt-1 sticky bottom-0 pb-2"
               style={{ background: "linear-gradient(180deg,transparent,#0E1D12 30%)" }}
             >
-              <button type="button" onClick={save} disabled={saving} className="btn-brass flex-1 h-14 text-[11px] disabled:opacity-40">
+              <button type="button" onClick={save} disabled={saving} className="btn-brass flex-1 h-14 text-[12px] disabled:opacity-40">
                 {saving ? "Saving…" : "Save to ERPNext"}
               </button>
-              <button type="button" onClick={onClose} className="btn-ghost h-14 px-5 text-[11px]">
+              <button type="button" onClick={onClose} className="btn-ghost h-14 px-5 text-[12px]">
                 Cancel
               </button>
             </div>
@@ -672,16 +672,16 @@ export function SelectedCustomerCard({
       </span>
       <div className="min-w-0 flex-1">
         <div className="font-semibold text-base truncate">{name}</div>
-        <div className="text-[11.5px] text-[var(--cd)] truncate mt-0.5">{meta || "No phone · no email · no address"}</div>
+        <div className="text-[12px] text-[var(--cd)] truncate mt-0.5">{meta || "No phone · no email · no address"}</div>
       </div>
       <div className="flex flex-col sm:flex-row gap-2 shrink-0">
         {onEdit && (
-          <button type="button" onClick={onEdit} className="btn-brass h-11 px-4 text-[10px]">
+          <button type="button" onClick={onEdit} className="btn-brass h-11 px-4 text-[12px]">
             Edit
           </button>
         )}
         {onChange && (
-          <button type="button" onClick={onChange} className="btn-ghost h-11 px-4 text-[10px]">
+          <button type="button" onClick={onChange} className="btn-ghost h-11 px-4 text-[12px]">
             Change
           </button>
         )}

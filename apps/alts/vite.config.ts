@@ -1,9 +1,26 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
+import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 
 const webapp = path.resolve(__dirname, "../../webapp/src");
 const pkgs = path.resolve(__dirname, "../../packages");
+
+/** 12 POS shell routes — precache navigations so floor survives wifi drops */
+const POS_ROUTES = [
+  "/",
+  "/login",
+  "/intake/kind",
+  "/intake/alterations",
+  "/shop-floor",
+  "/pickup",
+  "/dispatch",
+  "/quote",
+  "/orders/alterations",
+  "/parked",
+  "/transfers",
+  "/lookup",
+];
 
 export default defineConfig({
   server: {
@@ -13,7 +30,75 @@ export default defineConfig({
       "/api": { target: "http://localhost:3000", changeOrigin: true },
     },
   },
-  plugins: [react()],
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: "autoUpdate",
+      injectRegister: "auto",
+      includeAssets: [
+        "favicon.ico",
+        "apple-touch-icon.png",
+        "icon-192.png",
+        "icon-512.png",
+        "ls-icon.svg",
+        "ls-logo-seal.png",
+      ],
+      manifest: {
+        name: "L&S Alterations",
+        short_name: "Alts",
+        description: "L&S House alterations FOH — intake, shop floor, pickup",
+        start_url: "/",
+        scope: "/",
+        display: "standalone",
+        orientation: "landscape",
+        background_color: "#0D1A10",
+        theme_color: "#1F3A2E",
+        icons: [
+          { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
+      },
+      workbox: {
+        navigateFallback: "/index.html",
+        navigateFallbackAllowlist: POS_ROUTES.map(
+          (r) => new RegExp(`^${r === "/" ? "/" : r.replace(/\//g, "\\/")}(\\/?|\\?.*)?$`),
+        ),
+        // Shell + hashed assets always; POS navigations via navigateFallback
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,webp}"],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
+            handler: "NetworkOnly",
+          },
+          {
+            urlPattern: ({ request }) => request.mode === "navigate",
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "alts-pos-navigations",
+              networkTimeoutSeconds: 3,
+              expiration: { maxEntries: 32, maxAgeSeconds: 60 * 60 * 24 * 7 },
+            },
+          },
+          {
+            urlPattern: ({ request }) =>
+              request.destination === "style" ||
+              request.destination === "script" ||
+              request.destination === "worker" ||
+              request.destination === "font",
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "alts-shell-static",
+              expiration: { maxEntries: 64, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
+        ],
+      },
+      devOptions: {
+        enabled: false,
+      },
+    }),
+  ],
   build: {
     outDir: "dist",
     rollupOptions: {

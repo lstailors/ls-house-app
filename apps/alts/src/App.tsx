@@ -7,6 +7,7 @@ import { RoleGuard } from "@/components/shell/RoleGuard";
 import Login from "@/pages/Login";
 import HomeTiles from "@alts/pages/HomeTiles";
 import AltsShell from "@alts/components/AltsShell";
+import LandscapeGate from "@alts/components/LandscapeGate";
 import IntakeStepped from "@alts/pages/IntakeStepped";
 import TicketKind from "@alts/pages/TicketKind";
 import ShopFloorBoard from "@alts/pages/ShopFloorBoard";
@@ -38,7 +39,7 @@ const FOH = ["super_admin", "store_manager", "salesperson", "tailor"] as const;
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { retry: 1, refetchOnWindowFocus: false },
+    queries: { retry: 2, refetchOnWindowFocus: false },
   },
 });
 
@@ -64,6 +65,7 @@ export default function App() {
           }}
         />
         <BrowserRouter>
+          <LandscapeGate>
           <Suspense fallback={<Spin />}>
             <Routes>
               <Route path="/login" element={<Login />} />
@@ -243,6 +245,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
+          </LandscapeGate>
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>

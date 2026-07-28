@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { cn } from "@ls/design/utils";
+import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 
 type Ticket = {
@@ -106,7 +107,7 @@ export default function QuoteComposer() {
           <div className="caps">Email + SMS · accept to proceed</div>
         </div>
         <div className="flex-1" />
-        <Link to="/intake/kind" className="btn-ghost h-11 px-4 text-[11px] inline-flex items-center">
+        <Link to="/intake/kind" className="btn-ghost h-11 px-4 text-[12px] inline-flex items-center">
           New ticket
         </Link>
       </header>
@@ -131,6 +132,15 @@ export default function QuoteComposer() {
           </div>
 
           <div className="grid sm:grid-cols-2 gap-2 max-h-[220px] overflow-y-auto">
+            {open.isError && (
+              <div className="sm:col-span-2">
+                <QueryErrorPanel
+                  compact
+                  title="Could not load tickets for quote"
+                  onRetry={() => open.refetch()}
+                />
+              </div>
+            )}
             {filtered.map((row) => (
               <button
                 key={row.name}
@@ -141,7 +151,7 @@ export default function QuoteComposer() {
                   ticketId === row.name && "border-brass ring-1 ring-brass/40",
                 )}
               >
-                <div className="font-mono text-[11px] text-brass-light">{row.name}</div>
+                <div className="font-mono text-[12px] text-brass-light">{row.name}</div>
                 <div className="font-semibold">{row.customer_name}</div>
                 <div className="text-xs text-brass-light mt-0.5">{money(Number(row.ticket_total) || 0)}</div>
               </button>
@@ -188,10 +198,10 @@ export default function QuoteComposer() {
                     ))}
                   </div>
                   <div className="flex justify-between items-baseline pt-4">
-                    <span className="text-[9.5px] font-bold tracking-widest uppercase text-[#6B7A6D]">Quote total</span>
+                    <span className="text-[12px] font-bold tracking-widest uppercase text-[#6B7A6D]">Quote total</span>
                     <span className="display text-4xl">{money(total)}</span>
                   </div>
-                  <p className="text-[10.5px] text-[#7C8A7E] mb-4">No tax · valid {validDays} days</p>
+                  <p className="text-[12px] text-[#7C8A7E] mb-4">No tax · valid {validDays} days</p>
                   <div className="rounded-xl bg-gradient-to-br from-[#C79A5E] to-[#9B7B45] text-[#1A1005] text-center py-4 text-[12px] font-bold tracking-widest uppercase mb-2">
                     Accept quote
                   </div>
@@ -211,7 +221,7 @@ export default function QuoteComposer() {
               </span>
               <div>
                 <div className="text-sm font-semibold">Sofia · L&S</div>
-                <div className="text-[10px] text-cream-dim">{phone || "no mobile on file"}</div>
+                <div className="text-[12px] text-cream-dim">{phone || "no mobile on file"}</div>
               </div>
             </div>
             <div className="rounded-2xl rounded-bl-sm border border-brass/25 bg-gradient-to-br from-[#24422F] to-[#1B3324] p-3.5 text-[13px] leading-relaxed">
@@ -244,7 +254,7 @@ export default function QuoteComposer() {
             type="button"
             disabled={!ticketId || sendSms.isPending}
             onClick={() => sendSms.mutate()}
-            className="btn-brass w-full h-14 text-[11px] disabled:opacity-40"
+            className="btn-brass w-full h-14 text-[12px] disabled:opacity-40"
           >
             {sendSms.isPending ? "…" : "Send quote SMS"}
           </button>
@@ -252,7 +262,7 @@ export default function QuoteComposer() {
             type="button"
             disabled={!ticketId || sendEmail.isPending}
             onClick={() => sendEmail.mutate()}
-            className="btn-ghost w-full h-12 text-[11px] disabled:opacity-40"
+            className="btn-ghost w-full h-12 text-[12px] disabled:opacity-40"
           >
             {sendEmail.isPending ? "…" : email ? `Email · ${email}` : "Send quote email"}
           </button>
@@ -260,12 +270,12 @@ export default function QuoteComposer() {
             <button
               type="button"
               onClick={() => nav(`/orders/alterations/${ticketId}`)}
-              className="w-full text-[10px] font-bold tracking-widest uppercase text-brass-light pt-2"
+              className="w-full text-[12px] font-bold tracking-widest uppercase text-brass-light pt-2"
             >
               Open ticket →
             </button>
           )}
-          <p className="text-[10px] text-cream-dim leading-relaxed">
+          <p className="text-[12px] text-cream-dim leading-relaxed">
             Decision lock: quote = email + SMS + accept. Full accept-link deep wiring ships with API quote template
             deploy.
           </p>

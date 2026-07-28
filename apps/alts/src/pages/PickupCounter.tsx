@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
+import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { cn } from "@ls/design/utils";
+import { billingStatusLabel } from "@alts/lib/billingLabels";
 import "@alts/styles/alts-pos.css";
 
 type Ticket = {
@@ -120,6 +122,13 @@ export default function PickupCounter() {
 
   return (
     <div className="alts-root flex flex-col min-h-screen">
+        {ready.isError && (
+          <QueryErrorPanel
+            title="Could not load"
+            onRetry={() => ready.refetch()}
+            className="mx-4 mt-3"
+          />
+        )}
       <header className="flex items-center gap-3 px-5 py-4 border-b border-brass/20">
         <Link to="/" className="text-cream-dim hover:text-cream p-2 text-lg">
           ←
@@ -193,7 +202,7 @@ export default function PickupCounter() {
                   rowUnpaid && "border-l-2 border-l-signal-amber",
                 )}
               >
-                <div className="text-[11px] font-mono text-brass-light">{row.name}</div>
+                <div className="text-[12px] font-mono text-brass-light">{row.name}</div>
                 <div className="font-semibold mt-0.5">{row.customer_name}</div>
                 <div className="flex justify-between text-xs mt-1">
                   <span className={cn(rowUnpaid ? "text-signal-amber" : "text-signal-emerald")}>
@@ -204,12 +213,27 @@ export default function PickupCounter() {
               </button>
             );
           })}
-          {!list.length && !ready.isLoading && (
+          {!list.length && !ready.isLoading && !ready.isError && (
             <p className="text-cream-dim text-sm p-4 italic">No Ready tickets in this filter</p>
+          )}
+          {ready.isError && (
+            <QueryErrorPanel
+              compact
+              className="m-2"
+              title="Could not load Ready queue"
+              onRetry={() => ready.refetch()}
+            />
           )}
         </aside>
 
         <main className="overflow-y-auto p-5">
+          {detail.isError && selected && (
+            <QueryErrorPanel
+              className="mb-4"
+              title="Could not load ticket"
+              onRetry={() => detail.refetch()}
+            />
+          )}
           {!selected && (
             <div className="h-full grid place-items-center text-cream-dim">
               <div className="text-center">
@@ -231,7 +255,9 @@ export default function PickupCounter() {
                       <span className="font-mono text-brass-light">{t.name}</span>
                       <span className="chip">Ready</span>
                       {t.billing_status && t.billing_status !== "Billable" && (
-                        <span className="chip border-[rgba(155,139,196,0.5)] text-[var(--vi,#9B8BC4)]">{t.billing_status}</span>
+                        <span className="chip border-[rgba(155,139,196,0.5)] text-[var(--vi,#9B8BC4)]">
+                          {billingStatusLabel(t.billing_status)}
+                        </span>
                       )}
                       <span className="text-cream-dim">{t.customer_mobile || t.customer_phone}</span>
                     </div>
@@ -288,7 +314,7 @@ export default function PickupCounter() {
                 <button
                   type="button"
                   onClick={() => nav(`/orders/alterations/${selected}`)}
-                  className="mt-4 text-[11px] font-bold tracking-widest uppercase text-brass-light"
+                  className="mt-4 text-[12px] font-bold tracking-widest uppercase text-brass-light"
                 >
                   Open full ticket →
                 </button>
@@ -305,25 +331,25 @@ export default function PickupCounter() {
                       : t.payment_status}
                   {t.sales_invoice ? ` · ${t.sales_invoice}` : ""}
                 </div>
-                <p className="text-[11px] text-cream-dim mb-4">No tax — alterations are a service</p>
+                <p className="text-[12px] text-cream-dim mb-4">No tax — alterations are a service</p>
 
                 {unpaid && (
                   <div className="space-y-2 mb-4">
                     <div className="caps text-signal-amber">Charge at Ready / pickup</div>
-                    <button type="button" onClick={() => payLink.mutate()} className="btn-brass w-full h-12 text-[11px]">
+                    <button type="button" onClick={() => payLink.mutate()} className="btn-brass w-full h-12 text-[12px]">
                       Send pay link
                     </button>
                     <button
                       type="button"
                       onClick={() => nav(`/orders/alterations/${selected}`)}
-                      className="btn-ghost w-full h-12 text-[11px]"
+                      className="btn-ghost w-full h-12 text-[12px]"
                     >
                       Terminal / full ticket
                     </button>
                     <button
                       type="button"
                       onClick={() => smsUnpaid.mutate()}
-                      className="btn-ghost w-full h-11 text-[10px] text-signal-amber border-signal-amber/30"
+                      className="btn-ghost w-full h-11 text-[12px] text-signal-amber border-signal-amber/30"
                     >
                       SMS unpaid balance
                     </button>
@@ -350,7 +376,7 @@ export default function PickupCounter() {
                 >
                   {release.isPending ? "…" : unpaid ? "Release unpaid" : "Release · Picked Up"}
                 </button>
-                <p className="text-[10px] text-cream-dim mt-3 text-center">
+                <p className="text-[12px] text-cream-dim mt-3 text-center">
                   POD is separate — charge is never on proof of delivery.
                 </p>
               </aside>

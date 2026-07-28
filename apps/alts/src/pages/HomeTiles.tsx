@@ -4,10 +4,9 @@ import { signOut } from "@/lib/authClient";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { cn } from "@ls/design/utils";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
-
-type Loc = "NYC" | "HOU";
 
 type Stats = {
   open: number;
@@ -42,91 +41,70 @@ function timeGreeting() {
   return "Good evening";
 }
 
-function storeHoursLine(loc: Loc) {
+function storeHoursLine() {
   const d = new Date();
   const day = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-  const place = loc === "HOU" ? "Houston" : "East 61st Street";
-  return `${day} · ${place} · open until 6:00 PM`;
+  return `${day} · East 61st Street · open until 6:00 PM`;
 }
 
 export default function HomeTiles() {
   const { data: me } = useMe();
   const nav = useNavigate();
   const qc = useQueryClient();
-  const meLoc = String(
-    typeof me?.location === "string"
-      ? me.location
-      : (me?.location as { name?: string } | undefined)?.name || me?.locationId || "NYC",
-  ).toUpperCase();
-  const [loc, setLoc] = useState<Loc>(meLoc.includes("HOU") || meLoc.includes("TEX") ? "HOU" : "NYC");
 
   const stats = useQuery({
-    queryKey: ["alts-home-stats", loc],
+    queryKey: ["alts-home-stats"],
     queryFn: async (): Promise<Stats> => {
-      const empty: Stats = {
-        open: 0,
-        ready: 0,
-        dueToday: 0,
-        overdue: 0,
-        outToTailors: 0,
-        parked: 0,
-        syncedAt: Date.now(),
-      };
-      try {
-        const [rows, parked] = await Promise.all([
-          api.get<
-            Array<{
-              workflow_state?: string;
-              due_date?: string;
-              name: string;
-              origin_location?: string;
-              assigned_tailor?: string;
-            }>
-          >("/api/intake-alterations/tickets?limit=200"),
-          api.get<Array<unknown>>("/api/carts").catch(() => [] as unknown[]),
-        ]);
-        const list = Array.isArray(rows) ? rows : (rows as any)?.tickets ?? [];
-        const today = new Date().toISOString().slice(0, 10);
-        let open = 0;
-        let ready = 0;
-        let dueToday = 0;
-        let overdue = 0;
-        let outToTailors = 0;
-        for (const t of list) {
-          const st = t.workflow_state ?? "";
-          if (st === "Ready") ready += 1;
-          if (st && st !== "Picked Up" && st !== "Cancelled") {
-            open += 1;
-            if (t.due_date) {
-              if (t.due_date < today) overdue += 1;
-              else if (t.due_date === today) dueToday += 1;
-            }
-            const ol = (t.origin_location || "").toLowerCase();
-            if (ol.includes("home") || (t.assigned_tailor && ol && ol !== "nyc" && ol !== "hou")) {
-              outToTailors += 1;
-            } else if (t.assigned_tailor && st !== "Ready") {
-              // assigned but still in shop counts as out when location says home only — skip
-            }
+      const [rows, parked] = await Promise.all([
+        api.get<
+          Array<{
+            workflow_state?: string;
+            due_date?: string;
+            name: string;
+            origin_location?: string;
+            assigned_tailor?: string;
+          }>
+        >("/api/intake-alterations/tickets?limit=200"),
+        api.get<Array<unknown>>("/api/carts").catch(() => [] as unknown[]),
+      ]);
+      const list = Array.isArray(rows) ? rows : (rows as any)?.tickets ?? [];
+      const today = new Date().toISOString().slice(0, 10);
+      let open = 0;
+      let ready = 0;
+      let dueToday = 0;
+      let overdue = 0;
+      let outToTailors = 0;
+      for (const t of list) {
+        const st = t.workflow_state ?? "";
+        if (st === "Ready") ready += 1;
+        if (st && st !== "Picked Up" && st !== "Cancelled") {
+          open += 1;
+          if (t.due_date) {
+            if (t.due_date < today) overdue += 1;
+            else if (t.due_date === today) dueToday += 1;
+          }
+          const ol = (t.origin_location || "").toLowerCase();
+          if (ol.includes("home") || (t.assigned_tailor && ol && ol !== "nyc")) {
+            outToTailors += 1;
           }
         }
-        return {
-          open,
-          ready,
-          dueToday,
-          overdue,
-          outToTailors,
-          parked: Array.isArray(parked) ? parked.length : 0,
-          syncedAt: Date.now(),
-        };
-      } catch {
-        return empty;
       }
+      return {
+        open,
+        ready,
+        dueToday,
+        overdue,
+        outToTailors,
+        parked: Array.isArray(parked) ? parked.length : 0,
+        syncedAt: Date.now(),
+      };
     },
     staleTime: 30_000,
     refetchInterval: 60_000,
+    retry: 2,
   });
 
-  const s = stats.data ?? {
+  const empty: Stats = {
     open: 0,
     ready: 0,
     dueToday: 0,
@@ -136,6 +114,8 @@ export default function HomeTiles() {
     syncedAt: Date.now(),
   };
 
+  const s = stats.data ?? empty;
+
   const syncAge = useMemo(() => {
     const sec = Math.max(0, Math.round((Date.now() - s.syncedAt) / 1000));
     if (sec < 5) return "just now";
@@ -144,7 +124,6 @@ export default function HomeTiles() {
   }, [s.syncedAt, stats.dataUpdatedAt]);
 
   const logout = async () => {
-    // Clears HttpOnly lst_session cookie (SSO) + localStorage dual-write token
     await signOut();
     qc.clear();
     nav("/login", { replace: true });
@@ -271,37 +250,25 @@ export default function HomeTiles() {
         <div className="seal">LS</div>
         <div className="min-w-0">
           <div className="display text-[22px] leading-tight">L&S House</div>
-          <div className="text-[9.5px] tracking-[0.18em] uppercase text-[var(--cd)]">
+          <div className="text-xs tracking-[0.18em] uppercase text-[var(--cd)]">
             Alterations · alts.lstailors.com
           </div>
         </div>
         <div className="flex-1" />
-        <div className="hidden sm:flex gap-1 rounded-full border border-brass/20 bg-black/30 p-1">
-          {(["NYC", "HOU"] as const).map((l) => (
-            <button
-              key={l}
-              type="button"
-              onClick={() => setLoc(l)}
-              className={cn(
-                "px-[18px] py-[11px] rounded-full text-[11px] font-bold tracking-[0.14em] uppercase transition-colors",
-                loc === l ? "bg-brass text-forest-deep" : "text-[var(--cd)]",
-              )}
-            >
-              {l === "HOU" ? "Texas" : "NYC"}
-            </button>
-          ))}
+        <div className="hidden sm:flex items-center rounded-full border border-brass/20 bg-black/30 px-[18px] py-[11px] text-xs font-bold tracking-[0.14em] uppercase text-brass-light">
+          NYC
         </div>
         <button
           type="button"
           onClick={logout}
           className="flex items-center gap-2.5 rounded-full border border-brass/20 bg-white/[0.04] pl-2 pr-3.5 py-1.5 hover:border-brass/40 transition-colors"
         >
-          <span className="w-8 h-8 rounded-full bg-forest-raised border border-brass/30 grid place-items-center text-[11.5px] font-bold text-brass-light">
+          <span className="w-8 h-8 rounded-full bg-forest-raised border border-brass/30 grid place-items-center text-xs font-bold text-brass-light">
             {initials}
           </span>
           <span className="text-left hidden md:block">
             <span className="block text-xs font-semibold leading-tight">{me?.name ?? "Staff"}</span>
-            <span className="block text-[9.5px] text-[var(--cd)] capitalize">
+            <span className="block text-xs text-[var(--cd)] capitalize">
               {me?.role?.replace(/_/g, " ") || "Front of house"}
             </span>
           </span>
@@ -313,28 +280,38 @@ export default function HomeTiles() {
           <h1 className="display text-[34px] leading-none">
             {timeGreeting()}, {greetingName(me?.name)}
           </h1>
-          <p className="text-xs text-[var(--cd)] mt-1.5">{storeHoursLine(loc)}</p>
+          <p className="text-xs text-[var(--cd)] mt-1.5">{storeHoursLine()}</p>
         </div>
         <div className="flex-1" />
         {s.parked > 0 && (
           <Link
             to="/parked"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-brass/35 bg-brass/10 text-[11.5px] text-cream hover:border-brass/55"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-brass/35 bg-brass/10 text-xs text-cream hover:border-brass/55"
           >
             <b className="text-brass-light font-bold">{s.parked}</b> parked
           </Link>
         )}
         {s.overdue > 0 && (
-          <div className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-[rgba(217,123,108,0.42)] bg-[rgba(217,123,108,0.12)] text-[11.5px]">
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-[rgba(217,123,108,0.42)] bg-[rgba(217,123,108,0.12)] text-xs">
             <b className="text-[var(--ro)] font-bold">{s.overdue}</b> overdue
           </div>
         )}
         {s.dueToday > 0 && (
-          <div className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-[rgba(232,168,92,0.4)] bg-[rgba(232,168,92,0.12)] text-[11.5px]">
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-[rgba(232,168,92,0.4)] bg-[rgba(232,168,92,0.12)] text-xs">
             <b className="text-[var(--am)] font-bold">{s.dueToday}</b> due today
           </div>
         )}
       </div>
+
+      {stats.isError && (
+        <div className="mb-3 shrink-0">
+          <QueryErrorPanel
+            title="Could not load the shop board"
+            message="ERPNext stats failed — an outage must never look like an empty day. Tiles still work; counts may be stale."
+            onRetry={() => stats.refetch()}
+          />
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 grid grid-cols-2 lg:grid-cols-3 grid-rows-3 lg:grid-rows-2 gap-[15px]">
         {tiles.map((t) => {
@@ -368,9 +345,9 @@ export default function HomeTiles() {
               <h2 className={cn("display mt-3.5 leading-tight", t.external ? "text-[23px]" : "text-[26px]")}>
                 {t.title}
               </h2>
-              <p className="text-[11px] text-[var(--cd)] mt-1.5 leading-snug pr-8">{t.sub}</p>
+              <p className="text-xs text-[var(--cd)] mt-1.5 leading-snug pr-8">{t.sub}</p>
               {t.external && (
-                <div className="font-mono text-[9px] text-[var(--bd)] tracking-wide mt-2">app.lstailors.com ↗</div>
+                <div className="font-mono text-xs text-[var(--bd)] tracking-wide mt-2">app.lstailors.com ↗</div>
               )}
               <span className="absolute bottom-5 right-[22px] text-[var(--bd)] opacity-55 group-hover:opacity-100 group-hover:text-brass-light transition-opacity">
                 <Arrow external={t.external} />
@@ -403,7 +380,7 @@ export default function HomeTiles() {
           <Link
             key={l.to}
             to={l.to}
-            className="h-10 px-4 rounded-full border border-brass/25 bg-black/25 text-[10px] font-bold tracking-widest uppercase text-brass-light inline-flex items-center hover:border-brass/50"
+            className="h-10 px-4 rounded-full border border-brass/25 bg-black/25 text-xs font-bold tracking-widest uppercase text-brass-light inline-flex items-center hover:border-brass/50"
           >
             {l.lab}
           </Link>
@@ -412,24 +389,31 @@ export default function HomeTiles() {
 
       <div className="mt-[15px] rounded-[15px] border border-brass/15 bg-black/25 flex flex-wrap overflow-hidden shrink-0">
         <div className="flex-1 min-w-[110px] px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
-          <span className="text-[9.5px] font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Open tickets</span>
+          <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Open tickets</span>
           <span className="display text-2xl ml-auto">{s.open}</span>
         </div>
         <div className="flex-1 min-w-[110px] px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
-          <span className="text-[9.5px] font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Ready for pickup</span>
+          <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Ready for pickup</span>
           <span className="display text-2xl ml-auto text-[var(--em)]">{s.ready}</span>
         </div>
         <div className="flex-1 min-w-[110px] px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
-          <span className="text-[9.5px] font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Out to tailors</span>
+          <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Out to tailors</span>
           <span className="display text-2xl ml-auto text-[var(--am)]">{s.outToTailors}</span>
         </div>
         <div className="flex-1 min-w-[110px] px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
-          <span className="text-[9.5px] font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Overdue</span>
+          <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Overdue</span>
           <span className="display text-2xl ml-auto text-[var(--ro)]">{s.overdue}</span>
         </div>
-        <div className="flex items-center gap-2 px-[18px] py-[13px] text-[10px] text-[var(--cd)]">
-          <span className="w-[7px] h-[7px] rounded-full bg-[var(--em)] shadow-[0_0_8px_rgba(79,191,142,0.7)]" />
-          ERPNext live · synced {syncAge}
+        <div className="flex items-center gap-2 px-[18px] py-[13px] text-xs text-[var(--cd)]">
+          <span
+            className={cn(
+              "w-[7px] h-[7px] rounded-full",
+              stats.isError
+                ? "bg-[var(--am)] shadow-[0_0_8px_rgba(232,168,92,0.7)]"
+                : "bg-[var(--em)] shadow-[0_0_8px_rgba(79,191,142,0.7)]",
+            )}
+          />
+          {stats.isError ? "ERPNext unreachable · retry above" : `ERPNext live · synced ${syncAge}`}
         </div>
       </div>
     </div>

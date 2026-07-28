@@ -1,4 +1,5 @@
 import { useState } from "react";
+import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -19,13 +20,9 @@ export default function Lookup() {
     queryKey: ["lookup-universal", go],
     enabled: go.trim().length >= 2,
     queryFn: async () => {
-      try {
-        const res = await api.get<any>(`/api/search?q=${encodeURIComponent(go.trim())}`);
-        const results = Array.isArray(res) ? res : res?.results ?? res?.data?.results ?? [];
-        return results as any[];
-      } catch {
-        return [] as any[];
-      }
+      const res = await api.get<any>(`/api/search?q=${encodeURIComponent(go.trim())}`);
+      const results = Array.isArray(res) ? res : res?.results ?? res?.data?.results ?? [];
+      return results as any[];
     },
   });
 
@@ -80,16 +77,27 @@ export default function Lookup() {
           <div className="caps">Ticket · client · SO · scan</div>
         </div>
         <div className="flex-1" />
-        <Link to="/scanner" className="btn-ghost h-11 px-4 text-[11px] inline-flex items-center">
+        <Link to="/scanner" className="btn-ghost h-11 px-4 text-[12px] inline-flex items-center">
           Scanner
         </Link>
-        <Link to="/pickup" className="btn-brass h-11 px-4 text-[11px] inline-flex items-center">
+        <Link to="/pickup" className="btn-brass h-11 px-4 text-[12px] inline-flex items-center">
           Pickup
         </Link>
       </header>
 
       <div className="max-w-2xl mx-auto w-full p-6 space-y-5">
         <h2 className="display text-3xl">Find anything</h2>
+        {(tickets.isError || customers.isError || universal.isError) && go.trim().length >= 2 && (
+          <QueryErrorPanel
+            title="Search failed"
+            message="One or more lookup sources did not respond. Retry — empty results are not the same as a down API."
+            onRetry={() => {
+              void tickets.refetch();
+              void customers.refetch();
+              void universal.refetch();
+            }}
+          />
+        )}
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -104,7 +112,7 @@ export default function Lookup() {
             placeholder="ALT-… · name · phone · SO-"
             className="flex-1 h-14 rounded-2xl bg-black/30 border border-brass/25 px-4 text-cream outline-none focus:border-brass/50 text-base"
           />
-          <button type="submit" className="btn-brass h-14 px-6 text-[11px]">
+          <button type="submit" className="btn-brass h-14 px-6 text-[12px]">
             Search
           </button>
         </form>
@@ -118,7 +126,7 @@ export default function Lookup() {
                 setQ(chip === "Ready" ? "ALT-" : chip);
                 run(chip === "Ready" ? "ALT-" : chip);
               }}
-              className="px-3 py-1.5 rounded-full border border-brass/25 text-[10px] font-bold tracking-wide uppercase text-cream-dim"
+              className="px-3 py-1.5 rounded-full border border-brass/25 text-[12px] font-bold tracking-wide uppercase text-cream-dim"
             >
               {chip}
             </button>
@@ -138,7 +146,7 @@ export default function Lookup() {
                     className="w-full text-left card-glass px-4 py-3 flex items-center gap-3"
                   >
                     <div className="min-w-0 flex-1">
-                      <span className="font-mono text-[11px] text-brass-light">{t.name}</span>
+                      <span className="font-mono text-[12px] text-brass-light">{t.name}</span>
                       <div className="font-semibold truncate">{t.customer_name}</div>
                       <div className="text-xs text-cream-dim flex gap-2 flex-wrap">
                         <span>{t.workflow_state}</span>
@@ -157,7 +165,7 @@ export default function Lookup() {
                       onClick={() => nav(r.href || `/orders/alterations/${r.id}`)}
                       className="w-full text-left card-glass px-4 py-3"
                     >
-                      <span className="font-mono text-[11px] text-brass-light">{r.id || r.title}</span>
+                      <span className="font-mono text-[12px] text-brass-light">{r.id || r.title}</span>
                       <div className="font-semibold">{r.subtitle || r.title}</div>
                     </button>
                   ))}
@@ -212,7 +220,7 @@ export default function Lookup() {
                       }
                       className={cn("w-full text-left card-glass px-4 py-3")}
                     >
-                      <span className="font-mono text-[11px] text-[var(--vi,#9B8BC4)]">{r.id || r.title}</span>
+                      <span className="font-mono text-[12px] text-[var(--vi,#9B8BC4)]">{r.id || r.title}</span>
                       <div className="font-semibold">{r.subtitle || r.title}</div>
                       <div className="text-xs text-cream-dim">Tap to start custom-order ticket</div>
                     </button>
