@@ -49,24 +49,24 @@ export default function Transfers() {
     return rows;
   }, [tickets.data, q]);
 
-  const atHome = list.filter(
-    (t) =>
-      (t.origin_location || "").toLowerCase().includes("home") ||
-      (t.assigned_tailor && (t.origin_location || "") !== "NYC" && (t.origin_location || "") !== "HOU"),
-  );
+  // At-home = assigned tailor (origin_location stays NYC|HOU only)
+  const atHome = list.filter((t) => !!t.assigned_tailor);
 
   const transfer = useMutation({
     mutationFn: async () => {
       if (!selected) throw new Error("Pick a ticket");
+      if (dest === "Home" && !tailorId) throw new Error("Pick an at-home tailor");
       return api.patch(`/api/intake-alterations/tickets/${selected}/transfer`, {
         location: dest,
-        tailorId: dest === "Home" ? tailorId || null : tailorId || undefined,
+        // Home → backend sets assigned_tailor only (never origin_location=Home)
+        tailorId: dest === "Home" ? tailorId : tailorId || null,
       });
     },
     onSuccess: () => {
-      toast.success("Transfer saved");
+      toast.success(dest === "Home" ? "Sent to at-home tailor" : `Moved to ${dest}`);
       qc.invalidateQueries({ queryKey: ["xfer-tickets"] });
       setSelected(null);
+      setTailorId("");
     },
     onError: (e: Error) => toast.error(e.message),
   });
