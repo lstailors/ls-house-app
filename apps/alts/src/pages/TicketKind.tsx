@@ -260,8 +260,8 @@ export default function TicketKind() {
             <div className="max-w-xl mx-auto pt-8 text-center">
               <h2 className="display text-3xl mb-2">Re-do</h2>
               <p className="text-sm text-cream-dim mb-8">
-                Warranty work — client pays $0. Ticket is tagged <b className="text-cream">Warranty</b> in ERPNext so it never
-                invoices.
+                Warranty / re-do — full shop prices stay on the ticket for tailor stats & internal value.
+                Tagged <b className="text-cream">Warranty</b> in ERPNext: no client invoice, no AR.
               </p>
               <button
                 type="button"
