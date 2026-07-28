@@ -21,6 +21,32 @@ function authHeaders(key: string, secret: string): Record<string, string> {
   }
 }
 
+/** Unwrap Frappe 417 ValidationError / _server_messages into a short human string. */
+function erpErrorMessage(err: any, fallback: string): string {
+  try {
+    if (err?._server_messages) {
+      const arr = typeof err._server_messages === 'string'
+        ? JSON.parse(err._server_messages)
+        : err._server_messages
+      const first = typeof arr?.[0] === 'string' ? JSON.parse(arr[0]) : arr?.[0]
+      const msg = String(first?.message || '').replace(/<[^>]+>/g, '').trim()
+      if (msg) return msg
+    }
+    if (err?.exception) {
+      const ex = String(err.exception)
+      const idx = ex.indexOf(': ')
+      if (idx > 0) {
+        const rest = ex.slice(idx + 2).trim()
+        if (rest && !rest.startsWith('Traceback')) return rest
+      }
+    }
+    if (typeof err?.message === 'string' && err.message && !err.message.startsWith('[')) {
+      return err.message
+    }
+  } catch { /* fall through */ }
+  return fallback
+}
+
 export async function erpList<T = unknown>(
   doctype: string,
   opts: {
@@ -69,7 +95,7 @@ export async function erpCreate<T = unknown>(doctype: string, doc: Record<string
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as any
-    throw new Error(err._server_messages || err.exception || `ERP create failed: ${res.status}`)
+    throw new Error(erpErrorMessage(err, `ERP create failed: ${res.status}`))
   }
   const json = await res.json() as { data: T }
   return json.data ?? null
@@ -85,7 +111,7 @@ export async function erpUpdate<T = unknown>(doctype: string, name: string, doc:
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as any
-    throw new Error(err._server_messages || err.exception || `ERP update failed: ${res.status}`)
+    throw new Error(erpErrorMessage(err, `ERP update failed: ${res.status}`))
   }
   const json = await res.json() as { data: T }
   return json.data ?? null
@@ -101,7 +127,7 @@ export async function erpSubmit(doctype: string, name: string): Promise<void> {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as any
-    throw new Error(err._server_messages || err.exception || `ERP submit failed: ${res.status}`)
+    throw new Error(erpErrorMessage(err, `ERP submit failed: ${res.status}`))
   }
 }
 
@@ -120,7 +146,7 @@ export async function erpDelete(doctype: string, name: string): Promise<void> {
   )
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as any
-    throw new Error(err._server_messages || err.exception || `ERP delete failed: ${res.status}`)
+    throw new Error(erpErrorMessage(err, `ERP delete failed: ${res.status}`))
   }
 }
 
@@ -134,7 +160,7 @@ export async function erpRunMethod(method: string, params: Record<string, unknow
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as any
-    throw new Error(err._server_messages || err.exception || `ERP method failed: ${res.status}`)
+    throw new Error(erpErrorMessage(err, `ERP method failed: ${res.status}`))
   }
   const json = await res.json() as { message: unknown }
   return json.message ?? null

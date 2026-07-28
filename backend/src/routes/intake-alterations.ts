@@ -814,6 +814,8 @@ intakeAlterationsRouter.patch('/tickets/:name/due-date', async (c) => {
 });
 
 // 10. PATCH /tickets/:name/transfer (location and/or at-home tailor)
+// origin_location Select is NYC|HOU only. "Home" is at-home work via assigned_tailor —
+// never write origin_location="Home" (Frappe 417 ValidationError).
 intakeAlterationsRouter.patch('/tickets/:name/transfer', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
@@ -822,9 +824,39 @@ intakeAlterationsRouter.patch('/tickets/:name/transfer', async (c) => {
   const body = (await c.req.json()) as any;
   const { location, tailorId, note } = body;
 
+  const loc = typeof location === 'string' ? location.trim() : '';
+  const locUpper = loc.toUpperCase();
+  const isHome =
+    !loc ||
+    locUpper === 'HOME' ||
+    loc.toLowerCase() === 'at-home' ||
+    loc.toLowerCase() === 'at home';
+
   const doc: Record<string, any> = {};
-  if (location) doc.origin_location = location;
-  if (tailorId !== undefined) doc.assigned_tailor = tailorId || null;
+
+  if (isHome) {
+    if (!tailorId) {
+      return c.json(
+        { error: { message: 'Pick an at-home tailor — Home is not a store location' } },
+        400,
+      );
+    }
+    // Keep existing origin_location (store of record). Only assign tailor.
+    doc.assigned_tailor = tailorId;
+  } else if (locUpper === 'NYC' || locUpper === 'HOU') {
+    doc.origin_location = locUpper;
+    // Back in a shop: clear at-home tailor unless explicitly re-set
+    if (tailorId !== undefined) doc.assigned_tailor = tailorId || null;
+    else doc.assigned_tailor = null;
+  } else if (loc) {
+    return c.json(
+      { error: { message: 'Location must be NYC, HOU, or Home (at-home tailor)' } },
+      400,
+    );
+  } else if (tailorId !== undefined) {
+    doc.assigned_tailor = tailorId || null;
+  }
+
   if (note) doc.transfer_note = note;
 
   if (!Object.keys(doc).length) {
