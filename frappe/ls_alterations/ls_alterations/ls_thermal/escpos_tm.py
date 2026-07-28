@@ -9,6 +9,7 @@ inside the Frappe bench and nothing to drift.
 
 Legibility pass (2026-07): shop purple stock + distant rack reading.
 Body text is double-height Font A; key IDs double-width+height.
+Customer name + due date = largest, centered, top of ticket/tag.
 Never use Font B. Luxury = hierarchy + space, not tiny caps.
 """
 
@@ -36,7 +37,7 @@ BOLD_OFF = ESC + b"E\x00"
 SIZE_NORMAL = GS + b"!\x00"
 SIZE_2H = GS + b"!\x01"                  # double height (body default)
 SIZE_2W = GS + b"!\x10"                  # double width
-SIZE_2WH = GS + b"!\x11"                 # double width + height (ticket / total)
+SIZE_2WH = GS + b"!\x11"                 # double width + height (name / due / total)
 
 # 80mm printable ~48 cols Font A normal; ~24 cols when double-width
 LINE_WIDTH = 48
@@ -135,6 +136,22 @@ def _money(v):
         return "$0.00"
 
 
+def _wrap(text, width):
+    """Tiny word-wrapper (avoids importing textwrap for one call)."""
+    words = str(text).split()
+    lines, cur = [], ""
+    for w in words:
+        if len(cur) + len(w) + (1 if cur else 0) <= width:
+            cur = (cur + " " + w) if cur else w
+        else:
+            if cur:
+                lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    return lines or [""]
+
+
 # ---------------------------------------------------------------------------
 # Document builders
 # ---------------------------------------------------------------------------
@@ -148,31 +165,45 @@ WEB = "lstailors.com"
 
 def build_garment_tag(*, ticket, garment, qr_url, due_date=None,
                       is_rush=False, location=None, idx=None, total=None,
-                      lines=None):
+                      lines=None, customer_name=None):
     """
-    One garment hang tag. Large IDs for rack distance; QR to alts /g/.
-    `lines` optional list of work descriptions for this garment.
+    Rack hang tag — read from distance:
+      TOP (centered, largest): customer name + due date
+      then garment id / type, work, QR
     """
     g = garment
     out = INIT + FONT_A
-    out += line(BRAND, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
-    out += feed(1)
 
-    seq = ""
-    if idx is not None and total is not None:
-        seq = "  ({}/{})".format(idx, total)
-    out += line("GARMENT TAG" + seq, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    # --- RACK HEADER: name + due (largest, centered) ---
+    cname = (customer_name or "").strip().upper()
+    if cname:
+        for chunk in _wrap(cname, LINE_WIDTH_2W):
+            out += line(chunk, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+    else:
+        out += line("L&S", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+
+    if due_date:
+        out += feed(1)
+        out += line("DUE", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+        out += line(str(due_date), bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+
     if is_rush:
-        out += line("*** RUSH ***", bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+        out += line("*** RUSH ***", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+
     out += rule(heavy=True)
 
-    out += line(str(ticket), bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    # Ticket + garment ref
+    seq = ""
+    if idx is not None and total is not None:
+        seq = "  {}/{}".format(idx, total)
+    out += line(str(ticket) + seq, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
     if location:
         out += line(str(location), bold=True, align=ALIGN_CENTER, size=SIZE_2H)
-    out += feed(1)
 
     gid = str(g.get("garment_id") or "")
-    out += line(gid, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+    if gid:
+        out += feed(1)
+        out += line(gid, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
 
     gtype = g.get("garment_type") or ""
     color = g.get("color") or ""
@@ -185,7 +216,6 @@ def build_garment_tag(*, ticket, garment, qr_url, due_date=None,
         for chunk in _wrap(desc, LINE_WIDTH):
             out += line(chunk, align=ALIGN_CENTER, size=SIZE_2H)
 
-    # Work lines (what to do) — critical on the rack
     work = lines or g.get("lines") or []
     if work:
         out += feed(1)
@@ -197,12 +227,8 @@ def build_garment_tag(*, ticket, garment, qr_url, due_date=None,
             for chunk in _wrap(text, LINE_WIDTH):
                 out += line(chunk, bold=True, size=SIZE_2H)
 
-    if due_date:
-        out += feed(1)
-        out += line("DUE  " + str(due_date), bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
-
     out += feed(1)
-    out += ALIGN_CENTER + qr(qr_url, module_size=8) + ALIGN_LEFT
+    out += ALIGN_CENTER + qr(qr_url, module_size=7) + ALIGN_LEFT
     out += line(gid or str(ticket), bold=True, align=ALIGN_CENTER, size=SIZE_2H)
     out += feed(2)
     out += CUT
@@ -241,7 +267,6 @@ def _kv(label, value, *, bold_value=True, size=SIZE_2H):
     """Label left / value right — double-height body."""
     label = (label or "").upper()
     value = "" if value is None else str(value)
-    # Keep label short so value stays large and readable
     left = (label + ":") if not label.endswith(":") else label
     return two_col(left, value, bold=bold_value, size=size)
 
@@ -250,34 +275,44 @@ def _master(*, ticket, customer_name, customer_phone, garments, ticket_total,
             qr_url, ticket_date, due_date, promised_date, is_rush, location,
             notes, office):
     out = INIT + FONT_A
-    # Brand block
-    out += line(BRAND, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
-    out += line(SUB, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
-    out += line(ADDR_NYC, align=ALIGN_CENTER, size=SIZE_2H)
+
+    # Brand — compact so name/due own the top
+    out += line(BRAND, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    out += line(SUB, align=ALIGN_CENTER, size=SIZE_2H)
     out += feed(1)
 
     if office:
-        out += line("L&S OFFICE COPY", bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+        out += line("L&S OFFICE COPY", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
     else:
-        out += line("CUSTOMER RECEIPT", bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+        out += line("CUSTOMER COPY", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
     if is_rush:
-        out += line("*** RUSH ORDER ***", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+        out += line("*** RUSH ORDER ***", bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
     out += rule(heavy=True)
 
-    # Ticket ID is the most scanned field at the counter
-    out += line(str(ticket), bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+    # --- RACK TOP: customer name + due (largest, centered) ---
+    cname = (customer_name or "—").strip().upper()
+    for chunk in _wrap(cname, LINE_WIDTH_2W):
+        out += line(chunk, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+
+    ready = promised_date or due_date
+    if ready:
+        out += feed(1)
+        out += line("DUE", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+        out += line(str(ready), bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+
     out += feed(1)
+
+    # Ticket under name
+    out += line(str(ticket), bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    if customer_phone:
+        out += line(str(customer_phone), bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    out += rule(heavy=True)
 
     if location:
         out += _kv("Store", location)
     if ticket_date:
-        out += _kv("Date", ticket_date)
-    out += _kv("Customer", customer_name or "")
-    if customer_phone:
-        out += _kv("Phone", customer_phone)
-    if promised_date:
-        out += _kv("Promised", promised_date)
-    elif due_date:
+        out += _kv("In", ticket_date)
+    if promised_date and due_date and str(promised_date) != str(due_date):
         out += _kv("Due", due_date)
     out += rule(heavy=True)
 
@@ -300,7 +335,6 @@ def _master(*, ticket, customer_name, customer_phone, garments, ticket_total,
             for chunk in _wrap(desc, LINE_WIDTH):
                 out += line("  " + chunk, size=SIZE_2H)
 
-        # Alteration lines under each garment (office especially)
         work = g.get("lines") or []
         for w in work:
             text = w if isinstance(w, str) else (w.get("description") or "")
@@ -339,22 +373,6 @@ def _master(*, ticket, customer_name, customer_phone, garments, ticket_total,
     return out
 
 
-def _wrap(text, width):
-    """Tiny word-wrapper (avoids importing textwrap for one call)."""
-    words = str(text).split()
-    lines, cur = [], ""
-    for w in words:
-        if len(cur) + len(w) + (1 if cur else 0) <= width:
-            cur = (cur + " " + w) if cur else w
-        else:
-            if cur:
-                lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
-    return lines or [""]
-
-
 def build_payment_receipt(*, invoice, customer_name, amount_paid, total,
                           outstanding, payment_ref=None, method="Card",
                           paid_on=None, qr_url=None, ticket=None):
@@ -368,7 +386,13 @@ def build_payment_receipt(*, invoice, customer_name, amount_paid, total,
     out += _kv("Invoice", invoice)
     if ticket:
         out += _kv("Ticket", ticket)
-    out += _kv("Customer", customer_name or "")
+    # Large centered name on payment slip too
+    cname = (customer_name or "").strip().upper()
+    if cname:
+        out += feed(1)
+        for chunk in _wrap(cname, LINE_WIDTH_2W):
+            out += line(chunk, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+        out += feed(1)
     if paid_on:
         out += _kv("Paid", paid_on)
     out += _kv("Method", str(method) + " (Square)")
@@ -403,7 +427,10 @@ def build_pay_qr(*, invoice, customer_name, amount, url, ticket=None):
     out += _kv("Invoice", invoice)
     if ticket:
         out += _kv("Ticket", ticket)
-    out += _kv("Customer", customer_name or "")
+    cname = (customer_name or "").strip().upper()
+    if cname:
+        for chunk in _wrap(cname, LINE_WIDTH_2W):
+            out += line(chunk, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
     out += two_col("Amount Due", _money(amount), bold=True, size=SIZE_2WH)
     out += rule(heavy=True)
     out += feed(1)

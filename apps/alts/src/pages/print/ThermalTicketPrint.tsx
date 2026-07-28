@@ -94,14 +94,19 @@ body { margin: 0; }
   text-align: center; font-family: "JetBrains Mono", ui-monospace, monospace;
   font-weight: 700; letter-spacing: 0.02em; margin-top: 10px; line-height: 1.15;
 }
-.paper.master .tknum { font-size: 22px; }
-.paper.cust .tknum { font-size: 18px; }
+.paper.master .tknum { font-size: 20px; }
+.paper.cust .tknum { font-size: 16px; }
 .cname {
-  text-align: center; font-family: "Cormorant Garamond", Georgia, serif;
-  font-style: italic; font-weight: 600; margin-top: 10px; line-height: 1.15;
+  text-align: center; font-family: Montserrat, system-ui, sans-serif;
+  font-style: normal; font-weight: 800; margin-top: 12px; line-height: 1.1;
+  letter-spacing: 0.02em; text-transform: uppercase;
 }
-.paper.master .cname { font-size: 28px; }
-.paper.cust .cname { font-size: 24px; }
+.paper.master .cname { font-size: 32px; }
+.paper.cust .cname { font-size: 28px; }
+.dueblock { text-align: center; margin-top: 10px; }
+.dueblock .l { font-size: 12px; font-weight: 800; letter-spacing: 0.18em; }
+.dueblock .v { font-size: 26px; font-weight: 800; margin-top: 4px; line-height: 1.1; }
+.paper.master .dueblock .v { font-size: 28px; }
 .addr { text-align: center; font-size: 13px; font-weight: 700; color: #111; margin-top: 6px; }
 .solid { height: 3px; background: #000; margin: 14px 0; }
 .hair { height: 2px; background: #000; margin: 12px 0; }
@@ -290,9 +295,14 @@ export default function ThermalTicketPrint() {
         {/* STORE MASTER */}
         <div className="paper master">
           <div className="mhead">STORE MASTER</div>
+          <div className="cname">{(ticket.customer_name || "—").toUpperCase()}</div>
+          <div className="dueblock">
+            <div className="l">DUE</div>
+            <div className="v">{fmtLong(ticket.due_date).split(",")[0]}</div>
+          </div>
+          <div className="solid" />
           <div className="eyebrow">ALTERATIONS TICKET</div>
           <div className="tknum">{ticket.name}</div>
-          <div className="cname">{(ticket.customer_name || "—").toUpperCase()}</div>
           {ticket.customer_phone ? <div className="addr">{ticket.customer_phone}</div> : null}
           <div className="solid" />
           <div className="meta">
@@ -302,10 +312,6 @@ export default function ThermalTicketPrint() {
           <div className="meta">
             <span>TAKEN IN</span>
             <b>{fmtLong(ticket.ticket_date)}</b>
-          </div>
-          <div className="meta">
-            <span>READY BY</span>
-            <b>{fmtLong(ticket.due_date).split(",")[0]}</b>
           </div>
           <div className="meta">
             <span>EXIT</span>
@@ -382,16 +388,14 @@ export default function ThermalTicketPrint() {
         {/* CUSTOMER COPY */}
         <div className="paper cust">
           <div className="brand">L &amp; S HOUSE</div>
-          <div className="eyebrow" style={{ marginTop: 8 }}>
-            ALTERATIONS
+          <div className="cname">{(ticket.customer_name || "—").toUpperCase()}</div>
+          <div className="dueblock">
+            <div className="l">DUE</div>
+            <div className="v">{fmtLong(ticket.due_date).split(",")[0]}</div>
           </div>
-          <div className="tknum">{ticket.name}</div>
-          <div className="cname">{ticket.customer_name || "—"}</div>
           <div className="hair" />
-          <div className="meta">
-            <span>DUE</span>
-            <b>{fmtLong(ticket.due_date).split(",")[0]}</b>
-          </div>
+          <div className="eyebrow">ALTERATIONS</div>
+          <div className="tknum">{ticket.name}</div>
           <div className="meta">
             <span>EXIT</span>
             <b>{exit}</b>

@@ -16,7 +16,6 @@ import {
   fmtDueShort,
   garmentJobUrl,
   shortTicketNo,
-  surnameOf,
 } from "@alts/lib/printUrls";
 
 interface TicketDoc {
@@ -112,7 +111,6 @@ export default function GarmentTagPrint() {
   }
 
   const short = shortTicketNo(ticket.name);
-  const sur = surnameOf(ticket.customer_name || "—");
 
   return (
     <>
@@ -171,6 +169,8 @@ export default function GarmentTagPrint() {
           const url = garmentJobUrl(ticket.name, g.garment_id);
           const gm = [g.garment_type, g.garment_id].filter(Boolean).join(" · ").toUpperCase();
           const meta = [g.color, g.brand || g.garment_description].filter(Boolean).join(" · ").toUpperCase();
+          const fullName = (ticket.customer_name || "—").trim().toUpperCase();
+          const due = fmtDueShort(ticket.due_date);
           return (
             <div
               key={g.name || g.garment_id || i}
@@ -182,82 +182,76 @@ export default function GarmentTagPrint() {
                 color: "#000",
                 border: "3px solid #000",
                 borderRadius: 4,
-                padding: "12px 14px",
+                padding: "10px 12px",
                 display: "flex",
                 flexDirection: "column",
                 fontFamily: "Montserrat, system-ui, sans-serif",
               }}
             >
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      letterSpacing: "0.18em",
-                      color: "#000",
-                    }}
-                  >
-                    L &amp; S
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontSize: 36,
-                      fontWeight: 800,
-                      letterSpacing: "-0.02em",
-                      lineHeight: 1,
-                    }}
-                  >
-                    {short}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontSize: 24,
-                      fontWeight: 800,
-                      letterSpacing: "0.04em",
-                      lineHeight: 1.05,
-                    }}
-                  >
-                    {sur}
-                  </div>
+              {/* Rack header: name + due — largest, centered */}
+              <div style={{ textAlign: "center" }}>
+                <div
+                  style={{
+                    fontSize: fullName.length > 18 ? 20 : 26,
+                    fontWeight: 800,
+                    letterSpacing: "0.02em",
+                    lineHeight: 1.05,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {fullName}
                 </div>
                 <div
                   style={{
-                    flexShrink: 0,
-                    padding: 3,
-                    border: "3px solid #000",
-                    background: "#fff",
+                    marginTop: 6,
+                    fontSize: 11,
+                    fontWeight: 800,
+                    letterSpacing: "0.16em",
                   }}
                 >
-                  <QRCodeSVG value={url} size={78} level="M" includeMargin={false} />
+                  DUE
+                </div>
+                <div
+                  style={{
+                    marginTop: 2,
+                    fontSize: 22,
+                    fontWeight: 800,
+                    letterSpacing: "0.02em",
+                    lineHeight: 1,
+                  }}
+                >
+                  {due}
                 </div>
               </div>
 
-              <div style={{ flex: 1 }} />
+              <div style={{ height: 2, background: "#000", margin: "8px 0" }} />
 
-              <div style={{ height: 3, background: "#000", marginBottom: 8 }} />
-              <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: "0.03em" }}>{gm}</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-0.02em" }}>{short}</div>
+                  <div style={{ marginTop: 4, fontSize: 14, fontWeight: 800 }}>{gm}</div>
                   {meta ? (
                     <div
                       style={{
                         marginTop: 3,
                         fontSize: 12,
                         fontWeight: 700,
-                        letterSpacing: "0.06em",
-                        color: "#000",
+                        letterSpacing: "0.04em",
                       }}
                     >
-                      {meta.slice(0, 48)}
+                      {meta.slice(0, 36)}
                     </div>
                   ) : null}
                 </div>
-                <div style={{ textAlign: "right", flexShrink: 0 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.12em" }}>DUE</div>
-                  <div style={{ marginTop: 2, fontSize: 16, fontWeight: 800 }}>{fmtDueShort(ticket.due_date)}</div>
+                <div
+                  style={{
+                    flexShrink: 0,
+                    padding: 2,
+                    border: "2px solid #000",
+                    background: "#fff",
+                  }}
+                >
+                  <QRCodeSVG value={url} size={64} level="M" includeMargin={false} />
                 </div>
               </div>
             </div>

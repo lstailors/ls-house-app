@@ -194,7 +194,8 @@ def print_ticket(ticket, what="all"):
                 qr_url="{}/g/{}/{}".format(base, doc.name, g.get("garment_id")),
                 due_date=doc.promised_date or doc.due_date, is_rush=doc.is_rush,
                 location=doc.origin_location, idx=i, total=total,
-                lines=g.get("lines") or [])
+                lines=g.get("lines") or [],
+                customer_name=doc.customer_name)
             results.append(_send(cfg, doc.name, "garment",
                                  g.get("garment_id"), payload))
 
@@ -230,7 +231,8 @@ def print_garment(ticket, garment_id):
         ticket=doc.name, garment=match,
         qr_url="{}/g/{}/{}".format(base, doc.name, garment_id),
         due_date=doc.promised_date or doc.due_date, is_rush=doc.is_rush,
-        location=doc.origin_location, lines=match.get("lines") or [])
+        location=doc.origin_location, lines=match.get("lines") or [],
+        customer_name=doc.customer_name)
     res = _send(cfg, doc.name, "garment", garment_id, payload)
     return {"ok": res["ok"], "ticket": doc.name, "jobs": [res]}
 
