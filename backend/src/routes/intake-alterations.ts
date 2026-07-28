@@ -335,6 +335,9 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
     deposit_amount: paymentMethod === 'deposit' ? parseFloat(deposit) || 0 : 0,
     ticket_date: ticketDateStr,
     due_date: body.due_date ?? defaultDue,
+    // Billing intent on create so ERP never mints SI for Warranty / Included
+    billing_status: billingStatus,
+    included_in_custom: includedInCustom,
     // ERPNext create_ticket expects garments + lines as separate top-level arrays.
     // garments: metadata only (garment_type, description, color, fabric_notes)
     // lines: flat list of all alteration lines with garment_ref linking back to G1, G2...
@@ -349,15 +352,19 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
       complexity: g.complexity || '',
     })),
     lines: garments.flatMap((g: any) =>
-      (g.lines ?? []).map((l: any) => ({
-        garment_ref: g.ref,          // e.g. "G1", "G2"
-        preset: null,                // omit preset — referenced Items are disabled; use description+price only
-        description: l.description,
-        price: l.price,
-        est_minutes: l.estMinutes || null,
-      }))
+    (g.lines ?? []).map((l: any) => ({
+      garment_ref: g.ref,          // e.g. "G1", "G2"
+      preset: l.preset || null,    // optional — null = custom line (Lucia 030)
+      description: l.description,
+      price: l.price,              // always full shop price (internal value even if non-billable)
+      est_minutes: l.estMinutes || null,
+      line_notes: l.notes || l.line_notes || null,
+    }))
     ),
-  };
+    };
+    if (linkedSo) payload.linked_sales_order = linkedSo;
+    if (body.internal_notes) payload.internal_notes = body.internal_notes;
+    if (body.customer_notes) payload.customer_notes = body.customer_notes;
 
   if (customer) {
     payload.customer = customer.id ?? customer.name;
@@ -384,14 +391,16 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
       return c.json({ error: { message: 'Ticket may have been created in ERPNext but no ticket number was returned. Please check ERPNext.' } }, 502);
     }
 
-    // Apply billing intent after create (create_ticket API doesn't take these yet).
-    // For Warranty / Included: force payment_status N/A and clear/cancel any auto invoice.
+    // Apply billing intent after create (also sent on create_ticket now — belt-and-suspenders).
+    // Non-billable: payment N/A, clear any SI if one slipped through.
     try {
       const patch: Record<string, any> = {
         billing_status: billingStatus,
         included_in_custom: includedInCustom,
       };
       if (linkedSo) patch.linked_sales_order = linkedSo;
+      if (body.internal_notes) patch.internal_notes = body.internal_notes;
+      if (body.customer_notes) patch.customer_notes = body.customer_notes;
       if (billingStatus === 'Warranty' || billingStatus === 'Included in Custom Order') {
         patch.payment_status = 'N/A';
       }
@@ -1016,13 +1025,18 @@ intakeAlterationsRouter.post('/photos', async (c) => {
   const path = formData.get('path') as string | null;
   const ticketName = formData.get('ticketName') as string | null;
   const garmentRef = (formData.get('garmentRef') as string | null) || '';
+  const lineRef = (formData.get('lineRef') as string | null) || '';
 
   if (!file || !path) return c.json({ error: 'file and path required' }, 400);
 
   try {
     const buffer = new Uint8Array(await file.arrayBuffer());
     const base = path.split('/').pop() ?? file.name ?? 'photo.jpg';
-    const filename = garmentRef ? `${garmentRef}-${base}` : base;
+    const filename = lineRef
+      ? `${garmentRef || 'G'}-${lineRef.slice(0, 8)}-${base}`
+      : garmentRef
+        ? `${garmentRef}-${base}`
+        : base;
     const { fileUrl, fileId } = await uploadFile({
       file: buffer,
       filename,
@@ -1032,12 +1046,33 @@ intakeAlterationsRouter.post('/photos', async (c) => {
       isPrivate: false,
     });
 
+    // Append URL onto matching line's line_photos when we can resolve garment_ref + description seed
+    if (ticketName && lineRef) {
+      try {
+        const t = await erpGetDoc<any>('Alteration Ticket', ticketName);
+        const lines = t?.lines || [];
+        // Best-effort: match by description embed in filename or append to last line of garment
+        // Clients should also send notes at create; photos are supplemental evidence.
+        // Store on ticket-level for now if no row match — line_photos updated when line_id known.
+        const abs = erpFileAbsoluteUrl(fileUrl);
+        // Prefer garment-scoped first matching empty-ish line_photos or any line on garment
+        const gLines = lines.filter((ln: any) => ln.garment_ref === garmentRef);
+        const target = gLines[gLines.length - 1];
+        if (target?.name) {
+          const prev = String(target.line_photos || '').trim();
+          const next = prev ? `${prev},${abs}` : abs;
+          await erpUpdate('Alteration Ticket Line', target.name, { line_photos: next }).catch(() => {});
+        }
+      } catch { /* non-fatal */ }
+    }
+
     return c.json({
       data: {
         url: erpFileAbsoluteUrl(fileUrl),
         path,
         fileId,
         garmentRef,
+        lineRef: lineRef || null,
       },
     });
   } catch (e: unknown) {

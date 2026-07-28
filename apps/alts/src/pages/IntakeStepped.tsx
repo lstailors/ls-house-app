@@ -21,7 +21,18 @@ const GARMENT_TYPES = [
   "Other",
 ] as const;
 
-type Line = { id: string; description: string; price: number; estMinutes?: number | null; presetId?: string };
+type Line = {
+  id: string;
+  description: string;
+  price: number;
+  estMinutes?: number | null;
+  presetId?: string;
+  /** per-line note → ERP line_notes */
+  notes?: string;
+  /** local preview URLs until ticket exists; then uploaded */
+  photoFiles?: File[];
+  photoPreviewUrls?: string[];
+};
 type Garment = { ref: string; garmentType: string; color: string; notes: string; lines: Line[] };
 type CustomerHit = {
   id?: string;
@@ -138,6 +149,13 @@ export default function IntakeStepped() {
   const [expectedGarments, setExpectedGarments] = useState(0);
   const [remind, setRemind] = useState<Remind>("3d");
   const [parkedCartId, setParkedCartId] = useState<string | null>(resumeId);
+
+  // 030 — work step: custom line + notes
+  const [customDesc, setCustomDesc] = useState("");
+  const [customPrice, setCustomPrice] = useState("");
+  const [noteOpenFor, setNoteOpenFor] = useState<string | null>(null);
+  const [ticketNote, setTicketNote] = useState("");
+  const [ticketNoteKind, setTicketNoteKind] = useState<"internal" | "customer">("internal");
 
   const search = useQuery({
     queryKey: ["cust-search", q],
@@ -273,6 +291,79 @@ export default function IntakeStepped() {
     setGarments((prev) =>
       prev.map((g) => (g.ref === gRef ? { ...g, lines: g.lines.filter((l) => l.id !== lineId) } : g)),
     );
+    if (noteOpenFor === lineId) setNoteOpenFor(null);
+  };
+
+  const addCustomLine = () => {
+    if (!active) {
+      toast.error("Pick a garment first");
+      return;
+    }
+    const desc = customDesc.trim();
+    const price = Number(customPrice.replace(/[^0-9.]/g, ""));
+    if (!desc) {
+      toast.error("Describe the work");
+      return;
+    }
+    if (!(price > 0)) {
+      toast.error("$0 custom line is almost always a mistake — use Re-do for free work");
+      return;
+    }
+    setGarments((prev) =>
+      prev.map((g) => {
+        if (g.ref !== active.ref) return g;
+        return {
+          ...g,
+          lines: [
+            ...g.lines,
+            {
+              id: uid(),
+              description: desc,
+              price,
+              // no presetId → custom
+            },
+          ],
+        };
+      }),
+    );
+    setCustomDesc("");
+    setCustomPrice("");
+    toast.success("Custom line added");
+  };
+
+  const updateLineNotes = (gRef: string, lineId: string, notes: string) => {
+    setGarments((prev) =>
+      prev.map((g) =>
+        g.ref !== gRef
+          ? g
+          : {
+              ...g,
+              lines: g.lines.map((l) => (l.id === lineId ? { ...l, notes } : l)),
+            },
+      ),
+    );
+  };
+
+  const addLinePhoto = (gRef: string, lineId: string, file: File) => {
+    const url = URL.createObjectURL(file);
+    setGarments((prev) =>
+      prev.map((g) =>
+        g.ref !== gRef
+          ? g
+          : {
+              ...g,
+              lines: g.lines.map((l) =>
+                l.id !== lineId
+                  ? l
+                  : {
+                      ...l,
+                      photoFiles: [...(l.photoFiles || []), file],
+                      photoPreviewUrls: [...(l.photoPreviewUrls || []), url],
+                    },
+              ),
+            },
+      ),
+    );
   };
 
   const filteredPresets = useMemo(() => {
@@ -368,9 +459,13 @@ export default function IntakeStepped() {
         notes: g.notes,
         lines: g.lines.map((l) => ({
           description: l.description,
-          // Re-do is always $0 client charge. On-order keeps $ for COGS ledger.
-          price: billing === "redo" ? 0 : l.price,
+          // Always keep full shop price — internal accounted value.
+          // Non-billable (on_order / redo) never creates SI; billing_status gates books.
+          price: l.price,
           estMinutes: l.estMinutes,
+          // Lucia 030 — map to ERP line_notes (preset optional = custom line)
+          notes: l.notes || undefined,
+          preset: l.presetId || null,
         })),
       })),
       billing_status:
@@ -378,6 +473,10 @@ export default function IntakeStepped() {
       included_in_custom: billing === "on_order" ? 1 : 0,
       linked_sales_order: billing === "on_order" ? linkedSo || undefined : undefined,
     };
+    if (ticketNote.trim()) {
+      if (ticketNoteKind === "customer") body.customer_notes = ticketNote.trim();
+      else body.internal_notes = ticketNote.trim();
+    }
     if (customer?.id) body.customer = { id: customer.id, name: customer.name };
     else
       body.newCustomer = {
@@ -392,7 +491,24 @@ export default function IntakeStepped() {
     mutationFn: async () => {
       const body = buildTicketBody();
       const res = await api.post<{ ticketName: string }>("/api/intake-alterations/tickets", body);
-      // If we parked first, abandon park after successful commit optional
+      const ticketName = res.ticketName;
+      // Upload any line photos after ticket exists (Lucia 030 — reuse /photos)
+      if (ticketName) {
+        for (const g of garments) {
+          for (const l of g.lines) {
+            const files = l.photoFiles || [];
+            for (const file of files) {
+              const fd = new FormData();
+              fd.append("file", file);
+              fd.append("path", `alts/${ticketName}/${g.ref}/${l.id}/${file.name}`);
+              fd.append("ticketName", ticketName);
+              fd.append("garmentRef", g.ref);
+              fd.append("lineRef", l.id);
+              await api.raw("/api/intake-alterations/photos", { method: "POST", body: fd }).catch(() => {});
+            }
+          }
+        }
+      }
       if (parkedCartId) {
         await api.delete(`/api/carts/${encodeURIComponent(parkedCartId)}`).catch(() => {});
       }
@@ -501,7 +617,7 @@ export default function IntakeStepped() {
           <div>
             <div className="display text-lg">Alteration Intake</div>
             <div className="caps">
-              {billing === "billable" ? "Client billable" : billing === "on_order" ? "On custom order · COGS" : "Re-do · $0"}
+              {billing === "billable" ? "Client billable" : billing === "on_order" ? "On custom · valued · no SI" : "Re-do · valued · no SI"}
               {" · "}
               draft
             </div>
@@ -609,12 +725,12 @@ export default function IntakeStepped() {
               <div className="card-glass px-4 py-3 flex items-center gap-3 text-sm">
                 <span className="caps text-[var(--vi,#9B8BC4)]">Linked order</span>
                 <span className="font-mono text-[var(--vi,#9B8BC4)]">{linkedSo}</span>
-                <span className="text-cream-dim text-xs">· client pays $0 · COGS on order</span>
+                <span className="text-cream-dim text-xs">· full prices kept · no client invoice</span>
               </div>
             )}
             {billing === "redo" && (
               <div className="card-glass px-4 py-3 text-sm text-signal-emerald border-signal-emerald/30">
-                Re-do / Warranty — client pays $0. No invoice.
+                Re-do / Warranty — keep full prices for internal value & tailor stats. No SI / no AR.
               </div>
             )}
 
@@ -852,11 +968,13 @@ export default function IntakeStepped() {
           </div>
         )}
 
-        {/* ── Work ── */}
+        {/* ── Work (Lucia 030) ── */}
         {step === 2 && (
           <div className="max-w-4xl mx-auto">
             <h2 className="display text-[34px] mb-1">What needs doing?</h2>
-            <p className="text-[12.5px] text-cream-dim mb-4">Pick a garment, then tap the work. Prices from ERPNext presets · {origin}</p>
+            <p className="text-[12.5px] text-cream-dim mb-4">
+              Presets · custom lines · notes. Prices stay for internal value even on Re-do / custom order.
+            </p>
             <div className="flex gap-2.5 overflow-x-auto pb-4 mb-2">
               {garments.map((g) => (
                 <button
@@ -883,25 +1001,121 @@ export default function IntakeStepped() {
                 +
               </button>
             </div>
+
+            {/* Selected lines first (with note affordance) */}
+            {active && active.lines.length > 0 && (
+              <div className="grid sm:grid-cols-2 gap-3 mb-4">
+                {active.lines.map((l) => {
+                  const custom = !l.presetId;
+                  const open = noteOpenFor === l.id || !!(l.notes && l.notes.trim()) || !!(l.photoPreviewUrls?.length);
+                  return (
+                    <div key={l.id} className="min-w-0">
+                      <div
+                        className={cn(
+                          "w-full flex items-center gap-3.5 min-h-[72px] px-4 py-3.5 rounded-2xl border text-left",
+                          custom
+                            ? "border-signal-amber/45 bg-signal-amber/10"
+                            : "border-brass bg-brass/15",
+                        )}
+                      >
+                        <span className="w-[30px] h-[30px] rounded-full border grid place-items-center text-sm font-bold shrink-0 bg-brass text-forest-deep border-brass">
+                          ✓
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block font-semibold text-sm">
+                            {l.description}
+                            {custom ? (
+                              <span className="ml-2 text-[7.5px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded border border-signal-amber/50 text-signal-amber">
+                                custom
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="text-[11px] text-cream-dim">
+                            {custom ? "Out of scope · priced on the spot" : l.estMinutes ? `${l.estMinutes} min` : "—"}
+                          </span>
+                        </span>
+                        <span className="display text-2xl text-brass-light shrink-0">{money(l.price)}</span>
+                        <button
+                          type="button"
+                          className="w-9 h-9 rounded-lg bg-white/[0.04] text-cream-dim shrink-0"
+                          onClick={() => removeLine(active.ref, l.id)}
+                          aria-label="Remove line"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      {!open ? (
+                        <button
+                          type="button"
+                          onClick={() => setNoteOpenFor(l.id)}
+                          className="mt-2 inline-flex items-center gap-1.5 text-[9px] font-bold tracking-widest uppercase text-cream-dim border border-brass/25 bg-black/20 rounded-md px-2.5 py-1.5 hover:border-brass/50 hover:text-brass-light"
+                        >
+                          ✎ Note / photo
+                        </button>
+                      ) : (
+                        <div className="mt-2 border-l-2 border-brass pl-3 py-2">
+                          <span className="caps text-[8px] text-brass block mb-1.5">Note on this line</span>
+                          <textarea
+                            value={l.notes || ""}
+                            onChange={(e) => updateLineNotes(active.ref, l.id, e.target.value)}
+                            placeholder="Working buttonholes — open and re-sew…"
+                            rows={2}
+                            className="w-full rounded-xl bg-black/40 border border-brass/30 px-3 py-2 text-[12px] text-cream resize-none"
+                          />
+                          <div className="flex flex-wrap gap-2 mt-2 items-center">
+                            {(l.photoPreviewUrls || []).map((src, i) => (
+                              <img
+                                key={i}
+                                src={src}
+                                alt=""
+                                className="w-10 h-10 rounded-lg object-cover border border-brass/30"
+                              />
+                            ))}
+                            <label className="w-10 h-10 rounded-lg border border-dashed border-brass/35 grid place-items-center text-cream-dim text-lg cursor-pointer hover:border-brass">
+                              +
+                              <input
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) addLinePhoto(active.ref, l.id, f);
+                                  e.target.value = "";
+                                }}
+                              />
+                            </label>
+                            {!l.notes?.trim() && !(l.photoPreviewUrls?.length) && (
+                              <button
+                                type="button"
+                                className="text-[10px] text-cream-dim ml-auto"
+                                onClick={() => setNoteOpenFor(null)}
+                              >
+                                Collapse
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Preset picker */}
             <div className="grid sm:grid-cols-2 gap-3">
               {filteredPresets.map((p) => {
                 const on = !!active?.lines.find((l) => l.presetId === p.id);
+                if (on) return null;
                 return (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() => togglePreset(p)}
-                    className={cn(
-                      "w-full flex items-center gap-3.5 min-h-[92px] px-4 py-4 rounded-2xl border text-left",
-                      on ? "border-brass bg-brass/15" : "border-brass/20 bg-black/20",
-                    )}
+                    className="w-full flex items-center gap-3.5 min-h-[92px] px-4 py-4 rounded-2xl border text-left border-brass/20 bg-black/20 hover:border-brass/40"
                   >
-                    <span
-                      className={cn(
-                        "w-[30px] h-[30px] rounded-full border grid place-items-center text-sm font-bold shrink-0",
-                        on ? "bg-brass text-forest-deep border-brass" : "border-brass/40 text-transparent",
-                      )}
-                    >
+                    <span className="w-[30px] h-[30px] rounded-full border grid place-items-center text-sm font-bold shrink-0 border-brass/40 text-transparent">
                       ✓
                     </span>
                     <span className="flex-1 min-w-0">
@@ -916,6 +1130,86 @@ export default function IntakeStepped() {
             {!presets.data?.length && !presets.isLoading && (
               <p className="text-cream-dim text-sm mt-3">No presets loaded — check API / ERP.</p>
             )}
+
+            {/* Custom line */}
+            <div className="mt-4 rounded-[17px] border border-dashed border-brass/40 bg-brass/[0.05] p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="display text-[19px] italic">Custom alteration line</span>
+                <span className="text-[8px] font-bold tracking-wider uppercase px-2 py-0.5 rounded border border-signal-amber/50 text-signal-amber bg-signal-amber/10">
+                  out of scope
+                </span>
+              </div>
+              <div className="grid sm:grid-cols-[1fr_150px] gap-2.5">
+                <input
+                  value={customDesc}
+                  onChange={(e) => setCustomDesc(e.target.value)}
+                  placeholder="Describe the work — e.g. re-cut lapel roll, hand-pad"
+                  className="h-[52px] rounded-[13px] bg-black/40 border border-brass/30 px-4 text-sm text-cream placeholder:text-cream-dim"
+                />
+                <input
+                  value={customPrice}
+                  onChange={(e) => setCustomPrice(e.target.value)}
+                  placeholder="$0.00"
+                  inputMode="decimal"
+                  className="h-[52px] rounded-[13px] bg-black/40 border border-brass/30 px-4 text-right display text-xl italic text-brass-light placeholder:text-cream-dim"
+                />
+              </div>
+              <div className="flex flex-wrap gap-3 mt-3 items-center">
+                <p className="text-[9.5px] text-cream-dim flex-1 leading-relaxed min-w-[180px]">
+                  Normal line with <b className="text-cream-muted">no preset</b>. Full shop price kept for tailor
+                  stats — never $0 (use Re-do for free work).
+                </p>
+                <button
+                  type="button"
+                  onClick={addCustomLine}
+                  disabled={!customDesc.trim() || !(Number(customPrice.replace(/[^0-9.]/g, "")) > 0)}
+                  className="btn-brass h-11 px-6 text-[10px] disabled:opacity-40"
+                >
+                  Add line
+                </button>
+              </div>
+            </div>
+
+            {/* Ticket note */}
+            <div className="mt-5 rounded-[17px] border border-brass/25 bg-black/25 p-4">
+              <div className="flex items-center gap-3 mb-3 flex-wrap">
+                <span className="display text-[19px] italic flex-1">Ticket note</span>
+                <div className="flex rounded-lg overflow-hidden border border-brass/30">
+                  <button
+                    type="button"
+                    onClick={() => setTicketNoteKind("internal")}
+                    className={cn(
+                      "px-3 py-1.5 text-[8.5px] font-bold tracking-wider uppercase",
+                      ticketNoteKind === "internal" ? "bg-brass/20 text-brass-light" : "text-cream-dim",
+                    )}
+                  >
+                    Internal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTicketNoteKind("customer")}
+                    className={cn(
+                      "px-3 py-1.5 text-[8.5px] font-bold tracking-wider uppercase",
+                      ticketNoteKind === "customer" ? "bg-brass/20 text-brass-light" : "text-cream-dim",
+                    )}
+                  >
+                    On the receipt
+                  </button>
+                </div>
+              </div>
+              <textarea
+                value={ticketNote}
+                onChange={(e) => setTicketNote(e.target.value)}
+                placeholder="Anything about this ticket as a whole — client travelling Thursday, fabric fragile…"
+                rows={3}
+                className="w-full rounded-[13px] bg-black/40 border border-brass/30 px-4 py-3 text-[13px] text-cream-muted resize-none placeholder:text-cream-dim"
+              />
+              <p className="text-[9.5px] text-cream-dim mt-2 leading-relaxed">
+                <b className="text-signal-amber">Internal</b> is staff-only.{" "}
+                <b className="text-cream-muted">On the receipt</b> appears on thermal + e-ticket — deliberate tap.
+              </p>
+            </div>
+
             <button type="button" onClick={() => setStep(3)} className="btn-brass mt-6 h-14 px-8 text-[11px]">
               Review →
             </button>
@@ -954,21 +1248,39 @@ export default function IntakeStepped() {
                     </span>
                   </div>
                   {g.lines.map((l) => (
-                    <div key={l.id} className="flex items-center gap-3 px-5 py-3.5 border-b border-brass/10 text-[13.5px]">
-                      <span className="flex-1 text-cream-muted">{l.description}</span>
-                      <span className="font-semibold tabular-nums">{money(l.price)}</span>
-                      <button type="button" className="w-10 h-10 rounded-[10px] bg-white/[0.04] text-cream-dim" onClick={() => removeLine(g.ref, l.id)}>
-                        ✕
-                      </button>
+                    <div key={l.id} className="flex flex-col gap-1 px-5 py-3.5 border-b border-brass/10 text-[13.5px]">
+                      <div className="flex items-center gap-3">
+                        <span className="flex-1 text-cream-muted">
+                          {l.description}
+                          {!l.presetId ? (
+                            <span className="ml-2 text-[7.5px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded border border-signal-amber/50 text-signal-amber">
+                              custom
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="font-semibold tabular-nums">{money(l.price)}</span>
+                        <button type="button" className="w-10 h-10 rounded-[10px] bg-white/[0.04] text-cream-dim" onClick={() => removeLine(g.ref, l.id)}>
+                          ✕
+                        </button>
+                      </div>
+                      {l.notes?.trim() ? (
+                        <p className="text-[11px] text-cream-dim border-l border-brass/40 ml-0.5 pl-2">{l.notes}</p>
+                      ) : null}
                     </div>
                   ))}
                 </div>
               ))}
+              {ticketNote.trim() ? (
+                <p className="text-xs text-cream-dim px-5 py-3 border-t border-brass/15">
+                  <span className="caps text-brass">{ticketNoteKind === "customer" ? "On receipt" : "Internal"} · </span>
+                  {ticketNote.trim()}
+                </p>
+              ) : null}
               {billing !== "billable" && (
                 <p className="text-xs text-signal-amber px-5 py-3">
                   {billing === "on_order"
-                    ? "On custom order — prices track COGS, no client charge."
-                    : "Re-do — $0 to client."}
+                    ? "On custom order — full prices kept for value; no client invoice."
+                    : "Re-do / Warranty — full prices kept for value; no SI / no AR."}
                 </p>
               )}
             </div>
