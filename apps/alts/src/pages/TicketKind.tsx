@@ -225,11 +225,12 @@ export default function TicketKind() {
               <span className="text-brass/70">→</span>
             </div>
             <p className="text-[11px] text-[var(--cd)] mt-2 leading-relaxed">
-              A fix on work we already did. Our cost to put right — the client is never charged twice.
+              Warranty / re-do — a fix on work we already did. Our cost to put right; client never charged twice.
             </p>
             <div className="flex flex-wrap gap-1.5 mt-3">
               <span className="chip border-signal-emerald/40 text-signal-emerald bg-signal-emerald/10">Client pays $0</span>
-              <span className="chip border-signal-emerald/40 text-signal-emerald bg-signal-emerald/10">Tracked as re-do</span>
+              <span className="chip border-signal-emerald/40 text-signal-emerald bg-signal-emerald/10">Warranty · Re-do</span>
+              <span className="chip border-signal-emerald/40 text-signal-emerald bg-signal-emerald/10">No invoice</span>
             </div>
           </button>
 
