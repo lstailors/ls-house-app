@@ -596,7 +596,8 @@ export default function IntakeStepped() {
               id: uid(),
               description: desc,
               price,
-              // no presetId → custom
+              // no presetId → custom; default minutes so ERP capacity script doesn't block summit
+              estMinutes: 15,
             },
           ],
         };
