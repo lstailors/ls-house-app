@@ -117,6 +117,8 @@ def rollup_line_to_garment(doc, method=None):
 
 def ensure_custom_alteration_item():
 	if frappe.db.exists("Item", "ALT-CUSTOM-ALTERATION"):
+		if frappe.db.get_value("Item", "ALT-CUSTOM-ALTERATION", "disabled"):
+			frappe.db.set_value("Item", "ALT-CUSTOM-ALTERATION", "disabled", 0, update_modified=False)
 		return
 	from ls_alterations.ls_alterations.doctype.alteration_preset.alteration_preset import ensure_item_group
 
@@ -131,6 +133,7 @@ def ensure_custom_alteration_item():
 			"is_stock_item": 0,
 			"standard_rate": 0,
 			"description": "Custom alteration not matching standard presets",
+			"is_sales_item": 1,
 		}
 	).insert(ignore_permissions=True)
 
@@ -154,20 +157,19 @@ def create_sales_invoice(doc, method=None):
 	if doc.billing_status == "Billable" and not (doc.ticket_total or 0) > 0:
 		return  # Billable but $0 — don't create invoice yet
 
-	from ls_alterations.ls_alterations.doctype.alteration_preset.alteration_preset import item_code_for
+	from ls_alterations.ls_alterations.doctype.alteration_preset.alteration_preset import (
+		create_service_item,
+		item_code_for,
+	)
 
 	items = []
 	for line in doc.lines or []:
 		if line.preset:
-			item_code = item_code_for(line.preset)
-			# Auto-create the Service Item if a new preset slipped past the hook
-			if not frappe.db.exists("Item", item_code):
-				preset_doc = frappe.get_cached_doc("Alteration Preset", line.preset)
-				from ls_alterations.ls_alterations.doctype.alteration_preset.alteration_preset import (
-					create_service_item,
-				)
-
-				create_service_item(preset_doc.preset_name, preset_doc.default_price, preset_doc.garment_type)
+			# create_service_item also re-enables disabled items
+			preset_doc = frappe.get_cached_doc("Alteration Preset", line.preset)
+			item_code = create_service_item(
+				preset_doc.preset_name, preset_doc.default_price, preset_doc.garment_type
+			)
 		else:
 			item_code = "ALT-CUSTOM-ALTERATION"
 			ensure_custom_alteration_item()

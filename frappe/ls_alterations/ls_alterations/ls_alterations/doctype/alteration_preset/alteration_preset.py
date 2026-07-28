@@ -27,9 +27,15 @@ def ensure_item_group():
 
 
 def create_service_item(preset_name: str, default_price: float, garment_type: str | None = None):
-	"""Create a Service Item for a preset if it doesn't exist. Returns the item_code."""
+	"""Create a Service Item for a preset if it doesn't exist. Returns the item_code.
+
+	If the item already exists but was disabled, re-enable it — ticket SI creation
+	fails hard with 'Item X is disabled' and every preset was bulk-disabled once.
+	"""
 	item_code = item_code_for(preset_name)
 	if frappe.db.exists("Item", item_code):
+		if frappe.db.get_value("Item", item_code, "disabled"):
+			frappe.db.set_value("Item", item_code, "disabled", 0, update_modified=False)
 		return item_code
 	ensure_item_group()
 	desc = f"{garment_type} alteration: {preset_name}" if garment_type else preset_name
@@ -43,6 +49,7 @@ def create_service_item(preset_name: str, default_price: float, garment_type: st
 			"is_stock_item": 0,
 			"standard_rate": default_price or 0,
 			"description": desc,
+			"is_sales_item": 1,
 		}
 	).insert(ignore_permissions=True)
 	return item_code
