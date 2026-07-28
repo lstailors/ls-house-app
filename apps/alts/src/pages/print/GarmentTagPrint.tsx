@@ -13,8 +13,8 @@ import { ArrowLeft, Printer, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import {
-  fmtDueShort,
   garmentJobUrl,
+  parseDueRack,
   shortTicketNo,
 } from "@alts/lib/printUrls";
 
@@ -167,10 +167,10 @@ export default function GarmentTagPrint() {
         )}
         {garments.map((g, i) => {
           const url = garmentJobUrl(ticket.name, g.garment_id);
-          const gm = [g.garment_type, g.garment_id].filter(Boolean).join(" · ").toUpperCase();
-          const meta = [g.color, g.brand || g.garment_description].filter(Boolean).join(" · ").toUpperCase();
-          const fullName = (ticket.customer_name || "—").trim().toUpperCase();
-          const due = fmtDueShort(ticket.due_date);
+          const gm = [g.garment_type, g.garment_id].filter(Boolean).join(" · ");
+          const meta = [g.color, g.brand || g.garment_description].filter(Boolean).join(" · ");
+          const fullName = (ticket.customer_name || "—").trim();
+          const due = parseDueRack(ticket.due_date);
           return (
             <div
               key={g.name || g.garment_id || i}
@@ -182,76 +182,75 @@ export default function GarmentTagPrint() {
                 color: "#000",
                 border: "3px solid #000",
                 borderRadius: 4,
-                padding: "10px 12px",
+                padding: "8px 10px",
                 display: "flex",
                 flexDirection: "column",
                 fontFamily: "Montserrat, system-ui, sans-serif",
+                textAlign: "center",
               }}
             >
-              {/* Rack header: name + due — largest, centered */}
-              <div style={{ textAlign: "center" }}>
-                <div
-                  style={{
-                    fontSize: fullName.length > 16 ? 22 : 30,
-                    fontWeight: 800,
-                    letterSpacing: "0.02em",
-                    lineHeight: 1.05,
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {fullName}
-                </div>
-                <div
-                  style={{
-                    marginTop: 8,
-                    fontSize: 12,
-                    fontWeight: 800,
-                    letterSpacing: "0.2em",
-                  }}
-                >
-                  DUE
-                </div>
-                <div
-                  style={{
-                    marginTop: 2,
-                    fontSize: 26,
-                    fontWeight: 800,
-                    letterSpacing: "0.02em",
-                    lineHeight: 1,
-                  }}
-                >
-                  {due}
-                </div>
+              {/* Classic purple slip: # · Friday · 6:00 PM */}
+              <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1 }}>
+                {short}
+              </div>
+              {due ? (
+                <>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 26,
+                      fontWeight: 800,
+                      lineHeight: 1.05,
+                      letterSpacing: "0.01em",
+                    }}
+                  >
+                    {due.weekday}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 2,
+                      fontSize: 24,
+                      fontWeight: 800,
+                      lineHeight: 1.05,
+                    }}
+                  >
+                    {due.time}
+                  </div>
+                  <div style={{ marginTop: 2, fontSize: 12, fontWeight: 700, letterSpacing: "0.06em" }}>
+                    {due.dateShort}
+                  </div>
+                </>
+              ) : null}
+
+              <div style={{ height: 2, background: "#000", margin: "6px 0" }} />
+
+              <div
+                style={{
+                  fontSize: fullName.length > 18 ? 14 : 16,
+                  fontWeight: 800,
+                  lineHeight: 1.1,
+                }}
+              >
+                {fullName}
               </div>
 
-              <div style={{ height: 2, background: "#000", margin: "8px 0" }} />
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+              <div
+                style={{
+                  marginTop: "auto",
+                  display: "flex",
+                  alignItems: "flex-end",
+                  gap: 6,
+                  textAlign: "left",
+                }}
+              >
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-0.02em" }}>{short}</div>
-                  <div style={{ marginTop: 4, fontSize: 14, fontWeight: 800 }}>{gm}</div>
+                  <div style={{ fontSize: 12, fontWeight: 800 }}>{gm}</div>
                   {meta ? (
-                    <div
-                      style={{
-                        marginTop: 3,
-                        fontSize: 12,
-                        fontWeight: 700,
-                        letterSpacing: "0.04em",
-                      }}
-                    >
-                      {meta.slice(0, 36)}
-                    </div>
+                    <div style={{ marginTop: 2, fontSize: 11, fontWeight: 700 }}>{meta.slice(0, 32)}</div>
                   ) : null}
                 </div>
-                <div
-                  style={{
-                    flexShrink: 0,
-                    padding: 2,
-                    border: "2px solid #000",
-                    background: "#fff",
-                  }}
-                >
-                  <QRCodeSVG value={url} size={64} level="M" includeMargin={false} />
+                <div style={{ flexShrink: 0, border: "2px solid #000", padding: 1, background: "#fff" }}>
+                  <QRCodeSVG value={url} size={52} level="M" includeMargin={false} />
                 </div>
               </div>
             </div>

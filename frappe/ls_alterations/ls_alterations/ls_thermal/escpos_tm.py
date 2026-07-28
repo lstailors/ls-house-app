@@ -2,29 +2,35 @@
 """
 escpos_tm.py  --  L&S Custom Tailors thermal print engine
 
-Pure standard-library ESC/POS builder + raw socket sender for the
-Epson TM-M30ii (80mm thermal, ESC/POS, native QR). NO external
-dependencies -- only `socket` from stdlib -- so nothing to pip-pin
-inside the Frappe bench and nothing to drift.
+Epson TM-M30ii ESC/POS, stdlib only (socket).
 
-Legibility pass (2026-07): shop purple stock + distant rack reading.
-Body text is double-height Font A; key IDs double-width+height.
-Customer name + due date = largest, centered, top of ticket/tag.
-Never use Font B. Luxury = hierarchy + space, not tiny caps.
+Rack hierarchy (matches classic purple slip):
+    00061
+    Friday
+    6:00 PM
+    Aug 4
+    ----------------
+    Customer Name
+    phone
+    work lines / QR
+
+Body = double-height Font A; ticket / day / time / name = double W+H.
 """
 
+import re
 import socket
+from datetime import datetime
 
 # ---------------------------------------------------------------------------
-# Low-level ESC/POS primitives
+# Low-level ESC/POS
 # ---------------------------------------------------------------------------
 
 ESC = b"\x1b"
 GS = b"\x1d"
 
-INIT = ESC + b"@"                       # initialize printer
-CUT = GS + b"V\x42\x10"                 # partial cut, feed 16 dots first
-FONT_A = ESC + b"M\x00"                 # Font A (12×24) — always
+INIT = ESC + b"@"
+CUT = GS + b"V\x42\x10"
+FONT_A = ESC + b"M\x00"
 
 ALIGN_LEFT = ESC + b"a\x00"
 ALIGN_CENTER = ESC + b"a\x01"
@@ -33,19 +39,25 @@ ALIGN_RIGHT = ESC + b"a\x02"
 BOLD_ON = ESC + b"E\x01"
 BOLD_OFF = ESC + b"E\x00"
 
-# GS ! n  -- character size. high nibble = height mult, low nibble = width mult
 SIZE_NORMAL = GS + b"!\x00"
-SIZE_2H = GS + b"!\x01"                  # double height (body default)
-SIZE_2W = GS + b"!\x10"                  # double width
-SIZE_2WH = GS + b"!\x11"                 # double width + height (name / due / total)
+SIZE_2H = GS + b"!\x01"
+SIZE_2W = GS + b"!\x10"
+SIZE_2WH = GS + b"!\x11"
 
-# 80mm printable ~48 cols Font A normal; ~24 cols when double-width
 LINE_WIDTH = 48
 LINE_WIDTH_2W = 24
 
+# Shop ready-by when due_date is date-only (no appointment clock)
+DEFAULT_READY_TIME = "6:00 PM"
+
+BRAND = "L&S CUSTOM TAILORS"
+SUB = "Bespoke since 1974"
+ADDR_NYC = "138 East 61st Street, Ste 201, NYC"
+PHONE = "(212) 838-7372"
+WEB = "lstailors.com"
+
 
 def _enc(text):
-    """Encode to the printer's code page; fall back gracefully."""
     if text is None:
         text = ""
     if not isinstance(text, str):
@@ -54,7 +66,6 @@ def _enc(text):
 
 
 def line(text="", *, bold=False, size=None, align=None):
-    """One line of text + newline, with optional styling."""
     out = b""
     if align is not None:
         out += align
@@ -83,17 +94,14 @@ def feed(n=1):
 
 
 def two_col(left, right, width=LINE_WIDTH, *, bold=False, size=None):
-    """Left text + right text padded to full line (e.g. item ..... $40)."""
     left = "" if left is None else str(left)
     right = "" if right is None else str(right)
-    # Double-width text only fits half the columns
     if size in (SIZE_2W, SIZE_2WH):
         width = min(width, LINE_WIDTH_2W)
     space = width - len(left) - len(right)
     if space < 1:
         left = left[: max(0, width - len(right) - 1)]
-        space = width - len(left) - len(right)
-        space = max(space, 1)
+        space = max(width - len(left) - len(right), 1)
     text = left + (" " * space) + right
     out = b""
     if size is not None:
@@ -108,15 +116,10 @@ def two_col(left, right, width=LINE_WIDTH, *, bold=False, size=None):
     return out + b"\n"
 
 
-def qr(data, module_size=8, ec="M"):
-    """
-    Native ESC/POS QR (model 2) for the TM-M30ii via GS ( k.
-    module_size 1-16 (8 = easy phone scan on 80mm / hang-tag distance).
-    """
+def qr(data, module_size=7, ec="M"):
     data_bytes = data.encode("utf-8")
     ec_map = {"L": 48, "M": 49, "Q": 50, "H": 51}
     ec_byte = ec_map.get(ec.upper(), 49)
-
     out = b""
     out += GS + b"(k\x04\x00\x31\x41\x32\x00"
     out += GS + b"(k\x03\x00\x31\x43" + bytes([max(1, min(16, module_size))])
@@ -137,7 +140,6 @@ def _money(v):
 
 
 def _wrap(text, width):
-    """Tiny word-wrapper (avoids importing textwrap for one call)."""
     words = str(text).split()
     lines, cur = [], ""
     for w in words:
@@ -152,62 +154,136 @@ def _wrap(text, width):
     return lines or [""]
 
 
+def short_ticket_no(ticket):
+    """ALT-NYC-2026-00061 → 00061"""
+    s = str(ticket or "")
+    m = re.search(r"(\d{4,})$", s)
+    if m:
+        return m.group(1)
+    parts = s.split("-")
+    return parts[-1] if parts else s
+
+
+def parse_due(due_date, default_time=DEFAULT_READY_TIME):
+    """
+    Friday / 6:00 PM / Aug 4 from a due value.
+    Date-only ERP fields → default_time (shop EOD ready-by).
+    """
+    if not due_date:
+        return None
+    raw = str(due_date).strip()
+    dt = None
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d",
+        "%m/%d/%Y %I:%M %p",
+        "%m/%d/%Y %H:%M:%S",
+        "%m/%d/%Y",
+    ):
+        try:
+            dt = datetime.strptime(raw.replace("Z", "")[:26], fmt)
+            break
+        except ValueError:
+            continue
+    if dt is None:
+        return {"weekday": raw, "time": default_time, "date_short": raw}
+
+    weekday = dt.strftime("%A")  # Friday
+    date_short = dt.strftime("%b ") + str(dt.day)  # Aug 4
+
+    # Date-only (YYYY-MM-DD) → no real clock
+    if len(raw) <= 10 or (dt.hour == 0 and dt.minute == 0 and "T" not in raw and len(raw) <= 10):
+        time_s = default_time
+    elif dt.hour == 0 and dt.minute == 0 and len(raw) <= 10:
+        time_s = default_time
+    else:
+        # 4:00 PM style (strip leading zero on hour)
+        time_s = dt.strftime("%I:%M %p").lstrip("0")
+        if len(raw) <= 10:
+            time_s = default_time
+
+    # Cleaner: if only date portion
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", raw):
+        time_s = default_time
+
+    return {"weekday": weekday, "time": time_s, "date_short": date_short}
+
+
+def rack_due_block(due_date, default_time=DEFAULT_READY_TIME):
+    """Huge weekday + huge time + date short — centered."""
+    parts = parse_due(due_date, default_time=default_time)
+    if not parts:
+        return b""
+    out = b""
+    out += line(parts["weekday"], bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+    out += line(parts["time"], bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+    if parts.get("date_short"):
+        out += line(parts["date_short"], bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    return out
+
+
+def _kv(label, value, *, bold_value=True, size=SIZE_2H):
+    label = (label or "").upper()
+    value = "" if value is None else str(value)
+    left = (label + ":") if not label.endswith(":") else label
+    return two_col(left, value, bold=bold_value, size=size)
+
+
 # ---------------------------------------------------------------------------
 # Document builders
 # ---------------------------------------------------------------------------
 
-BRAND = "L&S CUSTOM TAILORS"
-SUB = "Bespoke since 1974"
-ADDR_NYC = "138 East 61st Street, Ste 201, NYC"
-PHONE = "(212) 838-7372"
-WEB = "lstailors.com"
-
-
 def build_garment_tag(*, ticket, garment, qr_url, due_date=None,
                       is_rush=False, location=None, idx=None, total=None,
-                      lines=None, customer_name=None):
+                      lines=None, customer_name=None, customer_phone=None):
     """
-    Rack hang tag — read from distance:
-      TOP (centered, largest): customer name + due date
-      then garment id / type, work, QR
+    Rack tag:
+      00061
+      Friday
+      6:00 PM
+      Aug 4
+      ========
+      Stefanie Frelick
+      phone
+      Coat / G1
+      -work lines
+      QR
     """
-    g = garment
+    g = garment or {}
     out = INIT + FONT_A
 
-    # --- RACK HEADER: name + due (largest, centered) ---
-    cname = (customer_name or "").strip().upper()
-    if cname:
-        for chunk in _wrap(cname, LINE_WIDTH_2W):
-            out += line(chunk, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
-    else:
-        out += line("L&S", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    short = short_ticket_no(ticket)
+    out += line(short, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
 
     if due_date:
         out += feed(1)
-        out += line("DUE", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
-        out += line(str(due_date), bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
-
+        out += rack_due_block(due_date)
     if is_rush:
         out += line("*** RUSH ***", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
 
     out += rule(heavy=True)
 
-    # Ticket + garment ref
-    seq = ""
-    if idx is not None and total is not None:
-        seq = "  {}/{}".format(idx, total)
-    out += line(str(ticket) + seq, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    cname = (customer_name or "").strip()
+    if cname:
+        display = cname if any(c.islower() for c in cname) else cname.title()
+        for chunk in _wrap(display, LINE_WIDTH_2W):
+            out += line(chunk, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+    if customer_phone:
+        out += line(str(customer_phone), bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+
+    out += feed(1)
     if location:
         out += line(str(location), bold=True, align=ALIGN_CENTER, size=SIZE_2H)
 
     gid = str(g.get("garment_id") or "")
-    if gid:
-        out += feed(1)
-        out += line(gid, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
-
     gtype = g.get("garment_type") or ""
     color = g.get("color") or ""
-    head = " / ".join([p for p in (gtype, color) if p])
+    head = " / ".join([p for p in (gtype, color, gid) if p])
     if head:
         out += line(head, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
 
@@ -219,17 +295,18 @@ def build_garment_tag(*, ticket, garment, qr_url, due_date=None,
     work = lines or g.get("lines") or []
     if work:
         out += feed(1)
-        out += line("WORK", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
-        for w in work[:6]:
+        for w in work[:8]:
             text = w if isinstance(w, str) else (w.get("description") or "")
             if not text:
                 continue
+            if not text.startswith("-") and not text.startswith("*"):
+                text = "-" + text
             for chunk in _wrap(text, LINE_WIDTH):
                 out += line(chunk, bold=True, size=SIZE_2H)
 
     out += feed(1)
     out += ALIGN_CENTER + qr(qr_url, module_size=7) + ALIGN_LEFT
-    out += line(gid or str(ticket), bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    out += line(gid or short, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
     out += feed(2)
     out += CUT
     return out
@@ -239,7 +316,6 @@ def build_customer_receipt(*, ticket, customer_name, customer_phone,
                           garments, ticket_total, qr_url, ticket_date=None,
                           due_date=None, promised_date=None, is_rush=False,
                           location=None, customer_notes=None):
-    """Master receipt -- the copy the customer takes."""
     return _master(
         ticket=ticket, customer_name=customer_name,
         customer_phone=customer_phone, garments=garments,
@@ -253,7 +329,6 @@ def build_office_receipt(*, ticket, customer_name, customer_phone,
                         garments, ticket_total, qr_url, ticket_date=None,
                         due_date=None, promised_date=None, is_rush=False,
                         location=None, internal_notes=None):
-    """Master receipt -- the L&S filing copy (attach to the order)."""
     return _master(
         ticket=ticket, customer_name=customer_name,
         customer_phone=customer_phone, garments=garments,
@@ -263,57 +338,45 @@ def build_office_receipt(*, ticket, customer_name, customer_phone,
     )
 
 
-def _kv(label, value, *, bold_value=True, size=SIZE_2H):
-    """Label left / value right — double-height body."""
-    label = (label or "").upper()
-    value = "" if value is None else str(value)
-    left = (label + ":") if not label.endswith(":") else label
-    return two_col(left, value, bold=bold_value, size=size)
-
-
 def _master(*, ticket, customer_name, customer_phone, garments, ticket_total,
             qr_url, ticket_date, due_date, promised_date, is_rush, location,
             notes, office):
     out = INIT + FONT_A
 
-    # Brand — compact so name/due own the top
-    out += line(BRAND, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
-    out += line(SUB, align=ALIGN_CENTER, size=SIZE_2H)
-    out += feed(1)
+    # Rack header first (like the sample slip)
+    short = short_ticket_no(ticket)
+    out += line(short, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
 
+    due_show = promised_date or due_date
+    if due_show:
+        out += feed(1)
+        out += rack_due_block(due_show)
+
+    if is_rush:
+        out += line("*** RUSH ORDER ***", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+
+    out += rule(heavy=True)
+
+    # Customer block
+    cname = (customer_name or "").strip()
+    if cname:
+        display = cname if any(c.islower() for c in cname) else cname.title()
+        for chunk in _wrap(display, LINE_WIDTH_2W):
+            out += line(chunk, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+    if customer_phone:
+        out += line(str(customer_phone), bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+
+    out += feed(1)
     if office:
         out += line("L&S OFFICE COPY", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
     else:
-        out += line("CUSTOMER COPY", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
-    if is_rush:
-        out += line("*** RUSH ORDER ***", bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
-    out += rule(heavy=True)
+        out += line("CUSTOMER RECEIPT", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
 
-    # --- RACK TOP: customer name + due (largest, centered) ---
-    cname = (customer_name or "—").strip().upper()
-    for chunk in _wrap(cname, LINE_WIDTH_2W):
-        out += line(chunk, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
-
-    ready = promised_date or due_date
-    if ready:
-        out += feed(1)
-        out += line("DUE", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
-        out += line(str(ready), bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
-
-    out += feed(1)
-
-    # Ticket under name
     out += line(str(ticket), bold=True, align=ALIGN_CENTER, size=SIZE_2H)
-    if customer_phone:
-        out += line(str(customer_phone), bold=True, align=ALIGN_CENTER, size=SIZE_2H)
-    out += rule(heavy=True)
-
     if location:
         out += _kv("Store", location)
     if ticket_date:
-        out += _kv("In", ticket_date)
-    if promised_date and due_date and str(promised_date) != str(due_date):
-        out += _kv("Due", due_date)
+        out += _kv("Date", ticket_date)
     out += rule(heavy=True)
 
     out += line("GARMENTS", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
@@ -335,16 +398,17 @@ def _master(*, ticket, customer_name, customer_phone, garments, ticket_total,
             for chunk in _wrap(desc, LINE_WIDTH):
                 out += line("  " + chunk, size=SIZE_2H)
 
-        work = g.get("lines") or []
-        for w in work:
+        for w in g.get("lines") or []:
             text = w if isinstance(w, str) else (w.get("description") or "")
             price = None if isinstance(w, str) else w.get("price")
             if not text:
                 continue
+            if not text.startswith("-"):
+                text = "-" + text
             if price is not None and float(price or 0) != 0:
-                out += two_col("  · " + text, _money(price), size=SIZE_2H)
+                out += two_col("  " + text, _money(price), size=SIZE_2H)
             else:
-                for chunk in _wrap("· " + text, LINE_WIDTH - 2):
+                for chunk in _wrap(text, LINE_WIDTH - 2):
                     out += line("  " + chunk, size=SIZE_2H)
         out += feed(1)
 
@@ -376,7 +440,6 @@ def _master(*, ticket, customer_name, customer_phone, garments, ticket_total,
 def build_payment_receipt(*, invoice, customer_name, amount_paid, total,
                           outstanding, payment_ref=None, method="Card",
                           paid_on=None, qr_url=None, ticket=None):
-    """Payment receipt printed after Square confirms a payment."""
     out = INIT + FONT_A
     out += line(BRAND, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
     out += line(SUB, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
@@ -386,13 +449,7 @@ def build_payment_receipt(*, invoice, customer_name, amount_paid, total,
     out += _kv("Invoice", invoice)
     if ticket:
         out += _kv("Ticket", ticket)
-    # Large centered name on payment slip too
-    cname = (customer_name or "").strip().upper()
-    if cname:
-        out += feed(1)
-        for chunk in _wrap(cname, LINE_WIDTH_2W):
-            out += line(chunk, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
-        out += feed(1)
+    out += _kv("Customer", customer_name or "")
     if paid_on:
         out += _kv("Paid", paid_on)
     out += _kv("Method", str(method) + " (Square)")
@@ -407,7 +464,7 @@ def build_payment_receipt(*, invoice, customer_name, amount_paid, total,
         out += feed(1)
         out += ALIGN_CENTER + qr(qr_url, module_size=8) + ALIGN_LEFT
     out += feed(1)
-    paid_full = (outstanding is not None and float(outstanding or 0) <= 0.02)
+    paid_full = outstanding is not None and float(outstanding or 0) <= 0.02
     out += line("PAID IN FULL" if paid_full else "PARTIAL PAYMENT",
                 bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
     out += line("Thank you for choosing L&S.", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
@@ -418,7 +475,6 @@ def build_payment_receipt(*, invoice, customer_name, amount_paid, total,
 
 
 def build_pay_qr(*, invoice, customer_name, amount, url, ticket=None):
-    """Scan-to-pay slip via Square hosted checkout."""
     out = INIT + FONT_A
     out += line(BRAND, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
     out += feed(1)
@@ -427,10 +483,7 @@ def build_pay_qr(*, invoice, customer_name, amount, url, ticket=None):
     out += _kv("Invoice", invoice)
     if ticket:
         out += _kv("Ticket", ticket)
-    cname = (customer_name or "").strip().upper()
-    if cname:
-        for chunk in _wrap(cname, LINE_WIDTH_2W):
-            out += line(chunk, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+    out += _kv("Customer", customer_name or "")
     out += two_col("Amount Due", _money(amount), bold=True, size=SIZE_2WH)
     out += rule(heavy=True)
     out += feed(1)
@@ -443,16 +496,7 @@ def build_pay_qr(*, invoice, customer_name, amount, url, ticket=None):
     return out
 
 
-# ---------------------------------------------------------------------------
-# Network sender
-# ---------------------------------------------------------------------------
-
 def send(host, payload, port=9100, timeout=5.0):
-    """
-    Ship raw ESC/POS bytes to the printer over TCP :9100.
-    Raises socket.timeout or OSError on failure -- caller logs it.
-    Returns the number of bytes sent.
-    """
     if not host:
         raise ValueError("No printer host/IP configured")
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
