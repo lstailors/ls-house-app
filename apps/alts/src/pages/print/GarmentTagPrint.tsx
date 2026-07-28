@@ -192,7 +192,7 @@ export default function GarmentTagPrint() {
               <div style={{ textAlign: "center" }}>
                 <div
                   style={{
-                    fontSize: fullName.length > 18 ? 20 : 26,
+                    fontSize: fullName.length > 16 ? 22 : 30,
                     fontWeight: 800,
                     letterSpacing: "0.02em",
                     lineHeight: 1.05,
@@ -203,10 +203,10 @@ export default function GarmentTagPrint() {
                 </div>
                 <div
                   style={{
-                    marginTop: 6,
-                    fontSize: 11,
+                    marginTop: 8,
+                    fontSize: 12,
                     fontWeight: 800,
-                    letterSpacing: "0.16em",
+                    letterSpacing: "0.2em",
                   }}
                 >
                   DUE
@@ -214,7 +214,7 @@ export default function GarmentTagPrint() {
                 <div
                   style={{
                     marginTop: 2,
-                    fontSize: 22,
+                    fontSize: 26,
                     fontWeight: 800,
                     letterSpacing: "0.02em",
                     lineHeight: 1,

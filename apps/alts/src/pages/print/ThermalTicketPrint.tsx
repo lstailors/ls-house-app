@@ -101,12 +101,12 @@ body { margin: 0; }
   font-style: normal; font-weight: 800; margin-top: 12px; line-height: 1.1;
   letter-spacing: 0.02em; text-transform: uppercase;
 }
-.paper.master .cname { font-size: 32px; }
-.paper.cust .cname { font-size: 28px; }
-.dueblock { text-align: center; margin-top: 10px; }
-.dueblock .l { font-size: 12px; font-weight: 800; letter-spacing: 0.18em; }
-.dueblock .v { font-size: 26px; font-weight: 800; margin-top: 4px; line-height: 1.1; }
-.paper.master .dueblock .v { font-size: 28px; }
+.paper.master .cname { font-size: 36px; }
+.paper.cust .cname { font-size: 32px; }
+.dueblock { text-align: center; margin-top: 12px; }
+.dueblock .l { font-size: 13px; font-weight: 800; letter-spacing: 0.22em; }
+.dueblock .v { font-size: 30px; font-weight: 800; margin-top: 4px; line-height: 1.05; }
+.paper.master .dueblock .v { font-size: 34px; }
 .addr { text-align: center; font-size: 13px; font-weight: 700; color: #111; margin-top: 6px; }
 .solid { height: 3px; background: #000; margin: 14px 0; }
 .hair { height: 2px; background: #000; margin: 12px 0; }
