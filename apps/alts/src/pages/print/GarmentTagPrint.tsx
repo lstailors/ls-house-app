@@ -94,14 +94,14 @@ export default function GarmentTagPrint() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-forest-deep grid place-items-center text-brass text-[12px] tracking-[0.2em] uppercase font-ui">
+      <div className="min-h-dvh bg-forest-deep grid place-items-center text-brass text-[12px] tracking-[0.2em] uppercase font-ui">
         Loading tags…
       </div>
     );
   }
   if (isError || !ticket) {
     return (
-      <div className="min-h-screen bg-forest-deep grid place-items-center gap-4">
+      <div className="min-h-dvh bg-forest-deep grid place-items-center gap-4">
         <p className="display italic text-cream text-xl">Ticket not found</p>
         <button type="button" onClick={() => navigate(-1)} className="text-brass text-xs tracking-widest uppercase">
           Back

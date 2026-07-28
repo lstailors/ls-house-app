@@ -115,14 +115,14 @@ export default function DeliveryLabelPrint() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-forest-deep grid place-items-center text-brass text-[12px] tracking-[0.2em] uppercase">
+      <div className="min-h-dvh bg-forest-deep grid place-items-center text-brass text-[12px] tracking-[0.2em] uppercase">
         Loading label…
       </div>
     );
   }
   if (isError || !data) {
     return (
-      <div className="min-h-screen bg-forest-deep grid place-items-center gap-3">
+      <div className="min-h-dvh bg-forest-deep grid place-items-center gap-3">
         <p className="display italic text-cream text-xl">Delivery not found</p>
         <button type="button" onClick={() => navigate(-1)} className="text-brass text-xs tracking-widest uppercase">
           Back

@@ -63,6 +63,7 @@
   font-weight: 600;
 }
 
+/* F3: 44px touch floor on controls + interactive chips only — status .chip stays compact */
 .alts-root .btn-brass {
   background: linear-gradient(135deg, #c9a46a, var(--br));
   color: var(--fd);
@@ -208,16 +209,6 @@
 
 /* Phone-tier layout fixes — no horizontal scroll on 390px */
 @media (max-width: 767px) {
-  .shop-floor-board-cols {
-    min-width: 0 !important;
-    flex-direction: column;
-    height: auto !important;
-    min-height: 0 !important;
-  }
-  .shop-floor-board-cols > div {
-    min-width: 0 !important;
-    max-height: 280px;
-  }
   .home-007 {
     padding-left: max(14px, env(safe-area-inset-left));
     padding-right: max(14px, env(safe-area-inset-right));
@@ -330,8 +321,13 @@
   .alts-root a.btn-brass,
   .alts-root a.btn-ghost,
   .alts-root label[class*="rounded"],
-  .alts-root .chip {
+  /* Interactive chips only — status pills (.chip) stay compact (F3) */
+  .alts-root button.chip,
+  .alts-root a.chip,
+  .alts-root .chip-tap {
     min-height: 44px;
+  }
+
   }
 
   .alts-root header {

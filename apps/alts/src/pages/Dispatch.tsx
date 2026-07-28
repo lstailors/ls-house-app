@@ -169,7 +169,7 @@ export default function Dispatch() {
   );
 
   return (
-    <div className="alts-root flex flex-col min-h-screen">
+    <div className="alts-root flex flex-col min-h-dvh">
         {ready.isError && (
           <QueryErrorPanel
             title="Could not load"

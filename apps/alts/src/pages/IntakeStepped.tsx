@@ -951,7 +951,7 @@ export default function IntakeStepped() {
   const displayName = customer?.name || newName || "";
 
   return (
-    <div className="alts-root flex flex-col min-h-screen">
+    <div className="alts-root flex flex-col min-h-dvh">
       <header className="px-5 pt-4 pb-0 border-b border-brass/20 bg-black/20 backdrop-blur-xl sticky top-0 z-30">
         <div className="flex items-center gap-3 mb-3">
           <Link to="/" className="seal">

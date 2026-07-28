@@ -28,6 +28,10 @@ const NAV_EXTRA = [
   /^\/e-ticket\/[^/]+\/?$/,
   /^\/t\/[^/]+\/?$/,
   /^\/orders\/alterations\/[^/]+\/photos\/?$/,
+  /^\/g\/[^/]+\/[^/]+\/?$/,
+  /^\/garments\/[^/]+\/?$/,
+  /^\/garments\/[^/]+\/[^/]+\/?$/,
+  /^\/scanner\/?$/,
 ];
 
 export default defineConfig({

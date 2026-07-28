@@ -76,7 +76,7 @@ export default function TicketPhotos() {
     : ["G1", "G2", "G3"];
 
   return (
-    <div className="alts-root min-h-screen flex flex-col">
+    <div className="alts-root min-h-dvh flex flex-col">
         {ticket.isError && (
           <QueryErrorPanel
             title="Could not load"

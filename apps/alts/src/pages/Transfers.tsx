@@ -74,7 +74,7 @@ export default function Transfers() {
   const sel = list.find((t) => t.name === selected);
 
   return (
-    <div className="alts-root min-h-screen flex flex-col">
+    <div className="alts-root min-h-dvh flex flex-col">
       <header className="flex items-center gap-3 px-5 py-4 border-b border-brass/20">
         <Link to="/" className="seal">
           LS

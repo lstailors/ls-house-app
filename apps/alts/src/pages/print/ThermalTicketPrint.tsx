@@ -178,14 +178,14 @@ export default function ThermalTicketPrint() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-forest-deep grid place-items-center text-brass text-[12px] tracking-[0.2em] uppercase">
+      <div className="min-h-dvh bg-forest-deep grid place-items-center text-brass text-[12px] tracking-[0.2em] uppercase">
         Loading ticket…
       </div>
     );
   }
   if (isError || !ticket) {
     return (
-      <div className="min-h-screen bg-forest-deep grid place-items-center">
+      <div className="min-h-dvh bg-forest-deep grid place-items-center">
         <p className="display italic text-cream text-xl">Ticket not found</p>
       </div>
     );
@@ -255,7 +255,7 @@ export default function ThermalTicketPrint() {
         </Link>
       </div>
 
-      <div className="cols flex flex-wrap gap-8 justify-center p-6 bg-[#13291C] min-h-screen">
+      <div className="cols flex flex-wrap gap-8 justify-center p-6 bg-[#13291C] min-h-dvh">
         {/* STORE MASTER */}
         <div className="paper master">
           <div className="mhead">STORE MASTER</div>

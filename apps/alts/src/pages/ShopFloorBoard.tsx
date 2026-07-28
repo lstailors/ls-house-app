@@ -134,7 +134,7 @@ export default function ShopFloorBoard() {
   }, [list]);
 
   return (
-    <div className="alts-root flex flex-col min-h-screen">
+    <div className="alts-root flex flex-col min-h-dvh">
       <header className="flex items-center gap-3 px-5 py-4 border-b border-brass/20">
         <Link to="/" className="seal">
           LS

@@ -46,15 +46,15 @@ const queryClient = new QueryClient({
 
 function Spin() {
   return (
-    <div className="flex items-center justify-center min-h-screen min-h-[100dvh] bg-forest-deep">
+    <div className="flex items-center justify-center min-h-dvh bg-forest-deep">
       <div className="h-6 w-6 rounded-full border-2 border-brass/40 border-t-brass animate-spin" />
     </div>
   );
 }
 
 /** Tablet-tier: wrap so phone widths get “open on shop tablet” card (CSS). */
-function tablet(node: ReactNode) {
-  return <TabletOnly>{node}</TabletOnly>;
+function tablet(node: ReactNode, feature?: string) {
+  return <TabletOnly feature={feature}>{node}</TabletOnly>;
 }
 
 export default function App() {
@@ -138,29 +138,30 @@ export default function App() {
                   </RoleGuard>
                 }
               />
+              {/* Scan / QR entry — phone tier by definition (rack + phone) */}
+              <Route path="/g/:ticket/:garmentId" element={<GarmentJobCard />} />
+              <Route path="/garments/:token" element={<GarmentTagRedirect />} />
 
               {/* Tablet-tier (landscape counter + phone → shop-tablet card) */}
               <Route
                 path="/orders/alterations/:ticketName/tags"
-                element={tablet(<AlterationTags />)}
+                element={tablet(<AlterationTags />, "Garment tags")}
               />
               <Route
                 path="/orders/alterations/:ticketName/thermal"
-                element={tablet(<ThermalTicketPrint />)}
+                element={tablet(<ThermalTicketPrint />, "Thermal ticket")}
               />
               <Route
                 path="/orders/alterations/:ticketName/receipt"
-                element={tablet(<AlterationReceipt />)}
+                element={tablet(<AlterationReceipt />, "Receipt print")}
               />
-              <Route path="/deliveries/:id/label" element={tablet(<DeliveryLabel />)} />
-              <Route path="/g/:ticket/:garmentId" element={tablet(<GarmentJobCard />)} />
-              <Route path="/garments/:token" element={<GarmentTagRedirect />} />
+              <Route path="/deliveries/:id/label" element={tablet(<DeliveryLabel />, "Delivery label")} />
 
               <Route
                 path="/intake/kind"
                 element={
                   <RoleGuard allow={[...FOH]}>
-                    {tablet(<TicketKind />)}
+                    {tablet(<TicketKind />, "New ticket")}
                   </RoleGuard>
                 }
               />
@@ -168,7 +169,7 @@ export default function App() {
                 path="/intake/alterations"
                 element={
                   <RoleGuard allow={[...FOH]}>
-                    {tablet(<IntakeStepped />)}
+                    {tablet(<IntakeStepped />, "Intake")}
                   </RoleGuard>
                 }
               />
@@ -176,7 +177,7 @@ export default function App() {
                 path="/transfers"
                 element={
                   <RoleGuard allow={[...FOH]}>
-                    {tablet(<Transfers />)}
+                    {tablet(<Transfers />, "Transfers")}
                   </RoleGuard>
                 }
               />
@@ -184,7 +185,7 @@ export default function App() {
                 path="/dispatch"
                 element={
                   <RoleGuard allow={[...FOH]}>
-                    {tablet(<Dispatch />)}
+                    {tablet(<Dispatch />, "Dispatch")}
                   </RoleGuard>
                 }
               />
@@ -192,7 +193,7 @@ export default function App() {
                 path="/quote"
                 element={
                   <RoleGuard allow={[...FOH]}>
-                    {tablet(<QuoteComposer />)}
+                    {tablet(<QuoteComposer />, "Quote")}
                   </RoleGuard>
                 }
               />

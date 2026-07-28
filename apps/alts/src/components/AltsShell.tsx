@@ -21,14 +21,14 @@ export default function AltsShell() {
 
   if (isHome) {
     return (
-      <div className="min-h-screen bg-forest-deep text-cream">
+      <div className="min-h-dvh bg-forest-deep text-cream">
         <Outlet />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-forest-deep text-cream flex flex-col">
+    <div className="min-h-dvh bg-forest-deep text-cream flex flex-col">
       <header
         className={cn(
           "flex items-center gap-3 px-4 py-3 border-b border-brass/20",
