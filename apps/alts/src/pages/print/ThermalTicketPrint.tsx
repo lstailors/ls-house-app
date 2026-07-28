@@ -10,7 +10,13 @@ import { QRCodeSVG } from "qrcode.react";
 import { ArrowLeft, MessageSquare, Printer, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { fmtMoney, payUrl, ticketPublicUrl } from "@alts/lib/printUrls";
+import {
+  fmtDueRack,
+  fmtMoney,
+  payUrl,
+  shortTicketNo,
+  ticketPublicUrl,
+} from "@alts/lib/printUrls";
 
 interface TicketDoc {
   name: string;
@@ -92,21 +98,30 @@ body { margin: 0; }
 }
 .tknum {
   text-align: center; font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-weight: 700; letter-spacing: 0.02em; margin-top: 10px; line-height: 1.15;
+  font-weight: 800; letter-spacing: 0.02em; margin-top: 4px; line-height: 1.05;
 }
-.paper.master .tknum { font-size: 20px; }
-.paper.cust .tknum { font-size: 16px; }
+.paper.master .tknum { font-size: 42px; }
+.paper.cust .tknum { font-size: 36px; }
 .cname {
   text-align: center; font-family: Montserrat, system-ui, sans-serif;
-  font-style: normal; font-weight: 800; margin-top: 12px; line-height: 1.1;
-  letter-spacing: 0.02em; text-transform: uppercase;
+  font-style: normal; font-weight: 700; margin-top: 10px; line-height: 1.15;
+  letter-spacing: 0.01em;
 }
-.paper.master .cname { font-size: 36px; }
-.paper.cust .cname { font-size: 32px; }
-.dueblock { text-align: center; margin-top: 12px; }
-.dueblock .l { font-size: 13px; font-weight: 800; letter-spacing: 0.22em; }
-.dueblock .v { font-size: 30px; font-weight: 800; margin-top: 4px; line-height: 1.05; }
-.paper.master .dueblock .v { font-size: 34px; }
+.paper.master .cname { font-size: 22px; }
+.paper.cust .cname { font-size: 20px; }
+.dueblock { text-align: center; margin-top: 6px; }
+.dueblock .day {
+  font-size: 40px; font-weight: 800; line-height: 1.05; letter-spacing: 0.01em;
+}
+.paper.master .dueblock .day { font-size: 44px; }
+.dueblock .time {
+  font-size: 40px; font-weight: 800; line-height: 1.05; margin-top: 2px;
+  letter-spacing: 0.02em;
+}
+.paper.master .dueblock .time { font-size: 44px; }
+.phone {
+  text-align: center; font-size: 16px; font-weight: 700; margin-top: 6px;
+}
 .addr { text-align: center; font-size: 13px; font-weight: 700; color: #111; margin-top: 6px; }
 .solid { height: 3px; background: #000; margin: 14px 0; }
 .hair { height: 2px; background: #000; margin: 12px 0; }
@@ -234,6 +249,9 @@ export default function ThermalTicketPrint() {
   const pieces = ticket.garments?.length ?? 0;
   const exit = (ticket.delivery_method || "Counter pickup").toUpperCase();
   const takenBy = ticket.taken_by || ticket.owner || "—";
+  const short = shortTicketNo(ticket.name);
+  const due = fmtDueRack(ticket.due_date);
+  const custName = ticket.customer_name || "—";
 
   return (
     <>
@@ -295,16 +313,19 @@ export default function ThermalTicketPrint() {
         {/* STORE MASTER */}
         <div className="paper master">
           <div className="mhead">STORE MASTER</div>
-          <div className="cname">{(ticket.customer_name || "—").toUpperCase()}</div>
+          {/* Rack top — A14937 / Friday / 04:00 PM */}
+          <div className="tknum">{short}</div>
           <div className="dueblock">
-            <div className="l">DUE</div>
-            <div className="v">{fmtLong(ticket.due_date).split(",")[0]}</div>
+            {due.day ? <div className="day">{due.day}</div> : null}
+            {due.time ? <div className="time">{due.time}</div> : null}
           </div>
+          <div className="cname">{custName}</div>
+          {ticket.customer_phone ? <div className="phone">{ticket.customer_phone}</div> : null}
           <div className="solid" />
-          <div className="eyebrow">ALTERATIONS TICKET</div>
-          <div className="tknum">{ticket.name}</div>
-          {ticket.customer_phone ? <div className="addr">{ticket.customer_phone}</div> : null}
-          <div className="solid" />
+          <div className="meta">
+            <span>TICKET</span>
+            <b>{ticket.name}</b>
+          </div>
           <div className="meta">
             <span>TAKEN BY</span>
             <b>{String(takenBy).toUpperCase()}</b>
@@ -388,14 +409,18 @@ export default function ThermalTicketPrint() {
         {/* CUSTOMER COPY */}
         <div className="paper cust">
           <div className="brand">L &amp; S HOUSE</div>
-          <div className="cname">{(ticket.customer_name || "—").toUpperCase()}</div>
+          <div className="tknum">{short}</div>
           <div className="dueblock">
-            <div className="l">DUE</div>
-            <div className="v">{fmtLong(ticket.due_date).split(",")[0]}</div>
+            {due.day ? <div className="day">{due.day}</div> : null}
+            {due.time ? <div className="time">{due.time}</div> : null}
           </div>
+          <div className="cname">{custName}</div>
+          {ticket.customer_phone ? <div className="phone">{ticket.customer_phone}</div> : null}
           <div className="hair" />
-          <div className="eyebrow">ALTERATIONS</div>
-          <div className="tknum">{ticket.name}</div>
+          <div className="meta">
+            <span>TICKET</span>
+            <b>{ticket.name}</b>
+          </div>
           <div className="meta">
             <span>EXIT</span>
             <b>{exit}</b>
