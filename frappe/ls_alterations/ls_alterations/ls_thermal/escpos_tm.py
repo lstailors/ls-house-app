@@ -155,11 +155,11 @@ def _wrap(text, width):
 
 
 def short_ticket_no(ticket):
-    """ALT-NYC-2026-00061 → 00061"""
+    """ALT-NYC-2026-00061 → A00061 (classic A14937 style)."""
     s = str(ticket or "")
-    m = re.search(r"(\d{4,})$", s)
+    m = re.search(r"(\d{3,})$", s)
     if m:
-        return m.group(1)
+        return "A" + m.group(1)
     parts = s.split("-")
     return parts[-1] if parts else s
 

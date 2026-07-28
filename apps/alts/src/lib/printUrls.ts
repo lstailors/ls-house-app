@@ -25,10 +25,10 @@ export function payUrl(salesInvoice: string): string {
   return `${APP_ORIGIN}/pay/${encodeURIComponent(salesInvoice)}`;
 }
 
-/** Short ticket digits for hang tags (ALT-NYC-2026-00061 → 00061). */
+/** Short ticket for rack (ALT-NYC-2026-00061 → A00061). */
 export function shortTicketNo(name: string): string {
-  const m = name.match(/(\d{4,})$/);
-  if (m) return m[1]!;
+  const m = name.match(/(\d{3,})$/);
+  if (m) return `A${m[1]}`;
   const parts = name.split("-");
   return parts[parts.length - 1] || name;
 }
