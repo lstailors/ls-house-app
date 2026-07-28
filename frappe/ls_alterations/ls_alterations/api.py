@@ -76,6 +76,10 @@ def create_ticket(payload):
 			"lines": payload["lines"],
 			"internal_notes": payload.get("internal_notes"),
 			"customer_notes": payload.get("customer_notes"),
+			# Billing intent — skip SI for Warranty / Included (create_sales_invoice checks these)
+			"billing_status": payload.get("billing_status") or "Billable",
+			"included_in_custom": 1 if payload.get("included_in_custom") else 0,
+			"linked_sales_order": payload.get("linked_sales_order"),
 		}
 	).insert()
 

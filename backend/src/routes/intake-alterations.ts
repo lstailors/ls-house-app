@@ -60,10 +60,36 @@ async function erpPost<T>(method: string, body: Record<string, unknown>): Promis
   });
   if (!res.ok) {
     const t = await res.text().catch(() => '');
-    throw new Error(`ERP ${res.status}: ${t.slice(0, 200)}`);
+    throw new Error(parseErpFail(res.status, t));
   }
   const json = (await res.json()) as any;
   return (json.message ?? json) as T;
+}
+
+/** Frappe ValidationError → HTTP 417; pull the human message out of the blob. */
+function parseErpFail(status: number, body: string): string {
+  try {
+    const j = JSON.parse(body);
+    if (j._server_messages) {
+      const arr = JSON.parse(j._server_messages);
+      const first = typeof arr[0] === 'string' ? JSON.parse(arr[0]) : arr[0];
+      const msg = String(first?.message || '').replace(/<[^>]+>/g, '').trim();
+      if (msg) return msg;
+    }
+    if (j.exception) {
+      const ex = String(j.exception);
+      // "frappe.exceptions.ValidationError: real message"
+      const idx = ex.indexOf(': ');
+      if (idx > 0) {
+        const rest = ex.slice(idx + 2).trim();
+        if (rest && !rest.startsWith('Traceback')) return rest;
+      }
+    }
+    if (typeof j.message === 'string' && j.message) return j.message;
+  } catch {
+    /* fall through */
+  }
+  return `ERP ${status}: ${body.slice(0, 240)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -357,7 +383,8 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
       preset: l.preset || null,    // optional — null = custom line (Lucia 030)
       description: l.description,
       price: l.price,              // always full shop price (internal value even if non-billable)
-      est_minutes: l.estMinutes || null,
+      // Capacity script needs minutes; custom lines default 15 if client omits
+      est_minutes: l.estMinutes || l.est_minutes || 15,
       line_notes: l.notes || l.line_notes || null,
     }))
     ),
