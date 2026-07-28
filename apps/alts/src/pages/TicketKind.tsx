@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -107,19 +107,14 @@ export default function TicketKind() {
     },
   });
 
-  // When detail loads, seed cart pieces (all selected)
-  useMemo(() => {
-    // useMemo misuse — use effect pattern below instead
-  }, []);
-
-  // Seed cart when SO detail arrives
-  if (kind === "on_order" && soDetail.data && selectedSo && cartPieces.length === 0 && !soDetail.isFetching) {
-    const pieces = piecesFromSoDetail(soDetail.data.items || []);
-    // schedule setState outside render
-    queueMicrotask(() => {
-      setCartPieces(pieces);
-    });
-  }
+  useEffect(() => {
+    if (!selectedSo?.id) {
+      setCartPieces([]);
+      return;
+    }
+    if (!soDetail.data?.items) return;
+    setCartPieces(piecesFromSoDetail(soDetail.data.items || []));
+  }, [selectedSo?.id, soDetail.data]);
 
   const hits = useMemo(() => {
     if (q.trim().length >= 2) return search.data ?? [];
@@ -130,7 +125,7 @@ export default function TicketKind() {
 
   const pickSo = (so: SoHit) => {
     setSelectedSo(so);
-    setCartPieces([]); // clear so detail reseed runs
+    setCartPieces([]);
   };
 
   const togglePiece = (id: string) => {
