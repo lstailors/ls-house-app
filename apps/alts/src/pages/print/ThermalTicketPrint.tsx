@@ -59,7 +59,7 @@ function fmtLong(iso?: string) {
 }
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,600&family=Montserrat:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,600&family=Montserrat:wght@600;700;800&family=JetBrains+Mono:wght@700&display=swap');
 * { box-sizing: border-box; }
 body { margin: 0; }
 @media print {
@@ -71,56 +71,87 @@ body { margin: 0; }
   .paper:last-child { page-break-after: auto; }
 }
 .paper {
-  background: #fff; color: #111;
+  background: #fff; color: #000;
   font-family: Montserrat, system-ui, sans-serif;
-  padding: 18px 16px 22px;
-  width: 320px;
+  padding: 20px 18px 26px;
+  width: 340px;
+  -webkit-font-smoothing: antialiased;
 }
-.paper.master { width: 360px; }
+.paper.master { width: 380px; }
 .mhead {
-  text-align: center; font-size: 11px; font-weight: 800; letter-spacing: 0.28em;
-  background: #000; color: #fff; padding: 8px; margin: -18px -16px 16px;
+  text-align: center; font-size: 14px; font-weight: 800; letter-spacing: 0.22em;
+  background: #000; color: #fff; padding: 12px 8px; margin: -20px -18px 18px;
 }
-.eyebrow { font-size: 9px; letter-spacing: 0.18em; font-weight: 700; color: #444; text-align: center; }
+.brand {
+  text-align: center; font-size: 13px; letter-spacing: 0.28em; font-weight: 800;
+  margin-bottom: 6px;
+}
+.eyebrow {
+  font-size: 12px; letter-spacing: 0.2em; font-weight: 800; color: #111;
+  text-align: center;
+}
 .tknum {
   text-align: center; font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-weight: 700; letter-spacing: 0.04em; margin-top: 6px;
+  font-weight: 700; letter-spacing: 0.02em; margin-top: 10px; line-height: 1.15;
 }
-.paper.master .tknum { font-size: 26px; }
-.paper.cust .tknum { font-size: 15px; }
+.paper.master .tknum { font-size: 22px; }
+.paper.cust .tknum { font-size: 18px; }
 .cname {
-  text-align: center; font-family: "Cormorant Garamond", serif; font-style: italic;
-  font-weight: 600; margin-top: 8px;
+  text-align: center; font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic; font-weight: 600; margin-top: 10px; line-height: 1.15;
 }
-.paper.master .cname { font-size: 22px; }
-.paper.cust .cname { font-size: 17px; }
-.addr { text-align: center; font-size: 10px; color: #444; margin-top: 4px; }
-.solid { height: 2px; background: #000; margin: 12px 0; }
-.hair { height: 1px; background: #bbb; margin: 10px 0; }
-.meta { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; padding: 3px 0; }
-.paper.master .meta { font-size: 11px; padding: 4px 0; }
-.meta span { color: #555; letter-spacing: 0.08em; font-weight: 600; }
-.meta b { font-weight: 700; text-align: right; }
-.rackrow { display: flex; gap: 8px; margin: 12px 0; }
-.rk { flex: 1; border: 2px solid #000; text-align: center; padding: 8px 4px; }
-.rk .l { font-size: 8px; letter-spacing: 0.14em; font-weight: 700; color: #555; }
-.rk .v { font-size: 18px; font-weight: 800; margin-top: 4px; }
-.gname { font-size: 11px; font-weight: 800; letter-spacing: 0.06em; margin: 12px 0 4px; }
-.paper.master .gname { font-size: 12px; }
-.gl { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; color: #222; padding: 2px 0; }
-.paper.master .gl { font-size: 12px; padding: 3px 0; }
-.gl .amt { font-variant-numeric: tabular-nums; font-weight: 600; }
-.totrow { display: flex; justify-content: space-between; align-items: baseline; padding-top: 6px; }
-.totrow span { font-size: 11px; letter-spacing: 0.14em; font-weight: 700; }
-.totrow b { font-size: 22px; font-family: "Cormorant Garamond", serif; font-style: italic; }
-.notebox { border: 2px solid #000; padding: 10px; margin-top: 12px; }
-.notebox .t { font-size: 8px; letter-spacing: 0.12em; font-weight: 800; margin-bottom: 6px; }
-.notebox .b { font-size: 10px; line-height: 1.35; }
-.qrp { display: flex; justify-content: center; padding: 14px 0 6px; }
-.qcap { text-align: center; font-size: 9px; letter-spacing: 0.16em; font-weight: 700; }
-.closing { text-align: center; font-size: 9px; letter-spacing: 0.14em; color: #444; margin-top: 10px; }
-.closing b { display: block; margin-top: 4px; color: #111; letter-spacing: 0.22em; }
-.brand { text-align: center; font-size: 10px; letter-spacing: 0.28em; font-weight: 800; margin-bottom: 4px; }
+.paper.master .cname { font-size: 28px; }
+.paper.cust .cname { font-size: 24px; }
+.addr { text-align: center; font-size: 13px; font-weight: 700; color: #111; margin-top: 6px; }
+.solid { height: 3px; background: #000; margin: 14px 0; }
+.hair { height: 2px; background: #000; margin: 12px 0; }
+.meta {
+  display: flex; justify-content: space-between; gap: 10px;
+  font-size: 13px; padding: 5px 0; font-weight: 700;
+}
+.paper.master .meta { font-size: 14px; padding: 6px 0; }
+.meta span { color: #222; letter-spacing: 0.1em; font-weight: 800; text-transform: uppercase; }
+.meta b { font-weight: 800; text-align: right; color: #000; }
+.rackrow { display: flex; gap: 8px; margin: 14px 0; }
+.rk { flex: 1; border: 2.5px solid #000; text-align: center; padding: 10px 4px; }
+.rk .l { font-size: 11px; letter-spacing: 0.14em; font-weight: 800; color: #111; }
+.rk .v { font-size: 22px; font-weight: 800; margin-top: 6px; line-height: 1; }
+.gname {
+  font-size: 14px; font-weight: 800; letter-spacing: 0.06em;
+  margin: 14px 0 6px; text-transform: uppercase;
+}
+.paper.master .gname { font-size: 15px; }
+.gl {
+  display: flex; justify-content: space-between; gap: 10px;
+  font-size: 13px; color: #000; padding: 4px 0; font-weight: 600; line-height: 1.35;
+}
+.paper.master .gl { font-size: 14px; padding: 5px 0; }
+.gl .amt { font-variant-numeric: tabular-nums; font-weight: 800; }
+.totrow {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding-top: 8px;
+}
+.totrow span { font-size: 14px; letter-spacing: 0.16em; font-weight: 800; }
+.totrow b {
+  font-size: 28px; font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic; font-weight: 600;
+}
+.notebox { border: 2.5px solid #000; padding: 12px; margin-top: 14px; }
+.notebox .t { font-size: 11px; letter-spacing: 0.12em; font-weight: 800; margin-bottom: 8px; }
+.notebox .b { font-size: 13px; line-height: 1.4; font-weight: 600; }
+.qrp { display: flex; justify-content: center; padding: 16px 0 8px; }
+.qcap {
+  text-align: center; font-size: 12px; letter-spacing: 0.16em;
+  font-weight: 800; text-transform: uppercase;
+}
+.closing {
+  text-align: center; font-size: 12px; letter-spacing: 0.12em;
+  color: #111; margin-top: 12px; font-weight: 700;
+}
+.closing b {
+  display: block; margin-top: 6px; color: #000;
+  letter-spacing: 0.22em; font-size: 13px; font-weight: 800;
+}
 `;
 
 export default function ThermalTicketPrint() {
@@ -341,8 +372,8 @@ export default function ThermalTicketPrint() {
             </div>
           )}
           <div className="qrp">
-            <div style={{ border: "2px solid #000", padding: 4 }}>
-              <QRCodeSVG value={ticketPublicUrl(ticket.name)} size={98} level="M" />
+            <div style={{ border: "3px solid #000", padding: 6 }}>
+              <QRCodeSVG value={ticketPublicUrl(ticket.name)} size={120} level="M" />
             </div>
           </div>
           <div className="qcap">SCAN TO OPEN IN ALTS</div>
@@ -368,13 +399,10 @@ export default function ThermalTicketPrint() {
           <div className="hair" />
           {groups.map((g) => (
             <div key={`c-${g.key}`}>
-              <div className="gname" style={{ fontSize: 10 }}>
-                {g.title}
-              </div>
+              <div className="gname">{g.title}</div>
               {g.lines.map((l, i) => (
                 <div className="gl" key={i}>
                   <span>{l.desc}</span>
-                  {/* customer sees line prices when billable — no factory internal */}
                   <span className="amt">{Number(l.price).toFixed(2)}</span>
                 </div>
               ))}
@@ -390,8 +418,8 @@ export default function ThermalTicketPrint() {
             <b>{payStatus}</b>
           </div>
           <div className="qrp">
-            <div style={{ border: "1px solid #000", padding: 3 }}>
-              <QRCodeSVG value={scanUrl} size={88} level="M" />
+            <div style={{ border: "3px solid #000", padding: 6 }}>
+              <QRCodeSVG value={scanUrl} size={112} level="M" />
             </div>
           </div>
           <div className="qcap">{ticket.sales_invoice ? "SCAN TO PAY" : "SCAN E-TICKET"}</div>

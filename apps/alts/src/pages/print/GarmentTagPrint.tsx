@@ -2,6 +2,8 @@
  * 004 / 027 — D520BT garment hang tags (3″ × 2″ continuous).
  * Path: PDF via system print → Share → LabelLife (no Web Bluetooth).
  * QR → alts /g/{ticket}/{garmentId}
+ *
+ * Legibility: large ticket short-code + surname, ≥13px body, high-contrast black.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -33,7 +35,7 @@ interface TicketDoc {
 }
 
 const PRINT_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&display=swap');
 * { box-sizing: border-box; }
 body { margin: 0; background: #0D1A10; }
 @media print {
@@ -74,7 +76,6 @@ export default function GarmentTagPrint() {
   useEffect(() => {
     if (ticket && garments.length && !auto.current) {
       auto.current = true;
-      // Staff-triggered preferred; light delay only when ?auto=1
       if (sp.get("auto") === "1") setTimeout(() => window.print(), 500);
     }
   }, [ticket, garments, sp]);
@@ -179,9 +180,9 @@ export default function GarmentTagPrint() {
                 height: 192,
                 background: "#fff",
                 color: "#000",
-                border: "2px solid #111",
+                border: "3px solid #000",
                 borderRadius: 4,
-                padding: "14px 16px",
+                padding: "12px 14px",
                 display: "flex",
                 flexDirection: "column",
                 fontFamily: "Montserrat, system-ui, sans-serif",
@@ -191,18 +192,18 @@ export default function GarmentTagPrint() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
-                      fontSize: 9,
-                      fontWeight: 700,
-                      letterSpacing: "0.22em",
-                      color: "#111",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      letterSpacing: "0.18em",
+                      color: "#000",
                     }}
                   >
                     L &amp; S
                   </div>
                   <div
                     style={{
-                      marginTop: 8,
-                      fontSize: 34,
+                      marginTop: 6,
+                      fontSize: 36,
                       fontWeight: 800,
                       letterSpacing: "-0.02em",
                       lineHeight: 1,
@@ -213,9 +214,9 @@ export default function GarmentTagPrint() {
                   <div
                     style={{
                       marginTop: 6,
-                      fontSize: 22,
+                      fontSize: 24,
                       fontWeight: 800,
-                      letterSpacing: "0.06em",
+                      letterSpacing: "0.04em",
                       lineHeight: 1.05,
                     }}
                   >
@@ -226,28 +227,28 @@ export default function GarmentTagPrint() {
                   style={{
                     flexShrink: 0,
                     padding: 3,
-                    border: "2px solid #000",
+                    border: "3px solid #000",
                     background: "#fff",
                   }}
                 >
-                  <QRCodeSVG value={url} size={72} level="M" includeMargin={false} />
+                  <QRCodeSVG value={url} size={78} level="M" includeMargin={false} />
                 </div>
               </div>
 
               <div style={{ flex: 1 }} />
 
-              <div style={{ height: 2, background: "#000", marginBottom: 10 }} />
+              <div style={{ height: 3, background: "#000", marginBottom: 8 }} />
               <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: "0.04em" }}>{gm}</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: "0.03em" }}>{gm}</div>
                   {meta ? (
                     <div
                       style={{
-                        marginTop: 4,
-                        fontSize: 9,
-                        fontWeight: 600,
-                        letterSpacing: "0.1em",
-                        color: "#222",
+                        marginTop: 3,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        letterSpacing: "0.06em",
+                        color: "#000",
                       }}
                     >
                       {meta.slice(0, 48)}
@@ -255,8 +256,8 @@ export default function GarmentTagPrint() {
                   ) : null}
                 </div>
                 <div style={{ textAlign: "right", flexShrink: 0 }}>
-                  <div style={{ fontSize: 8, fontWeight: 600, letterSpacing: "0.16em" }}>DUE</div>
-                  <div style={{ marginTop: 3, fontSize: 13, fontWeight: 800 }}>{fmtDueShort(ticket.due_date)}</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.12em" }}>DUE</div>
+                  <div style={{ marginTop: 2, fontSize: 16, fontWeight: 800 }}>{fmtDueShort(ticket.due_date)}</div>
                 </div>
               </div>
             </div>
