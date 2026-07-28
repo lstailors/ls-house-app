@@ -68,7 +68,7 @@ export default function ParkedTray() {
         </Link>
         <div>
           <div className="display text-xl">Parked</div>
-          <div className="caps">Resume · quote · submit</div>
+          <div className="caps">Hold until resume or drop</div>
         </div>
         <div className="flex-1" />
         <Link to="/intake/alterations" className="btn-brass h-11 px-5 text-[11px] inline-flex items-center">
@@ -143,7 +143,7 @@ export default function ParkedTray() {
           <div className="md:col-span-2 card-glass p-10 text-center">
             <div className="display text-3xl mb-2">Nothing parked</div>
             <p className="text-cream-dim text-sm mb-4">
-              Mid-intake, hit Park to save multi-piece waves or finish later. No ticket number is burned.
+              Park holds a cart with no ticket number. Come back whenever — resume it, submit it, or drop it.
             </p>
             <Link to="/intake/alterations" className="btn-brass inline-flex h-12 px-6 items-center text-[11px]">
               Start intake

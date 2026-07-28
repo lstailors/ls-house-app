@@ -46,13 +46,14 @@ Add on `LSH Parked Cart` (or equivalent):
 (Even if nag policy is “nobody” for now — fields enable jobs later without migration pain.)
 
 ### 6. Warranty vs custom-order
-**Decision: SEPARATE buckets.**  
-| Mode | Meaning |
-|---|---|
-| **On custom order** | MTM/bespoke fitting work; $ → COGS of the make; no client charge |
-| **Warranty / Re-do** | Fix on something **we already did**, **no cost to customer** |
+**Decision: SEPARATE buckets. Warranty = Re-do path (one setup).**  
+| Mode | Meaning | System |
+|---|---|---|
+| **On custom order** | MTM/bespoke fitting work; $ → COGS of the make; no client charge | `billing_status = Included in Custom Order` · linked SO |
+| **Warranty / Re-do** | Fix on something **we already did**, **no cost to customer** | Kind `redo` · UI **Re-do** · `billing_status = Warranty` · $0 · no invoice |
 
-Label in UI: prefer **“Re-do”** (or “Warranty · Re-do”) so staff don’t confuse with MTM fitting.  
+**C 2026-07-28:** Warranty is not a fourth kind — it **is** Re-do. Same intake, same $0, same reporting bucket.  
+Label in UI: **“Re-do”** (subtitle may say Warranty). Do not invent a separate warranty workflow.  
 Report warranty/re-do apart from included-in-custom — rising re-do = quality signal.
 
 ---
@@ -64,10 +65,12 @@ Report warranty/re-do apart from included-in-custom — rising re-do = quality s
 - No counter hard-stop / warn threshold in POS v1.  
 - Managers see high absorbed cost on dashboard/reporting.
 
-### 8. Stale parked cart nag
-**Decision: C — nobody.**  
-- No SMS/push to parker or floor for stale carts v1.  
-- Still store `remind_at` (Q5) for a future toggle.
+### 8. Parked carts
+**Decision (C 2026-07-28): Hold until whenever. Resume/use or delete — nothing else.**  
+- No auto-expiry, no stale nag SMS/push to parker or floor (v1).  
+- Park = mid-intake freeze; no ticket number burned until submit.  
+- Actions only: **Resume** · **Submit ticket** · **Drop (delete)**.  
+- `remind_at` may exist on schema for a future toggle — **off**.
 
 ### 9. Quote send
 **Decision: A — email + SMS with accept link.**  
