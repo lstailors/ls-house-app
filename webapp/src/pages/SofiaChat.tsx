@@ -46,6 +46,18 @@ interface SofiaTask {
   status: "open" | "done";
 }
 
+interface Escalation {
+  name: string;
+  client_phone?: string | null;
+  client_name?: string | null;
+  status: "pending" | "waiting_carl" | "answered" | "cancelled" | "expired";
+  severity?: "normal" | "emergency" | null;
+  summary?: string | null;
+  reason?: string | null;
+  opened_at?: string | null;
+  expires_at?: string | null;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function formatTime(iso: string | undefined) {
   if (!iso) return "—";
@@ -343,6 +355,25 @@ export default function SofiaChat() {
     },
   });
 
+  // ── Take over / release ──
+  // Writes LSH SMS Thread Control. The relay reads it before waking the agent,
+  // and the agent re-checks immediately before sending — so a takeover lands
+  // even if Sofia is already mid-reply.
+  const toggleTakeover = useMutation({
+    mutationFn: (release: boolean) =>
+      api.post(`/api/sofia/conversations/${encodeURIComponent(selectedPhone!)}/handoff`, { release }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sofia-conversations"] });
+    },
+  });
+
+  // ── Escalations still waiting on Carl ──
+  const { data: escalations = [] } = useQuery<Escalation[]>({
+    queryKey: ["sofia-escalations"],
+    queryFn: () => api.get<Escalation[]>("/api/sofia/escalations?status=open"),
+    refetchInterval: 20_000,
+  });
+
   // ── Auto-scroll ──
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -450,6 +481,50 @@ export default function SofiaChat() {
                 </div>
               </div>
 
+              {/* Escalations waiting on Carl. Only shown when there are any —
+                  an always-present empty panel trains people to ignore it. */}
+              {escalations.length > 0 && (
+                <div className="border-b border-amber-500/25 bg-amber-500/8">
+                  <div className="px-3 py-2 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                    <span className="text-[10px] tracking-wider font-bold uppercase text-amber-300">
+                      {escalations.length} waiting on Carl
+                    </span>
+                  </div>
+                  <div className="max-h-44 overflow-y-auto">
+                    {escalations.map(esc => (
+                      <button
+                        key={esc.name}
+                        onClick={() => esc.client_phone && handleSelectThread(esc.client_phone)}
+                        className="w-full text-left px-3 py-2 border-t border-amber-500/12 hover:bg-amber-500/10 transition-colors"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-cream truncate">
+                            {esc.client_name || esc.client_phone || "Unknown"}
+                          </span>
+                          {esc.severity === "emergency" && (
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-red-300 border border-red-400/40 bg-red-500/15 rounded px-1">
+                              emergency
+                            </span>
+                          )}
+                          {esc.status === "waiting_carl" && (
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-amber-200 border border-amber-400/40 rounded px-1">
+                              overdue
+                            </span>
+                          )}
+                        </div>
+                        {esc.summary && (
+                          <p className="text-[11px] text-cream-dim truncate mt-0.5">{esc.summary}</p>
+                        )}
+                        <span className="text-[10px] text-cream-dim">
+                          opened {formatTime(esc.opened_at ?? undefined)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* List */}
               <div className="flex-1 overflow-y-auto">
                 {convLoading ? (
@@ -538,10 +613,20 @@ export default function SofiaChat() {
                       <Button
                         size="sm"
                         variant="outline"
+                        disabled={!selectedPhone || toggleTakeover.isPending}
                         className="text-xs border-brass/25 text-cream-muted hover:border-brass/50 hover:text-cream h-7 px-2.5"
-                        onClick={() => {/* TODO: take over logic */}}
+                        onClick={() => toggleTakeover.mutate(activeConv?.sofiaActive === false)}
+                        title={
+                          activeConv?.sofiaActive === false
+                            ? "Give this thread back to Sofia"
+                            : "Stop Sofia replying — you handle this thread"
+                        }
                       >
-                        Take Over
+                        {toggleTakeover.isPending
+                          ? "…"
+                          : activeConv?.sofiaActive === false
+                            ? "Release to Sofia"
+                            : "Take Over"}
                       </Button>
                     </div>
                   </div>

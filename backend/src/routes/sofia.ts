@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { erpList, erpRunMethod } from "../lib/erp";
 import { DT } from "../lib/erpnext/doctypes";
-import { storeInsert, storeList, storeFindOne, storeSearch, storeUpdate } from "../lib/erpnext/store";
+import { storeInsert, storeList, storeFindOne, storeSearch, storeUpdate, storeUpsert } from "../lib/erpnext/store";
 import {
   insertSmsMessage,
   listSmsMessagesFiltered,
@@ -378,8 +378,33 @@ async function loadLocalSofiaMessages(opts: { phone?: string; limit?: number; as
   return messages.slice(0, limit);
 }
 
+/**
+ * last-10-digits -> whether the AI may reply, from LSH SMS Thread Control.
+ *
+ * An absent row means AI is on. That is the default the relay and the
+ * sofia-sms agent both assume, so the three agree without coordination.
+ */
+async function loadThreadControl(): Promise<Map<string, boolean>> {
+  const map = new Map<string, boolean>();
+  try {
+    const rows = await storeList(DT.SMS_THREAD_CONTROL, {
+      fields: ["client_phone", "ai_enabled"],
+      limit: 500,
+    });
+    for (const row of rows ?? []) {
+      const key = phoneLast10((row as any).client_phone);
+      if (key) map.set(key, Boolean(Number((row as any).ai_enabled ?? 1)));
+    }
+  } catch (e: any) {
+    // Never fail the thread list over this — fall back to "AI on".
+    console.error("[sofia/threads] thread control read failed:", e?.message);
+  }
+  return map;
+}
+
 async function buildLocalSofiaConversations() {
   const messages = await loadLocalSofiaMessages({ limit: 500 });
+  const control = await loadThreadControl();
   const threads = new Map<string, any>();
 
   for (const message of messages) {
@@ -404,7 +429,8 @@ async function buildLocalSofiaConversations() {
           timestamp: message.timestamp,
         },
         messageCount: (existing?.messageCount ?? 0) + 1,
-        sofiaActive: true,
+        // Was hard-coded true, so the console could never show "Human active".
+        sofiaActive: control.get(key) ?? true,
         unread,
         customer: message.client_id ?? existing?.customer ?? null,
         reference_doctype: message.reference_doctype ?? existing?.reference_doctype ?? null,
@@ -1665,39 +1691,98 @@ sofiaRouter.get("/conversations/:phone", async (c) => {
 });
 
 // ── POST /api/sofia/conversations/:phone/handoff ──
-// Destination: lsh.conversation_handoffs (Supabase service role, schema lsh)
-// Columns: handoff_type (text), client_phone (text), taken_over_by (uuid),
-//          decision (text), note (text), previous_sofia_state (jsonb)
+// Takes a thread away from the AI, or gives it back.
+//
+// Body: { release?: boolean, notes?: string }
+//
+// The flag lives in LSH SMS Thread Control (one row per phone). Both the relay
+// and the sofia-sms agent read it — the relay skips waking the agent at all,
+// and the agent re-checks immediately before sending, which closes the race
+// where a human takes over mid-generation.
+//
+// LSH Conversation Handoff stays what it already was: an append-only audit
+// trail. Note its real fields are client_phone / handoff_to / reason / context
+// — the previous code wrote handoff_type, taken_over_by, decision, note and
+// previous_sofia_state, none of which exist on the doctype, so every one of
+// those values was silently dropped.
 sofiaRouter.post("/conversations/:phone/handoff", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (user.role === "driver") return c.json({ error: { message: "Forbidden" } }, 403);
 
-  
-
   const phone = decodeURIComponent(c.req.param("phone"));
   const body = await c.req.json().catch(() => ({}));
   const notes = typeof body?.notes === "string" ? body.notes : undefined;
+  const release = body?.release === true;
+  const nowIso = new Date().toISOString().slice(0, 19).replace("T", " ");
 
-  // Best-effort: find which agent was last active on this phone
-  let agentName = "sofia";
-  const actRows = await storeList(DT.SOFIA_ACTIVITY_LOG, { filters: [["client_phone", "=", phone]], orderBy: "creation desc", limit: 1 });
-  if (actRows[0]?.agent_name) agentName = actRows[0].agent_name as string;
   try {
-    await storeInsert(DT.CONVERSATION_HANDOFF, {
-      handoff_type: "human_takeover",
-      client_phone: phone,
-      taken_over_by: user.id,
-      decision: "human_takeover",
-      note: notes ?? null,
-      previous_sofia_state: JSON.stringify({ agent_name: agentName }),
-    });
-  } catch (e) {
-    console.error("[sofia/handoff] insert error:", (e as Error).message);
-    return c.json({ error: { message: "Failed to log handoff" } }, 500);
+    await storeUpsert(
+      DT.SMS_THREAD_CONTROL,
+      release
+        ? { client_phone: phone, ai_enabled: 1, released_at: nowIso, note: notes ?? null }
+        : {
+            client_phone: phone,
+            ai_enabled: 0,
+            taken_over_by: user.id,
+            taken_over_at: nowIso,
+            released_at: null,
+            note: notes ?? null,
+          },
+      "client_phone",
+    );
+  } catch (e: any) {
+    console.error("[sofia/handoff] thread control write failed:", e?.message);
+    return c.json({ error: { message: "Failed to change thread control" } }, 500);
   }
 
-  return c.json({ data: { ok: true, agentName } });
+  // Audit trail — best effort, must not fail the takeover itself.
+  try {
+    await storeInsert(DT.CONVERSATION_HANDOFF, {
+      client_phone: phone,
+      handoff_to: release ? "sofia" : user.id,
+      reason: release ? "released back to AI" : "human takeover",
+      context: JSON.stringify({ by: user.id, at: nowIso, notes: notes ?? null }),
+    });
+  } catch (e: any) {
+    console.error("[sofia/handoff] audit insert failed (non-fatal):", e?.message);
+  }
+
+  return c.json({ data: { ok: true, phone, aiEnabled: release } });
+});
+
+// ── GET /api/sofia/escalations ──
+// The Carl loop, for the console: pending / waiting_carl / answered.
+// ?status=open returns just the ones still needing him (the default view).
+sofiaRouter.get("/escalations", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (user.role === "driver") return c.json({ error: { message: "Forbidden" } }, 403);
+
+  const status = c.req.query("status") ?? "open";
+  const filters: unknown[] =
+    status === "all" ? [] :
+    status === "open" ? [["status", "in", ["pending", "waiting_carl"]]] :
+    [["status", "=", status]];
+
+  try {
+    const data = await storeList(DT.ESCALATION, {
+      filters,
+      fields: [
+        "name", "client_phone", "client_name", "customer", "status", "severity",
+        "source_channel", "summary", "reason", "opened_at", "expires_at",
+        "repinged_at", "carl_replied_at", "c_reply_raw", "sofia_rewritten",
+        "voice_call_sid",
+      ],
+      // Oldest first: the one that has been waiting longest is the one that matters.
+      orderBy: "opened_at asc",
+      limit: 100,
+    });
+    return c.json({ data });
+  } catch (e: any) {
+    console.error("[sofia/escalations] read failed:", e?.message);
+    return c.json({ error: { message: "Failed to load escalations" } }, 502);
+  }
 });
 
 // ── GET /api/sofia/threads ── deduplicated thread list (uses real column names)
@@ -1762,6 +1847,26 @@ sofiaRouter.get("/voice-approvals", async (c) => {
 // POST /api/sofia/sms  — Twilio webhook (signature validated)
 // ────────────────────────────────────────────────────────────────────────────
 sofiaRouter.post("/sms", async (c) => {
+  // As of the sofia-sms cutover (2026-07-29) the SMS brain is the Hermes
+  // profile behind sofia-sms.lstailors.com. This route is kept for rollback,
+  // but it must never generate a second reply: two brains answering one client
+  // is the worst failure mode this build has.
+  //
+  // Twilio does not point here (it pointed at sofia.lstailors.com/sms/incoming
+  // before cutover, which is also the rollback target), so a hit means a stale
+  // config somewhere. Ack and drop.
+  //
+  // Set SOFIA_APP_SMS_BRAIN=1 to re-enable the old Grok path — the only reason
+  // to do that is if the Hermes path is down AND Twilio has been pointed back
+  // at this URL specifically.
+  if (process.env.SOFIA_APP_SMS_BRAIN !== "1") {
+    console.warn(
+      "[sofia/sms] inbound hit the retired app brain — acking without processing. " +
+      "The live SMS brain is the Hermes sofia-sms profile.",
+    );
+    return emptyTwiml(c);
+  }
+
   try {
     const formText = await c.req.text();
     const params = new URLSearchParams(formText);

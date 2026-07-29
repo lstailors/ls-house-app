@@ -31,6 +31,9 @@ export const DT = {
   LS_TASK_ITEM: "LSH Task Item",
   CUSTOMER_MEETING: "LSH Customer Meeting",
   CONVERSATION_HANDOFF: "LSH Conversation Handoff",
+  // One row per client phone (autoname field:client_phone). ai_enabled=0 means
+  // a human holds the thread and the sofia-sms agent must stay silent.
+  SMS_THREAD_CONTROL: "LSH SMS Thread Control",
   SOFIA_ACTIVITY_LOG: "LSH Sofia Activity Log",
   VOICE_APPROVAL_REQUEST: "LSH Voice Approval Request",
   TASK: "LSH Task",
