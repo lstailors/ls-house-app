@@ -430,7 +430,8 @@ trackingRouter.patch("/:token/attempted", async (c) => {
       ...existingPhotos,
       {
         photo_url: photoUrl,
-        photo_type: "attempt",
+        // ERP Select: proof | signature | package | other — no "attempt"
+        photo_type: "other",
         caption: attemptNotes.slice(0, 140),
         captured_at: attemptedAt,
         uploaded_by: driverName ?? "driver",
