@@ -8,12 +8,46 @@
  */
 
 import { Hono } from "hono";
-import { erpList, erpGet, erpUpdate } from "../lib/erp";
+import { erpList, erpGet, erpUpdate, erpCreate } from "../lib/erp";
 import { uploadFile, erpFileAbsoluteUrl } from "../lib/erpnext/files";
+import { sendSms } from "../lib/twilio";
 
 function erpDatetime(d?: Date | string | null): string {
   const dt = d ? new Date(d) : new Date();
   return dt.toISOString().replace("T", " ").slice(0, 19);
+}
+
+/** Fire-and-forget customer SMS — mirrors deliveries.ts notifyCustomer. */
+async function notifyCustomer(
+  doc: any,
+  event: "out_for_delivery" | "delivered",
+): Promise<void> {
+  const phone = doc.lsh_notify_phone ?? doc.customer_phone ?? null;
+  if (!phone) return;
+  const first = (doc.customer_name ?? "").split(" ")[0] || "there";
+  const msg =
+    event === "out_for_delivery"
+      ? `Hi ${first}, your order from L&S Custom Tailors is on its way. Your driver is en route — we'll see you shortly!`
+      : `Hi ${first}, your garments from L&S Custom Tailors have been delivered. Thank you — enjoy!`;
+  try {
+    const sid = await sendSms(phone, msg);
+    if (sid && doc.name) {
+      await erpCreate("LSH Notification Log", {
+        lsh_delivery: doc.name,
+        channel: "SMS",
+        recipient_phone: phone,
+        template_id: event,
+        twilio_sid: sid,
+        status: "sent",
+        sent_at: erpDatetime(),
+      }).catch(() => {});
+      await erpUpdate("LSH Delivery", doc.name, {
+        lsh_customer_notified_at: erpDatetime(),
+      }).catch(() => {});
+    }
+  } catch {
+    /* non-blocking */
+  }
 }
 
 /** ERP Select options for lsh_pod_method — anything else 500s the update. */
@@ -152,6 +186,7 @@ trackingRouter.patch("/:token/pickup", async (c) => {
         lsh_status: "Out for Delivery",
         lsh_dispatched_at: erpDatetime(),
       });
+      void notifyCustomer(doc, "out_for_delivery");
     } catch (e: any) {
       console.error("[scan/pickup] erp update failed:", e?.message ?? e);
       return c.json({ error: { message: e?.message ?? "Pickup update failed" } }, 500);
@@ -315,6 +350,9 @@ trackingRouter.post("/:token/pod", async (c) => {
     );
   }
 
+  // Customer SMS (same path as staff Mark Delivered)
+  void notifyCustomer({ ...doc, ...updates, name: erpId }, "delivered");
+
   return c.json({
     data: {
       ok: true,
@@ -324,4 +362,89 @@ trackingRouter.post("/:token/pod", async (c) => {
       uploadErrors: uploadErrors.length ? uploadErrors : undefined,
     },
   });
+});
+
+// ── PATCH /api/scan/:token/attempted  — driver could not complete ─────────
+// ERP Select has no "Attempted" — map to Failed + lsh_attempt_notes.
+
+trackingRouter.patch("/:token/attempted", async (c) => {
+  const token = c.req.param("token");
+  if (!token || token.length < 8) return c.json({ error: { message: "Not found" } }, 404);
+
+  let form: Record<string, any>;
+  try {
+    form = await c.req.parseBody({ all: true });
+  } catch {
+    return c.json({ error: { message: "Bad form data" } }, 400);
+  }
+
+  const doc = await findDeliveryByToken(token);
+  if (!doc) return c.json({ error: { message: "Not found" } }, 404);
+
+  if (doc.lsh_status === "Delivered") {
+    return c.json({ error: { message: "Already delivered" } }, 409);
+  }
+  if (doc.lsh_status === "Failed") {
+    return c.json({ data: { ok: true, source: "erp", already: true } });
+  }
+
+  const driverName = pickStr(form, "driver_name");
+  const attemptNotes = pickStr(form, "attempt_notes") ?? "";
+  const lat = form["lat"] ? parseFloat(String(form["lat"])) : null;
+  const lng = form["lng"] ? parseFloat(String(form["lng"])) : null;
+  const accuracy = form["accuracy"] ? parseFloat(String(form["accuracy"])) : null;
+  const now = Date.now();
+  const attemptedAt = erpDatetime();
+
+  let photoUrl: string | null = null;
+  const photoFile = asFile(form, "photo_1");
+  if (photoFile) {
+    try {
+      const buf = new Uint8Array(await photoFile.arrayBuffer());
+      const { fileUrl } = await uploadFile({
+        file: buf,
+        filename: `${doc.name}-attempt_${now}.jpg`,
+        contentType: photoFile.type || "image/jpeg",
+        doctype: "LSH Delivery",
+        docname: doc.name,
+        isPrivate: false,
+      });
+      photoUrl = erpFileAbsoluteUrl(fileUrl);
+    } catch (e: any) {
+      console.warn("[scan/attempted] photo upload failed:", e?.message ?? e);
+    }
+  }
+
+  const updates: Record<string, unknown> = {
+    lsh_status: "Failed",
+    lsh_courier_name: driverName || doc.lsh_courier_name || null,
+    lsh_attempt_notes: attemptNotes,
+    lsh_gps_lat: safeNum(lat),
+    lsh_gps_lng: safeNum(lng),
+    lsh_gps_accuracy: safeNum(accuracy),
+  };
+
+  if (photoUrl) {
+    const existingPhotos = (doc.lsh_photos ?? []).map(photoRowForWrite);
+    updates.lsh_photos = [
+      ...existingPhotos,
+      {
+        photo_url: photoUrl,
+        photo_type: "attempt",
+        caption: attemptNotes.slice(0, 140),
+        captured_at: attemptedAt,
+        uploaded_by: driverName ?? "driver",
+      },
+    ];
+  }
+
+  try {
+    await erpUpdate("LSH Delivery", doc.name, updates);
+  } catch (e: any) {
+    const message = e?.message ?? "ERP update failed";
+    console.error("[scan/attempted] erp update failed:", message);
+    return c.json({ error: { message } }, 500);
+  }
+
+  return c.json({ data: { ok: true, source: "erp", status: "Failed" } });
 });
