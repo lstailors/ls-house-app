@@ -43,7 +43,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex bg-forest-deep">
+    <div className="min-h-dvh flex bg-forest-deep">
 
       {/* ── Left panel — brand ── */}
       <div className="hidden lg:flex lg:w-1/2 flex-col items-center justify-center relative overflow-hidden"

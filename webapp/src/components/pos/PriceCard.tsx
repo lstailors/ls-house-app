@@ -238,7 +238,7 @@ export function PriceCard({
                 value={depositAmount || ""}
                 onChange={(e) => onDepositChange(Math.max(0, Number(e.target.value)))}
                 placeholder="0"
-                className="flex-1 bg-forest-raised/40 border border-brass/20 rounded-md px-2 py-1.5 text-cream text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brass/40"
+                className="flex-1 bg-forest-raised/40 border border-brass/20 rounded-md px-2 py-1.5 text-base sm:text-sream text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brass/40"
               />
             </div>
           </div>

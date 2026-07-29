@@ -72,12 +72,12 @@ export function QuickCreateFAB({ userEmail }: QuickCreateFABProps) {
                 required
                 autoFocus
                 placeholder="What needs to be done?"
-                className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream placeholder:text-cream-dim/50 focus:outline-none focus:border-brass/50 resize-none"
+                className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-base sm:text-sm text-cream placeholder:text-cream-dim/50 focus:outline-none focus:border-brass/50 resize-none"
               />
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as "High" | "Medium" | "Low")}
-                className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream focus:outline-none focus:border-brass/50"
+                className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-base sm:text-sm text-cream focus:outline-none focus:border-brass/50"
               >
                 <option value="High">High Priority</option>
                 <option value="Medium">Medium Priority</option>

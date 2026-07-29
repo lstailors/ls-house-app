@@ -389,7 +389,7 @@ export default function SalesOrders() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by ID or customer name…"
-          className="w-full sm:w-80 bg-forest-raised border border-brass/20 rounded-lg px-3 py-2 text-cream text-sm placeholder:text-cream-dim/50 focus:outline-none focus:border-brass/50 transition-colors"
+          className="w-full sm:w-80 bg-forest-raised border border-brass/20 rounded-lg px-3 py-2 text-cream text-base sm:text-sm placeholder:text-cream-dim/50 focus:outline-none focus:border-brass/50 transition-colors"
         />
       </div>
 

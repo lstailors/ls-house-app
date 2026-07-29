@@ -77,7 +77,7 @@ const App = () => (
         }}
       />
       <BrowserRouter>
-        <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="h-6 w-6 rounded-full border-2 border-brass/40 border-t-brass animate-spin" /></div>}>
+        <Suspense fallback={<div className="flex items-center justify-center min-h-dvh"><div className="h-6 w-6 rounded-full border-2 border-brass/40 border-t-brass animate-spin" /></div>}>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/d/:token" element={<DeliveryTracking />} />

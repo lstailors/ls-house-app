@@ -118,7 +118,7 @@ export function ThreadView({
                   value={pendingDraft.text}
                   onChange={(e) => onDraftChange(e.target.value)}
                   rows={4}
-                  className="w-full rounded-lg border border-brass/30 bg-forest-raised/60 p-2.5 text-sm text-cream focus:outline-none focus:border-brass/60 resize-y"
+                  className="w-full rounded-lg border border-brass/30 bg-forest-raised/60 p-2.5 text-base sm:text-sm text-cream focus:outline-none focus:border-brass/60 resize-y"
                 />
               ) : (
                 <p className="text-sm text-cream whitespace-pre-wrap leading-relaxed">{pendingDraft.text}</p>

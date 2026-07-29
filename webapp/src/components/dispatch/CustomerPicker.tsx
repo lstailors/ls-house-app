@@ -62,7 +62,7 @@ export function CustomerPicker({ selected, onSelect, batchMode = false, batchKey
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search customers by name or phone…"
-          className="w-full rounded-xl border border-brass/20 bg-forest-raised/40 pl-9 pr-3 py-2.5 text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50 transition-colors"
+          className="w-full rounded-xl border border-brass/20 bg-forest-raised/40 pl-9 pr-3 py-2.5 text-base sm:text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50 transition-colors"
         />
       </div>
 

@@ -274,7 +274,7 @@ function CustomerSearch({
           <div className="col-span-2">
             <label className="ui-label text-cream-muted mb-1 block">Name *</label>
             <input
-              className="w-full bg-forest-deep border border-brass/20 rounded px-3 py-2 text-cream text-sm focus:border-brass/50 focus:outline-none"
+              className="w-full bg-forest-deep border border-brass/20 rounded px-3 py-2 text-cream text-base sm:text-sm focus:border-brass/50 focus:outline-none"
               placeholder="Full name"
               value={manual.name}
               onChange={e => setManual(m => ({ ...m, name: e.target.value }))}
@@ -283,7 +283,7 @@ function CustomerSearch({
           <div>
             <label className="ui-label text-cream-muted mb-1 block">Phone</label>
             <input
-              className="w-full bg-forest-deep border border-brass/20 rounded px-3 py-2 text-cream text-sm focus:border-brass/50 focus:outline-none"
+              className="w-full bg-forest-deep border border-brass/20 rounded px-3 py-2 text-cream text-base sm:text-sm focus:border-brass/50 focus:outline-none"
               placeholder="+1..."
               value={manual.phone}
               onChange={e => setManual(m => ({ ...m, phone: e.target.value }))}
@@ -292,7 +292,7 @@ function CustomerSearch({
           <div>
             <label className="ui-label text-cream-muted mb-1 block">Email</label>
             <input
-              className="w-full bg-forest-deep border border-brass/20 rounded px-3 py-2 text-cream text-sm focus:border-brass/50 focus:outline-none"
+              className="w-full bg-forest-deep border border-brass/20 rounded px-3 py-2 text-cream text-base sm:text-sm focus:border-brass/50 focus:outline-none"
               placeholder="email@..."
               value={manual.email}
               onChange={e => setManual(m => ({ ...m, email: e.target.value }))}
@@ -319,7 +319,7 @@ function CustomerSearch({
       <div className="glass-panel p-3 flex items-center gap-2">
         <Search className="w-4 h-4 text-cream-muted flex-shrink-0" />
         <input
-          className="flex-1 bg-transparent text-cream text-sm placeholder:text-cream-dim focus:outline-none"
+          className="flex-1 bg-transparent text-cream text-base sm:text-sm placeholder:text-cream-dim focus:outline-none"
           placeholder="Search customer by name or phone…"
           value={query}
           onChange={e => setQuery(e.target.value)}
@@ -346,7 +346,7 @@ function CustomerSearch({
                 <span className="text-brass-shimmer font-semibold text-sm">{(r.name || r.id || '?').charAt(0).toUpperCase()}</span>
               </div>
               <div className="flex-1 min-w-0 space-y-0.5">
-                <p className="text-cream text-sm font-semibold truncate">{r.name}</p>
+                <p className="text-cream text-base sm:text-sm font-semibold truncate">{r.name}</p>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
                   {r.phone && (
                     <span className="flex items-center gap-1 text-cream-muted text-xs whitespace-nowrap">
@@ -519,7 +519,7 @@ function ColorSwatchPicker({ value, onChange }: { value: string; onChange: (v: s
         <div className="flex gap-2">
           <input
             autoFocus
-            className="flex-1 bg-forest-deep border border-brass/30 rounded-lg px-3 py-1.5 text-cream text-sm focus:border-brass/60 focus:outline-none"
+            className="flex-1 bg-forest-deep border border-brass/30 rounded-lg px-3 py-1.5 text-cream text-base sm:text-sm focus:border-brass/60 focus:outline-none"
             placeholder="e.g. Cobalt Blue, Herringbone…"
             value={customVal}
             onChange={e => setCustomVal(e.target.value)}
@@ -860,7 +860,7 @@ function ActiveGarmentCard({
         <div>
           <label className="ui-label text-cream-muted mb-1 block">Description</label>
           <input
-            className="w-full bg-forest-deep border border-brass/20 rounded-lg px-3 py-2 text-cream text-sm focus:border-brass/50 focus:outline-none"
+            className="w-full bg-forest-deep border border-brass/20 rounded-lg px-3 py-2 text-cream text-base sm:text-sm focus:border-brass/50 focus:outline-none"
             placeholder="e.g. Navy blazer"
             value={garment.description}
             onChange={e => onUpdate({ ...garment, description: e.target.value })}
@@ -877,7 +877,7 @@ function ActiveGarmentCard({
           <label className="ui-label text-cream-muted mb-1 block">Notes</label>
           <textarea
             rows={2}
-            className="w-full bg-forest-deep border border-brass/20 rounded-lg px-3 py-2 text-cream text-sm focus:border-brass/50 focus:outline-none resize-none"
+            className="w-full bg-forest-deep border border-brass/20 rounded-lg px-3 py-2 text-cream text-base sm:text-sm focus:border-brass/50 focus:outline-none resize-none"
             placeholder="Special instructions, fabric notes…"
             value={garment.notes}
             onChange={e => onUpdate({ ...garment, notes: e.target.value })}
@@ -973,7 +973,7 @@ function ActiveGarmentCard({
       {garment.lines.filter(l => !l.preset).map((line, idx) => (
         <div key={idx} className="flex items-center gap-2 mb-2">
           <div className="flex-1 bg-brass/10 border border-brass/20 rounded-lg px-3 py-1.5 flex items-center justify-between">
-            <span className="text-cream text-sm">{line.description}</span>
+            <span className="text-cream text-base sm:text-sm">{line.description}</span>
             <span className="text-brass-shimmer text-sm font-medium ml-2">{formatUSD(line.price)}</span>
           </div>
           <button
@@ -997,7 +997,7 @@ function ActiveGarmentCard({
             <label className="ui-label text-cream-muted mb-1 block">Description</label>
             <input
               autoFocus
-              className="w-full bg-forest-deep border border-brass/20 rounded px-3 py-1.5 text-cream text-sm focus:border-brass/50 focus:outline-none"
+              className="w-full bg-forest-deep border border-brass/20 rounded px-3 py-1.5 text-cream text-base sm:text-sm focus:border-brass/50 focus:outline-none"
               placeholder="e.g. Hem tape repair"
               value={customDesc}
               onChange={e => setCustomDesc(e.target.value)}
@@ -1007,7 +1007,7 @@ function ActiveGarmentCard({
           <div className="w-24">
             <label className="ui-label text-cream-muted mb-1 block">Price</label>
             <input
-              className="w-full bg-forest-deep border border-brass/20 rounded px-3 py-1.5 text-cream text-sm focus:border-brass/50 focus:outline-none"
+              className="w-full bg-forest-deep border border-brass/20 rounded px-3 py-1.5 text-cream text-base sm:text-sm focus:border-brass/50 focus:outline-none"
               placeholder="25.00"
               value={customPrice}
               onChange={e => setCustomPrice(e.target.value)}
@@ -1123,7 +1123,7 @@ function CheckoutCart({
                       {g.ref}
                     </span>
                     <div className="min-w-0">
-                      <p className="text-cream text-sm font-medium truncate">{g.garmentType}</p>
+                      <p className="text-cream text-base sm:text-sm font-medium truncate">{g.garmentType}</p>
                       <p className="text-cream-dim text-xs">{g.lines.length} alteration{g.lines.length !== 1 ? 's' : ''}</p>
                     </div>
                   </div>
@@ -1197,7 +1197,7 @@ function CheckoutCart({
             value={dueDate}
             onChange={e => onDueDateChange(e.target.value)}
             min={new Date().toISOString().slice(0, 10)}
-            className="w-full bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream text-sm focus:outline-none focus:border-brass/50 [color-scheme:dark]"
+            className="w-full bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream text-base sm:text-sm focus:outline-none focus:border-brass/50 [color-scheme:dark]"
           />
         </div>
 
@@ -1247,7 +1247,7 @@ function CheckoutCart({
                   type="number"
                   min="0"
                   step="0.01"
-                  className="w-full bg-forest-deep border border-brass/20 rounded-lg pl-7 pr-3 py-2 text-cream text-sm focus:border-brass/50 focus:outline-none"
+                  className="w-full bg-forest-deep border border-brass/20 rounded-lg pl-7 pr-3 py-2 text-cream text-base sm:text-sm focus:border-brass/50 focus:outline-none"
                   placeholder="0.00"
                   value={deposit}
                   onChange={e => onDepositChange(e.target.value)}
@@ -1298,7 +1298,7 @@ class IntakeErrorBoundary extends Component<{ children: ReactNode }, { error: Er
   render() {
     if (this.state.error) {
       return (
-        <div className="min-h-screen bg-forest-deep flex items-center justify-center p-6">
+        <div className="min-h-dvh bg-forest-deep flex items-center justify-center p-6">
           <div className="glass-panel rounded-2xl p-8 max-w-md w-full text-center border border-signal-rose/30">
             <AlertCircle className="w-10 h-10 text-signal-rose mx-auto mb-4" />
             <h2 className="text-cream text-xl font-bold mb-2">Something went wrong</h2>
@@ -1330,7 +1330,7 @@ function SuccessState({
   onReset: () => void
 }) {
   return (
-    <div className="min-h-screen bg-forest-deep flex items-center justify-center p-6">
+    <div className="min-h-dvh bg-forest-deep flex items-center justify-center p-6">
       <div className="glass-panel rounded-2xl p-8 max-w-md w-full text-center border border-brass/30">
         <div className="w-16 h-16 rounded-full bg-brass/20 border-2 border-brass/50 flex items-center justify-center mx-auto mb-5">
           <Check className="w-8 h-8 text-brass-shimmer" />
@@ -1545,7 +1545,7 @@ function IntakeAlterationsInner() {
   }
 
   return (
-    <div className="min-h-screen bg-forest-deep text-cream">
+    <div className="min-h-dvh bg-forest-deep text-cream">
       {/* Top Bar */}
       <div className="border-b border-brass/20 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -1687,7 +1687,7 @@ function IntakeAlterationsInner() {
       {/* Mobile Sticky Bottom Summary */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 glass-panel border-t border-brass/30 px-4 py-3 flex items-center justify-between">
         <div>
-          <p className="text-cream text-sm font-semibold">
+          <p className="text-cream text-base sm:text-sm font-semibold">
             {garments.length} garment{garments.length !== 1 ? 's' : ''}
             {garments.some(g => g.lines.length > 0) && (
               <span className="text-cream-muted ml-1">·</span>

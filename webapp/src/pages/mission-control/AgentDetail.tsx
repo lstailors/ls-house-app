@@ -351,7 +351,7 @@ function AgentChat({ slug, agentName }: { slug: string; agentName: string }) {
           onKeyDown={handleKey}
           placeholder={`Message ${agentName}…`}
           rows={1}
-          className="flex-1 text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40 resize-none"
+          className="flex-1 text-base sm:text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40 resize-none"
           style={{ minHeight: 40, maxHeight: 120 }}
         />
         <Button
@@ -415,7 +415,7 @@ function DelegateTaskPanel({ slug, onClose }: { slug: string; onClose: () => voi
             onChange={(e) => setTitle(e.target.value)}
             placeholder="What should the agent do?"
             required
-            className="w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50 focus:ring-1 focus:ring-brass/30"
+            className="w-full text-base sm:text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50 focus:ring-1 focus:ring-brass/30"
           />
         </div>
         <div>
@@ -425,7 +425,7 @@ function DelegateTaskPanel({ slug, onClose }: { slug: string; onClose: () => voi
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Additional context..."
-            className="w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50 resize-none h-20"
+            className="w-full text-base sm:text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50 resize-none h-20"
           />
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -435,7 +435,7 @@ function DelegateTaskPanel({ slug, onClose }: { slug: string; onClose: () => voi
               id="dtask-priority"
               value={priority}
               onChange={(e) => setPriority(e.target.value)}
-              className="w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream focus:outline-none focus:border-brass/50"
+              className="w-full text-base sm:text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream focus:outline-none focus:border-brass/50"
             >
               <option value="low">Low</option>
               <option value="medium">Medium</option>
@@ -450,7 +450,7 @@ function DelegateTaskPanel({ slug, onClose }: { slug: string; onClose: () => voi
               type="date"
               value={dueAt}
               onChange={(e) => setDueAt(e.target.value)}
-              className="w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream focus:outline-none focus:border-brass/50"
+              className="w-full text-base sm:text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream focus:outline-none focus:border-brass/50"
             />
           </div>
         </div>
@@ -515,7 +515,7 @@ function AgentApprovals({ agent, showFinancials }: { agent: any; showFinancials:
                   </span>
                 )}
               </div>
-              <div className="text-sm text-cream font-medium">{item.title ?? "(untitled)"}</div>
+              <div className="text-base sm:text-sm text-cream font-medium">{item.title ?? "(untitled)"}</div>
               {item.summary && (
                 <p className="text-xs text-cream-muted mt-1 line-clamp-2">{String(item.summary)}</p>
               )}
@@ -670,7 +670,7 @@ export default function AgentDetail() {
       {/* Back */}
       <button
         onClick={() => navigate("/mission-control")}
-        className="flex items-center gap-1.5 text-sm text-cream-dim hover:text-cream transition-colors"
+        className="flex items-center gap-1.5 text-base sm:text-sm text-cream-dim hover:text-cream transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
         Mission Control
@@ -790,7 +790,7 @@ export default function AgentDetail() {
           <GlassCard className="p-5 rounded-2xl space-y-4">
             <div className="ui-label">About</div>
             {agent.description && (
-              <p className="text-sm text-cream-muted leading-relaxed">{String(agent.description)}</p>
+              <p className="text-base sm:text-sm text-cream-muted leading-relaxed">{String(agent.description)}</p>
             )}
 
             {agent.current_task && (

@@ -73,7 +73,7 @@ export default function DeliveryLabel() {
 
   if (isLoading) {
     return (
-      <div style={{ background: "#0D1A10", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "#0D1A10", minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ fontFamily: "Montserrat, sans-serif", fontSize: 11, color: "rgba(176,141,87,0.6)", letterSpacing: "0.2em" }}>LOADING LABEL…</div>
       </div>
     );
@@ -81,7 +81,7 @@ export default function DeliveryLabel() {
 
   if (isError || !data) {
     return (
-      <div style={{ background: "#0D1A10", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
+      <div style={{ background: "#0D1A10", minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
         <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, fontStyle: "italic", color: "#F1E9D6" }}>Delivery not found</div>
         <button onClick={() => navigate(-1)} style={{ fontFamily: "Montserrat, sans-serif", fontSize: 11, color: "#B08D57", background: "none", border: "1px solid rgba(176,141,87,0.3)", borderRadius: 8, padding: "10px 20px", cursor: "pointer", letterSpacing: "0.12em" }}>
           GO BACK
@@ -122,7 +122,7 @@ export default function DeliveryLabel() {
       </div>
 
       {/* Screen UI — hidden on print */}
-      <div className="screen-only" style={{ minHeight: "100vh", background: "linear-gradient(180deg, #16271E 0%, #0D1A10 100%)", padding: "24px 16px 60px", fontFamily: "Montserrat, sans-serif", color: "#F1E9D6" }}>
+      <div className="screen-only" style={{ minHeight: "100dvh", background: "linear-gradient(180deg, #16271E 0%, #0D1A10 100%)", padding: "24px 16px 60px", fontFamily: "Montserrat, sans-serif", color: "#F1E9D6" }}>
 
         {/* Top bar */}
         <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 900, margin: "0 auto 20px" }}>

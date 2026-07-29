@@ -673,9 +673,16 @@ export default function Comms() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-64px)] overflow-hidden">
-      {/* ── LEFT SIDEBAR (resizable) ── */}
-      <div style={{ width: sidebarWidth }} className="flex-shrink-0 border-r border-brass/15 flex flex-col bg-forest-deep relative">
+    <div className="flex h-[calc(100dvh-64px)] overflow-hidden">
+      {/* ── LEFT SIDEBAR (resizable on desktop; full-width on phone when no item selected) ── */}
+      <div
+        style={selected ? {} : { width: sidebarWidth }}
+        className={cn(
+          "flex-shrink-0 border-r border-brass/15 flex flex-col bg-forest-deep relative",
+          // On phone: hide sidebar once an item is selected (single-pane)
+          selected ? "hidden lg:flex lg:w-auto" : "w-full lg:w-auto",
+        )}
+      >
         {/* Header + Search */}
         <div className="px-4 pt-4 pb-3 flex-shrink-0 border-b border-brass/10">
           <h1 className="text-cream font-semibold text-lg mb-3">Comms</h1>
@@ -686,7 +693,7 @@ export default function Comms() {
               placeholder="Search..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 bg-forest-raised border border-brass/15 rounded-lg text-cream text-sm placeholder:text-cream-dim focus:outline-none focus:border-brass/40"
+              className="w-full pl-8 pr-3 py-1.5 bg-forest-raised border border-brass/15 rounded-lg text-cream text-base sm:text-sm placeholder:text-cream-dim focus:outline-none focus:border-brass/40"
             />
           </div>
         </div>
@@ -754,12 +761,26 @@ export default function Comms() {
         </div>
       </div>
 
-      {/* Drag handle */}
+      {/* Drag handle — desktop only */}
       <div onMouseDown={handleDragStart}
-        className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-brass/40 transition-colors z-10" />
+        className="hidden lg:block absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-brass/40 transition-colors z-10" />
 
-      {/* ── RIGHT PANEL ── */}
-      <div className="flex-1 flex flex-col bg-forest-deep overflow-hidden">
+      {/* ── RIGHT PANEL (full-width on phone when item selected) ── */}
+      <div className={cn(
+        "flex-1 flex flex-col bg-forest-deep overflow-hidden",
+        !selected && "hidden lg:flex",
+      )}>
+        {/* Mobile back button */}
+        {selected && (
+          <div className="lg:hidden flex items-center gap-2 px-4 py-3 border-b border-brass/15 flex-shrink-0">
+            <button
+              onClick={() => setSelected(null)}
+              className="flex items-center gap-1.5 text-sm text-cream-dim hover:text-cream transition-colors min-h-[44px]"
+            >
+              ← Back
+            </button>
+          </div>
+        )}
         {/* Grok brief result */}
         {briefMutation.isPending && (
           <div className="mx-6 mt-4">

@@ -205,7 +205,7 @@ export function CompleteGarmentModal({
                   value={minutes}
                   onChange={(e) => setMinutes(e.target.value)}
                   placeholder="e.g. 45"
-                  className="w-full bg-forest-raised border border-brass/20 rounded-xl px-4 py-3 text-cream text-sm placeholder:text-cream-muted/40 focus:outline-none focus:border-brass/50"
+                  className="w-full bg-forest-raised border border-brass/20 rounded-xl px-4 py-3 text-base sm:text-sm text-cream text-sm placeholder:text-cream-muted/40 focus:outline-none focus:border-brass/50"
                 />
                 {minutesInvalid ? (
                   <p className="text-red-400 text-xs">Enter a non-negative number of minutes.</p>

@@ -258,7 +258,7 @@ export function TransferModal({ open, onClose }: TransferModalProps) {
                 <p className="text-brass-shimmer font-mono text-sm font-medium">{item.ticketId}</p>
                 <p className="text-cream-muted text-xs">{item.customerName} · {item.garmentType}</p>
               </div>
-              <p className="text-cream text-sm font-semibold">${item.total.toFixed(2)}</p>
+              <p className="text-cream text-base sm:text-sm font-semibold">${item.total.toFixed(2)}</p>
             </div>
           ))}
         </div>
@@ -290,7 +290,7 @@ export function TransferModal({ open, onClose }: TransferModalProps) {
               value={checkNumber}
               onChange={e => setCheckNumber(e.target.value)}
               placeholder="e.g. 1042"
-              className="w-full bg-forest-raised border border-brass/20 rounded-xl px-4 py-3 text-cream text-sm placeholder:text-cream-muted/40 focus:outline-none focus:border-brass/50"
+              className="w-full bg-forest-raised border border-brass/20 rounded-xl px-4 py-3 text-cream text-base sm:text-sm placeholder:text-cream-muted/40 focus:outline-none focus:border-brass/50"
             />
           </div>
 

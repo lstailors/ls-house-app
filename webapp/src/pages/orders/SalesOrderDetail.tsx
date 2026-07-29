@@ -140,7 +140,7 @@ function DateField({
     return (
       <div>
         <div className="ui-label text-[10px] mb-1">{label}</div>
-        <div className="text-cream text-sm">
+        <div className="text-cream text-base sm:text-sm">
           {value ? formatDate(value) : <span className="text-cream-dim italic">—</span>}
         </div>
       </div>
@@ -183,7 +183,7 @@ function DateField({
           </button>
         </div>
       ) : (
-        <div className="text-cream text-sm">
+        <div className="text-cream text-base sm:text-sm">
           {value ? formatDate(value) : <span className="text-cream-dim italic">—</span>}
         </div>
       )}
@@ -377,7 +377,7 @@ export default function SalesOrderDetail() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
               <div>
                 <div className="ui-label text-[10px] mb-1">Order Date</div>
-                <div className="text-cream text-sm">{formatDate(order.transactionDate)}</div>
+                <div className="text-cream text-base sm:text-sm">{formatDate(order.transactionDate)}</div>
               </div>
               <DateField
                 label="Delivery Date"
@@ -387,13 +387,13 @@ export default function SalesOrderDetail() {
               />
               <div>
                 <div className="ui-label text-[10px] mb-1">Company</div>
-                <div className="text-cream text-sm">{order.company}</div>
+                <div className="text-cream text-base sm:text-sm">{order.company}</div>
               </div>
             </div>
             {order.makeType ? (
               <div className="mt-2">
                 <div className="ui-label text-[10px] mb-1">Make Type</div>
-                <div className="text-cream text-sm uppercase">{order.makeType}</div>
+                <div className="text-cream text-base sm:text-sm uppercase">{order.makeType}</div>
               </div>
             ) : null}
           </GlassCard>
@@ -674,7 +674,7 @@ export default function SalesOrderDetail() {
               </div>
 
               <div className="flex justify-between items-center py-1.5 border-t border-brass/30">
-                <span className="text-cream text-sm font-semibold">Balance Due</span>
+                <span className="text-cream text-base sm:text-sm font-semibold">Balance Due</span>
                 <span
                   className={cn(
                     "font-display italic text-xl tabular-nums",
@@ -749,7 +749,7 @@ export default function SalesOrderDetail() {
               rows={4}
               value={smsText}
               onChange={e => setSmsText(e.target.value)}
-              className="w-full bg-forest-raised border border-brass/20 rounded-xl px-3 py-2.5 text-cream text-sm focus:outline-none focus:border-brass/50 resize-none mb-3"
+              className="w-full bg-forest-raised border border-brass/20 rounded-xl px-3 py-2.5 text-cream text-base sm:text-sm focus:outline-none focus:border-brass/50 resize-none mb-3"
             />
             <div className="flex gap-2">
               <button

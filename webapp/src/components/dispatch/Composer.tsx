@@ -153,7 +153,7 @@ export function Composer({ customerId, disabled, disabledReason, optedOut, sendi
             onChange={(e) => setInstruction(e.target.value)}
             rows={2}
             placeholder={'Tell Sofia what to say — e.g. "her navy jacket is ready, get her in Thu or Fri afternoon"'}
-            className="w-full rounded-xl border border-brass/20 bg-forest-deep/40 p-3 text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50 resize-y"
+            className="w-full rounded-xl border border-brass/20 bg-forest-deep/40 p-3 text-base sm:text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50 resize-y"
           />
           <p className="text-[10px] text-cream-dim">Sofia writes the message in her voice. Nothing sends until you approve her draft.</p>
         </div>
@@ -168,7 +168,7 @@ export function Composer({ customerId, disabled, disabledReason, optedOut, sendi
             rows={3}
             placeholder={mode === "template" ? "Pick a template above, then adjust before sending…" : "Write the exact message to send…"}
             className={cn(
-              "w-full rounded-xl border bg-forest-deep/40 p-3 text-sm text-cream placeholder:text-cream-dim focus:outline-none resize-y transition-colors",
+              "w-full rounded-xl border bg-forest-deep/40 p-3 text-base sm:text-sm text-cream placeholder:text-cream-dim focus:outline-none resize-y transition-colors",
               blockedByTokens ? "border-signal-amber/60 focus:border-signal-amber" : "border-brass/20 focus:border-brass/50",
             )}
           />

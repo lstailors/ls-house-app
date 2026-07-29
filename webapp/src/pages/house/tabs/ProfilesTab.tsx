@@ -114,7 +114,7 @@ function NewProfileDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Analyst"
-              className="w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50"
+              className="w-full text-base sm:text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50"
             />
           </div>
 
@@ -181,7 +181,7 @@ function NewProfileDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What is this profile for?"
-              className="w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50 resize-none h-20"
+              className="w-full text-base sm:text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50 resize-none h-20"
             />
           </div>
         </div>

@@ -117,7 +117,7 @@ export default function PayInvoice() {
 
   if (pageState === "loading") {
     return (
-      <div className="min-h-screen bg-forest-deep flex items-center justify-center">
+      <div className="min-h-dvh bg-forest-deep flex items-center justify-center">
         <Loader2 className="h-8 w-8 text-brass animate-spin" />
       </div>
     );
@@ -125,7 +125,7 @@ export default function PayInvoice() {
 
   if (pageState === "not_found") {
     return (
-      <div className="min-h-screen bg-forest-deep flex items-center justify-center px-6">
+      <div className="min-h-dvh bg-forest-deep flex items-center justify-center px-6">
         <div className="text-center max-w-sm">
           <div className="font-display italic text-3xl text-cream mb-3">Invoice not found</div>
           <p className="text-cream-muted text-sm">
@@ -138,7 +138,7 @@ export default function PayInvoice() {
 
   if (pageState === "already_paid") {
     return (
-      <div className="min-h-screen bg-forest-deep flex items-center justify-center px-6">
+      <div className="min-h-dvh bg-forest-deep flex items-center justify-center px-6">
         <div className="text-center max-w-sm">
           <div className="relative inline-flex items-center justify-center mb-6">
             <div className="absolute inset-0 rounded-full bg-signal-emerald/20 blur-3xl" />
@@ -161,7 +161,7 @@ export default function PayInvoice() {
     Math.abs(Number(invoice.net_total) - Number(invoice.grand_total)) > 0.001;
 
   return (
-    <div className="min-h-screen bg-forest-deep px-5 py-10">
+    <div className="min-h-dvh bg-forest-deep px-5 py-10 pb-[env(safe-area-inset-bottom,2.5rem)]">
       <div className="max-w-md mx-auto">
         {/* Header */}
         <div className="text-center mb-8">

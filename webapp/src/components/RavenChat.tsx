@@ -391,7 +391,7 @@ export default function RavenChat({ open: openProp, onClose }: { open?: boolean;
                   onKeyDown={handleKeyDown}
                   placeholder="Message..."
                   rows={1}
-                  className="flex-1 bg-transparent text-sm text-cream placeholder:text-cream-dim/50 resize-none outline-none max-h-32 leading-relaxed"
+                  className="flex-1 bg-transparent text-base sm:text-sm text-cream placeholder:text-cream-dim/50 resize-none outline-none max-h-32 leading-relaxed"
                   style={{ minHeight: "22px" }}
                 />
                 {/* Hidden file input for receipt photos */}

@@ -178,7 +178,7 @@ export default function Customers() {
           <div className="flex-1 flex items-center gap-2 glass-panel px-3 py-2.5 rounded-xl border border-brass/15">
             <Search className="w-4 h-4 text-cream-muted flex-shrink-0" />
             <input
-              className="flex-1 bg-transparent text-cream text-sm placeholder:text-cream-dim focus:outline-none"
+              className="flex-1 bg-transparent text-cream text-base sm:text-sm placeholder:text-cream-dim focus:outline-none"
               placeholder="Search by name, phone, email, company…"
               value={search}
               onChange={e => setSearch(e.target.value)}

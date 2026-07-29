@@ -52,7 +52,7 @@ function NewJobDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
             <input
               disabled
               placeholder="e.g. 6:45 AM daily  ·  cron: 45 6 * * *"
-              className="w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim"
+              className="w-full text-base sm:text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim"
             />
           </div>
           <div>
@@ -60,7 +60,7 @@ function NewJobDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
             <textarea
               disabled
               placeholder="What should the agent do on each run?"
-              className="w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim resize-none h-24"
+              className="w-full text-base sm:text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim resize-none h-24"
             />
           </div>
           <div>
@@ -68,7 +68,7 @@ function NewJobDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
             <input
               disabled
               placeholder="e.g. iMessage to C  ·  #ops channel"
-              className="w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim"
+              className="w-full text-base sm:text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim"
             />
           </div>
         </div>
@@ -91,7 +91,7 @@ function MobileJobCard({ job }: { job: CronJob }) {
     <div className={cn("glass-panel rounded-xl p-4 border border-brass/10", !job.enabled && "opacity-50")}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-sm text-cream font-medium">{job.name}</div>
+          <div className="text-base sm:text-sm text-cream font-medium">{job.name}</div>
           <div className="text-[10px] text-cream-muted mt-0.5">{job.description}</div>
         </div>
         <JobToggle job={job} />
@@ -143,7 +143,7 @@ export default function CronTab() {
                 {CRON_JOBS.map((job) => (
                   <tr key={job.id} className={cn("border-b border-brass/5 last:border-0 hover:bg-cream/[0.02] transition-colors", !job.enabled && "opacity-50")}>
                     <td className="px-4 py-3">
-                      <div className="text-sm text-cream font-medium">{job.name}</div>
+                      <div className="text-base sm:text-sm text-cream font-medium">{job.name}</div>
                       <div className="text-[10px] text-cream-dim mt-0.5 max-w-[220px] truncate">{job.description}</div>
                     </td>
                     <td className="px-4 py-3">

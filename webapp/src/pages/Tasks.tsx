@@ -104,7 +104,7 @@ function TaskDetailPanel({ todo, onClose }: TaskDetailPanelProps) {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
-              className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream placeholder:text-cream-dim/50 focus:outline-none focus:border-brass/50 resize-none"
+              className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-base sm:text-sm text-cream placeholder:text-cream-dim/50 focus:outline-none focus:border-brass/50 resize-none"
             />
           </div>
 
@@ -115,7 +115,7 @@ function TaskDetailPanel({ todo, onClose }: TaskDetailPanelProps) {
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as "High" | "Medium" | "Low")}
-                className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream focus:outline-none focus:border-brass/50"
+                className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-base sm:text-sm text-cream focus:outline-none focus:border-brass/50"
               >
                 <option value="High">High</option>
                 <option value="Medium">Medium</option>
@@ -130,7 +130,7 @@ function TaskDetailPanel({ todo, onClose }: TaskDetailPanelProps) {
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream focus:outline-none focus:border-brass/50"
+                className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-base sm:text-sm text-cream focus:outline-none focus:border-brass/50"
               />
             </div>
           </div>
@@ -174,7 +174,7 @@ function TaskDetailPanel({ todo, onClose }: TaskDetailPanelProps) {
                 onClick={() => markComplete.mutate()}
                 disabled={markComplete.isPending}
                 variant="outline"
-                className="border-brass/30 text-brass-light hover:bg-brass/10 h-9 text-sm flex-1"
+                className="border-brass/30 text-brass-light hover:bg-brass/10 h-9 text-base sm:text-sm flex-1"
               >
                 <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
                 {markComplete.isPending ? "Saving…" : "Mark Complete"}
@@ -183,7 +183,7 @@ function TaskDetailPanel({ todo, onClose }: TaskDetailPanelProps) {
             <Button
               type="submit"
               disabled={save.isPending}
-              className="bg-[#c9a84c] hover:bg-[#b8963c] text-[#0a120e] font-medium h-9 text-sm flex-1"
+              className="bg-[#c9a84c] hover:bg-[#b8963c] text-[#0a120e] font-medium h-9 text-base sm:text-sm flex-1"
             >
               {save.isPending ? "Saving…" : "Save Changes"}
             </Button>
@@ -278,7 +278,7 @@ function NewTaskPanel({ onClose, currentUserEmail, defaults }: NewTaskPanelProps
             rows={3}
             required
             placeholder="What needs to be done?"
-            className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream placeholder:text-cream-dim/50 focus:outline-none focus:border-brass/50 resize-none"
+            className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-base sm:text-sm text-cream placeholder:text-cream-dim/50 focus:outline-none focus:border-brass/50 resize-none"
           />
         </div>
 
@@ -290,7 +290,7 @@ function NewTaskPanel({ onClose, currentUserEmail, defaults }: NewTaskPanelProps
             <select
               value={priority}
               onChange={(e) => setPriority(e.target.value as "High" | "Medium" | "Low")}
-              className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream focus:outline-none focus:border-brass/50"
+              className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-base sm:text-sm text-cream focus:outline-none focus:border-brass/50"
             >
               <option value="High">High</option>
               <option value="Medium">Medium</option>
@@ -322,7 +322,7 @@ function NewTaskPanel({ onClose, currentUserEmail, defaults }: NewTaskPanelProps
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream focus:outline-none focus:border-brass/50"
+              className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-base sm:text-sm text-cream focus:outline-none focus:border-brass/50"
             />
           </div>
         </div>
@@ -333,7 +333,7 @@ function NewTaskPanel({ onClose, currentUserEmail, defaults }: NewTaskPanelProps
           <select
             value={repeat}
             onChange={(e) => setRepeat(e.target.value as "None" | "Daily" | "Weekly" | "Monthly")}
-            className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream focus:outline-none focus:border-brass/50"
+            className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-base sm:text-sm text-cream focus:outline-none focus:border-brass/50"
           >
             <option value="None">None</option>
             <option value="Daily">Daily</option>
@@ -371,7 +371,7 @@ function NewTaskPanel({ onClose, currentUserEmail, defaults }: NewTaskPanelProps
                   value={refType}
                   onChange={(e) => setRefType(e.target.value)}
                   placeholder="Sales Order"
-                  className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream placeholder:text-cream-dim/40 focus:outline-none focus:border-brass/50"
+                  className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-base sm:text-sm text-cream placeholder:text-cream-dim/40 focus:outline-none focus:border-brass/50"
                 />
               </div>
               <div>
@@ -381,7 +381,7 @@ function NewTaskPanel({ onClose, currentUserEmail, defaults }: NewTaskPanelProps
                   value={refName}
                   onChange={(e) => setRefName(e.target.value)}
                   placeholder="LSTNY-SO-2026-00001"
-                  className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-sm text-cream placeholder:text-cream-dim/40 focus:outline-none focus:border-brass/50"
+                  className="w-full bg-forest-deep/60 border border-brass/20 rounded-lg px-3 py-2 text-base sm:text-sm text-cream placeholder:text-cream-dim/40 focus:outline-none focus:border-brass/50"
                 />
               </div>
             </div>
@@ -604,7 +604,7 @@ export default function Tasks() {
             onChange={(e) => setNlText(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") handleNlParse(); }}
             placeholder="Type a task in plain English… 'Call Emanuel Cohen about deposit by Friday'"
-            className="w-full bg-forest-deep/60 border border-brass/20 rounded-xl px-4 py-2.5 pr-10 text-sm text-cream placeholder:text-cream-dim/40 focus:outline-none focus:border-brass/50 transition-colors"
+            className="w-full bg-forest-deep/60 border border-brass/20 rounded-xl px-4 py-2.5 pr-10 text-base sm:text-sm text-cream placeholder:text-cream-dim/40 focus:outline-none focus:border-brass/50 transition-colors"
           />
           {nlParsing ? (
             <div className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 border-brass/40 border-t-brass animate-spin" />
@@ -627,7 +627,7 @@ export default function Tasks() {
 
       {/* AI Briefing */}
       {briefingData?.briefing ? (
-        <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-brass/5 border border-brass/15 text-sm text-cream-muted italic">
+        <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-brass/5 border border-brass/15 text-base sm:text-sm text-cream-muted italic">
           <Sparkles className="h-4 w-4 text-brass-light/60 shrink-0 mt-0.5" />
           <span>{briefingData.briefing}</span>
         </div>
@@ -664,7 +664,7 @@ export default function Tasks() {
                 return (
                   <div key={idx} className="flex items-center gap-3 py-2">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-cream leading-snug">{s.description}</p>
+                      <p className="text-base sm:text-sm text-cream leading-snug">{s.description}</p>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className={cn(
                           "text-[10px] font-semibold uppercase tracking-widest",

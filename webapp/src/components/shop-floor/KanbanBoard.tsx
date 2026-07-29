@@ -20,11 +20,11 @@ export function KanbanBoard({ orders, onSelect }: Props) {
   }, [orders]);
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4">
+    <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory">
       {columns.map((col) => (
         <div
           key={col.status}
-          className="flex w-[300px] shrink-0 flex-col rounded-2xl border border-brass/12 bg-forest-deep/30"
+          className="flex w-[85vw] sm:w-[300px] shrink-0 snap-start flex-col rounded-2xl border border-brass/12 bg-forest-deep/30"
         >
           {/* Column header */}
           <div className="flex items-center justify-between gap-2 border-b border-brass/12 px-3.5 py-3">

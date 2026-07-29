@@ -86,7 +86,7 @@ export function AppShell() {
 
         <div className="flex flex-1 flex-col overflow-hidden">
           <TopBar user={user} onMenuClick={() => setNavOpen(true)} />
-          <main className="flex-1 overflow-y-auto pb-safe">
+          <main className="flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom,0px)]">
             <div className="mx-auto max-w-[1400px] px-3 sm:px-4 md:px-6 py-4 md:py-8">
               <Outlet />
             </div>

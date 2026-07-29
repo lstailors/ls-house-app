@@ -162,7 +162,7 @@ export default function SofiaDispatch() {
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[340px,1fr] gap-4">
         {/* Left: customer picker (hidden on mobile once a thread is open; always visible in batch mode) */}
-        <div className={cn("min-h-0 lg:h-[calc(100vh-16rem)]", !batchMode && selected ? "hidden lg:block" : "h-[calc(100vh-16rem)]")}>
+        <div className={cn("min-h-0 lg:h-[calc(100dvh-16rem)]", !batchMode && selected ? "hidden lg:block" : "h-[calc(100dvh-16rem)]")}>
           <CustomerPicker
             selected={selected}
             batchMode={batchMode}
@@ -180,7 +180,7 @@ export default function SofiaDispatch() {
         </div>
 
         {/* Right: conversation or batch panel */}
-        <GlassCard className={cn("min-h-0 flex-col lg:h-[calc(100vh-16rem)] overflow-hidden p-0", batchMode || selected ? "flex h-[calc(100vh-14rem)]" : "hidden lg:flex")}>
+        <GlassCard className={cn("min-h-0 flex-col lg:h-[calc(100dvh-16rem)] overflow-hidden p-0", batchMode || selected ? "flex h-[calc(100dvh-14rem)]" : "hidden lg:flex")}>
           {batchMode ? (
             <BatchPanel
               recipients={batchRecipients}
@@ -248,7 +248,7 @@ export default function SofiaDispatch() {
                     value={newPhone}
                     onChange={(e) => setNewPhone(e.target.value)}
                     placeholder="Add mobile number, e.g. (917) 555-0142"
-                    className="flex-1 rounded-xl border border-brass/20 bg-forest-deep/40 px-3 py-2 text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50"
+                    className="flex-1 rounded-xl border border-brass/20 bg-forest-deep/40 px-3 py-2 text-base sm:text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50"
                   />
                   <button
                     onClick={() => phoneMutation.mutate(newPhone)}

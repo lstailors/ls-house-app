@@ -85,11 +85,11 @@ function SofiaTab() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search phone or message"
-              className="w-full pl-9 pr-3 py-2 bg-forest-raised/50 border border-brass/15 rounded-md text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40"
+              className="w-full pl-9 pr-3 py-2 bg-forest-raised/50 border border-brass/15 rounded-md text-base sm:text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40"
             />
           </div>
         </div>
-        <div className="max-h-[calc(100vh-22rem)] overflow-y-auto">
+        <div className="max-h-[calc(100dvh-22rem)] overflow-y-auto">
           {isLoading ? (
             <div className="p-4 text-cream-dim text-xs">Loading…</div>
           ) : filtered.length === 0 ? (
@@ -149,7 +149,7 @@ function SofiaTab() {
               )}
             </div>
           </div>
-          <div className="p-4 space-y-3 max-h-[calc(100vh-26rem)] overflow-y-auto">
+          <div className="p-4 space-y-3 max-h-[calc(100dvh-26rem)] overflow-y-auto">
             {msgLoading ? (
               <div className="text-cream-dim text-xs">Loading…</div>
             ) : messages.length === 0 ? (
@@ -182,7 +182,7 @@ function SofiaTab() {
                           </span>
                         ) : null}
                       </div>
-                      <div className="text-sm text-cream leading-relaxed whitespace-pre-wrap">
+                      <div className="text-base sm:text-sm text-cream leading-relaxed whitespace-pre-wrap">
                         {String(msg.body ?? "")}
                       </div>
                     </div>
@@ -235,7 +235,7 @@ function VoiceTab() {
             ) : null}
           </div>
           {item.client_name || item.client_phone ? (
-            <div className="text-sm text-cream mb-1">
+            <div className="text-base sm:text-sm text-cream mb-1">
               {item.client_name ?? item.client_phone}
             </div>
           ) : null}
@@ -321,11 +321,11 @@ function AllCommsTab() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search clients or messages"
-              className="w-full pl-9 pr-3 py-2 bg-forest-raised/50 border border-brass/15 rounded-md text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40"
+              className="w-full pl-9 pr-3 py-2 bg-forest-raised/50 border border-brass/15 rounded-md text-base sm:text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40"
             />
           </div>
         </div>
-        <div className="max-h-[calc(100vh-22rem)] overflow-y-auto">
+        <div className="max-h-[calc(100dvh-22rem)] overflow-y-auto">
           {filteredThreads.map((t) => {
             const isActive = activeThread?.customerId === t.customerId;
             return (
@@ -363,7 +363,7 @@ function AllCommsTab() {
             </div>
             <div className="text-xs text-cream-dim mt-1">{activeThread.customer?.phone}</div>
           </div>
-          <div className="p-5 space-y-4 max-h-[calc(100vh-26rem)] overflow-y-auto">
+          <div className="p-5 space-y-4 max-h-[calc(100dvh-26rem)] overflow-y-auto">
             {[...activeThread.items]
               .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
               .map((m) => {
@@ -383,7 +383,7 @@ function AllCommsTab() {
                         </span>
                         <span className="text-[10px] text-cream-dim">· {formatDateTime(m.createdAt)}</span>
                       </div>
-                      <div className="text-sm text-cream leading-relaxed whitespace-pre-wrap">
+                      <div className="text-base sm:text-sm text-cream leading-relaxed whitespace-pre-wrap">
                         {m.body ?? m.transcript ?? (m.channel === "call" ? "(no transcript)" : "(empty)")}
                       </div>
                     </div>

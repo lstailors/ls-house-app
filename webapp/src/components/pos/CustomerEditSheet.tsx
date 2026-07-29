@@ -43,7 +43,7 @@ function Field({ label, value, onChange, placeholder, type = 'text' }: {
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full h-9 px-3 rounded-[var(--ls-radius)] border border-[var(--ls-line)] bg-[var(--ls-surface)] text-[var(--ls-on-surface)] text-sm focus:outline-none focus:border-[var(--ls-brass)] transition-colors placeholder:text-[var(--ls-on-surface-muted)]"
+        className="w-full h-9 px-3 rounded-[var(--ls-radius)] border border-[var(--ls-line)] bg-[var(--ls-surface)] text-[var(--ls-on-surface)] text-base sm:text-sm focus:outline-none focus:border-[var(--ls-brass)] transition-colors placeholder:text-[var(--ls-on-surface-muted)]"
       />
     </div>
   )
@@ -177,7 +177,7 @@ export function CustomerEditSheet({ customerId, customerName, onClose, onSaved }
                 onChange={e => setNotes(e.target.value)}
                 placeholder="Preferences, fit notes, allergies, VIP status…"
                 rows={4}
-                className="w-full px-3 py-2 rounded-[var(--ls-radius)] border border-[var(--ls-line)] bg-[var(--ls-surface)] text-[var(--ls-on-surface)] text-sm focus:outline-none focus:border-[var(--ls-brass)] transition-colors placeholder:text-[var(--ls-on-surface-muted)] resize-none"
+                className="w-full px-3 py-2 rounded-[var(--ls-radius)] border border-[var(--ls-line)] bg-[var(--ls-surface)] text-[var(--ls-on-surface)] text-base sm:text-sm focus:outline-none focus:border-[var(--ls-brass)] transition-colors placeholder:text-[var(--ls-on-surface-muted)] resize-none"
               />
             </div>
 

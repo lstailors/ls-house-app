@@ -51,7 +51,7 @@ export function TaskBoardView({ todos, onSelect, onComplete, onPatch, completing
             </div>
 
             {/* Column body */}
-            <div className="flex-1 p-2 space-y-2 min-h-[120px] md:max-h-[calc(100vh-22rem)] md:overflow-y-auto scrollbar-none">
+            <div className="flex-1 p-2 space-y-2 min-h-[120px] md:max-h-[calc(100dvh-22rem)] md:overflow-y-auto scrollbar-none">
               {items.length === 0 ? (
                 <div className="h-24 flex items-center justify-center text-[11px] text-cream-dim/50 italic">
                   Nothing here

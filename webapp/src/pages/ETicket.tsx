@@ -61,7 +61,7 @@ export default function ETicket() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-forest-deep flex items-center justify-center">
+      <div className="min-h-dvh bg-forest-deep flex items-center justify-center">
         <div className="space-y-3 text-center">
           <div className="h-6 w-6 rounded-full border-2 border-brass/30 border-t-brass-shimmer animate-spin mx-auto" />
           <p className="text-cream-dim/60 text-sm">Loading your ticket…</p>
@@ -72,7 +72,7 @@ export default function ETicket() {
 
   if (isError || !ticket) {
     return (
-      <div className="min-h-screen bg-forest-deep flex flex-col items-center justify-center gap-4 px-6 text-center">
+      <div className="min-h-dvh bg-forest-deep flex flex-col items-center justify-center gap-4 px-6 text-center">
         <p className="text-brass-shimmer font-bold text-xl tracking-widest uppercase">L&S Tailors</p>
         <p className="text-cream-muted text-base mt-2">Ticket not found</p>
         <p className="text-cream-dim/60 text-sm">Please contact us for assistance.</p>
@@ -81,8 +81,8 @@ export default function ETicket() {
   }
 
   return (
-    <div className="min-h-screen bg-forest-deep text-cream">
-      <div className="max-w-sm mx-auto px-4 py-10 space-y-5">
+    <div className="min-h-dvh bg-forest-deep text-cream">
+      <div className="max-w-sm mx-auto px-4 py-10 pb-[max(2.5rem,env(safe-area-inset-bottom))] space-y-5">
 
         {/* ── Wordmark ── */}
         <div className="text-center space-y-0.5 pb-2">

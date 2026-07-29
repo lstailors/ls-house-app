@@ -278,7 +278,7 @@ function GarmentCard({
         <div className="border-t border-brass/10 pt-3 space-y-1.5">
           {garmentLines.map((line) => (
             <div key={line.name} className="flex items-start justify-between gap-2">
-              <span className="text-cream-muted text-sm flex-1">{line.description}</span>
+              <span className="text-cream-muted text-base sm:text-sm flex-1">{line.description}</span>
               <span className="text-brass-light text-sm font-medium shrink-0">
                 {formatCurrency(line.price)}
               </span>
@@ -546,7 +546,7 @@ function TailorSection({
             disabled={assignTailorMutation.isPending}
             className={cn(
               'w-full bg-forest-raised border border-brass/20 rounded-md px-3 py-2',
-              'text-cream text-sm focus:outline-none focus:ring-1 focus:ring-brass-shimmer/50',
+              'text-cream text-base sm:text-sm focus:outline-none focus:ring-1 focus:ring-brass-shimmer/50',
               'disabled:opacity-60'
             )}
           >
@@ -819,7 +819,7 @@ function InlineDueDate({
             if (e.key === 'Enter') handleSave()
             if (e.key === 'Escape') setEditing(false)
           }}
-          className="text-cream text-sm bg-forest-raised border border-brass/30 rounded px-1.5 py-0.5 w-36 focus:outline-none focus:ring-1 focus:ring-brass-shimmer/50"
+          className="text-cream text-base sm:text-sm bg-forest-raised border border-brass/30 rounded px-1.5 py-0.5 w-36 focus:outline-none focus:ring-1 focus:ring-brass-shimmer/50"
         />
       ) : (
         <button
@@ -1096,7 +1096,7 @@ export default function TicketDetail() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-forest-deep flex items-center justify-center">
+      <div className="min-h-dvh bg-forest-deep flex items-center justify-center">
         <div className="text-cream-dim animate-pulse">Loading ticket…</div>
       </div>
     )
@@ -1104,7 +1104,7 @@ export default function TicketDetail() {
 
   if (isError || !ticket) {
     return (
-      <div className="min-h-screen bg-forest-deep flex flex-col items-center justify-center gap-4">
+      <div className="min-h-dvh bg-forest-deep flex flex-col items-center justify-center gap-4">
         <AlertTriangle className="text-red-400" size={40} />
         <p className="text-cream-muted">Ticket not found</p>
         <button
@@ -1120,7 +1120,7 @@ export default function TicketDetail() {
   // ── Main render ────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-forest-deep text-cream">
+    <div className="min-h-dvh bg-forest-deep text-cream">
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
 
         {/* ── Header ── */}

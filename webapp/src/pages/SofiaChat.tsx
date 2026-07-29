@@ -255,7 +255,7 @@ function TasksPane() {
         >
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
-              <p className="text-sm text-cream font-medium leading-snug">{task.title}</p>
+              <p className="text-base sm:text-sm text-cream font-medium leading-snug">{task.title}</p>
               <div className="flex items-center flex-wrap gap-1.5 mt-1.5">
                 <span className="text-[9px] tracking-wider uppercase font-bold px-1.5 py-0.5 rounded border border-brass/25 text-brass-light bg-brass/8">
                   {task.type}
@@ -297,7 +297,7 @@ function TasksPane() {
           <div className="mt-2 space-y-2">
             {done.map(task => (
               <div key={task.id} className="glass-panel p-3 rounded-xl border border-brass/8 opacity-50">
-                <p className="text-sm text-cream-dim line-through">{task.title}</p>
+                <p className="text-base sm:text-sm text-cream-dim line-through">{task.title}</p>
               </div>
             ))}
           </div>
@@ -428,7 +428,7 @@ export default function SofiaChat() {
         <div className={cn(
           "border border-brass/12 rounded-2xl overflow-hidden",
           "flex",
-          isMobile ? "h-[calc(100vh-260px)]" : "h-[calc(100vh-280px)]"
+          isMobile ? "h-[calc(100dvh-260px)]" : "h-[calc(100dvh-280px)]"
         )}>
 
           {/* LEFT: Thread list */}
@@ -442,7 +442,7 @@ export default function SofiaChat() {
                 <div className="flex items-center gap-2 bg-brass/5 border border-brass/15 rounded-xl px-3 py-2">
                   <Search className="w-3.5 h-3.5 text-cream-dim flex-shrink-0" />
                   <input
-                    className="flex-1 bg-transparent text-sm text-cream placeholder:text-cream-dim focus:outline-none"
+                    className="flex-1 bg-transparent text-base sm:text-sm text-cream placeholder:text-cream-dim focus:outline-none"
                     placeholder="Search conversations…"
                     value={search}
                     onChange={e => setSearch(e.target.value)}
@@ -594,7 +594,7 @@ export default function SofiaChat() {
                         onChange={e => setReplyText(e.target.value)}
                         onKeyDown={handleKeyDown}
                         placeholder={`Message as ${replyAs === "sofia" ? "Sofia (AI)" : "Carl"}…`}
-                        className="flex-1 bg-brass/5 border border-brass/15 focus:border-brass/40 rounded-xl px-3 py-2 text-sm text-cream placeholder:text-cream-dim focus:outline-none resize-none transition-colors"
+                        className="flex-1 bg-brass/5 border border-brass/15 focus:border-brass/40 rounded-xl px-3 py-2 text-base sm:text-sm text-cream placeholder:text-cream-dim focus:outline-none resize-none transition-colors"
                       />
                       <button
                         onClick={handleSend}

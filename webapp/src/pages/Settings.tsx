@@ -26,7 +26,7 @@ function PrinterSettings() {
     <GlassCard className="p-5 space-y-4">
       <div className="flex items-center gap-2">
         <Printer className="h-4 w-4 text-brass" />
-        <span className="text-sm text-cream font-medium">Epson TM-M30II Printer</span>
+        <span className="text-base sm:text-sm text-cream font-medium">Epson TM-M30II Printer</span>
       </div>
       <p className="text-xs text-cream-dim leading-relaxed">
         Printer settings are managed in ERPNext LSH Print Settings. Printing now runs through the backend so browsers do not connect directly to the Epson.
@@ -74,7 +74,7 @@ function Field({ label, icon: Icon, value, onChange, type = "text", disabled = f
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
-          className="w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl pl-9 pr-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full text-base sm:text-sm bg-forest-raised/50 border border-brass/20 rounded-xl pl-9 pr-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50 disabled:opacity-50 disabled:cursor-not-allowed"
         />
       </div>
     </div>
@@ -151,7 +151,7 @@ export default function Settings() {
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
           </div>
           <div>
-            <div className="text-sm text-cream font-medium">{me.name}</div>
+            <div className="text-base sm:text-sm text-cream font-medium">{me.name}</div>
             <div className="text-xs text-cream-dim mt-0.5">{me.email}</div>
             <div className="inline-flex items-center gap-1 mt-2 px-2 py-0.5 text-[10px] rounded-full border border-brass/25 bg-brass/10 text-brass-light">
               <Shield className="h-2.5 w-2.5" /> {ROLE_LABEL[me.role] ?? me.role}
@@ -178,7 +178,7 @@ export default function Settings() {
       {/* ── Change Password ── */}
       <GlassCard className="p-6">
         <div className="ui-label mb-3">Change Password</div>
-        <p className="text-sm text-cream-muted mb-4">
+        <p className="text-base sm:text-sm text-cream-muted mb-4">
           Passwords are managed through ERPNext. Click below to update yours.
         </p>
         <a
@@ -202,7 +202,7 @@ export default function Settings() {
       <GlassCard className="p-5">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm text-cream font-medium">Sign out</div>
+            <div className="text-base sm:text-sm text-cream font-medium">Sign out</div>
             <div className="text-xs text-cream-dim mt-0.5">You'll need to sign back in.</div>
           </div>
           <Button variant="outline" className="border-signal-rose/30 text-signal-rose hover:bg-signal-rose/10" onClick={handleSignOut}>

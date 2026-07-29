@@ -332,7 +332,7 @@ export default function InvoiceDetail() {
               {/* Divider + Grand Total */}
               <div className="border-t border-brass/20 mt-1 pt-3 pb-1">
                 <div className="flex justify-between items-baseline">
-                  <span className="text-cream text-sm font-medium">Grand Total</span>
+                  <span className="text-cream text-base sm:text-sm font-medium">Grand Total</span>
                   <span className="font-display italic text-2xl text-brass-shimmer tabular-nums">
                     {formatUSD(invoice.grandTotal)}
                   </span>
@@ -359,7 +359,7 @@ export default function InvoiceDetail() {
 
               {/* Outstanding */}
               <div className="flex justify-between items-baseline pt-2.5 border-t border-brass/20 mt-1">
-                <span className="text-cream text-sm font-semibold">Outstanding</span>
+                <span className="text-cream text-base sm:text-sm font-semibold">Outstanding</span>
                 <span
                   className={cn(
                     "font-display italic text-xl tabular-nums",
@@ -443,7 +443,7 @@ export default function InvoiceDetail() {
               <User className="h-3.5 w-3.5" /> Customer
             </div>
             <div className="space-y-2">
-              <div className="text-cream text-sm font-semibold leading-snug">
+              <div className="text-cream text-base sm:text-sm font-semibold leading-snug">
                 {displayName}
               </div>
               {invoice.billingAddress ? (
@@ -476,7 +476,7 @@ export default function InvoiceDetail() {
                 <div className="text-cream-dim text-[10px] mb-1 font-medium uppercase tracking-wider">
                   Posting Date
                 </div>
-                <div className="text-cream text-sm">
+                <div className="text-cream text-base sm:text-sm">
                   {invoice.postingDate ? (
                     formatDate(invoice.postingDate)
                   ) : (
@@ -494,7 +494,7 @@ export default function InvoiceDetail() {
                   type="date"
                   value={editDueDate}
                   onChange={(e) => setEditDueDate(e.target.value)}
-                  className="w-full bg-transparent border border-brass/20 rounded-lg px-3 py-2 text-cream text-sm focus:outline-none focus:border-brass/50 transition-colors"
+                  className="w-full bg-transparent border border-brass/20 rounded-lg px-3 py-2 text-cream text-base sm:text-sm focus:outline-none focus:border-brass/50 transition-colors"
                 />
               </div>
 
@@ -535,7 +535,7 @@ export default function InvoiceDetail() {
               value={editRemarks}
               onChange={(e) => setEditRemarks(e.target.value)}
               placeholder="Add notes or remarks…"
-              className="w-full bg-transparent border border-brass/20 rounded-lg px-3 py-2 text-cream text-sm focus:outline-none focus:border-brass/50 transition-colors resize-none h-24 placeholder:text-cream-dim/40"
+              className="w-full bg-transparent border border-brass/20 rounded-lg px-3 py-2 text-cream text-base sm:text-sm focus:outline-none focus:border-brass/50 transition-colors resize-none h-24 placeholder:text-cream-dim/40"
             />
           </GlassCard>
 

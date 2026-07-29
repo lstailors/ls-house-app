@@ -29,7 +29,7 @@ function LoadingSkeleton() {
   return (
     <div className="flex gap-4 overflow-hidden">
       {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="w-[280px] shrink-0 rounded-2xl border border-brass/10 bg-forest-deep/30 p-2.5">
+        <div key={i} className="w-[85vw] sm:w-[280px] shrink-0 rounded-2xl border border-brass/10 bg-forest-deep/30 p-2.5">
           <div className="mb-3 h-6 rounded bg-brass/5" />
           {Array.from({ length: 3 }).map((__, j) => (
             <div key={j} className="mb-2.5 h-24 animate-pulse rounded-xl bg-forest-raised/40" />

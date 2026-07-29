@@ -205,7 +205,7 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
                         className="w-full text-left px-3 py-2.5 hover:bg-[#c9a84c]/10 transition-colors flex items-center gap-2.5"
                       >
                         <UserPlus className="h-3.5 w-3.5 shrink-0 text-signal-emerald" />
-                        <span className="text-sm text-[#f5f0e8]">
+                        <span className="text-base sm:text-sm text-[#f5f0e8]">
                           + Create <span className="font-medium">"{search}"</span> as new customer
                         </span>
                       </button>
@@ -221,7 +221,7 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
                           >
                             <Icon className={cn("h-3.5 w-3.5 mt-0.5 shrink-0", TYPE_COLOR[r.type])} />
                             <div className="min-w-0">
-                              <div className="text-sm text-[#f5f0e8] font-medium truncate">{r.label}</div>
+                              <div className="text-base sm:text-sm text-[#f5f0e8] font-medium truncate">{r.label}</div>
                               <div className="text-[10px] text-[#8a7560] mt-0.5">
                                 <span className={cn("font-semibold mr-1", TYPE_COLOR[r.type])}>{TYPE_LABEL[r.type]}</span>
                                 {r.sublabel}
@@ -322,7 +322,7 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
               placeholder="2-piece navy suit, white dress shirt…"
               {...register("garmentSummary")}
               rows={2}
-              className={cn("w-full rounded-md border border-[#c9a84c]/20 bg-[#162118]/60 px-3 py-2 text-sm text-[#f5f0e8]", "placeholder:text-[#8a7560] focus:outline-none focus:border-[#c9a84c]/50 resize-none")}
+              className={cn("w-full rounded-md border border-[#c9a84c]/20 bg-[#162118]/60 px-3 py-2 text-base sm:text-sm text-[#f5f0e8]", "placeholder:text-[#8a7560] focus:outline-none focus:border-[#c9a84c]/50 resize-none")}
             />
           </div>
 
@@ -333,7 +333,7 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
               placeholder="Any special instructions…"
               {...register("notes")}
               rows={2}
-              className={cn("w-full rounded-md border border-[#c9a84c]/20 bg-[#162118]/60 px-3 py-2 text-sm text-[#f5f0e8]", "placeholder:text-[#8a7560] focus:outline-none focus:border-[#c9a84c]/50 resize-none")}
+              className={cn("w-full rounded-md border border-[#c9a84c]/20 bg-[#162118]/60 px-3 py-2 text-base sm:text-sm text-[#f5f0e8]", "placeholder:text-[#8a7560] focus:outline-none focus:border-[#c9a84c]/50 resize-none")}
             />
           </div>
 
