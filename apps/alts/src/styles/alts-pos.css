@@ -153,9 +153,9 @@
 
 /*
  * TABLET landscape lock — CSS only.
- * Trigger: (orientation: portrait) AND tablet+ (min-width: 768px).
+ * Trigger: (orientation: portrait) AND tablet+ (min-width: 720px).
  * Never height/aspect-ratio — soft keyboard must not false-fire.
- * Phones (<768px): NO rotate gate — portrait is first-class.
+ * Phones (<720px): NO rotate gate — portrait is first-class.
  * Overlay does not unmount routes — rotate restores same step/state.
  * No screen.orientation.lock() — no-op on iOS Safari.
  */
@@ -163,7 +163,7 @@
   display: none;
 }
 
-@media (orientation: portrait) and (min-width: 768px) {
+@media (orientation: portrait) and (min-width: 720px) {
   .alts-landscape-block {
     display: grid;
     place-items: center;
@@ -198,17 +198,9 @@
     color: #b08d57;
   }
 }
-@media print {
-  .alts-rotate-gate,
-  .alts-landscape-block,
-  .alts-tablet-route-block,
-  .alts-tablet-phone-card {
-    display: none !important;
-  }
-}
 
 /* Phone-tier layout fixes — no horizontal scroll on 390px */
-@media (max-width: 767px) {
+@media (max-width: 719.98px) {
   .home-007 {
     padding-left: max(14px, env(safe-area-inset-left));
     padding-right: max(14px, env(safe-area-inset-right));
@@ -231,7 +223,7 @@
   display: none;
 }
 
-@media (max-width: 767.98px) {
+@media (max-width: 719.98px) {
   .alts-tablet-desk {
     display: none !important;
   }
@@ -301,10 +293,10 @@
 }
 
 /*
- * PHONE TIER — portrait first-class @ ≤767px (390×844 baseline).
+ * PHONE TIER — portrait first-class @ ≤719.98px (390×844 baseline).
  * No rotate prompt. Touch ≥44px. Inputs ≥16px (Safari zoom lock).
  */
-@media (max-width: 767.98px) {
+@media (max-width: 719.98px) {
   .alts-root {
     overflow-x: hidden;
     max-width: 100vw;
@@ -374,4 +366,14 @@
     max-width: 100% !important;
     min-height: 0;
   }
+}
+
+/* MUST stay last — same !important weight as the tier rules,
+   so source order is what decides. Print beats every tier. */
+@media print {
+  .alts-rotate-gate,
+  .alts-landscape-block,
+  .alts-tablet-route-block,
+  .alts-tablet-phone-card { display: none !important; }
+  .alts-tablet-desk       { display: contents !important; }
 }
