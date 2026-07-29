@@ -16,6 +16,7 @@ const ORDER_MAP: Record<string, Variant> = {
   delivered: "emerald",
 
   scheduled: "brass",
+  queued: "brass",
   ready_for_pickup: "amber",
   out_for_delivery: "amber",
   failed: "rose",

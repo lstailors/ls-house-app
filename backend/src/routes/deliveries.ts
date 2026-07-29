@@ -123,6 +123,7 @@ function serializeDelivery(doc: any): object {
       email: null,
     },
     orderRef: doc.lsh_sales_order ?? null,
+    alterationTicket: doc.lsh_alteration_ticket ?? null,
     addressLine:
       [doc.lsh_delivery_address, doc.lsh_delivery_apt].filter(Boolean).join(", ") || null,
     city: doc.lsh_delivery_city ?? null,
@@ -179,6 +180,7 @@ const LIST_FIELDS = [
   "lsh_origin_location",
   "lsh_scheduled_at",
   "lsh_delivered_at",
+  "lsh_dispatched_at",
   "lsh_delivery_address",
   "lsh_delivery_city",
   "lsh_supabase_delivery_no",
@@ -188,16 +190,34 @@ const LIST_FIELDS = [
   "lsh_garment_count",
   "lsh_tracking_number",
   "lsh_sales_order",
+  "lsh_alteration_ticket",
+  "lsh_pod_method",
+  "lsh_signature_image_url",
+  "lsh_signature_name",
   "creation",
   "modified",
 ];
 
 // ── GET /api/deliveries ───────────────────────────────────────────────────────
+// Optional: ?alterationTicket=ALT-… — ticket→delivery reverse lookup for alts
+// (HER-75). Prefer this over a new route; same serializer, less surface area.
 deliveriesRouter.get("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
   const filters: unknown[] = [["docstatus", "!=", 2]];
+
+  const alterationTicket = (c.req.query("alterationTicket") ?? "").trim();
+  if (alterationTicket) {
+    filters.push(["lsh_alteration_ticket", "=", alterationTicket]);
+    const rows = await erpList("LSH Delivery", {
+      filters,
+      fields: LIST_FIELDS,
+      limit: 20,
+      order_by: "creation desc",
+    });
+    return c.json({ data: (rows as any[]).map(serializeDelivery) });
+  }
 
   if (user.role === "driver") {
     filters.push(["lsh_courier_name", "=", user.name ?? user.email]);
@@ -410,7 +430,12 @@ deliveriesRouter.post("/", async (c) => {
       lsh_garment_count: body.garmentCount ?? null,
       lsh_courier_name: body.courierName ?? body.driverName ?? null,
       lsh_delivery_notes: body.notes ?? null,
-      lsh_sales_order: body.orderRef ?? null,
+      lsh_sales_order: body.orderRef ?? body.sales_order ?? null,
+      // HER-75: alts Dispatch posts alteration_ticket — must land on the join key
+      lsh_alteration_ticket: body.alterationTicket ?? body.alteration_ticket ?? null,
+      customer_name: body.customer_name ?? body.customerName ?? null,
+      customer_phone:
+        body.customer_phone ?? body.customerPhone ?? body.newCustomerPhone ?? null,
       lsh_timeline: [buildTimelineEntry("Queued", user.name ?? user.email ?? "Staff")],
     });
 
