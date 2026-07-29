@@ -53,6 +53,8 @@ interface AlterationTicketDoc {
   is_rush: 0 | 1
   ticket_total: number
   payment_status: string
+  /** Staff-set. Gates SI + payment CTAs. Never auto-derived from price. */
+  billing_status?: string
   assigned_tailor?: string
   assigned_tailor_name?: string
   notes?: string
@@ -1199,7 +1201,9 @@ export default function TicketDetail() {
                 step === 'Picked Up' &&
                 ticket.payment_status !== 'Paid' &&
                 ticket.payment_status !== 'N/A' &&
-                (ticket.ticket_total ?? 0) > 0
+                (ticket.ticket_total ?? 0) > 0 &&
+                ticket.billing_status !== 'Warranty' &&
+                ticket.billing_status !== 'Included in Custom Order'
               if (unpaid) {
                 const ok = window.confirm(
                   'Release without payment?\n\nClient can pick up now. An SMS will be sent that the work was released with balance due + pay link.',
@@ -1278,7 +1282,17 @@ export default function TicketDetail() {
                 Print Receipt
               </Button>
             </div>
-          ) : ticket.payment_status !== 'Paid' && (ticket.ticket_total ?? 0) > 0 ? (
+          ) : (() => {
+            // Mirror PickupCounter unpaid gate (HER-62 P0-4 / HER-56).
+            // Charge Terminal + Pay Link must not show for Warranty / Included,
+            // even when lines carry full shop prices.
+            const chargeable =
+              ticket.payment_status !== 'N/A' &&
+              (ticket.ticket_total ?? 0) > 0 &&
+              ticket.billing_status !== 'Warranty' &&
+              ticket.billing_status !== 'Included in Custom Order'
+            if (!chargeable) return null
+            return (
             <div className="mt-3 flex flex-col items-stretch gap-2">
               <p className="text-xs text-cream-dim text-right">
                 Pickup allowed unpaid — client gets balance SMS on release.
@@ -1338,7 +1352,8 @@ export default function TicketDetail() {
               )}
               </div>
             </div>
-          ) : null}
+            )
+          })()}
         </section>
 
         {/* ── Tailor Assignment ── */}
@@ -1372,7 +1387,9 @@ export default function TicketDetail() {
                 const unpaid =
                   ticket.payment_status !== 'Paid' &&
                   ticket.payment_status !== 'N/A' &&
-                  (ticket.ticket_total ?? 0) > 0
+                  (ticket.ticket_total ?? 0) > 0 &&
+                  ticket.billing_status !== 'Warranty' &&
+                  ticket.billing_status !== 'Included in Custom Order'
                 if (unpaid) {
                   const ok = window.confirm(
                     'Hand deliver without payment?\n\nClient takes the garment now. SMS will note release + unpaid balance + pay link.',

@@ -30,23 +30,12 @@ def set_naming_series(doc, method=None):
 
 
 def ensure_rush_surcharge(doc, method=None):
-	RUSH_PRICE = 25.0
-	# Match both the new canonical description and the preset description
-	def _is_rush_line(l):
-		desc = (l.description or "").lower()
-		return "rush surcharge" in desc or "rush surcharge (24hr)" in desc
+	"""NO-OP. Rush surcharge removed (C decision) — never auto-add $25.
 
-	has_rush_line = any(_is_rush_line(l) for l in (doc.lines or []))
-	if doc.is_rush and not has_rush_line:
-		garment_ref = (doc.garments[0].garment_id if doc.garments else "G1")
-		doc.append("lines", {
-			"garment_ref": garment_ref,
-			"description": "Rush Surcharge",
-			"price": RUSH_PRICE,
-		})
-	elif not doc.is_rush:
-		# Remove all rush lines (both naming variants) — idempotent
-		doc.lines = [l for l in (doc.lines or []) if not _is_rush_line(l)]
+	Kept as a named symbol so any stale hook path referencing it is harmless.
+	Hook registration was removed from hooks.py; do not re-add.
+	"""
+	return
 
 
 def set_payment_status_na(doc, method=None):
@@ -57,21 +46,19 @@ def set_payment_status_na(doc, method=None):
 
 
 def compute_totals(doc, method=None):
+	"""Sum line prices onto garments + ticket_total.
+
+	Does NOT touch billing_status. billing_status is staff-set only
+	(Billable / Warranty / Included in Custom Order). Full dollar value
+	stays on the lines even when we do not charge — SI minting is gated
+	by billing_status in create_sales_invoice, never by price > 0 alone.
+	"""
 	garment_totals = {}
 	for line in doc.lines or []:
 		garment_totals[line.garment_ref] = garment_totals.get(line.garment_ref, 0) + (line.price or 0)
 	for g in doc.garments or []:
 		g.garment_total = garment_totals.get(g.garment_id, 0)
 	doc.ticket_total = sum(garment_totals.values())
-
-	# Auto-flip billing_status when a cost is entered on an "included" ticket.
-	# Staff flipping included_in_custom off manually is also respected — we
-	# only auto-set when the checkbox is on and total crosses the $0 boundary.
-	if doc.included_in_custom:
-		if (doc.ticket_total or 0) > 0:
-			doc.billing_status = "Billable"
-		else:
-			doc.billing_status = "Included in Custom Order"
 
 
 def rollup_line_to_garment(doc, method=None):
@@ -164,8 +151,10 @@ def create_sales_invoice(doc, method=None):
 	Square payment link is minted after_commit so FOH / thermal / SMS can charge
 	as soon as the ticket exists — not only after Ready/Picked Up.
 
-	Skipped for Warranty / Included in Custom Order, and for Billable $0
-	(create later when a charge is added).
+	Gated strictly by billing_status (staff-set). Warranty and Included in
+	Custom Order never mint an SI — even when lines carry full shop prices
+	(internal accounted value). Billable + $0 also skips (no empty invoice).
+	billing_status is never derived from ticket_total.
 	"""
 	if doc.sales_invoice:
 		return

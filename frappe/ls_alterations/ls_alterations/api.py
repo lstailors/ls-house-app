@@ -22,6 +22,10 @@ def create_ticket(payload):
 	  "ticket_date": "2026-05-27",
 	  "due_date": "2026-06-03",
 	  "is_rush": false,
+	  "idempotency_key": "uuid" (optional — duplicate submit returns same ticket),
+	  "billing_status": "Billable" | "Warranty" | "Included in Custom Order",
+	  "included_in_custom": 0 | 1,
+	  "linked_sales_order": "SO-..." or null,
 	  "garments": [
 	    {"garment_type": "Jacket", "garment_description": "Navy 2-btn", "color": "Navy"},
 	    ...
@@ -38,13 +42,40 @@ def create_ticket(payload):
 	{
 	  "name": "ALT-NYC-2026-00001",
 	  "ticket_total": 95.00,
-	  "sales_invoice": "ACC-SINV-...",
+	  "sales_invoice": "ACC-SINV-..." or null,
 	  "invoice_pdf_url": "https://erp.lstailors.com/api/method/...",
-	  "square_payment_url": "https://square.link/u/NyvWei4e"
+	  "square_payment_url": "https://square.link/u/NyvWei4e",
+	  "idempotent": true  # only when replayed via idempotency_key
 	}
 	"""
 	if isinstance(payload, str):
 		payload = json.loads(payload)
+
+	idem_key = (payload.get("idempotency_key") or payload.get("idempotencyKey") or "").strip()
+	if idem_key:
+		# Field may not exist until ls_alterations is migrated — fail open (no dedupe) rather than 500.
+		try:
+			has_field = frappe.get_meta("Alteration Ticket").has_field("idempotency_key")
+		except Exception:
+			has_field = False
+		if has_field:
+			existing = frappe.db.get_value(
+				"Alteration Ticket",
+				{"idempotency_key": idem_key},
+				["name", "ticket_total", "sales_invoice"],
+				as_dict=True,
+			)
+			if existing:
+				return {
+					"name": existing.name,
+					"ticket_total": existing.ticket_total,
+					"sales_invoice": existing.sales_invoice,
+					"invoice_pdf_url": get_invoice_pdf_url(existing.sales_invoice),
+					"square_payment_url": frappe.conf.get("square_payment_url"),
+					"idempotent": True,
+				}
+		else:
+			idem_key = ""  # don't attempt to write unknown field
 
 	customer = payload.get("customer")
 	if not customer and payload.get("new_customer"):
@@ -62,26 +93,28 @@ def create_ticket(payload):
 	if not customer:
 		frappe.throw("Customer or new_customer required")
 
-	ticket = frappe.get_doc(
-		{
-			"doctype": "Alteration Ticket",
-			"customer": customer,
-			"origin_location": payload["origin_location"],
-			"ticket_date": payload["ticket_date"],
-			"due_date": payload["due_date"],
-			"promised_date": payload.get("promised_date"),
-			"is_rush": payload.get("is_rush", False),
-			"workflow_state": "Received",
-			"garments": payload["garments"],
-			"lines": payload["lines"],
-			"internal_notes": payload.get("internal_notes"),
-			"customer_notes": payload.get("customer_notes"),
-			# Billing intent — skip SI for Warranty / Included (create_sales_invoice checks these)
-			"billing_status": payload.get("billing_status") or "Billable",
-			"included_in_custom": 1 if payload.get("included_in_custom") else 0,
-			"linked_sales_order": payload.get("linked_sales_order"),
-		}
-	).insert()
+	ticket_dict = {
+		"doctype": "Alteration Ticket",
+		"customer": customer,
+		"origin_location": payload["origin_location"],
+		"ticket_date": payload["ticket_date"],
+		"due_date": payload["due_date"],
+		"promised_date": payload.get("promised_date"),
+		"is_rush": payload.get("is_rush", False),
+		"workflow_state": "Received",
+		"garments": payload["garments"],
+		"lines": payload["lines"],
+		"internal_notes": payload.get("internal_notes"),
+		"customer_notes": payload.get("customer_notes"),
+		# Billing intent — skip SI for Warranty / Included (create_sales_invoice checks these)
+		"billing_status": payload.get("billing_status") or "Billable",
+		"included_in_custom": 1 if payload.get("included_in_custom") else 0,
+		"linked_sales_order": payload.get("linked_sales_order"),
+	}
+	if idem_key:
+		ticket_dict["idempotency_key"] = idem_key
+
+	ticket = frappe.get_doc(ticket_dict).insert()
 
 	# Pick up sales_invoice that create_sales_invoice set via db_set
 	ticket.reload()

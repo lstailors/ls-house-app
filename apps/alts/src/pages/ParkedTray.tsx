@@ -48,17 +48,10 @@ export default function ParkedTray() {
     onError: () => toast.error("Could not delete"),
   });
 
-  const commit = useMutation({
-    mutationFn: (id: string) =>
-      api.post<{ ticketName?: string; name?: string; ticket?: string }>(`/api/carts/${id}/commit`, {}),
-    onSuccess: (res) => {
-      const name = res?.ticketName || res?.ticket || res?.name;
-      toast.success(name ? `Submitted ${name}` : "Submitted");
-      qc.invalidateQueries({ queryKey: ["parked-carts"] });
-      if (name) nav(`/orders/alterations/${name}`);
-    },
-    onError: (e: Error) => toast.error(e.message || "Commit failed"),
-  });
+  // Commit-from-tray intentionally hidden (HER-62 P0-1).
+  // commitParkedCart has no billing_status wiring — Re-do / On-order would
+  // land Billable + SI. Resume → intake → normal submit is the path until
+  // commit parity ships post-launch on top of staff-set billing_status.
 
   const list = carts.data ?? [];
 
@@ -127,14 +120,6 @@ export default function ParkedTray() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => commit.mutate(id)}
-                    disabled={commit.isPending}
-                    className="btn-ghost flex-1 h-11 text-[12px]"
-                  >
-                    Submit ticket
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => {
                       if (window.confirm("Remove this parked cart?")) del.mutate(id);
                     }}
@@ -150,7 +135,7 @@ export default function ParkedTray() {
           <div className="md:col-span-2 xl:col-span-3 card-glass p-8 text-center">
             <div className="display text-3xl mb-2">Nothing parked</div>
             <p className="text-cream-dim text-sm mb-4">
-              Park holds a cart with no ticket number. Come back whenever — resume it, submit it, or drop it.
+              Park holds a cart with no ticket number. Come back whenever — resume it or drop it.
             </p>
             <Link to="/intake/alterations" className="btn-brass inline-flex h-12 px-6 items-center text-[12px]">
               Start intake

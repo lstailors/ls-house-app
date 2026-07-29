@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -307,6 +307,12 @@ export default function IntakeStepped() {
   const [ticketNoteKind, setTicketNoteKind] = useState<"internal" | "customer">("internal");
   /** gates draft writes until hydrate + SO seed settle */
   const [draftReady, setDraftReady] = useState(false);
+  /** Real submit idempotency key — survives double-click / flaky wifi retry. Rotated only on success. */
+  const submitIdempotencyKeyRef = useRef<string>(
+    typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `idemp-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
 
   const search = useQuery({
     queryKey: ["cust-search", q],
@@ -1074,6 +1080,8 @@ export default function IntakeStepped() {
       due_date: promiseDate || undefined,
       promised_date: promiseDate || undefined,
       due_time: promiseTime || undefined,
+      // Real idempotency key (not isPending). Same key on retry = same ticket.
+      idempotency_key: submitIdempotencyKeyRef.current,
       garments: garments.map((g) => ({
         ref: g.ref,
         garmentType: g.garmentType,
@@ -1195,6 +1203,11 @@ export default function IntakeStepped() {
     onSuccess: (res) => {
       clearIntakeDraft();
       clearSoCart();
+      // Rotate key only after a successful create so a future new ticket is distinct.
+      submitIdempotencyKeyRef.current =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `idemp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const inv = res.salesInvoice ? ` · ${res.salesInvoice}` : "";
       toast.success(
         res.squarePaymentLink || res.appPayUrl
@@ -1277,6 +1290,9 @@ export default function IntakeStepped() {
       });
     },
     onSuccess: () => {
+      // HER-62 P1-1: park must clear draft so next walk-in never restores prior customer.
+      clearIntakeDraft();
+      clearSoCart();
       toast.success("Parked — no ticket number burned");
       qc.invalidateQueries({ queryKey: ["parked-carts"] });
       qc.invalidateQueries({ queryKey: ["alts-home-stats"] });
