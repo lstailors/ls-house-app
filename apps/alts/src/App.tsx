@@ -157,11 +157,12 @@ export default function App() {
               />
               <Route path="/deliveries/:id/label" element={tablet(<DeliveryLabel />, "Delivery label")} />
 
+              {/* Intake is phone-first — C creates tickets on iPhone (HER-71) */}
               <Route
                 path="/intake/kind"
                 element={
                   <RoleGuard allow={[...FOH]}>
-                    {tablet(<TicketKind />, "New ticket")}
+                    <TicketKind />
                   </RoleGuard>
                 }
               />
@@ -169,7 +170,7 @@ export default function App() {
                 path="/intake/alterations"
                 element={
                   <RoleGuard allow={[...FOH]}>
-                    {tablet(<IntakeStepped />, "Intake")}
+                    <IntakeStepped />
                   </RoleGuard>
                 }
               />
