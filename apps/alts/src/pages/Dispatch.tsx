@@ -4,7 +4,7 @@ import BoardStatusCard, { type BoardDelivery } from "@alts/components/BoardStatu
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { StatusPill } from "@ls/design";
 import "@alts/styles/alts-pos.css";

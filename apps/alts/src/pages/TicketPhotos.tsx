@@ -3,8 +3,8 @@ import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
-import { getStoredToken } from "@/lib/authClient";
+import { api } from "@ls/api-client";
+import { getStoredToken } from "@ls/auth/authClient";
 import { cn } from "@ls/design/utils";
 import "@alts/styles/alts-pos.css";
 

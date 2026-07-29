@@ -1,6 +1,6 @@
 import { Outlet, Link, useNavigate, useLocation } from "react-router-dom";
-import { useMe } from "@/lib/session";
-import { signOut } from "@/lib/authClient";
+import { useMe } from "@ls/auth/session";
+import { signOut } from "@ls/auth/authClient";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@ls/design/utils";
 

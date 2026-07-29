@@ -2,7 +2,7 @@ import { useState } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import "@alts/styles/alts-pos.css";
 

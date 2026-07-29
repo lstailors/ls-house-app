@@ -150,8 +150,8 @@ export default defineConfig({
       { find: /^@ls\/design\/hooks\/(.*)$/, replacement: path.join(pkgs, "design/src/hooks") + "/$1" },
       { find: /^@ls\/design\/glass\/(.*)$/, replacement: path.join(pkgs, "design/src/glass") + "/$1" },
       { find: /^@ls\/design$/, replacement: path.join(pkgs, "design/src/index.ts") },
-      // Shared FOH implementation lives in webapp until fully extracted
-      { find: "@", replacement: webapp },
+      // HER-64 step 2: all @/ deps extracted — alts is now self-contained
+      // { find: "@", replacement: webapp }, // REMOVED — no @/ imports remain
     ],
     dedupe: ["react", "react-dom", "@tanstack/react-query", "clsx", "tailwind-merge"],
   },

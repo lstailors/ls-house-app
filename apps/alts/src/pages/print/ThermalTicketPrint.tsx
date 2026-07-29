@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import { ArrowLeft, MessageSquare, Printer, Zap } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import {
   fmtDueRack,
   fmtMoney,

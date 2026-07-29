@@ -10,7 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import { ArrowLeft, Printer, Share2 } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 
 export type LabelBand =
   | "paid_collect_nothing"

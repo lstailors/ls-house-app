@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { piecesFromSoDetail, writeSoCart, type SoPiece } from "@alts/lib/soCart";
 import { REDO_DISPLAY } from "@alts/lib/billingLabels";

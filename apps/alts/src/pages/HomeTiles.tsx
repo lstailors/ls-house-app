@@ -1,8 +1,8 @@
 import { Link, useNavigate } from "react-router-dom";
-import { useMe } from "@/lib/session";
-import { signOut } from "@/lib/authClient";
+import { useMe } from "@ls/auth/session";
+import { signOut } from "@ls/auth/authClient";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { useMemo } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";

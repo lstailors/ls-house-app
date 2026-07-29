@@ -3,7 +3,7 @@ import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { billingStatusLabel } from "@alts/lib/billingLabels";
 import "@alts/styles/alts-pos.css";

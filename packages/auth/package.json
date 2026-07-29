@@ -11,7 +11,9 @@
     "./scope": "./src/scope.ts",
     "./authClient": "./src/authClient.ts",
     "./session": "./src/session.ts",
-    "./session-cookie": "./src/session-cookie.ts"
+    "./session-cookie": "./src/session-cookie.ts",
+    "./Login": "./src/Login.tsx",
+    "./RoleGuard": "./src/RoleGuard.tsx"
   },
   "dependencies": {
     "@ls/types": "workspace:*",
