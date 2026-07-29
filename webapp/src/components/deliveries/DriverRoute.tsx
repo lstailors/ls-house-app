@@ -25,7 +25,8 @@ import {
   DialogDescription,
 } from "@ls/design/ui/dialog";
 import type { Delivery } from "@ls/types";
-import { useUpdateDelivery } from "@/lib/queries";
+import { useUpdateDelivery, useMarkDelivered } from "@/lib/queries";
+import { api } from "@/lib/api";
 import { formatDateTime } from "@ls/design/format";
 import { cn } from "@ls/design/utils";
 
@@ -370,9 +371,10 @@ function ProofOfDeliveryDialog({
   delivery: Delivery | null;
   onClose: () => void;
 }) {
-  const update = useUpdateDelivery();
+  const markDelivered = useMarkDelivered();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const onFileChange = (f: File | null) => {
     setFile(f);
@@ -388,23 +390,38 @@ function ProofOfDeliveryDialog({
   const handleClose = () => {
     setFile(null);
     setPreview(null);
+    setSubmitting(false);
     onClose();
   };
 
   const submit = async () => {
-    if (!delivery || !preview) return;
+    if (!delivery || !file) return;
+    setSubmitting(true);
     try {
-      // Upload proof photos via ERPNext file API (backend handles storage).
-      // For now we store the data URL on the delivery row so it's visible end-to-end.
-      await update.mutateAsync({
+      // Upload photo via ERP file API, then mark delivered through /pod
+      const fd = new FormData();
+      fd.append("file", file, file.name || "pod.jpg");
+      fd.append("doctype", "LSH Delivery");
+      fd.append("docname", delivery.id);
+      const up = await api.raw("/api/files/upload", { method: "POST", body: fd });
+      if (!up.ok) {
+        const j = await up.json().catch(() => ({} as any));
+        throw new Error(j?.error?.message || "Photo upload failed");
+      }
+      const upJson = await up.json();
+      const photoUrl = upJson?.data?.url as string | undefined;
+      if (!photoUrl) throw new Error("Upload failed — no URL returned");
+
+      await markDelivered.mutateAsync({
         id: delivery.id,
-        proofOfDeliveryUrl: preview,
-        status: delivery.status === "out_for_delivery" ? "delivered" : delivery.status,
+        podMethod: "Photo Only",
+        photoUrls: [photoUrl],
       });
       toast.success("Proof uploaded · delivery complete");
       handleClose();
     } catch (e) {
       toast.error((e as Error).message || "Could not upload");
+      setSubmitting(false);
     }
   };
 
@@ -451,16 +468,17 @@ function ProofOfDeliveryDialog({
               <Button
                 variant="outline"
                 onClick={() => onFileChange(null)}
+                disabled={submitting}
                 className="border-brass/25 bg-forest-raised/40 hover:bg-brass/10 text-cream-muted h-12"
               >
                 Retake
               </Button>
               <Button
                 onClick={submit}
-                disabled={update.isPending}
+                disabled={submitting || markDelivered.isPending}
                 className="btn-brass h-12"
               >
-                {update.isPending ? "Uploading…" : "Confirm"}
+                {submitting || markDelivered.isPending ? "Uploading…" : "Confirm"}
               </Button>
             </div>
           ) : (

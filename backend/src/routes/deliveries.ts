@@ -700,8 +700,15 @@ deliveriesRouter.patch("/:id/pod", async (c) => {
     lsh_delivered_at: erpDatetime(),
   };
 
-  if (body.podMethod !== undefined) updates.lsh_pod_method = body.podMethod;
-  if (body.signatureName !== undefined) updates.lsh_signature_name = body.signatureName;
+  // ERP Select options only — invalid values 500 the PUT
+  const VALID_POD = new Set(["", "Photo Only", "Signature", "Signature + Photo"]);
+  if (body.podMethod !== undefined) {
+    const m = String(body.podMethod ?? "");
+    updates.lsh_pod_method = VALID_POD.has(m) ? m : "";
+  }
+  // receivedBy is the common client field; signatureName is legacy alias
+  const receivedBy = body.receivedBy ?? body.signatureName ?? body.pickup_confirmed_by;
+  if (receivedBy !== undefined) updates.lsh_signature_name = receivedBy;
   if (body.signatureImageUrl !== undefined)
     updates.lsh_signature_image_url = body.signatureImageUrl;
   if (body.gpsLat !== undefined) updates.lsh_gps_lat = body.gpsLat;
@@ -723,7 +730,8 @@ deliveriesRouter.patch("/:id/pod", async (c) => {
     try {
       const buf = Buffer.from(body.photoBase64, "base64");
       const ext = body.photoMimeType === "image/png" ? "png" : "jpg";
-      const filename = `${id}/${Date.now()}.${ext}`;
+      // No slash in filename — ERP public URLs flatten path separators
+      const filename = `${id}-pod-${Date.now()}.${ext}`;
       const { fileUrl } = await uploadFile({
         file: buf,
         filename,
@@ -738,9 +746,15 @@ deliveriesRouter.patch("/:id/pod", async (c) => {
     }
   }
 
-  // Append all incoming photos to lsh_photos child table
+  // Append all incoming photos to lsh_photos child table (strip system fields)
   if (incomingUrls.length > 0) {
-    const existingPhotos: any[] = existing.lsh_photos ?? [];
+    const existingPhotos: any[] = (existing.lsh_photos ?? []).map((p: any) => ({
+      photo_url: p.photo_url,
+      photo_type: p.photo_type || "proof",
+      caption: p.caption || "",
+      captured_at: p.captured_at || null,
+      uploaded_by: p.uploaded_by || "",
+    }));
     updates.lsh_photos = [
       ...existingPhotos,
       ...incomingUrls.map((url) => ({
