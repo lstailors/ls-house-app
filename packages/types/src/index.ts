@@ -399,6 +399,8 @@ export const DashboardKpis = z.object({
   revenue: z.number(),
   ordersByStage: z.record(z.string(), z.number()),
   deliveriesDue: z.number(),
+  deliveriesOutForDelivery: z.number().optional(),
+  deliveriesDeliveredToday: z.number().optional(),
   openAlterations: z.number(),
   customInProduction: z.number(),
   depositsPending: z.number(),

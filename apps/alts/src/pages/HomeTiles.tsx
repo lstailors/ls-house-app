@@ -17,6 +17,7 @@ type Stats = {
   parked: number;
   outForDelivery: number;
   deliveredToday: number;
+  pendingBoard: number;
   syncedAt: number;
 };
 
@@ -100,9 +101,11 @@ export default function HomeTiles() {
       const deliv = Array.isArray(deliveries) ? deliveries : [];
       let outForDelivery = 0;
       let deliveredToday = 0;
+      let pendingBoard = 0;
       for (const d of deliv) {
         const st = (d.status || "").toLowerCase();
         if (st === "out_for_delivery") outForDelivery += 1;
+        if (st === "scheduled" || st === "out_for_delivery" || st === "queued") pendingBoard += 1;
         if (st === "delivered" && d.deliveredAt && String(d.deliveredAt).slice(0, 10) === today) {
           deliveredToday += 1;
         }
@@ -116,6 +119,7 @@ export default function HomeTiles() {
         parked: Array.isArray(parked) ? parked.length : 0,
         outForDelivery,
         deliveredToday,
+        pendingBoard,
         syncedAt: Date.now(),
       };
     },
@@ -133,6 +137,7 @@ export default function HomeTiles() {
     parked: 0,
     outForDelivery: 0,
     deliveredToday: 0,
+    pendingBoard: 0,
     syncedAt: Date.now(),
   };
 
@@ -255,7 +260,7 @@ export default function HomeTiles() {
       title: "Deliveries",
       sub: "Dispatch board · driver route · POD",
       external: true,
-      badge: s.outForDelivery || null,
+      badge: s.pendingBoard || null,
       badgeKind: s.outForDelivery > 0 ? "warn" : "neutral",
       icon: (
         <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
