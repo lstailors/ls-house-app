@@ -64,7 +64,7 @@ export default function DeliveryTracking() {
   return (
     <>
       <style>{`${FONTS} *{box-sizing:border-box;margin:0;padding:0} body{margin:0;background:${C.bg};font-family:'Montserrat',sans-serif;color:${C.cream};-webkit-font-smoothing:antialiased} @keyframes spin{to{transform:rotate(360deg)}} .spin{animation:spin 1s linear infinite}`}</style>
-      <div style={{ minHeight: "100vh", background: `linear-gradient(160deg, #0e1f13 0%, ${C.bg} 60%)` }}>
+      <div style={{ minHeight: "100dvh", background: `linear-gradient(160deg, #0e1f13 0%, ${C.bg} 60%)` }}>
         <Header />
         <div style={{ maxWidth: 520, margin: "0 auto", padding: "28px 20px 80px" }}>
           {isLoading ? <LoadingState /> :

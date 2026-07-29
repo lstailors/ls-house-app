@@ -1,10 +1,10 @@
 /**
  * Public delivery tracking endpoints — used by the driver/customer
- * delivery tracking page at /d/:token (DeliveryTracking.tsx) and by
- * delivered.lstailors.com which proxies QR POD here for ERP deliveries.
+ * delivery tracking page at /d/:token (DeliveryTracking.tsx) on both
+ * app.lstailors.com and delivered.lstailors.com (same ls-house-app deploy).
  *
- * These endpoints are intentionally unauthenticated so drivers can access
- * them without an ERPNext session. They are scoped to LSH Delivery only.
+ * ERPNext LSH Delivery is the only source of truth. No Supabase.
+ * Intentionally unauthenticated so drivers can complete POD without a session.
  */
 
 import { Hono } from "hono";
