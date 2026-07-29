@@ -76,7 +76,8 @@ async function findClientByPhone(phone: string, bare: string) {
 }
 
 sofiaBridgeRouter.get("/context", async (c) => {
-  const key = c.req.header("x-sofia-bridge-key") ?? c.req.query("key") ?? null;
+  // HER-61: header-only — no ?key= (leaks into logs/Referer/history)
+  const key = c.req.header("x-sofia-bridge-key") ?? null;
   if (!authGuard(key)) return c.json({ error: "Unauthorized" }, 401);
 
   const rawPhone = c.req.query("phone") ?? "";
@@ -165,7 +166,8 @@ sofiaBridgeRouter.get("/context", async (c) => {
 });
 
 sofiaBridgeRouter.get("/summary", async (c) => {
-  const key = c.req.header("x-sofia-bridge-key") ?? c.req.query("key") ?? null;
+  // HER-61: header-only — no ?key= (leaks into logs/Referer/history)
+  const key = c.req.header("x-sofia-bridge-key") ?? null;
   if (!authGuard(key)) return c.json({ error: "Unauthorized" }, 401);
 
   const today = new Date().toISOString().slice(0, 10);
