@@ -10,41 +10,41 @@
 @layer base {
   :root {
     /* Shadcn semantic tokens — mapped onto the L&S palette */
-    --background: 138 33% 7%;            /* forest deep #0D1A10 */
+    --background: 145 35% 13%;           /* forest deep #163524 */
     --foreground: 41 50% 90%;            /* cream #F1E9D6 */
 
-    --card: 138 30% 12%;                 /* forest base, slightly raised */
+    --card: 145 32% 17%;                 /* forest base #1C3D2C */
     --card-foreground: 41 50% 90%;
 
-    --popover: 138 30% 12%;
+    --popover: 145 32% 17%;
     --popover-foreground: 41 50% 90%;
 
     --primary: 34 35% 52%;               /* brass #B08D57 */
-    --primary-foreground: 138 33% 7%;
+    --primary-foreground: 145 35% 13%;
 
-    --secondary: 138 32% 18%;            /* forest raised */
+    --secondary: 145 30% 24%;            /* forest raised #2A4F3C */
     --secondary-foreground: 41 50% 90%;
 
-    --muted: 138 28% 14%;
-    --muted-foreground: 39 19% 73%;
+    --muted: 145 28% 18%;
+    --muted-foreground: 42 22% 78%;
 
     --accent: 34 50% 65%;                /* brass light */
-    --accent-foreground: 138 33% 7%;
+    --accent-foreground: 145 35% 13%;
 
     --destructive: 8 60% 64%;            /* rose */
     --destructive-foreground: 41 50% 90%;
 
     --border: 34 24% 30%;
-    --input: 138 32% 16%;
+    --input: 145 30% 20%;
     --ring: 34 35% 52%;
 
     --radius: 0.625rem;
 
-    --sidebar-background: 138 35% 9%;
+    --sidebar-background: 145 34% 14%;
     --sidebar-foreground: 41 50% 90%;
     --sidebar-primary: 34 35% 52%;
-    --sidebar-primary-foreground: 138 33% 7%;
-    --sidebar-accent: 138 30% 14%;
+    --sidebar-primary-foreground: 145 35% 13%;
+    --sidebar-accent: 145 30% 18%;
     --sidebar-accent-foreground: 41 50% 90%;
     --sidebar-border: 34 24% 25%;
     --sidebar-ring: 34 35% 52%;
@@ -64,8 +64,8 @@
     @apply bg-forest-deep text-cream font-sans;
     background-image:
       radial-gradient(ellipse 1200px 600px at 50% -10%, rgba(176, 141, 87, 0.10) 0%, transparent 60%),
-      radial-gradient(ellipse 900px 700px at 100% 100%, rgba(31, 58, 46, 0.6) 0%, transparent 55%),
-      linear-gradient(180deg, #0D1A10 0%, #0A140E 100%);
+      radial-gradient(ellipse 900px 700px at 100% 100%, rgba(42, 79, 60, 0.55) 0%, transparent 55%),
+      linear-gradient(180deg, #163524 0%, #122A1C 100%);
     background-attachment: fixed;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

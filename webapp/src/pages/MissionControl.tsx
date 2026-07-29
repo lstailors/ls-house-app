@@ -172,7 +172,7 @@ function AgentStatusCard({ agent, costToday, onClick }: {
               <Bot className="h-5 w-5 text-brass-light" />
             </div>
           )}
-          <span className={cn("absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#0D1A10]", dot)} />
+          <span className={cn("absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#163524]", dot)} />
         </div>
 
         <div className="flex-1 min-w-0">
@@ -298,7 +298,7 @@ function FleetPanel({ agents, costs }: { agents: any[]; costs: any }) {
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <img src={AGENT_PHOTO.sofia} alt="Sofia" className="h-12 w-12 rounded-full object-cover border border-emerald-500/30" />
-                  <span className={cn("absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#0D1A10]", AGENT_DOT[sofia.status as AgentStatus] ?? AGENT_DOT.offline)} />
+                  <span className={cn("absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#163524]", AGENT_DOT[sofia.status as AgentStatus] ?? AGENT_DOT.offline)} />
                 </div>
                 <div>
                   <div className="font-display italic text-xl text-cream">Sofia</div>

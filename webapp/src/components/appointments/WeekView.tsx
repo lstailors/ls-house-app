@@ -70,7 +70,7 @@ interface MiniBlockProps {
 function MiniBlock({ block }: MiniBlockProps) {
   return (
     <div
-      className="w-full rounded-lg border border-white/10 bg-[#0D1A10]/60 px-2 py-1.5 relative overflow-hidden"
+      className="w-full rounded-lg border border-white/10 bg-[#163524]/60 px-2 py-1.5 relative overflow-hidden"
       style={{
         backgroundImage:
           "repeating-linear-gradient(-45deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 2px, transparent 2px, transparent 8px)",

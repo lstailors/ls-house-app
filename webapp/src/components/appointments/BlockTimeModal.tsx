@@ -56,7 +56,7 @@ export function BlockTimeModal({ open, onClose, onSubmit, isSubmitting, currentU
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="bg-[#0D1A10] border border-white/10 text-[#F1E9D6] max-w-sm mx-auto">
+      <DialogContent className="bg-[#163524] border border-white/10 text-[#F1E9D6] max-w-sm mx-auto">
         <DialogHeader>
           <DialogTitle className="font-['Cormorant_Garamond'] text-xl italic text-[#F1E9D6] font-normal">
             Block My Time

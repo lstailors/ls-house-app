@@ -258,7 +258,7 @@ payInfoRouter.get('/:id/og', async (c) => {
     `<meta name="twitter:image" content="${esc(logo)}" />`,
     `<link rel="canonical" href="${esc(pageUrl)}" />`,
     '</head>',
-    '<body style="margin:0;background:#0D1A10;color:#F1E9D6;font-family:Georgia,serif;padding:32px;text-align:center;">',
+    '<body style="margin:0;background:#163524;color:#F1E9D6;font-family:Georgia,serif;padding:32px;text-align:center;">',
     '<p style="font-style:italic;font-size:22px;">L&amp;S Custom Tailors</p>',
     `<p style="font-family:Helvetica,Arial,sans-serif;font-size:14px;color:#C9C0AB;">${esc(title)}</p>`,
     `<p style="font-family:Helvetica,Arial,sans-serif;font-size:13px;"><a href="${esc(pageUrl)}" style="color:#B08D57;">Open invoice</a></p>`,

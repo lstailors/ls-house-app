@@ -163,8 +163,8 @@ export default function QuoteComposer() {
               <div className="px-4 py-3 border-b border-brass/15 bg-black/20">
                 <h3 className="display text-lg">Email preview</h3>
               </div>
-              <div className="bg-[#FBF7EE] text-[#1F3A2E]">
-                <div className="bg-[#0D1A10] text-center px-6 py-7">
+              <div className="bg-[#FBF7EE] text-[#163524]">
+                <div className="bg-[#163524] text-center px-6 py-7">
                   <div className="w-12 h-12 rounded-full border border-[#B08D57] mx-auto mb-2 grid place-items-center display text-[#D4B27A] text-xl">
                     LS
                   </div>
@@ -193,7 +193,7 @@ export default function QuoteComposer() {
                     {(t.lines ?? []).slice(0, 8).map((l, i) => (
                       <div key={i} className="flex justify-between text-[12.5px] text-[#4A574C]">
                         <span>{l.description}</span>
-                        <span className="font-semibold text-[#1F3A2E]">{money(Number(l.price) || 0)}</span>
+                        <span className="font-semibold text-[#163524]">{money(Number(l.price) || 0)}</span>
                       </div>
                     ))}
                   </div>

@@ -13,15 +13,15 @@ export default {
       colors: {
         // ─── L&S House Liquid Glass palette ───────────────────────────
         forest: {
-          deep: "#0D1A10",
-          base: "#0F2218",
-          raised: "#1F3A2E",
-          highlight: "#2A4D3D",
+          deep: "#163524",
+          base: "#1C3D2C",
+          raised: "#2A4F3C",
+          highlight: "#3A6550",
         },
         cream: {
           DEFAULT: "#F1E9D6",
-          muted: "#C9C0AB",
-          dim: "#8A8474",
+          muted: "#D4CDB8",
+          dim: "#A39C8A",
         },
         brass: {
           dark: "#8C6F42",
@@ -54,7 +54,7 @@ export default {
         "brass-radial":
           "radial-gradient(ellipse at top, rgba(176,141,87,0.18) 0%, transparent 65%)",
         "forest-radial":
-          "radial-gradient(ellipse at center, #1F3A2E 0%, #0D1A10 70%)",
+          "radial-gradient(ellipse at center, #2A4F3C 0%, #163524 70%)",
       },
       boxShadow: {
         glass: "0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(212,178,122,0.08)",

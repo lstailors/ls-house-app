@@ -17,7 +17,7 @@ function AgentCard({ agent, onView }: { agent: HouseAgent; onView: () => void })
       <div className="flex items-start gap-3">
         <div className="relative">
           <AgentAvatar name={agent.name} photo={agent.photo} size="md" />
-          <span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[#0D1A10]">
+          <span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[#163524]">
             <StatusDot status={agent.status} />
           </span>
         </div>
@@ -87,7 +87,7 @@ function AgentDrawer({ agent, onClose }: { agent: HouseAgent | null; onClose: ()
               <div className="flex items-start gap-3">
                 <div className="relative">
                   <AgentAvatar name={agent.name} photo={agent.photo} size="lg" />
-                  <span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[#0D1A10]">
+                  <span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[#163524]">
                     <StatusDot status={agent.status} />
                   </span>
                 </div>

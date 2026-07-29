@@ -101,7 +101,7 @@ export function StaffBookingModal({ open, onClose, onSubmit, isSubmitting, agent
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="bg-[#0D1A10] border border-white/10 text-[#F1E9D6] max-w-sm mx-auto max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-[#163524] border border-white/10 text-[#F1E9D6] max-w-sm mx-auto max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-['Cormorant_Garamond'] text-xl italic text-[#F1E9D6] font-normal">
             New Appointment
@@ -118,7 +118,7 @@ export function StaffBookingModal({ open, onClose, onSubmit, isSubmitting, agent
               <SelectTrigger className="bg-white/5 border-white/10 text-[#F1E9D6]">
                 <SelectValue placeholder="Select agent" />
               </SelectTrigger>
-              <SelectContent className="bg-[#0D1A10] border-white/10">
+              <SelectContent className="bg-[#163524] border-white/10">
                 {activeAgents.map((agent) => (
                   <SelectItem key={agent.agentUser} value={agent.agentUser} className="text-[#F1E9D6] focus:bg-white/10">
                     {agent.displayName}
@@ -137,7 +137,7 @@ export function StaffBookingModal({ open, onClose, onSubmit, isSubmitting, agent
               <SelectTrigger className="bg-white/5 border-white/10 text-[#F1E9D6]">
                 <SelectValue placeholder="Select type" />
               </SelectTrigger>
-              <SelectContent className="bg-[#0D1A10] border-white/10">
+              <SelectContent className="bg-[#163524] border-white/10">
                 {types.map((t) => (
                   <SelectItem key={t.name} value={t.appointmentType} className="text-[#F1E9D6] focus:bg-white/10">
                     {t.appointmentType}

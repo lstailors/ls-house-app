@@ -160,7 +160,7 @@ export default function Appointments() {
   }
 
   return (
-    <div className="min-h-dvh bg-[#0D1A10] pb-20">
+    <div className="min-h-dvh bg-[#163524] pb-20">
       <SectionHeader
         eyebrow="Schedule"
         title="Appointments"

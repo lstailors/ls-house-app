@@ -28,7 +28,7 @@ export function BlockCard({ block }: Props) {
 
   return (
     <div
-      className="w-full rounded-xl border border-white/10 p-3 bg-[#0D1A10]/80 relative overflow-hidden"
+      className="w-full rounded-xl border border-white/10 p-3 bg-[#163524]/80 relative overflow-hidden"
       style={{
         backgroundImage:
           "repeating-linear-gradient(-45deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 2px, transparent 2px, transparent 10px)",

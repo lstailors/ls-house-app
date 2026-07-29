@@ -58,7 +58,7 @@ function inferBand(status?: string | null, forced?: LabelBand | null): LabelBand
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&display=swap');
 * { box-sizing: border-box; }
-body { margin: 0; background: #0D1A10; }
+body { margin: 0; background: #163524; }
 @media print {
   @page { size: 4in 6in; margin: 0; }
   html, body { background: #fff !important; margin: 0 !important; }

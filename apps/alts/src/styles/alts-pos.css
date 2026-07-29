@@ -1,18 +1,18 @@
 /* Shared Liquid Glass tokens for mock-faithful alts FOH screens */
 .alts-root {
-  --fd: #0d1a10;
-  --fr: #1f3a2e;
+  --fd: #163524;
+  --fr: #2a4f3c;
   --cr: #f1e9d6;
-  --cm: #c9c0ab;
-  --cd: #8a8474;
+  --cm: #d4cdb8;
+  --cd: #a39c8a;
   --bd: #8c6f42;
   --br: #b08d57;
   --bl: #d4b27a;
   --em: #4fbf8e;
   --am: #e8a85c;
   --ro: #d97b6c;
-  --glass: linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012));
-  --gh: linear-gradient(135deg, rgba(255, 255, 255, 0.085), rgba(255, 255, 255, 0.025));
+  --glass: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+  --gh: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
   --sl: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(212, 178, 122, 0.12);
   /* iOS Safari: dvh + safe areas (notch / home indicator) */
   min-height: 100vh;
@@ -21,7 +21,7 @@
   font-family: Montserrat, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   font-size: 14px;
-  background: radial-gradient(ellipse at 50% -12%, #17321f, var(--fd) 58%);
+  background: radial-gradient(ellipse at 50% -12%, #234d38, var(--fd) 58%);
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -173,7 +173,7 @@
     padding: 2rem;
     text-align: center;
     color: #f1e9d6;
-    background: radial-gradient(ellipse at 50% -12%, #17321f, #0d1a10 58%);
+    background: radial-gradient(ellipse at 50% -12%, #234d38, #163524 58%);
     font-family: Montserrat, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
@@ -237,7 +237,7 @@
     min-height: 100dvh;
     padding: calc(1.25rem + env(safe-area-inset-top, 0px)) 1.25rem
       calc(1.25rem + env(safe-area-inset-bottom, 0px));
-    background: radial-gradient(ellipse at 50% -12%, #17321f, #0d1a10 58%);
+    background: radial-gradient(ellipse at 50% -12%, #234d38, #163524 58%);
     color: #f1e9d6;
     font-family: Montserrat, system-ui, sans-serif;
   }

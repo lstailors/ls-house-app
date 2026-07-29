@@ -1895,7 +1895,7 @@ export default function IntakeStepped() {
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div
             className="relative w-full max-w-lg max-h-[70vh] overflow-y-auto rounded-t-[26px] border border-brass/30 p-5"
-            style={{ background: "linear-gradient(180deg,#13291C,#0D1A10)" }}
+            style={{ background: "linear-gradient(180deg,#1C3D2C,#163524)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="w-[52px] h-1 rounded-full bg-brass/40 mx-auto mb-4" />

@@ -47,7 +47,7 @@ export default function Login() {
 
       {/* ── Left panel — brand ── */}
       <div className="hidden lg:flex lg:w-1/2 flex-col items-center justify-center relative overflow-hidden"
-        style={{ background: "linear-gradient(160deg, #1F3A2E 0%, #0D1A10 100%)" }}>
+        style={{ background: "linear-gradient(160deg, #2A4F3C 0%, #163524 100%)" }}>
 
         {/* Corner marks */}
         {["top-6 left-6", "top-6 right-6", "bottom-6 left-6", "bottom-6 right-6"].map((pos) => (
