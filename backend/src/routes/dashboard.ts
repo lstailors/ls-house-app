@@ -89,15 +89,25 @@ dashboardRouter.get("/kpis", async (c) => {
   const siFilters: any[] = [["docstatus", "=", 1], ["status", "=", "Paid"], ["posting_date", ">=", monthStartStr]];
   if (locCode) siFilters.push(["company", "like", locCode === "HOU" ? "%TX%" : "%NY%"]);
 
-  // LSH Delivery for deliveriesDue
+  // LSH Delivery for deliveriesDue + day split
   const deliveryFilters: any[] = [["lsh_status", "in", ["Queued", "Out for Delivery"]]];
   if (locCode) deliveryFilters.push(["lsh_origin_location", "=", locCode]);
+
+  const deliveredTodayFilters: any[] = [
+    ["lsh_status", "=", "Delivered"],
+    ["lsh_delivered_at", ">=", startOfDay.toISOString().replace("T", " ").slice(0, 19)],
+    ["lsh_delivered_at", "<=", endOfDay.toISOString().replace("T", " ").slice(0, 19)],
+  ];
+  if (locCode) deliveredTodayFilters.push(["lsh_origin_location", "=", locCode]);
+
+  const outFilters: any[] = [["lsh_status", "=", "Out for Delivery"]];
+  if (locCode) outFilters.push(["lsh_origin_location", "=", locCode]);
 
   // Today's intake from ERPNext SOs
   const todayFilters: any[] = [["docstatus", "=", 1], ["transaction_date", "=", todayDate]];
   if (locCode) todayFilters.push(["company", "like", locCode === "HOU" ? "%TX%" : "%NY%"]);
 
-  const [erpSalesOrders, erpPaidInvoices, erpDeliveriesDue, erpTodaySOs] = await Promise.all([
+  const [erpSalesOrders, erpPaidInvoices, erpDeliveriesDue, erpDeliveredToday, erpOutForDelivery, erpTodaySOs] = await Promise.all([
     erpList<{ name: string; grand_total: number; status: string; transaction_date: string }>("Sales Order", {
       filters: soFilters,
       fields: ["name", "grand_total", "status", "transaction_date"],
@@ -110,6 +120,16 @@ dashboardRouter.get("/kpis", async (c) => {
     }).catch(() => []),
     erpList<{ name: string }>("LSH Delivery", {
       filters: deliveryFilters,
+      fields: ["name"],
+      limit: 500,
+    }).catch(() => []),
+    erpList<{ name: string }>("LSH Delivery", {
+      filters: deliveredTodayFilters,
+      fields: ["name"],
+      limit: 500,
+    }).catch(() => []),
+    erpList<{ name: string }>("LSH Delivery", {
+      filters: outFilters,
       fields: ["name"],
       limit: 500,
     }).catch(() => []),
@@ -224,6 +244,8 @@ dashboardRouter.get("/kpis", async (c) => {
       revenue,
       ordersByStage,
       deliveriesDue: erpDeliveriesDue.length,
+      deliveriesOutForDelivery: erpOutForDelivery.length,
+      deliveriesDeliveredToday: erpDeliveredToday.length,
       openAlterations,
       customInProduction,
       depositsPending,

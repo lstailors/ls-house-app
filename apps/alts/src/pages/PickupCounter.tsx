@@ -18,9 +18,18 @@ type Ticket = {
   ticket_total?: number;
   payment_status?: string;
   billing_status?: string;
+  delivery_method?: string;
   garments?: Array<{ name?: string; garment_id?: string; garment_type?: string; color?: string; garment_total?: number }>;
   lines?: Array<{ description?: string; price?: number; garment?: string }>;
   sales_invoice?: string;
+};
+
+type BoardDelivery = {
+  id: string;
+  status?: string;
+  method?: string | null;
+  courierName?: string | null;
+  deliveredAt?: string | null;
 };
 
 function money(n: number) {
@@ -48,6 +57,17 @@ export default function PickupCounter() {
     queryFn: () => api.get<Ticket>(`/api/intake-alterations/tickets/${selected}`),
   });
 
+  // Live board row for this Ready ticket (same join key as Dispatch strip)
+  const board = useQuery({
+    queryKey: ["pickup-board", selected],
+    enabled: !!selected,
+    queryFn: () =>
+      api.get<BoardDelivery[]>(
+        `/api/deliveries?alterationTicket=${encodeURIComponent(selected!)}`,
+      ),
+    staleTime: 15_000,
+  });
+
   const list = useMemo(() => {
     let rows = ready.data ?? [];
     if (q.trim()) {
@@ -66,6 +86,7 @@ export default function PickupCounter() {
   }, [ready.data, q, filter]);
 
   const t = detail.data;
+  const boardRow = (board.data ?? [])[0] ?? null;
   const unpaid =
     t &&
     t.payment_status !== "Paid" &&
@@ -73,6 +94,13 @@ export default function PickupCounter() {
     (Number(t.ticket_total) || 0) > 0 &&
     t.billing_status !== "Warranty" &&
     t.billing_status !== "Included in Custom Order";
+
+  const methodLabel = (m?: string | null) => {
+    if (m === "Hand Delivery") return "Hand delivery";
+    if (m === "Courier") return "Ship direct";
+    if (m === "Pickup") return "Counter pickup";
+    return m || "Not set";
+  };
 
   const release = useMutation({
     mutationFn: async () => {
@@ -87,6 +115,7 @@ export default function PickupCounter() {
       toast.success("Released — Picked Up");
       if (data?.unpaid_release_sms?.sent) toast.success("Unpaid balance SMS sent");
       qc.invalidateQueries({ queryKey: ["pickup-ready"] });
+      qc.invalidateQueries({ queryKey: ["pickup-board"] });
       setSelected(null);
       setCollector("");
     },
@@ -147,6 +176,14 @@ export default function PickupCounter() {
             className="bg-transparent outline-none text-sm flex-1 text-cream placeholder:text-cream-dim"
           />
         </div>
+        <a
+          href="https://app.lstailors.com/deliveries"
+          target="_blank"
+          rel="noreferrer"
+          className="hidden sm:inline-flex items-center gap-2 h-11 px-4 rounded-full border border-[rgba(155,139,196,0.45)] bg-[rgba(155,139,196,0.10)] text-sm font-semibold text-[#C4B5E0] hover:border-[rgba(155,139,196,0.7)]"
+        >
+          Dispatch board
+        </a>
         <Link
           to="/scanner"
           className="flex items-center gap-2 h-11 px-4 rounded-full border border-brass/30 text-sm font-semibold text-brass-light hover:border-brass/50"
@@ -356,9 +393,51 @@ export default function PickupCounter() {
                   </div>
                 )}
 
+                {/* Exit path: counter release OR hand delivery / ship */}
+                <div className="rounded-2xl border border-[rgba(155,139,196,0.35)] bg-[rgba(155,139,196,0.08)] p-3 mb-4 space-y-2">
+                  <div className="caps text-[#C4B5E0]">Exit path</div>
+                  <div className="text-xs text-cream-dim">
+                    Ticket method:{" "}
+                    <span className="text-cream font-semibold">
+                      {methodLabel(t.delivery_method)}
+                    </span>
+                  </div>
+                  {boardRow ? (
+                    <div className="text-xs space-y-1">
+                      <div>
+                        On board ·{" "}
+                        <span className="font-mono text-brass-light">{boardRow.id}</span>
+                      </div>
+                      <div className="text-cream">
+                        {(boardRow.status || "—").replace(/_/g, " ")}
+                        {boardRow.courierName ? ` · ${boardRow.courierName}` : ""}
+                      </div>
+                      <a
+                        href={`https://app.lstailors.com/deliveries/${boardRow.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex text-[12px] font-bold tracking-widest uppercase text-[#C4B5E0] pt-1"
+                      >
+                        Open on dispatch board ↗
+                      </a>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => nav(`/dispatch?ticket=${encodeURIComponent(selected!)}`)}
+                      className="w-full h-12 rounded-xl border border-[rgba(155,139,196,0.5)] bg-[rgba(155,139,196,0.18)] text-[12px] font-bold tracking-widest uppercase text-[#EDE6FF] hover:bg-[rgba(155,139,196,0.28)]"
+                    >
+                      Queue hand delivery / ship
+                    </button>
+                  )}
+                  <p className="text-[11px] text-cream-dim leading-snug">
+                    Counter release below is for walk-in pickup only. Driver POD never charges.
+                  </p>
+                </div>
+
                 <button
                   type="button"
-                  disabled={release.isPending || !confirmWho}
+                  disabled={release.isPending || !confirmWho || !!boardRow}
                   onClick={() => {
                     if (unpaid) {
                       const ok = window.confirm(
@@ -374,7 +453,13 @@ export default function PickupCounter() {
                     "disabled:opacity-40",
                   )}
                 >
-                  {release.isPending ? "…" : unpaid ? "Release unpaid" : "Release · Picked Up"}
+                  {boardRow
+                    ? "On delivery board"
+                    : release.isPending
+                      ? "…"
+                      : unpaid
+                        ? "Release unpaid · counter"
+                        : "Release · counter pickup"}
                 </button>
                 <p className="text-[12px] text-cream-dim mt-3 text-center">
                   POD is separate — charge is never on proof of delivery.

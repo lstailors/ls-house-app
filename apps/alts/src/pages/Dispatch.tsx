@@ -1,14 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { cn } from "@ls/design/utils";
+import { StatusPill } from "@ls/design";
 import "@alts/styles/alts-pos.css";
 
 type Ticket = {
   name: string;
+  customer?: string;
   customer_name?: string;
   customer_mobile?: string;
   customer_phone?: string;
@@ -23,8 +25,73 @@ type Ticket = {
 
 type Method = "Pickup" | "Hand Delivery" | "Courier";
 
+/** Board status tokens after serializeDelivery (ERP title-case → snake). */
+type BoardDelivery = {
+  id: string;
+  deliveryNo?: string | null;
+  status: string;
+  method?: string | null;
+  courierName?: string | null;
+  driver?: { name?: string | null; phone?: string | null } | null;
+  scheduledAt?: string | null;
+  deliveredAt?: string | null;
+  dispatchedAt?: string | null;
+  addressLine?: string | null;
+  city?: string | null;
+  garmentSummary?: string | null;
+  garmentCount?: number | null;
+  podMethod?: string | null;
+  hasSignature?: boolean;
+  proofOfDeliveryUrl?: string | null;
+  signatureImageUrl?: string | null;
+  notes?: string | null;
+};
+
 function money(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function asMethod(v?: string | null): Method {
+  if (v === "Hand Delivery" || v === "Courier" || v === "Pickup") return v;
+  return "Pickup";
+}
+
+function methodLabel(m?: string | null): string {
+  if (m === "Pickup") return "Counter pickup";
+  if (m === "Hand Delivery") return "Hand delivery";
+  if (m === "Courier") return "Ship direct";
+  return "Not set";
+}
+
+function fmtShort(iso?: string | null): string {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function boardStatusDot(status: string): string {
+  if (status === "delivered") return "bg-signal-emerald shadow-[0_0_8px_rgba(79,191,142,0.7)]";
+  if (status === "failed" || status === "cancelled") return "bg-signal-rose shadow-[0_0_8px_rgba(217,123,108,0.7)]";
+  if (status === "out_for_delivery" || status === "ready_for_pickup")
+    return "bg-signal-amber shadow-[0_0_8px_rgba(232,168,92,0.7)]";
+  return "bg-brass shadow-[0_0_8px_rgba(176,141,87,0.55)]";
+}
+
+function boardWindow(d: BoardDelivery): string {
+  if (d.deliveredAt) return fmtShort(d.deliveredAt);
+  if (d.dispatchedAt) return fmtShort(d.dispatchedAt);
+  if (d.scheduledAt) return fmtShort(d.scheduledAt);
+  return "—";
 }
 
 export default function Dispatch() {
@@ -53,7 +120,22 @@ export default function Dispatch() {
     queryFn: () => api.get<Ticket>(`/api/intake-alterations/tickets/${selected}`),
   });
 
+  const board = useQuery({
+    queryKey: ["dispatch-board", selected],
+    enabled: !!selected,
+    queryFn: async () => {
+      // api.get unwraps { data: T }
+      const rows = await api.get<BoardDelivery[]>(
+        `/api/deliveries?alterationTicket=${encodeURIComponent(selected!)}`,
+      );
+      return (Array.isArray(rows) ? rows : [])[0] ?? null;
+    },
+    refetchInterval: 30_000,
+  });
+
   const t = detail.data;
+  const boardDoc = board.data ?? null;
+  const storedMethod = asMethod(t?.delivery_method);
   const total = Number(t?.ticket_total) || 0;
   const unpaid =
     t &&
@@ -65,45 +147,50 @@ export default function Dispatch() {
 
   const list = ready.data ?? [];
 
+  // HER-75 P0: seed method from the ticket record on select — never hard-default Pickup
+  useEffect(() => {
+    if (!t) return;
+    setMethod(asMethod(t.delivery_method));
+  }, [t?.name, t?.delivery_method]);
+
   const setDelivery = useMutation({
     mutationFn: async () => {
       if (!selected) throw new Error("Pick a ticket");
-      // Prefer intake status path for delivery_method when present on detail PATCH
-      try {
-        await api.patch(`/api/alterations/${encodeURIComponent(selected)}`, {
-          deliveryMethod: method,
-        });
-      } catch {
-        // non-fatal — method still used for local UX + delivery create
-      }
+
+      // Write method on the ticket (staff-owned axis). Surface failures — do not swallow.
+      await api.patch(`/api/alterations/${encodeURIComponent(selected)}`, {
+        deliveryMethod: method,
+      });
+
       if (method !== "Pickup") {
-        await api.post("/api/deliveries", {
+        // from-order is the path that already writes lsh_alteration_ticket (join key).
+        // POST / now also accepts the key, but from-order matches alts' payload shape.
+        await api.post("/api/deliveries/from-order", {
           alteration_ticket: selected,
+          customer_erp_name: t?.customer,
           customer_name: t?.customer_name,
           customer_phone: t?.customer_mobile || t?.customer_phone,
+          notify_phone: t?.customer_mobile || t?.customer_phone,
           method,
           address: addr1 || undefined,
           city: city || undefined,
-          apt: undefined,
-          notify_phone: t?.customer_mobile || t?.customer_phone,
+          state: state || undefined,
+          // zip is not on from-order schema fields beyond notes — fold into notes if present
           garment_summary: (t?.garments ?? []).map((g) => g.garment_type).filter(Boolean).join(", "),
           garment_count: t?.garments?.length ?? 0,
           location: "NYC",
-          notes: note || undefined,
-        }).catch(async () => {
-          // alternate payload shape
-          await api.post("/api/deliveries", {
-            sales_order: null,
-            alteration_ticket: selected,
-            customer_name: t?.customer_name,
-            method,
-            address: [addr1, city, state, zip].filter(Boolean).join(", "),
-          });
+          notes: [note, zip ? `ZIP ${zip}` : ""].filter(Boolean).join(" · ") || undefined,
         });
       }
       return true;
     },
-    onSuccess: () => toast.success(method === "Pickup" ? "Marked for counter pickup" : `${method} queued`),
+    onSuccess: () => {
+      toast.success(method === "Pickup" ? "Marked for counter pickup" : `${methodLabel(method)} queued`);
+      qc.invalidateQueries({ queryKey: ["dispatch-ticket", selected] });
+      qc.invalidateQueries({ queryKey: ["dispatch-board", selected] });
+      qc.invalidateQueries({ queryKey: ["dispatch-ready"] });
+      qc.invalidateQueries({ queryKey: ["alts-home-stats"] });
+    },
     onError: (e: Error) => toast.error(e.message || "Could not set delivery"),
   });
 
@@ -151,18 +238,41 @@ export default function Dispatch() {
           title: "Counter pickup",
           sub: "Client comes in. Confirm identity, then release.",
           pod: "No POD",
+          icon: (
+            <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M16 3a3.2 3.2 0 0 0-3.2 3.2c0 1.6 1.3 2.3 2.3 2.8L5.5 15.5A2 2 0 0 0 4.6 17v1.9c0 .7.6 1.3 1.3 1.3h20.2c.7 0 1.3-.6 1.3-1.3V17a2 2 0 0 0-.9-1.6l-9.6-6.4c1-.5 2.3-1.2 2.3-2.8A3.2 3.2 0 0 0 16 3z" />
+              <path d="M9 24h14M9 28h9" opacity=".65" />
+            </svg>
+          ),
         },
         {
           id: "Hand Delivery" as const,
           title: "Hand delivery",
           sub: "Marco / house driver. Address required.",
           pod: "POD on delivery — never charges",
+          icon: (
+            <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M2.5 20.5V9.5A1.6 1.6 0 0 1 4.1 8h11.3a1.6 1.6 0 0 1 1.6 1.5v11" />
+              <path d="M17 12.5h5.4l4.1 4.3v3.7" />
+              <circle cx="8" cy="23" r="2.6" />
+              <circle cx="22" cy="23" r="2.6" />
+              <path d="M10.6 23h8.8M2.5 20.5h2.9M24.6 20.5h2.4" />
+            </svg>
+          ),
         },
         {
           id: "Courier" as const,
-          title: "Courier",
-          sub: "Third-party courier. Track + notify.",
-          pod: "POD if available",
+          // Display copy only — stored value stays "Courier" (Lucia / HER-75).
+          title: "Ship direct",
+          sub: "Third-party courier. Tracked, client notified.",
+          pod: "POD if carrier provides",
+          icon: (
+            <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M4 10.6 16 4.5l12 6.1v10.8L16 27.5 4 21.4z" />
+              <path d="M4 10.6 16 16.7l12-6.1M16 16.7v10.8" opacity=".7" />
+              <path d="M10 7.5 22 13.6" opacity=".45" />
+            </svg>
+          ),
         },
       ] as const,
     [],
@@ -170,13 +280,13 @@ export default function Dispatch() {
 
   return (
     <div className="alts-root flex flex-col min-h-dvh">
-        {ready.isError && (
-          <QueryErrorPanel
-            title="Could not load"
-            onRetry={() => ready.refetch()}
-            className="mx-4 mt-3"
-          />
-        )}
+      {ready.isError && (
+        <QueryErrorPanel
+          title="Could not load"
+          onRetry={() => ready.refetch()}
+          className="mx-4 mt-3"
+        />
+      )}
       <header className="flex items-center gap-3 px-5 py-3.5 border-b border-brass/20 bg-black/20">
         <Link
           to={selected ? `/orders/alterations/${selected}` : "/"}
@@ -225,6 +335,15 @@ export default function Dispatch() {
                       </span>
                       <span className="text-brass-light">{money(Number(row.ticket_total) || 0)}</span>
                     </div>
+                    {/* HER-75 1a — method line (board pill needs a per-row fetch; method is on list) */}
+                    <div
+                      className="mt-[9px] pt-[9px] flex items-center gap-[7px]"
+                      style={{ borderTop: "1px solid rgba(176,141,87,.14)" }}
+                    >
+                      <span className="text-[12px] font-semibold tracking-[0.1em] uppercase text-[var(--cd)]">
+                        {methodLabel(row.delivery_method).toUpperCase()}
+                      </span>
+                    </div>
                   </button>
                 );
               })}
@@ -245,30 +364,112 @@ export default function Dispatch() {
 
           {selected && t && (
             <>
+              {/* HER-75 — violet live-state strip (read-only board mirror). Nothing when no record. */}
+              {boardDoc && (
+                <div
+                  className="rounded-[15px] px-4 py-[13px] flex flex-wrap items-center gap-3"
+                  style={{
+                    border: "1px solid rgba(155,139,196,.30)",
+                    background: "rgba(155,139,196,.08)",
+                  }}
+                >
+                  <span className={cn("w-2 h-2 rounded-full shrink-0", boardStatusDot(boardDoc.status))} />
+                  <StatusPill status={boardDoc.status} />
+                  <span className="font-mono text-[12px] text-brass-light">
+                    {boardDoc.deliveryNo || boardDoc.id}
+                  </span>
+                  <span className="text-[12px] text-[var(--cm)]">
+                    {(boardDoc.courierName || boardDoc.driver?.name || "Unassigned") +
+                      " · " +
+                      boardWindow(boardDoc)}
+                  </span>
+                  <a
+                    href={`https://app.lstailors.com/deliveries/${encodeURIComponent(boardDoc.id)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="ml-auto min-h-11 inline-flex items-center text-[12px] font-bold tracking-widest uppercase text-[var(--violet,#9B8BC4)] hover:opacity-90"
+                  >
+                    Board →
+                  </a>
+                </div>
+              )}
+
               <div>
                 <div className="caps mb-3">How it goes out</div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {ways.map((w) => (
-                    <button
-                      key={w.id}
-                      type="button"
-                      onClick={() => setMethod(w.id)}
-                      className={cn(
-                        "text-left rounded-[18px] p-4 border transition-all",
-                        method === w.id
-                          ? "border-brass bg-gradient-to-br from-brass/20 to-brass/5 ring-1 ring-brass/30"
-                          : "border-brass/20 bg-black/20 hover:border-brass/45",
-                      )}
-                    >
-                      <div className="display text-[21px] mb-1">{w.title}</div>
-                      <p className="text-[12px] text-[var(--cd)] leading-relaxed">{w.sub}</p>
-                      <div className="mt-3 pt-2 border-t border-brass/15 text-[12px] font-bold tracking-wider uppercase text-brass/70">
-                        {w.pod}
-                      </div>
-                    </button>
-                  ))}
+                  {ways.map((w) => {
+                    const isCurrent = storedMethod === w.id;
+                    const isSelected = method === w.id;
+                    return (
+                      <button
+                        key={w.id}
+                        type="button"
+                        onClick={() => setMethod(w.id)}
+                        className={cn(
+                          "relative text-left rounded-[18px] p-4 border transition-all min-h-[150px] flex flex-col",
+                          isSelected
+                            ? "border-brass bg-gradient-to-br from-brass/20 to-brass/5 ring-1 ring-brass/30"
+                            : "border-brass/20 bg-black/20 hover:border-brass/45",
+                        )}
+                      >
+                        {isCurrent && (
+                          <span
+                            className="absolute top-3.5 right-3.5 text-[12px] font-bold tracking-[0.1em] uppercase px-2 py-0.5 rounded-full z-[1]"
+                            style={{
+                              color: "var(--violet, #9B8BC4)",
+                              border: "1px solid rgba(155,139,196,.4)",
+                              background: "rgba(155,139,196,.12)",
+                            }}
+                          >
+                            Current
+                          </span>
+                        )}
+                        {isSelected && (
+                          <span className="absolute top-3.5 left-3.5 w-[22px] h-[22px] rounded-full bg-brass text-forest-deep text-[12px] grid place-items-center font-bold z-[1]">
+                            ✓
+                          </span>
+                        )}
+                        {/* 30px stroked icons hold the top band — no selection mt shift (Lucia render check) */}
+                        <span
+                          className={cn(
+                            "block mb-2.5 transition-colors",
+                            isSelected ? "text-brass-light opacity-100" : "text-brass-light opacity-90",
+                          )}
+                          style={isSelected ? { color: "var(--brass-glow, #E3C48F)" } : undefined}
+                        >
+                          {w.icon}
+                        </span>
+                        <div className="display text-[21px] mb-1">{w.title}</div>
+                        <p className="text-[12px] text-[var(--cd)] leading-relaxed flex-1">{w.sub}</p>
+                        <div className="mt-3 pt-2 border-t border-brass/15 text-[12px] font-bold tracking-wider uppercase text-brass/70">
+                          {w.pod}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
+
+              {/* Empty-state honesty when method needs a board record but none exists */}
+              {!boardDoc && method !== "Pickup" && storedMethod !== "Pickup" && (
+                <div className="card-glass px-[18px] py-[22px] text-center">
+                  <div className="seal mx-auto mb-3 opacity-80">LS</div>
+                  <span className="pill pill-muted">No dispatch</span>
+                  <p className="text-[12px] text-[var(--cd)] leading-relaxed mt-3 max-w-md mx-auto">
+                    No board record for this ticket yet. Choose a method above, then queue it —
+                    a silent write failure looks the same as never queued.
+                  </p>
+                </div>
+              )}
+              {!boardDoc && method === "Pickup" && storedMethod === "Pickup" && (
+                <div className="card-glass px-[18px] py-[22px] text-center">
+                  <div className="seal mx-auto mb-3 opacity-80">LS</div>
+                  <span className="pill pill-muted">At counter</span>
+                  <p className="text-[12px] text-[var(--cd)] leading-relaxed mt-3 max-w-md mx-auto">
+                    Pickup does not create a board record. Release at the counter — no POD, no driver.
+                  </p>
+                </div>
+              )}
 
               {method !== "Pickup" && (
                 <div className="card-glass overflow-hidden">
@@ -364,6 +565,29 @@ export default function Dispatch() {
               </div>
               <p className="text-[12px] text-cream-dim mb-4">No tax · service</p>
 
+              {boardDoc && (
+                <>
+                  <div className="my-2 h-px bg-brass/15" />
+                  <div className="caps mb-2">On the board</div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <StatusPill status={boardDoc.status} />
+                  </div>
+                  <div className="text-[12px] text-[var(--cm)] mb-2">
+                    {(boardDoc.courierName || boardDoc.driver?.name || "Unassigned") +
+                      " · " +
+                      boardWindow(boardDoc)}
+                  </div>
+                  <a
+                    href={`https://app.lstailors.com/deliveries/${encodeURIComponent(boardDoc.id)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-ghost w-full min-h-11 h-11 text-[12px] mb-4 inline-flex items-center justify-center"
+                  >
+                    Open on dispatch board →
+                  </a>
+                </>
+              )}
+
               {unpaid && (
                 <div className="space-y-2 mb-4">
                   <div className="caps text-signal-amber">Charge at Ready</div>
@@ -399,7 +623,9 @@ export default function Dispatch() {
                   ? "…"
                   : method === "Pickup"
                     ? "Confirm counter pickup"
-                    : `Queue ${method.toLowerCase()}`}
+                    : method === "Courier"
+                      ? "Queue ship direct"
+                      : `Queue ${method.toLowerCase()}`}
               </button>
 
               {method === "Pickup" && (
@@ -415,6 +641,7 @@ export default function Dispatch() {
                   disabled={releasePickup.isPending}
                   className={cn(
                     "w-full h-14 rounded-2xl font-bold tracking-widest uppercase text-sm",
+                    // C: emerald when paid, amber when unpaid — never red
                     unpaid ? "bg-signal-amber/90 text-forest-deep" : "bg-signal-emerald text-forest-deep",
                   )}
                 >

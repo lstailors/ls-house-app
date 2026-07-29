@@ -15,6 +15,9 @@ type Stats = {
   overdue: number;
   outToTailors: number;
   parked: number;
+  outForDelivery: number;
+  deliveredToday: number;
+  pendingBoard: number;
   syncedAt: number;
 };
 
@@ -55,7 +58,7 @@ export default function HomeTiles() {
   const stats = useQuery({
     queryKey: ["alts-home-stats"],
     queryFn: async (): Promise<Stats> => {
-      const [rows, parked] = await Promise.all([
+      const [rows, parked, deliveries] = await Promise.all([
         api.get<
           Array<{
             workflow_state?: string;
@@ -66,6 +69,12 @@ export default function HomeTiles() {
           }>
         >("/api/intake-alterations/tickets?limit=200"),
         api.get<Array<unknown>>("/api/carts").catch(() => [] as unknown[]),
+        // HER-75: board counts for Deliveries tile + status strip
+        api
+          .get<
+            Array<{ status?: string; deliveredAt?: string | null }>
+          >("/api/deliveries")
+          .catch(() => [] as Array<{ status?: string; deliveredAt?: string | null }>),
       ]);
       const list = Array.isArray(rows) ? rows : (rows as any)?.tickets ?? [];
       const today = new Date().toISOString().slice(0, 10);
@@ -89,6 +98,18 @@ export default function HomeTiles() {
           }
         }
       }
+      const deliv = Array.isArray(deliveries) ? deliveries : [];
+      let outForDelivery = 0;
+      let deliveredToday = 0;
+      let pendingBoard = 0;
+      for (const d of deliv) {
+        const st = (d.status || "").toLowerCase();
+        if (st === "out_for_delivery") outForDelivery += 1;
+        if (st === "scheduled" || st === "out_for_delivery" || st === "queued") pendingBoard += 1;
+        if (st === "delivered" && d.deliveredAt && String(d.deliveredAt).slice(0, 10) === today) {
+          deliveredToday += 1;
+        }
+      }
       return {
         open,
         ready,
@@ -96,6 +117,9 @@ export default function HomeTiles() {
         overdue,
         outToTailors,
         parked: Array.isArray(parked) ? parked.length : 0,
+        outForDelivery,
+        deliveredToday,
+        pendingBoard,
         syncedAt: Date.now(),
       };
     },
@@ -111,6 +135,9 @@ export default function HomeTiles() {
     overdue: 0,
     outToTailors: 0,
     parked: 0,
+    outForDelivery: 0,
+    deliveredToday: 0,
+    pendingBoard: 0,
     syncedAt: Date.now(),
   };
 
@@ -227,6 +254,24 @@ export default function HomeTiles() {
       ),
     },
     {
+      key: "deliveries",
+      // Board lives on app.lstailors.com — external affordance matches Reports & Admin
+      href: "https://app.lstailors.com/deliveries",
+      title: "Deliveries",
+      sub: "Dispatch board · driver route · POD",
+      external: true,
+      badge: s.pendingBoard || null,
+      badgeKind: s.outForDelivery > 0 ? "warn" : "neutral",
+      icon: (
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 16.5 26 7l20 9.5v17L26 43 6 33.5z" />
+          <path d="M6 16.5 26 26l20-9.5M26 26v17" opacity=".7" />
+          <circle cx="38" cy="36" r="8" stroke="#9B8BC4" strokeWidth="1.4" />
+          <path d="M38 32.5v7M34.5 36h7" stroke="#9B8BC4" strokeWidth="1.4" />
+        </svg>
+      ),
+    },
+    {
       key: "admin",
       href: "https://app.lstailors.com",
       title: "Reports & Admin",
@@ -313,7 +358,7 @@ export default function HomeTiles() {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 grid grid-cols-2 lg:grid-cols-3 grid-rows-3 lg:grid-rows-2 gap-[15px]">
+      <div className="flex-1 min-h-0 grid grid-cols-2 lg:grid-cols-3 auto-rows-fr gap-[15px]">
         {tiles.map((t) => {
           const className = cn(
             "relative rounded-[22px] border p-[22px] flex flex-col min-h-0 overflow-hidden",
@@ -323,6 +368,9 @@ export default function HomeTiles() {
             t.primary &&
               "from-brass/20 to-brass/5 border-brass/50 hover:from-brass/28 hover:to-brass/8",
             t.external && "border-dashed border-brass/40",
+            // HER-75 Deliveries tile — violet-tinted border (board-owned surface)
+            t.key === "deliveries" &&
+              "border-[rgba(155,139,196,0.42)] hover:border-[rgba(155,139,196,0.65)] from-[rgba(155,139,196,0.10)] to-white/[0.012]",
           );
 
           const body = (
@@ -387,24 +435,33 @@ export default function HomeTiles() {
         ))}
       </div>
 
-      <div className="mt-[15px] rounded-[15px] border border-brass/15 bg-black/25 flex flex-wrap overflow-hidden shrink-0">
-        <div className="flex-1 min-w-[110px] px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
+      {/* HER-75: 3×2 status strip — six metrics without wrap-shear at tablet landscape */}
+      <div className="mt-[15px] rounded-[15px] border border-brass/15 bg-black/25 grid grid-cols-2 sm:grid-cols-3 overflow-hidden shrink-0">
+        <div className="px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-b border-brass/10">
           <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Open tickets</span>
           <span className="display text-2xl ml-auto">{s.open}</span>
         </div>
-        <div className="flex-1 min-w-[110px] px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
+        <div className="px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-b border-brass/10 sm:border-r">
           <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Ready for pickup</span>
           <span className="display text-2xl ml-auto text-[var(--em)]">{s.ready}</span>
         </div>
-        <div className="flex-1 min-w-[110px] px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
+        <div className="px-[18px] py-[13px] flex items-baseline gap-2.5 border-b border-brass/10 border-r sm:border-r-0">
           <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Out to tailors</span>
           <span className="display text-2xl ml-auto text-[var(--am)]">{s.outToTailors}</span>
         </div>
-        <div className="flex-1 min-w-[110px] px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
+        <div className="px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
+          <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Out for delivery</span>
+          <span className="display text-2xl ml-auto text-[var(--am)]">{s.outForDelivery}</span>
+        </div>
+        <div className="px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
+          <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Delivered today</span>
+          <span className="display text-2xl ml-auto text-[var(--em)]">{s.deliveredToday}</span>
+        </div>
+        <div className="px-[18px] py-[13px] flex items-baseline gap-2.5">
           <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Overdue</span>
           <span className="display text-2xl ml-auto text-[var(--ro)]">{s.overdue}</span>
         </div>
-        <div className="flex items-center gap-2 px-[18px] py-[13px] text-xs text-[var(--cd)]">
+        <div className="col-span-2 sm:col-span-3 flex items-center gap-2 px-[18px] py-[11px] text-xs text-[var(--cd)] border-t border-brass/10">
           <span
             className={cn(
               "w-[7px] h-[7px] rounded-full",

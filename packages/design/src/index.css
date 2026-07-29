@@ -128,7 +128,8 @@
   }
 
   .pill {
-    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium uppercase tracking-widerer border;
+    /* HER-75 / SPEC 037: hard 12px floor (was text-[10px]) */
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium uppercase tracking-widerer border;
   }
   .pill-emerald {
     @apply bg-signal-emerald/10 text-signal-emerald border-signal-emerald/30;

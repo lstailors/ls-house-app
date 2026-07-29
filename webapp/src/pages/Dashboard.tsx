@@ -306,6 +306,19 @@ export default function Dashboard() {
         />
         <div className="flex items-center gap-2 flex-wrap shrink-0 pt-1">
           <button
+            onClick={() => navigate("/deliveries")}
+            className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/35 bg-cyan-400/10 px-3.5 py-2 text-xs font-medium text-cyan-200 hover:bg-cyan-400/18 hover:border-cyan-400/55 transition-all"
+          >
+            <Truck className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Deliveries</span>
+            <span className="sm:hidden">Route</span>
+            {!isLoading && (kpis?.deliveriesDue ?? 0) > 0 ? (
+              <span className="ml-0.5 min-w-[1.25rem] h-5 px-1.5 rounded-full bg-cyan-300/90 text-forest-deep text-[10px] font-bold grid place-items-center">
+                {kpis?.deliveriesDue}
+              </span>
+            ) : null}
+          </button>
+          <button
             onClick={() => navigate("/intake/alterations")}
             className="inline-flex items-center gap-1.5 rounded-full border border-brass/30 bg-brass/8 px-3.5 py-2 text-xs font-medium text-brass-shimmer hover:bg-brass/15 hover:border-brass/50 transition-all"
           >
@@ -501,11 +514,23 @@ export default function Dashboard() {
 
         <GlassCard className="p-5">
           <div className="flex items-start justify-between mb-3">
-            <div className="ui-label">Logistics</div>
+            <div className="ui-label">Logistics · today</div>
             <Truck className="h-4 w-4 text-brass-light/60" />
           </div>
-          <div className="kpi-number text-4xl mb-1">{isLoading ? "—" : (kpis?.deliveriesDue ?? 0)}</div>
-          <div className="text-xs text-cream-muted mb-3">deliveries scheduled</div>
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            <div>
+              <div className="kpi-number text-2xl leading-none">{isLoading ? "—" : (kpis?.deliveriesDue ?? 0)}</div>
+              <div className="text-[10px] text-cream-muted mt-1">pending</div>
+            </div>
+            <div>
+              <div className="kpi-number text-2xl leading-none text-amber-300">{isLoading ? "—" : (kpis?.deliveriesOutForDelivery ?? 0)}</div>
+              <div className="text-[10px] text-cream-muted mt-1">out now</div>
+            </div>
+            <div>
+              <div className="kpi-number text-2xl leading-none text-emerald-300">{isLoading ? "—" : (kpis?.deliveriesDeliveredToday ?? 0)}</div>
+              <div className="text-[10px] text-cream-muted mt-1">delivered</div>
+            </div>
+          </div>
           <button onClick={() => navigate("/deliveries")}
             className="text-xs text-brass-light hover:text-brass transition-colors">
             Open dispatch board →
