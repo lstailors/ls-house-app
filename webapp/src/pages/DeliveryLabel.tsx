@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Printer } from "lucide-react";
 import QRCode from "qrcode";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 
 interface LabelData {
   id: string;

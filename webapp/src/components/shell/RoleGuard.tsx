@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
-import { useMe } from "@/lib/session";
+import { useMe } from "@ls/auth";
 import type { UserRole } from "@ls/types";
 import { Monogram } from "@ls/design";
 

@@ -8,11 +8,11 @@ import { SectionHeader } from "@ls/design";
 import { GlassCard } from "@ls/design";
 import { Button } from "@ls/design/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@ls/design/ui/avatar";
-import { useMe } from "@/lib/session";
-import { signOut } from "@/lib/authClient";
+import { useMe } from "@ls/auth";
+import { signOut } from "@ls/auth";
 import { initials } from "@ls/design/format";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { useMutation } from "@tanstack/react-query";
 
 function PrinterSettings() {

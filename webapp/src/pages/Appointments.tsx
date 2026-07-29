@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { cn } from "@ls/design/utils";
 import { Button } from "@ls/design/ui/button";
 import { SectionHeader } from "@ls/design";
-import { useMe } from "@/lib/session";
+import { useMe } from "@ls/auth";
 import { AgendaView } from "@/components/appointments/AgendaView";
 import { WeekView } from "@/components/appointments/WeekView";
 import { MonthView } from "@/components/appointments/MonthView";

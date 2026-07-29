@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { SectionHeader } from "@ls/design";
 import { AlterationsBoard, type AlterationRow } from "@/components/alterations/AlterationsBoard";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 
 export default function AdminBoard() {
   const { data: rows = [], isLoading } = useQuery({

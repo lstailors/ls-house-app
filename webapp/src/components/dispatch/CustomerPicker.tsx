@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Search, MessageSquare, User } from "lucide-react";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { GlassCard } from "@ls/design";
 import { cn } from "@ls/design/utils";
 import type { DispatchCustomer, DispatchRecentThread } from "@ls/types";

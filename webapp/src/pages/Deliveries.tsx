@@ -17,10 +17,10 @@ import { useDeliveries, useUpdateDelivery, useDeliveryDailyOpsSummary } from "@/
 import { AnomaliesCard } from "@/components/deliveries/AnomaliesCard";
 import { DispatchMap } from "@/components/maps/DispatchMap";
 import { useNavigate } from "react-router-dom";
-import { useMe } from "@/lib/session";
+import { useMe } from "@ls/auth";
 import { formatDateTime } from "@ls/design/format";
 import { cn } from "@ls/design/utils";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import type { Delivery } from "@ls/types";
 
 const FILTERS = [

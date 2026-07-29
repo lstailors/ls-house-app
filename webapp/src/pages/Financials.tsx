@@ -24,7 +24,7 @@ import { GlassCard } from "@ls/design";
 import { KpiCard } from "@ls/design";
 import { useState } from "react";
 import { useFinancials } from "@/lib/queries";
-import { useMe } from "@/lib/session";
+import { useMe } from "@ls/auth";
 import { formatUSD } from "@ls/design/format";
 import { cn } from "@ls/design/utils";
 

@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { useUpdateDelivery, useCustomerSearch, useDeliveryProofUrls } from "@/lib/queries";
 import { Button } from "@ls/design/ui/button";
 import { Input } from "@ls/design/ui/input";

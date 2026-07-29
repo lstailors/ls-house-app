@@ -10,12 +10,12 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@ls/design/ui/dropdown-menu";
-import { signOut } from "@/lib/authClient";
+import { signOut } from "@ls/auth";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import type { Profile } from "@ls/types";
 import { initials, formatDate } from "@ls/design/format";
 import { LocationBanner } from "./LocationBanner";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { useState, useEffect, useRef } from "react";
 import { UnifiedFeed } from "@/components/UnifiedFeed";
 import { cn } from "@ls/design/utils";

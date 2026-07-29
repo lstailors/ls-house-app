@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, RotateCcw, Briefcase } from "lucide-react";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { GlassCard } from "@ls/design";
 import { cn } from "@ls/design/utils";
 

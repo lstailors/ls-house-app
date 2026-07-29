@@ -10,7 +10,7 @@ import { StatusPill } from "@ls/design";
 import { Button } from "@ls/design/ui/button";
 import { useCustomOrder } from "@/lib/queries";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import type { CustomOrder } from "@ls/types";
 import { GARMENT_LABEL } from "@/lib/pricing";
 import { formatUSD, formatDateTime } from "@ls/design/format";

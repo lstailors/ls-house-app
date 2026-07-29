@@ -6,7 +6,7 @@ import {
   RefreshCw, CheckCircle2, AlertCircle, Wifi, Calendar
 } from "lucide-react"
 import { toast } from "sonner"
-import { api } from "@/lib/api"
+import { api } from "@ls/api-client"
 import { GlassCard } from "@ls/design"
 import { Button } from "@ls/design/ui/button"
 import { cn } from "@ls/design/utils"

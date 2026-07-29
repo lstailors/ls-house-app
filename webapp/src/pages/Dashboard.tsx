@@ -6,7 +6,7 @@ import {
   Zap, TrendingUp, TrendingDown, Receipt, BarChart2, QrCode, ArrowLeftRight,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { useMe } from "@/lib/session";
+import { useMe } from "@ls/auth";
 import { useDashboardKpis, useDailyEspresso, useFinancials, useOpenYZTickets } from "@/lib/queries";
 import { SectionHeader } from "@ls/design";
 import { KpiCard } from "@ls/design";

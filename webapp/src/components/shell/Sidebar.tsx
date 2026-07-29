@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@ls/design/ui/avatar";
 import { useMaestroApprovalCount, useTaskCount, useHelpdeskOpenCount } from "@/lib/queries";
-import { useMe } from "@/lib/session";
+import { useMe } from "@ls/auth";
 import type { UserRole } from "@ls/types";
 import { cn } from "@ls/design/utils";
 import { initials } from "@ls/design/format";

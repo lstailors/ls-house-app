@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Outlet, Navigate, useLocation } from "react-router-dom";
 import { Sidebar, type SidebarMode } from "./Sidebar";
 import { TopBar } from "./TopBar";
-import { useMe } from "@/lib/session";
+import { useMe } from "@ls/auth";
 import { LocationProvider } from "@/lib/locationContext";
 import { Monogram } from "@ls/design";
 import {

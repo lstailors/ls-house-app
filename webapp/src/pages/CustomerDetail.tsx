@@ -7,7 +7,7 @@ import {
   FileText, Heart, Ruler, AlertCircle, ShoppingBag,
   Scissors, Receipt, ExternalLink, DollarSign, Camera, Users, Mail,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { Button } from "@ls/design/ui/button";
 import { cn } from "@ls/design/utils";
 import { toast } from "sonner";

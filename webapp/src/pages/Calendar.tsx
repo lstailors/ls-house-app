@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Calendar as CalIcon, MapPin, Clock, User, Filter } from "lucide-react";
 import { SectionHeader } from "@ls/design";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 
 // ── Feed config ───────────────────────────────────────────────────────────────

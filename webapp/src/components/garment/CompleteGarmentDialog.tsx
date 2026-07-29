@@ -19,7 +19,7 @@ import {
 import { Input } from "@ls/design/ui/input";
 import { Label } from "@ls/design/ui/label";
 import { Button } from "@ls/design/ui/button";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import type { GarmentWorker } from "@ls/types";
 
 interface Props {

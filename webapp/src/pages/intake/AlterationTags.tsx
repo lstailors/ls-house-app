@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
 import { Printer, ArrowLeft, Zap } from 'lucide-react'
 import { toast } from 'sonner'
-import { api } from '@/lib/api'
+import { api } from '@ls/api-client'
 
 interface AlterationTicketDoc {
   name: string

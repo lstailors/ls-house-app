@@ -22,9 +22,9 @@ import {
   Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { api } from '@/lib/api'
+import { api } from '@ls/api-client'
 import { cn } from "@ls/design/utils"
-import { useMe } from '@/lib/session'
+import { useMe } from '@ls/auth'
 import type { CartPayload } from '@/lib/cart/parked'
 import { ChargeTerminalButton } from '@/components/payments/ChargeTerminalButton'
 import { ChargeCardOnFileButton } from '@/components/payments/ChargeCardOnFileButton'

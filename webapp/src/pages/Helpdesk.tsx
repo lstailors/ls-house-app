@@ -22,7 +22,7 @@ import {
 import {
   useHelpdeskTickets, useHelpdeskOpenCount, useHelpdeskCreateTicket,
 } from "@/lib/queries";
-import { useMe } from "@/lib/session";
+import { useMe } from "@ls/auth";
 import { cn } from "@ls/design/utils";
 import type { HDTicket } from "@ls/types";
 

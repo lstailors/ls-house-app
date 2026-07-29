@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Smartphone, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 import { GlassCard } from "@ls/design";
 import { Button } from "@ls/design/ui/button";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { toast } from "sonner";
 
 type Stage = "idle" | "starting" | "waiting" | "paired" | "error";

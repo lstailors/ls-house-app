@@ -2,9 +2,9 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   MessageSquare, X, ArrowLeft, Send, Hash, Bot, ChevronRight, Camera,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
-import { useMe } from "@/lib/session";
+import { useMe } from "@ls/auth";
 import { toast } from "sonner";
 
 // ── Types ─────────────────────────────────────────────────────────────────────

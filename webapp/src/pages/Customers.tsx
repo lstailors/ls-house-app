@@ -8,7 +8,7 @@ import { SectionHeader } from "@ls/design";
 import { StatusPill } from "@ls/design";
 import { EmptyState } from "@ls/design";
 import { Button } from "@ls/design/ui/button";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@ls/design/utils";
 

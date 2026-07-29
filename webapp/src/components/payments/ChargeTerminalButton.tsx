@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
 } from "@ls/design/ui/alert-dialog";
 import { cn } from "@ls/design/utils";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 
 type Stage =
   | "idle"

@@ -7,7 +7,7 @@ import {
 import { SectionHeader } from "@ls/design";
 import { EmptyState } from "@ls/design";
 import { Button } from "@ls/design/ui/button";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@ls/design/utils";
 import { useIsMobile } from "@ls/design/hooks/use-mobile";

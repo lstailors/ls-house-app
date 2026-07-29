@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import { Plus, X } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { Button } from "@ls/design/ui/button";
 

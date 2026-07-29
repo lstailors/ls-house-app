@@ -1,7 +1,7 @@
 // Thermal printer helpers. The printer configuration now lives in ERPNext
 // (LSH Print Settings), and browser UI prints through /api/print/*.
 
-import { api } from "@/lib/api"
+import { api } from "@ls/api-client"
 
 export interface PrintConfig {
   enabled: boolean

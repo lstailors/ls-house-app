@@ -11,7 +11,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { GlassCard } from "@ls/design";
 import { StatusPill } from "@ls/design";
 import { Button } from "@ls/design/ui/button";

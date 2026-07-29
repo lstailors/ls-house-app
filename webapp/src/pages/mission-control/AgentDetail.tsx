@@ -21,7 +21,7 @@ import {
 import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
 import { formatRelative, formatDateTime } from "@ls/design/format";
-import { useMe } from "@/lib/session";
+import { useMe } from "@ls/auth";
 import { canSeeFinancials } from "@ls/auth";
 
 // ─── Types ────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { toast } from "sonner";
 import { cn } from "@ls/design/utils";
 

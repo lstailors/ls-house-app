@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ExternalLink, Phone, RefreshCw, Users } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { SectionHeader } from "@ls/design";
 import { GlassCard } from "@ls/design";
 import { CustomerPicker, selectionKey, type DispatchSelection } from "@/components/dispatch/CustomerPicker";

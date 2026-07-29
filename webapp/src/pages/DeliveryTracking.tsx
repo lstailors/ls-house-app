@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Check, Phone, Truck, CheckCircle2, Camera, PenLine, MapPin, Loader2, X, Navigation } from "lucide-react";
 import SignatureCanvas from "react-signature-canvas";
 import imageCompression from "browser-image-compression";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 
 const LS_PHONE = "(212) 308-4431";
 const LS_PHONE_RAW = "+12123084431";

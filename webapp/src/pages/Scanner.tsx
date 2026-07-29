@@ -5,7 +5,8 @@ import { toast } from "sonner";
 import { X, Keyboard, ArrowRight, CameraOff, Aperture } from "lucide-react";
 import { Button } from "@ls/design/ui/button";
 import { Input } from "@ls/design/ui/input";
-import { api } from "@/lib/api";
+import { cn } from "@ls/design/utils";
+import { api } from "@ls/api-client";
 import type { ScannerResult, ScannerActionResult } from "@ls/types";
 import { ScannerResultSheet } from "@/components/scanner/ScannerResultSheet";
 import {

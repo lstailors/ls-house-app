@@ -18,14 +18,14 @@ import {
   useCreateCustomOrder,
   type DepositReceipt as ReceiptT,
 } from "@/lib/queries";
-import { useMe } from "@/lib/session";
+import { useMe } from "@ls/auth";
 import { useActiveLocation } from "@/lib/locationContext";
 import { computePrice, suggestedDeposit, type SpecChoices } from "@/lib/pricing";
 import type { CustomOrder, GarmentType } from "@ls/types";
 import { Textarea } from "@ls/design/ui/textarea";
 import { Label } from "@ls/design/ui/label";
 import { formatUSD } from "@ls/design/format";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@ls/design/ui/dialog";
 
 const STEPS = [

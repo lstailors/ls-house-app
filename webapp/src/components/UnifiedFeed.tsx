@@ -3,7 +3,7 @@ import {
   X, Bell, Hash, Smartphone, Zap, CheckSquare, Clock, ChevronRight, CheckCheck,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { formatRelative } from "@ls/design/format";
 import { cn } from "@ls/design/utils";
 

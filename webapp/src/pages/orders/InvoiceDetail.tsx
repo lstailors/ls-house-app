@@ -17,7 +17,7 @@ import {
   Check,
 } from "lucide-react";
 import { ChargeTerminalButton } from "@/components/payments/ChargeTerminalButton";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { GlassCard } from "@ls/design";
 import { StatusPill } from "@ls/design";
 import { formatUSD, formatDate } from "@ls/design/format";

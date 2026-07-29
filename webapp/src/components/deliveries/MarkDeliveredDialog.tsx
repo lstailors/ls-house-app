@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@ls/design/ui/select";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { useMarkDelivered } from "@/lib/queries";
 import { cn } from "@ls/design/utils";
 import type { Delivery } from "@ls/types";

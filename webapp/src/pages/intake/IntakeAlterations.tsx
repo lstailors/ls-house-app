@@ -7,9 +7,9 @@ import {
   Banknote, ClipboardList, Search, User, Phone, Mail, MapPin,
   Camera
 } from 'lucide-react'
-import { api } from '@/lib/api'
+import { api } from '@ls/api-client'
 import { cn } from "@ls/design/utils"
-import { useMe } from '@/lib/session'
+import { useMe } from '@ls/auth'
 import { CustomerEditSheet } from '@/components/pos/CustomerEditSheet'
 import { SaveCartControls } from '@/components/alterations/SaveCartControls'
 import type { ParkedCart, CartPayload } from '@/lib/cart/parked'

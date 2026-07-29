@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from "react";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import type { ParkedCart, CartPayload } from "@/lib/cart/parked";
 import type { CustomerInput } from "@/lib/erpnext/customer";
 

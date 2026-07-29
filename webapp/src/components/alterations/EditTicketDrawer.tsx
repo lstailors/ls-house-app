@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
-import { api } from '@/lib/api'
+import { api } from '@ls/api-client'
 import { cn } from "@ls/design/utils"
 import {
   Sheet,

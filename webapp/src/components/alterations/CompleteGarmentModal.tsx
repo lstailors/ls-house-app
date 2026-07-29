@@ -3,7 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, CheckCircle2, Clock, Loader2, PartyPopper } from 'lucide-react'
 import { toast } from 'sonner'
-import { api } from '@/lib/api'
+import { api } from '@ls/api-client'
 import { cn } from "@ls/design/utils"
 import type { CompleteGarmentResult } from "@ls/types"
 
