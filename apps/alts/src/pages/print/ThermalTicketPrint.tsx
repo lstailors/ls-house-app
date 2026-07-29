@@ -212,10 +212,14 @@ export default function ThermalTicketPrint() {
     setPrinting(what);
     try {
       const path = what === "receipts" ? "/api/print/receipt" : "/api/print/ticket";
+      // /api/print/receipt expects { invoice } (ticket name or SI name);
+      // /api/print/ticket expects { ticket_name, what }.
+      const payload =
+        what === "receipts" ? { invoice: ticket.name } : { ticket_name: ticket.name, what };
       const res = await api.raw(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ticket_name: ticket.name, what }),
+        body: JSON.stringify(payload),
       });
       const result = await res.json().catch(() => ({}));
       if (!result.ok) throw new Error(result.error ?? "Print failed");
