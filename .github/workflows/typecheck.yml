@@ -1,0 +1,52 @@
+name: Typecheck
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  typecheck-webapp:
+    name: "tsc: webapp"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install root + webapp deps
+        run: bun install
+      - name: Typecheck webapp
+        working-directory: webapp
+        # continue-on-error: false so this genuinely gates merges.
+        # Land red-but-reporting if tree is not clean; the gate still reports.
+        run: bun run typecheck
+
+  typecheck-backend:
+    name: "tsc: backend"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install root + backend deps
+        run: bun install && cd backend && bun install
+      - name: Typecheck backend
+        working-directory: backend
+        run: bun run typecheck
+
+  typecheck-alts:
+    name: "tsc: apps/alts"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install all deps
+        run: bun install
+      - name: Typecheck alts
+        working-directory: apps/alts
+        run: bun run typecheck

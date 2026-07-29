@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite --port 8010",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
