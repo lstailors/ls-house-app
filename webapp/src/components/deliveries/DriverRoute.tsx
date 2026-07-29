@@ -26,7 +26,7 @@ import {
 } from "@ls/design/ui/dialog";
 import type { Delivery } from "@ls/types";
 import { useUpdateDelivery, useMarkDelivered } from "@/lib/queries";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { formatDateTime } from "@ls/design/format";
 import { cn } from "@ls/design/utils";
 
