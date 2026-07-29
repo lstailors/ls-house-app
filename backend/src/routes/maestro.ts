@@ -15,7 +15,7 @@ import {
 } from "../lib/erpnext/agents";
 import { storeList } from "../lib/erpnext/store";
 import { DT } from "../lib/erpnext/doctypes";
-import { requireCronSecret } from "../lib/require-secret";
+import { requireCronOrSession } from "../lib/require-secret";
 
 export const maestroRouter = new Hono();
 
@@ -156,7 +156,7 @@ maestroRouter.post("/brief", async (c) => {
 // ── GET /api/maestro/brief/trigger ── generate + save a fresh brief via Grok ──
 // HER-61 S4: Vercel cron must send Authorization: Bearer $CRON_SECRET
 maestroRouter.get("/brief/trigger", async (c) => {
-  const gate = requireCronSecret(c);
+  const gate = await requireCronOrSession(c);
   if (gate !== true) return gate;
   try {
     const now = new Date();

@@ -3,6 +3,7 @@
  * Never treat a missing env secret as "auth disabled".
  */
 import type { Context } from "hono";
+import { getAuthedUser } from "./scope";
 
 /** True only when expected is non-empty and matches provided (constant-time-ish). */
 export function secretsMatch(
@@ -78,4 +79,14 @@ export function requireHeaderSecret(
     return c.json({ error: { message: "Unauthorized" } }, 401);
   }
   return true;
+}
+
+/**
+ * Cron routes that are also invoked from the staff SPA (session cookie/Bearer).
+ * Allow either a valid staff session OR CRON_SECRET. Anonymous always denied.
+ */
+export async function requireCronOrSession(c: Context): Promise<true | Response> {
+  const user = await getAuthedUser(c);
+  if (user) return true;
+  return requireCronSecret(c);
 }

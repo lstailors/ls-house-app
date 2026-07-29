@@ -16,7 +16,7 @@ import {
 import { findCustomerByPhone } from "../lib/erpnext/customers";
 import { approveEmailDraft, discardEmailDraft } from "../lib/erpnext/email-drafts";
 import { getAuthedUser } from "../lib/scope";
-import { requireCronSecret } from "../lib/require-secret";
+import { requireCronOrSession } from "../lib/require-secret";
 // sendSms and alertCarl defined locally below
 
 // ── Constants ──
@@ -2268,7 +2268,7 @@ End with: — Sofia`,
 
 // HER-61 S4: briefing endpoints require CRON_SECRET (same as Vercel cron header)
 sofiaRouter.post("/briefing", async (c) => {
-  const gate = requireCronSecret(c);
+  const gate = await requireCronOrSession(c);
   if (gate !== true) return gate;
   const result = await runBriefing();
   if (!result.ok) return c.json({ error: { message: result.error ?? "briefing failed" } }, 500);
@@ -2276,7 +2276,7 @@ sofiaRouter.post("/briefing", async (c) => {
 });
 
 sofiaRouter.get("/briefing/trigger", async (c) => {
-  const gate = requireCronSecret(c);
+  const gate = await requireCronOrSession(c);
   if (gate !== true) return gate;
   const result = await runBriefing();
   if (!result.ok) return c.json({ error: { message: result.error ?? "briefing failed" } }, 500);
