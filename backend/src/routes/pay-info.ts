@@ -97,63 +97,40 @@ async function persistLinkToInvoice(invoiceId: string, url: string): Promise<voi
   }
 }
 
+/**
+ * HER-63 P0-2: mint ONLY via ERP `ls_square.pos.create_payment_link`.
+ * That path writes a `Square Checkout` row so webhooks can reconcile.
+ * The old direct Square `online-checkout/payment-links` fallback minted a
+ * bare `square.link` with no map — every hit guaranteed a webhook miss and
+ * manufactured duplicate open links. Do not restore it.
+ */
 async function createSquareLink(
   invoiceId: string,
-  amountCents: number,
-  customerName: string,
+  _amountCents: number,
+  _customerName: string,
 ): Promise<string | null> {
-  const accessToken = (process.env.SQUARE_ACCESS_TOKEN ?? '').trim();
-  const locationId = (process.env.SQUARE_LOCATION_ID ?? process.env.VITE_SQUARE_LOCATION_ID ?? '').trim();
-  if (!accessToken || !locationId || amountCents <= 0) return null;
+  if (!hasErpCreds() || !invoiceId) return null;
 
   try {
-    // Prefer ERP method (ties order to invoice cleanly)
-    if (hasErpCreds()) {
-      const erpRes = await fetch(
-        `${ERP_BASE}/api/method/ls_alterations.ls_square.pos.create_payment_link`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: erpAuth(),
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 L&S-House-Pay',
-          },
-          body: JSON.stringify({ invoice: invoiceId }),
+    const erpRes = await fetch(
+      `${ERP_BASE}/api/method/ls_alterations.ls_square.pos.create_payment_link`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: erpAuth(),
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 L&S-House-Pay',
         },
-      );
-      if (erpRes.ok) {
-        const j: any = await erpRes.json().catch(() => ({}));
-        const msg = j?.message ?? j;
-        const url = msg?.url || msg?.payment_url || msg?.data?.url;
-        if (typeof url === 'string' && url.startsWith('http')) return url;
-      }
-    }
-
-    const res = await fetch('https://connect.squareup.com/v2/online-checkout/payment-links', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'Square-Version': '2024-12-18',
+        body: JSON.stringify({ invoice: invoiceId }),
       },
-      body: JSON.stringify({
-        idempotency_key: crypto.randomUUID(),
-        quick_pay: {
-          name: `L&S Custom Tailors — Invoice ${invoiceId}`,
-          price_money: { amount: amountCents, currency: 'USD' },
-          location_id: locationId,
-        },
-        checkout_options: {
-          allow_tipping: false,
-          ask_for_shipping_address: false,
-        },
-        payment_note: `Invoice ${invoiceId}${customerName ? ` — ${customerName}` : ''}`,
-      }),
-    });
-    if (!res.ok) return null;
-    const json: any = await res.json();
-    return json?.payment_link?.url ?? null;
+    );
+    if (!erpRes.ok) return null;
+    const j: any = await erpRes.json().catch(() => ({}));
+    const msg = j?.message ?? j;
+    const url = msg?.url || msg?.payment_url || msg?.data?.url;
+    if (typeof url === 'string' && url.startsWith('http')) return url;
+    return null;
   } catch {
     return null;
   }
