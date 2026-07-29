@@ -238,12 +238,27 @@ export default function Dispatch() {
           title: "Counter pickup",
           sub: "Client comes in. Confirm identity, then release.",
           pod: "No POD",
+          icon: (
+            <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M16 3a3.2 3.2 0 0 0-3.2 3.2c0 1.6 1.3 2.3 2.3 2.8L5.5 15.5A2 2 0 0 0 4.6 17v1.9c0 .7.6 1.3 1.3 1.3h20.2c.7 0 1.3-.6 1.3-1.3V17a2 2 0 0 0-.9-1.6l-9.6-6.4c1-.5 2.3-1.2 2.3-2.8A3.2 3.2 0 0 0 16 3z" />
+              <path d="M9 24h14M9 28h9" opacity=".65" />
+            </svg>
+          ),
         },
         {
           id: "Hand Delivery" as const,
           title: "Hand delivery",
           sub: "Marco / house driver. Address required.",
           pod: "POD on delivery — never charges",
+          icon: (
+            <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M2.5 20.5V9.5A1.6 1.6 0 0 1 4.1 8h11.3a1.6 1.6 0 0 1 1.6 1.5v11" />
+              <path d="M17 12.5h5.4l4.1 4.3v3.7" />
+              <circle cx="8" cy="23" r="2.6" />
+              <circle cx="22" cy="23" r="2.6" />
+              <path d="M10.6 23h8.8M2.5 20.5h2.9M24.6 20.5h2.4" />
+            </svg>
+          ),
         },
         {
           id: "Courier" as const,
@@ -251,6 +266,13 @@ export default function Dispatch() {
           title: "Ship direct",
           sub: "Third-party courier. Tracked, client notified.",
           pod: "POD if carrier provides",
+          icon: (
+            <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M4 10.6 16 4.5l12 6.1v10.8L16 27.5 4 21.4z" />
+              <path d="M4 10.6 16 16.7l12-6.1M16 16.7v10.8" opacity=".7" />
+              <path d="M10 7.5 22 13.6" opacity=".45" />
+            </svg>
+          ),
         },
       ] as const,
     [],
@@ -392,7 +414,7 @@ export default function Dispatch() {
                       >
                         {isCurrent && (
                           <span
-                            className="absolute top-3.5 right-3.5 text-[12px] font-bold tracking-[0.1em] uppercase px-2 py-0.5 rounded-full"
+                            className="absolute top-3.5 right-3.5 text-[12px] font-bold tracking-[0.1em] uppercase px-2 py-0.5 rounded-full z-[1]"
                             style={{
                               color: "var(--violet, #9B8BC4)",
                               border: "1px solid rgba(155,139,196,.4)",
@@ -403,11 +425,21 @@ export default function Dispatch() {
                           </span>
                         )}
                         {isSelected && (
-                          <span className="absolute top-3.5 left-3.5 w-[22px] h-[22px] rounded-full bg-brass text-forest-deep text-[12px] grid place-items-center font-bold">
+                          <span className="absolute top-3.5 left-3.5 w-[22px] h-[22px] rounded-full bg-brass text-forest-deep text-[12px] grid place-items-center font-bold z-[1]">
                             ✓
                           </span>
                         )}
-                        <div className={cn("display text-[21px] mb-1", isSelected && "mt-4")}>{w.title}</div>
+                        {/* 30px stroked icons hold the top band — no selection mt shift (Lucia render check) */}
+                        <span
+                          className={cn(
+                            "block mb-2.5 transition-colors",
+                            isSelected ? "text-brass-light opacity-100" : "text-brass-light opacity-90",
+                          )}
+                          style={isSelected ? { color: "var(--brass-glow, #E3C48F)" } : undefined}
+                        >
+                          {w.icon}
+                        </span>
+                        <div className="display text-[21px] mb-1">{w.title}</div>
                         <p className="text-[12px] text-[var(--cd)] leading-relaxed flex-1">{w.sub}</p>
                         <div className="mt-3 pt-2 border-t border-brass/15 text-[12px] font-bold tracking-wider uppercase text-brass/70">
                           {w.pod}
