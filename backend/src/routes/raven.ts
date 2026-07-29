@@ -13,9 +13,13 @@ const CARL_EMAIL = "carl@lstailors.com";
 const SOFIA_EMAIL = "concierge@lstailors.com";
 
 // Carl's API credentials for posting as Sofia
+// HER-61 S3: no hardcoded fallbacks — empty string if unset (callers must handle).
 function carlAuthHeader(): string {
-  const key = process.env.ERPNEXT_CARL_API_KEY ?? "0c3a223606ede7c";
-  const secret = process.env.ERPNEXT_CARL_API_SECRET ?? "cd4fd503416f673";
+  const key = (process.env.ERPNEXT_CARL_API_KEY ?? "").trim();
+  const secret = (process.env.ERPNEXT_CARL_API_SECRET ?? "").trim();
+  if (!key || !secret) {
+    throw new Error("ERPNEXT_CARL_API_KEY/SECRET not configured");
+  }
   return `token ${key}:${secret}`;
 }
 
@@ -52,13 +56,17 @@ async function postRavenMessage(channelId: string, text: string): Promise<{ ok: 
 
 // Fetch recent messages from a Raven channel using Carl's creds
 async function fetchRavenMessages(channelId: string, limit = 20): Promise<any[]> {
-  const fields = JSON.stringify(["name", "channel_id", "text", "owner", "creation", "message_type"]);
-  const filters = JSON.stringify([["channel_id", "=", channelId]]);
-  const url = `${ERP_BASE}/api/resource/Raven%20Message?fields=${encodeURIComponent(fields)}&filters=${encodeURIComponent(filters)}&order_by=creation%20desc&limit=${limit}`;
-  const res = await fetch(url, { headers: { Authorization: carlAuthHeader() } });
-  if (!res.ok) return [];
-  const json: any = await res.json();
-  return json?.data ?? [];
+  try {
+    const fields = JSON.stringify(["name", "channel_id", "text", "owner", "creation", "message_type"]);
+    const filters = JSON.stringify([["channel_id", "=", channelId]]);
+    const url = `${ERP_BASE}/api/resource/Raven%20Message?fields=${encodeURIComponent(fields)}&filters=${encodeURIComponent(filters)}&order_by=creation%20desc&limit=${limit}`;
+    const res = await fetch(url, { headers: { Authorization: carlAuthHeader() } });
+    if (!res.ok) return [];
+    const json: any = await res.json();
+    return json?.data ?? [];
+  } catch {
+    return [];
+  }
 }
 
 // Core Sofia-for-staff Grok call

@@ -13,10 +13,15 @@ import { listSmsMessagesFiltered, insertSmsMessage } from "../lib/erpnext/agents
 
 export const sofiaBridgeRouter = new Hono();
 
+// HER-61 S1: fail closed — missing SOFIA_BRIDGE_KEY must NOT open the API.
 function authGuard(key: string | null): boolean {
-  const expected = process.env.SOFIA_BRIDGE_KEY;
-  if (!expected) return true;
-  return key === expected;
+  const expected = (process.env.SOFIA_BRIDGE_KEY ?? "").trim();
+  if (!expected) return false;
+  const provided = (key ?? "").trim();
+  if (!provided || provided.length !== expected.length) return false;
+  let out = 0;
+  for (let i = 0; i < expected.length; i++) out |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
+  return out === 0;
 }
 
 function fmtNYC(iso: string): string {

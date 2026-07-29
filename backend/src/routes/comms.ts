@@ -9,6 +9,7 @@ import {
   listSmsMessagesFiltered,
   insertAgentBrief,
 } from "../lib/erpnext/agents";
+import { requireCronSecret } from "../lib/require-secret";
 
 // ── Log communication to ERPNext Customer timeline ────────────────────────
 export async function logErpCommunication(opts: {
@@ -306,7 +307,10 @@ Extract everything concrete. Use actual names, amounts, dates from the transcrip
 
 // ── GET /api/comms/daily-brief/trigger — Sofia scans all day's comms ───────
 // Called by Vercel cron at end of day. Generates full intelligence brief.
+// HER-61 S4: require CRON_SECRET
 commsRouter.get("/daily-brief/trigger", async (c) => {
+  const gate = requireCronSecret(c);
+  if (gate !== true) return gate;
   const todayStr = new Date().toISOString().slice(0, 10);
   const nycDate = new Date().toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "long", month: "long", day: "numeric" });
 

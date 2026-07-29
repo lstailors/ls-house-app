@@ -6,9 +6,17 @@ export const outreachRouter = new Hono();
 
 // POST /api/outreach/order-ready
 // Called by n8n when a Sales Order status changes to ready
+// HER-61 S2: fail closed when OUTREACH_SECRET unset (undefined===undefined was open).
 outreachRouter.post("/order-ready", async (c) => {
-  const secret = c.req.header("x-outreach-secret");
-  if (secret !== process.env.OUTREACH_SECRET) {
+  const expected = (process.env.OUTREACH_SECRET ?? "").trim();
+  if (!expected) {
+    return c.json(
+      { error: { message: "OUTREACH_SECRET not configured", code: "SECRET_UNSET" } },
+      503,
+    );
+  }
+  const secret = (c.req.header("x-outreach-secret") ?? "").trim();
+  if (!secret || secret !== expected) {
     return c.json({ error: { message: "Unauthorized" } }, 401);
   }
 
