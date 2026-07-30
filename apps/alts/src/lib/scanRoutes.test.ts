@@ -1,0 +1,124 @@
+/**
+ * Pure unit checks for scan route mapping (no DOM / camera).
+ * Run: bun webapp/src/lib/scanRoutes.test.ts
+ */
+import {
+  parseGarmentTagUrl,
+  parseCustomerUrl,
+  parseTicketUrl,
+  parsePayUrl,
+  routeForScannerResult,
+  openPathForResult,
+  routeFromRawScan,
+} from "./scanRoutes";
+import type { ScannerResult } from "../../../backend/src/types";
+
+function assert(cond: unknown, msg: string) {
+  if (!cond) throw new Error(msg);
+}
+
+// garment path
+const g = parseGarmentTagUrl("https://alts.lstailors.com/g/ALT-NYC-2026-00042/G1");
+assert(g?.ticket === "ALT-NYC-2026-00042" && g?.garment === "G1", "garment url");
+assert(parseGarmentTagUrl("/g/ALT-1/G2")?.garment === "G2", "garment path only");
+
+// thermal ticket QR (what C photographed)
+assert(
+  parseTicketUrl("https://alts.lstailors.com/t/ALT-NYC-2026-00061") === "ALT-NYC-2026-00061",
+  "thermal /t/ url",
+);
+assert(parseTicketUrl("https://alts.lstailors.com/e-ticket/ALT-NYC-1") === "ALT-NYC-1", "e-ticket");
+assert(parseTicketUrl("ALT-NYC-2026-00061") === "ALT-NYC-2026-00061", "bare ALT");
+
+// customer
+assert(parseCustomerUrl("https://app.lstailors.com/customers/CUST-0001") === "CUST-0001", "customer url");
+assert(parseCustomerUrl("/customers/new") === null, "customer new ignored");
+
+// pay
+assert(parsePayUrl("https://app.lstailors.com/pay/SINV-1") === "SINV-1", "pay url");
+assert(parsePayUrl("SINV-NYC-1") === "SINV-NYC-1", "bare sinv");
+
+// fast route from raw thermal scan → ticket detail (not public e-ticket)
+const fast = routeFromRawScan("https://alts.lstailors.com/t/ALT-NYC-2026-00061");
+assert(
+  fast.kind === "path" && fast.path === "/orders/alterations/ALT-NYC-2026-00061",
+  "fast thermal → TicketDetail",
+);
+
+// ticket auto-route
+const ticket: ScannerResult = {
+  ok: true,
+  type: "alteration_ticket",
+  name: "ALT-NYC-2026-00042",
+  doctype: "Alteration Ticket",
+};
+const tNav = routeForScannerResult(ticket);
+assert(tNav.kind === "path" && tNav.path.includes("orders/alterations/ALT-NYC"), "ticket path");
+
+// invoice → ticket when ref present
+const inv: ScannerResult = {
+  ok: true,
+  type: "sales_invoice",
+  name: "SINV-1",
+  doctype: "Sales Invoice",
+  meta: { alteration_ticket_ref: "ALT-NYC-2026-00042" },
+};
+const iNav = routeForScannerResult(inv);
+assert(iNav.kind === "path" && iNav.path.includes("ALT-NYC-2026-00042"), "invoice→ticket");
+
+// invoice without ref → pay
+const inv2: ScannerResult = {
+  ok: true,
+  type: "sales_invoice",
+  name: "SINV-2",
+  doctype: "Sales Invoice",
+};
+const i2 = routeForScannerResult(inv2);
+assert(i2.kind === "path" && i2.path === "/pay/SINV-2", "invoice→pay");
+
+// delivery
+const d: ScannerResult = {
+  ok: true,
+  type: "lsh_delivery",
+  name: "DN-NYC-2026-00001",
+  doctype: "LSH Delivery",
+};
+assert(
+  routeForScannerResult(d).kind === "path" &&
+    (routeForScannerResult(d) as { path: string }).path.includes("deliveries"),
+  "delivery",
+);
+
+// transfer stays on sheet
+const tr: ScannerResult = {
+  ok: true,
+  type: "tailor_transfer",
+  name: "TT-1",
+  doctype: "Tailor Transfer",
+};
+assert(routeForScannerResult(tr).kind === "none", "transfer sheet");
+
+// open fallback desk
+const co: ScannerResult = {
+  ok: true,
+  type: "custom_order",
+  name: "LST-1",
+  doctype: "LSH Custom Order",
+};
+const open = openPathForResult(co);
+assert(open.kind === "external" && open.url.includes("erp.lstailors.com"), "desk fallback");
+
+// customer type
+const cu: ScannerResult = {
+  ok: true,
+  type: "customer",
+  name: "CUST-9",
+  doctype: "Customer",
+};
+assert(
+  routeForScannerResult(cu).kind === "path" &&
+    (routeForScannerResult(cu) as { path: string }).path === "/customers/CUST-9",
+  "customer path",
+);
+
+console.log("scanRoutes.test.ts — all assertions passed");
