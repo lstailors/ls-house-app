@@ -251,3 +251,195 @@ def checkout_status(checkout_id):
     """Poll a terminal checkout (e.g. to show progress on the iPad)."""
     c = client.get_terminal_checkout(checkout_id)
     return {"status": c.get("status"), "payment_ids": c.get("payment_ids") or []}
+
+
+# ---------------------------------------------------------------------------
+# Card on file (HER-79) — staff-confirm only, never auto-bill
+# ---------------------------------------------------------------------------
+
+def _erp_customer_for_invoice(inv):
+    return inv.customer
+
+
+def _resolve_square_customer_id(erp_customer):
+    """Return Square customer id for an ERP Customer, linking if we can."""
+    if not erp_customer:
+        return None
+    row = frappe.db.get_value(
+        "Customer", erp_customer,
+        ["square_customer_id", "mobile_no", "email_id", "customer_name"],
+        as_dict=True,
+    )
+    if not row:
+        return None
+    sid = (row.get("square_customer_id") or "").strip()
+    if sid:
+        return sid
+
+    # Try phone match against Square vault
+    phone = row.get("mobile_no") or ""
+    if not phone:
+        # primary contact mobile
+        contact = frappe.db.get_value("Customer", erp_customer, "customer_primary_contact")
+        if contact:
+            phone = frappe.db.get_value("Contact", contact, "mobile_no") or ""
+    matches = client.search_customers_by_phone(phone) if phone else []
+    if not matches:
+        return None
+    sid = matches[0].get("id")
+    if sid:
+        try:
+            frappe.db.set_value("Customer", erp_customer, {
+                "square_customer_id": sid,
+                "last_square_sync_at": frappe.utils.now_datetime(),
+            }, update_modified=False)
+            frappe.db.commit()
+        except Exception:
+            pass
+    return sid
+
+
+def _sync_has_stored_card(erp_customer, cards):
+    try:
+        flag = 1 if cards else 0
+        frappe.db.set_value(
+            "Customer", erp_customer,
+            {
+                "has_stored_card": flag,
+                "last_square_sync_at": frappe.utils.now_datetime(),
+            },
+            update_modified=False,
+        )
+        frappe.db.commit()
+    except Exception:
+        pass
+
+
+def _card_public(c):
+    return {
+        "id": c.get("id"),
+        "brand": c.get("card_brand") or c.get("card_type") or "CARD",
+        "last4": c.get("last_4") or "",
+        "exp_month": c.get("exp_month"),
+        "exp_year": c.get("exp_year"),
+        "enabled": bool(c.get("enabled", True)),
+        "cardholder_name": c.get("cardholder_name") or "",
+    }
+
+
+@frappe.whitelist()
+def list_cards(invoice=None, ticket=None, customer=None):
+    """
+    List vaulted Square cards for the customer on an invoice/ticket.
+    Never charges. Staff picks a card in the UI, then calls charge_card_on_file.
+    """
+    erp_customer = customer
+    inv_name = None
+    if not erp_customer:
+        inv_name = _resolve_invoice(invoice=invoice, ticket=ticket)
+        inv = frappe.get_doc("Sales Invoice", inv_name)
+        erp_customer = inv.customer
+    if not erp_customer:
+        return {"ok": False, "error": "no_customer", "cards": []}
+
+    sq_id = _resolve_square_customer_id(erp_customer)
+    if not sq_id:
+        return {
+            "ok": True,
+            "customer": erp_customer,
+            "square_customer_id": None,
+            "cards": [],
+            "message": "No Square customer linked — card on file not available",
+        }
+
+    cards = client.list_cards(sq_id)
+    enabled = [c for c in cards if c.get("enabled", True)]
+    _sync_has_stored_card(erp_customer, enabled)
+    return {
+        "ok": True,
+        "customer": erp_customer,
+        "square_customer_id": sq_id,
+        "invoice": inv_name,
+        "cards": [_card_public(c) for c in enabled],
+    }
+
+
+@frappe.whitelist()
+def charge_card_on_file(card_id, invoice=None, ticket=None, amount=None,
+                        idempotency_key=None):
+    """
+    Staff-confirmed charge of a vaulted card against SI outstanding.
+    NEVER called automatically from ticket create/submit.
+    Amount defaults to full outstanding; partial allowed if amount provided.
+    """
+    if not card_id:
+        frappe.throw("card_id required")
+
+    inv_name = _resolve_invoice(invoice=invoice, ticket=ticket)
+    inv = frappe.get_doc("Sales Invoice", inv_name)
+    if inv.docstatus != 1:
+        frappe.throw("Invoice {} is not submitted".format(inv_name))
+
+    outstanding = flt(inv.outstanding_amount)
+    if outstanding <= 0:
+        return {"ok": False, "status": "already_paid", "invoice": inv_name}
+
+    charge_amt = flt(amount) if amount is not None else outstanding
+    if charge_amt <= 0:
+        frappe.throw("amount must be positive")
+    if charge_amt - outstanding > 0.02:
+        frappe.throw("amount {} exceeds outstanding {}".format(charge_amt, outstanding))
+
+    erp_customer = inv.customer
+    sq_id = _resolve_square_customer_id(erp_customer)
+    if not sq_id:
+        frappe.throw("Customer has no Square account linked")
+
+    # Verify the card belongs to this Square customer
+    cards = client.list_cards(sq_id)
+    match = next((c for c in cards if c.get("id") == card_id and c.get("enabled", True)), None)
+    if not match:
+        frappe.throw("Card not found on customer's Square vault")
+
+    amount_cents = int(round(charge_amt * 100))
+    key = idempotency_key or "cof-{}-{}-{}".format(
+        inv_name, card_id[-8:], amount_cents)
+
+    payment = client.create_card_payment(
+        amount_cents=amount_cents,
+        source_card_id=card_id,
+        customer_id=sq_id,
+        reference_id=inv_name,
+        note="L&S COF {} - {}".format(inv_name, inv.customer_name or inv.customer),
+        idempotency_key=key,
+    )
+
+    status = (payment.get("status") or "").upper()
+    payment_id = payment.get("id")
+
+    # Best-effort ticket method label (webhook will set payment_status)
+    try:
+        tname = _ticket_for_invoice(inv_name)
+        if tname and payment_id:
+            frappe.db.set_value(
+                "Alteration Ticket", tname,
+                {
+                    "square_transaction_id": payment_id,
+                    "square_payment_method": "Card on File",
+                },
+                update_modified=False,
+            )
+            frappe.db.commit()
+    except Exception:
+        pass
+
+    return {
+        "ok": status in ("COMPLETED", "APPROVED"),
+        "status": status or "UNKNOWN",
+        "method": "card_on_file",
+        "invoice": inv_name,
+        "amount": charge_amt,
+        "payment_id": payment_id,
+        "card": _card_public(match),
+        "receipt_url": payment.get("receipt_url"),
+    }

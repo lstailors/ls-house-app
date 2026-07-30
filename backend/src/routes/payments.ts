@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
+import { erpGet, erpUpdate, erpRunMethod } from "../lib/erp";
 
 export const paymentsRouter = new Hono();
 
@@ -280,5 +281,367 @@ paymentsRouter.get("/terminal/pair/:id", async (c) => {
     return c.json({ ok: true, status, device_id: deviceId, saved });
   } catch (e) {
     return c.json({ error: { message: e instanceof Error ? e.message : "Pairing check failed" } }, 502);
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Card on file (HER-79) — staff-confirm only. Never auto-bill.
+// Prefer ERP ls_square.pos methods when deployed; fall back to direct Square
+// + ERP REST so alts can ship without waiting on a bench migrate.
+// ───────────────────────────────────────────────────────────────────────────
+
+const SQUARE_API = "https://connect.squareup.com";
+
+function squareHeaders(token: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    "Square-Version": SQUARE_VERSION,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+}
+
+type PublicCard = {
+  id: string;
+  brand: string;
+  last4: string;
+  exp_month?: number | null;
+  exp_year?: number | null;
+  enabled: boolean;
+  cardholder_name?: string;
+};
+
+function toPublicCard(c: Record<string, unknown>): PublicCard {
+  return {
+    id: String(c.id ?? ""),
+    brand: String(c.card_brand ?? c.card_type ?? "CARD"),
+    last4: String(c.last_4 ?? ""),
+    exp_month: (c.exp_month as number | null | undefined) ?? null,
+    exp_year: (c.exp_year as number | null | undefined) ?? null,
+    enabled: c.enabled !== false,
+    cardholder_name: String(c.cardholder_name ?? ""),
+  };
+}
+
+async function squareFetch(path: string, init?: RequestInit): Promise<any> {
+  const token = process.env.SQUARE_ACCESS_TOKEN ?? "";
+  if (!token) throw new Error("Square not configured");
+  const res = await fetch(`${SQUARE_API}${path}`, {
+    ...init,
+    headers: { ...squareHeaders(token), ...(init?.headers as Record<string, string> | undefined) },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail =
+      (data as any)?.errors?.[0]?.detail ||
+      (data as any)?.errors?.[0]?.code ||
+      `Square HTTP ${res.status}`;
+    throw new Error(String(detail));
+  }
+  return data;
+}
+
+async function resolveInvoiceContext(opts: {
+  invoice?: string;
+  ticket?: string;
+  customer?: string;
+}): Promise<{
+  invoice: string | null;
+  customer: string | null;
+  customerName: string | null;
+  outstanding: number;
+  mobile: string | null;
+}> {
+  let invoice = opts.invoice?.trim() || null;
+  let customer = opts.customer?.trim() || null;
+  let outstanding = 0;
+  let customerName: string | null = null;
+  let mobile: string | null = null;
+
+  if (!invoice && opts.ticket) {
+    const t = await erpGet<Record<string, unknown>>("Alteration Ticket", opts.ticket);
+    if (!t) throw new Error(`Ticket ${opts.ticket} not found`);
+    invoice = (t.sales_invoice as string) || null;
+    customer = customer || (t.customer as string) || null;
+    customerName = (t.customer_name as string) || null;
+    mobile = (t.customer_mobile as string) || null;
+    if (!invoice) throw new Error(`Ticket ${opts.ticket} has no Sales Invoice yet`);
+  }
+
+  if (invoice) {
+    const inv = await erpGet<Record<string, unknown>>("Sales Invoice", invoice);
+    if (!inv) throw new Error(`Sales Invoice ${invoice} not found`);
+    if (Number(inv.docstatus) !== 1) throw new Error(`Invoice ${invoice} is not submitted`);
+    outstanding = Number(inv.outstanding_amount ?? 0);
+    customer = customer || (inv.customer as string) || null;
+    customerName = customerName || (inv.customer_name as string) || null;
+  }
+
+  if (customer && !mobile) {
+    const cust = await erpGet<Record<string, unknown>>("Customer", customer);
+    mobile = (cust?.mobile_no as string) || null;
+    customerName = customerName || (cust?.customer_name as string) || null;
+  }
+
+  return { invoice, customer, customerName, outstanding, mobile };
+}
+
+async function resolveSquareCustomerId(
+  erpCustomer: string,
+  mobile: string | null,
+): Promise<string | null> {
+  const cust = await erpGet<Record<string, unknown>>("Customer", erpCustomer);
+  if (!cust) return null;
+  let sid = String(cust.square_customer_id ?? "").trim();
+  if (sid) return sid;
+
+  const phone = mobile || String(cust.mobile_no ?? "");
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 10) return null;
+  const last10 = digits.slice(-10);
+  const candidates = [`+1${last10}`, last10, `1${last10}`];
+
+  for (const exact of candidates) {
+    try {
+      const data = await squareFetch("/v2/customers/search", {
+        method: "POST",
+        body: JSON.stringify({
+          query: { filter: { phone_number: { exact } } },
+          limit: 5,
+        }),
+      });
+      const hit = (data.customers || [])[0];
+      if (hit?.id) {
+        sid = String(hit.id);
+        try {
+          await erpUpdate("Customer", erpCustomer, {
+            square_customer_id: sid,
+            last_square_sync_at: new Date().toISOString().slice(0, 19).replace("T", " "),
+          });
+        } catch {
+          /* link is best-effort */
+        }
+        return sid;
+      }
+    } catch {
+      /* try next format */
+    }
+  }
+  return null;
+}
+
+async function listSquareCards(squareCustomerId: string): Promise<PublicCard[]> {
+  const cards: PublicCard[] = [];
+  let cursor: string | undefined;
+  for (let i = 0; i < 10; i++) {
+    const q = new URLSearchParams({
+      customer_id: squareCustomerId,
+      include_disabled: "false",
+    });
+    if (cursor) q.set("cursor", cursor);
+    const data = await squareFetch(`/v2/cards?${q.toString()}`);
+    for (const c of data.cards || []) {
+      if (c?.id) cards.push(toPublicCard(c));
+    }
+    cursor = data.cursor;
+    if (!cursor) break;
+  }
+  return cards.filter((c) => c.enabled && c.id);
+}
+
+// GET /api/payments/cards?ticket= | ?invoice= | ?customer=
+paymentsRouter.get("/cards", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const ticket = c.req.query("ticket") || undefined;
+  const invoice = c.req.query("invoice") || undefined;
+  const customer = c.req.query("customer") || undefined;
+  if (!ticket && !invoice && !customer) {
+    return c.json({ error: { message: "ticket, invoice, or customer is required" } }, 400);
+  }
+
+  // Prefer ERP method when deployed
+  try {
+    const result = await erpRunMethod("ls_alterations.ls_square.pos.list_cards", {
+      ...(ticket ? { ticket } : {}),
+      ...(invoice ? { invoice } : {}),
+      ...(customer ? { customer } : {}),
+    });
+    if (result && typeof result === "object" && (result as any).ok !== undefined) {
+      return c.json(result);
+    }
+  } catch {
+    /* fall through to direct Square path */
+  }
+
+  try {
+    const ctx = await resolveInvoiceContext({ ticket, invoice, customer });
+    if (!ctx.customer) {
+      return c.json({ ok: false, error: "no_customer", cards: [] }, 400);
+    }
+    const sqId = await resolveSquareCustomerId(ctx.customer, ctx.mobile);
+    if (!sqId) {
+      return c.json({
+        ok: true,
+        customer: ctx.customer,
+        square_customer_id: null,
+        invoice: ctx.invoice,
+        cards: [],
+        message: "No Square customer linked — card on file not available",
+      });
+    }
+    const cards = await listSquareCards(sqId);
+    try {
+      await erpUpdate("Customer", ctx.customer, {
+        has_stored_card: cards.length > 0 ? 1 : 0,
+        last_square_sync_at: new Date().toISOString().slice(0, 19).replace("T", " "),
+      });
+    } catch {
+      /* flag is convenience */
+    }
+    return c.json({
+      ok: true,
+      customer: ctx.customer,
+      customer_name: ctx.customerName,
+      square_customer_id: sqId,
+      invoice: ctx.invoice,
+      cards,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not list cards";
+    return c.json({ error: { message } }, 502);
+  }
+});
+
+// POST /api/payments/card-on-file
+// body: { card_id, ticket? | invoice?, amount? }  amount in dollars (optional)
+paymentsRouter.post("/card-on-file", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const body = (await c.req.json().catch(() => null)) as {
+    card_id?: string;
+    invoice?: string;
+    ticket?: string;
+    amount?: number;
+    idempotency_key?: string;
+  } | null;
+
+  if (!body?.card_id) {
+    return c.json({ error: { message: "card_id is required" } }, 400);
+  }
+  if (!body.invoice && !body.ticket) {
+    return c.json({ error: { message: "invoice or ticket is required" } }, 400);
+  }
+
+  // Prefer ERP when deployed
+  try {
+    const result = await erpRunMethod("ls_alterations.ls_square.pos.charge_card_on_file", {
+      card_id: body.card_id,
+      ...(body.ticket ? { ticket: body.ticket } : {}),
+      ...(body.invoice ? { invoice: body.invoice } : {}),
+      ...(body.amount != null ? { amount: body.amount } : {}),
+      ...(body.idempotency_key ? { idempotency_key: body.idempotency_key } : {}),
+    });
+    if (result && typeof result === "object" && (result as any).ok !== undefined) {
+      return c.json(result);
+    }
+  } catch {
+    /* fall through */
+  }
+
+  try {
+    const ctx = await resolveInvoiceContext({
+      ticket: body.ticket,
+      invoice: body.invoice,
+    });
+    if (!ctx.invoice) {
+      return c.json({ error: { message: "Could not resolve Sales Invoice" } }, 400);
+    }
+    if (ctx.outstanding <= 0) {
+      return c.json({ ok: false, status: "already_paid", invoice: ctx.invoice });
+    }
+    if (!ctx.customer) {
+      return c.json({ error: { message: "Invoice has no customer" } }, 400);
+    }
+
+    const chargeAmt =
+      body.amount != null && Number.isFinite(body.amount) ? Number(body.amount) : ctx.outstanding;
+    if (chargeAmt <= 0) {
+      return c.json({ error: { message: "amount must be positive" } }, 400);
+    }
+    if (chargeAmt - ctx.outstanding > 0.02) {
+      return c.json(
+        { error: { message: `amount ${chargeAmt} exceeds outstanding ${ctx.outstanding}` } },
+        400,
+      );
+    }
+
+    const sqId = await resolveSquareCustomerId(ctx.customer, ctx.mobile);
+    if (!sqId) {
+      return c.json({ error: { message: "Customer has no Square account linked" } }, 400);
+    }
+
+    const cards = await listSquareCards(sqId);
+    const match = cards.find((c) => c.id === body.card_id);
+    if (!match) {
+      return c.json({ error: { message: "Card not found on customer's Square vault" } }, 400);
+    }
+
+    const amountCents = Math.round(chargeAmt * 100);
+    const locationId = process.env.SQUARE_LOCATION_ID ?? "";
+    if (!locationId) {
+      return c.json({ error: { message: "SQUARE_LOCATION_ID not configured" } }, 500);
+    }
+
+    const idem =
+      body.idempotency_key ||
+      `cof-${ctx.invoice}-${body.card_id.slice(-8)}-${amountCents}`;
+
+    const data = await squareFetch("/v2/payments", {
+      method: "POST",
+      body: JSON.stringify({
+        idempotency_key: idem,
+        source_id: body.card_id,
+        autocomplete: true,
+        customer_id: sqId,
+        location_id: locationId,
+        amount_money: { amount: amountCents, currency: "USD" },
+        // Webhook resolves SI via reference_id — keep under 40 chars
+        reference_id: ctx.invoice.slice(0, 40),
+        note: `L&S COF ${ctx.invoice} - ${ctx.customerName || ctx.customer}`.slice(0, 500),
+      }),
+    });
+
+    const payment = data.payment || {};
+    const status = String(payment.status || "UNKNOWN").toUpperCase();
+    const paymentId = payment.id ? String(payment.id) : null;
+
+    // Best-effort ticket annotation (webhook sets payment_status when PE posts)
+    if (body.ticket && paymentId) {
+      try {
+        await erpUpdate("Alteration Ticket", body.ticket, {
+          square_transaction_id: paymentId,
+          square_payment_method: "Card on File",
+        });
+      } catch {
+        /* non-blocking */
+      }
+    }
+
+    return c.json({
+      ok: status === "COMPLETED" || status === "APPROVED",
+      status,
+      method: "card_on_file",
+      invoice: ctx.invoice,
+      amount: chargeAmt,
+      payment_id: paymentId,
+      card: match,
+      receipt_url: payment.receipt_url ?? null,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Card-on-file charge failed";
+    return c.json({ error: { message } }, 502);
   }
 });

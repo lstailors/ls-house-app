@@ -160,3 +160,85 @@ def create_payment_link(amount_cents, reference_id, name, note=None,
         body["description"] = note[:300]
     data = _request("POST", "/v2/online-checkout/payment-links", body)
     return data.get("payment_link", {})
+
+
+# ---------------------------------------------------------------------------
+# Cards on file (HER-79)
+# ---------------------------------------------------------------------------
+
+def list_cards(customer_id, include_disabled=False):
+    """Return Square Card objects vaulted on a Square customer."""
+    if not customer_id:
+        return []
+    path = "/v2/cards?customer_id={}&include_disabled={}".format(
+        customer_id, "true" if include_disabled else "false")
+    out = []
+    cursor = None
+    for _ in range(10):  # hard cap pages
+        url = path if not cursor else path + "&cursor=" + cursor
+        data = _request("GET", url)
+        out.extend(data.get("cards") or [])
+        cursor = data.get("cursor")
+        if not cursor:
+            break
+    return out
+
+
+def create_card_payment(amount_cents, source_card_id, customer_id,
+                        reference_id, note=None, idempotency_key=None,
+                        location_id=None):
+    """
+    Charge a vaulted card (card-on-file). reference_id MUST be the Sales
+    Invoice name so webhook.py can reconcile without a Square Checkout map.
+    Never auto-bill — callers must be staff-confirmed.
+    """
+    s = get_settings()
+    loc = location_id or s.location_id
+    if not loc:
+        raise frappe.ValidationError("No Square location_id configured")
+    if not source_card_id:
+        raise frappe.ValidationError("card_id required")
+    body = {
+        "idempotency_key": idempotency_key or frappe.generate_hash(length=24),
+        "source_id": source_card_id,
+        "autocomplete": True,
+        "location_id": loc,
+        "amount_money": {"amount": int(amount_cents), "currency": "USD"},
+        "reference_id": (reference_id or "")[:40],
+    }
+    if customer_id:
+        body["customer_id"] = customer_id
+    if note:
+        body["note"] = note[:500]
+    data = _request("POST", "/v2/payments", body)
+    return data.get("payment", {})
+
+
+def search_customers_by_phone(phone):
+    """Best-effort Square customer lookup by phone digits."""
+    digits = "".join(ch for ch in (phone or "") if ch.isdigit())
+    if len(digits) < 10:
+        return []
+    # US normalize last 10
+    digits = digits[-10:]
+    body = {
+        "query": {
+            "filter": {
+                "phone_number": {
+                    "exact": "+1" + digits,
+                }
+            }
+        },
+        "limit": 5,
+    }
+    try:
+        data = _request("POST", "/v2/customers/search", body)
+        return data.get("customers") or []
+    except Exception:
+        # try bare 10-digit
+        body["query"]["filter"]["phone_number"]["exact"] = digits
+        try:
+            data = _request("POST", "/v2/customers/search", body)
+            return data.get("customers") or []
+        except Exception:
+            return []

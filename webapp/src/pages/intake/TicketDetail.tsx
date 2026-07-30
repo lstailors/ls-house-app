@@ -27,6 +27,7 @@ import { cn } from "@ls/design/utils"
 import { useMe } from '@/lib/session'
 import type { CartPayload } from '@/lib/cart/parked'
 import { ChargeTerminalButton } from '@/components/payments/ChargeTerminalButton'
+import { ChargeCardOnFileButton } from '@/components/payments/ChargeCardOnFileButton'
 import { EditTicketDrawer } from '@/components/alterations/EditTicketDrawer'
 import {
   Dialog,
@@ -1287,8 +1288,19 @@ export default function TicketDetail() {
                 invoiceId={ticket.name}
                 amountCents={Math.round((ticket.ticket_total ?? 0) * 100)}
                 amountDisplay={formatCurrency(ticket.ticket_total ?? 0)}
+                ticketId={ticket.name}
                 onSuccess={() => {
                   toast.success('Payment captured — refreshing…')
+                  queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
+                }}
+                onError={(msg) => toast.error(msg)}
+              />
+              <ChargeCardOnFileButton
+                ticketId={ticket.name}
+                amountDisplay={formatCurrency(ticket.ticket_total ?? 0)}
+                customerLabel={ticket.customer_name}
+                onSuccess={() => {
+                  toast.success('Card on file charged — refreshing…')
                   queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
                 }}
                 onError={(msg) => toast.error(msg)}
