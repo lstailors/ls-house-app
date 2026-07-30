@@ -5,6 +5,7 @@ import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
+import { BrandSeal } from "@alts/components/BrandSeal";
 
 type Ticket = {
   name: string;
@@ -68,9 +69,7 @@ export default function OrdersGlass() {
   return (
     <div className="alts-root min-h-dvh flex flex-col">
       <header className="flex items-center gap-3 px-5 py-4 border-b border-brass/20">
-        <Link to="/" className="seal">
-          LS
-        </Link>
+        <BrandSeal />
         <div>
           <div className="display text-xl">Orders</div>
           <div className="caps">Tickets · due · unpaid</div>

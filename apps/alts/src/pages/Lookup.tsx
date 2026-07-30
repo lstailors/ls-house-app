@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import "@alts/styles/alts-pos.css";
+import { BrandSeal } from "@alts/components/BrandSeal";
 
 function money(n?: number) {
   if (n == null || Number.isNaN(Number(n))) return "";
@@ -69,9 +70,7 @@ export default function Lookup() {
   return (
     <div className="alts-root min-h-dvh flex flex-col">
       <header className="flex items-center gap-3 px-5 py-4 border-b border-brass/20">
-        <Link to="/" className="seal">
-          LS
-        </Link>
+        <BrandSeal />
         <div>
           <div className="display text-xl">Lookup</div>
           <div className="caps">Ticket · client · SO · scan</div>

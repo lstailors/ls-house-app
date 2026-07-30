@@ -7,6 +7,7 @@ import { cn } from "@ls/design/utils";
 import { useMemo } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
+import { BrandSeal } from "@alts/components/BrandSeal";
 
 type Stats = {
   open: number;
@@ -410,7 +411,7 @@ export default function HomeTiles() {
   return (
     <div className="alts-root home-007 flex flex-col min-h-[100dvh] overflow-x-hidden overflow-y-auto px-3.5 sm:px-5 lg:px-[26px] pt-[max(12px,env(safe-area-inset-top))] pb-[max(16px,env(safe-area-inset-bottom))]">
       <header className="flex items-center gap-2.5 sm:gap-3.5 pb-2.5 sm:pb-3 border-b border-brass/15 shrink-0">
-        <div className="seal shrink-0">LS</div>
+        <BrandSeal className="shrink-0" />
         <div className="min-w-0">
           <div className="display text-[18px] sm:text-[22px] leading-tight">L&S House</div>
           <div className="text-[10px] sm:text-xs tracking-[0.14em] sm:tracking-[0.18em] uppercase text-[var(--cd)] truncate">

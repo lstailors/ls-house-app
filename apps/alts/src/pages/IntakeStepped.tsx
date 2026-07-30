@@ -15,6 +15,7 @@ import {
 } from "@alts/lib/intakeDraft";
 import { REDO_DISPLAY } from "@alts/lib/billingLabels";
 import "@alts/styles/alts-pos.css";
+import { BrandSeal } from "@alts/components/BrandSeal";
 
 const GARMENT_TYPES = [
   "Jacket",
@@ -955,9 +956,7 @@ export default function IntakeStepped() {
     <div className="alts-root flex flex-col min-h-dvh">
       <header className="px-5 pt-4 pb-0 border-b border-brass/20 bg-black/20 backdrop-blur-xl sticky top-0 z-30">
         <div className="flex items-center gap-3 mb-3">
-          <Link to="/" className="seal">
-            LS
-          </Link>
+          <BrandSeal />
           <div>
             <div className="display text-lg">Alteration Intake</div>
             <div className="caps">

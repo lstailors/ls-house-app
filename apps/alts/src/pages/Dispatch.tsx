@@ -10,6 +10,7 @@ import { StatusPill } from "@ls/design";
 import { ChargeCardOnFileButton } from "@alts/components/payments/ChargeCardOnFileButton";
 import { ChargeTerminalButton } from "@alts/components/payments/ChargeTerminalButton";
 import "@alts/styles/alts-pos.css";
+import { BrandSeal } from "@alts/components/BrandSeal";
 
 type Ticket = {
   name: string;
@@ -432,7 +433,7 @@ export default function Dispatch() {
                 <BoardStatusCard board={boardDoc} />
               ) : method === "Pickup" && storedMethod === "Pickup" ? (
                 <div className="card-glass px-[18px] py-[22px] text-center">
-                  <div className="seal mx-auto mb-3 opacity-80">LS</div>
+                  <BrandSeal to={null} className="mx-auto mb-3 opacity-80" />
                   <span className="pill pill-muted">At counter</span>
                   <p className="text-[12px] text-[var(--cd)] leading-relaxed mt-3 max-w-md mx-auto">
                     Pickup does not create a board record. Release at the counter — no POD, no driver.
@@ -440,7 +441,7 @@ export default function Dispatch() {
                 </div>
               ) : (
                 <div className="card-glass px-[18px] py-[22px] text-center">
-                  <div className="seal mx-auto mb-3 opacity-80">LS</div>
+                  <BrandSeal to={null} className="mx-auto mb-3 opacity-80" />
                   <span className="pill pill-muted">No dispatch</span>
                   <p className="text-[12px] text-[var(--cd)] leading-relaxed mt-3 max-w-md mx-auto">
                     No board record yet. Choose a method above, then queue it — a silent write failure

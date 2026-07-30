@@ -45,8 +45,8 @@
 .alts-root .seal {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
-  border: 1px solid var(--br);
+  border-radius: 10px; /* square mark — matches logo plate */
+  border: 1px solid rgba(176, 141, 87, 0.45);
   display: grid;
   place-items: center;
   font-family: "Cormorant Garamond", serif;
@@ -54,7 +54,42 @@
   font-size: 19px;
   color: var(--bl);
   flex: none;
-  box-shadow: inset 0 0 18px rgba(176, 141, 87, 0.14);
+  box-shadow:
+    inset 0 0 18px rgba(176, 141, 87, 0.14),
+    0 1px 3px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  background: #1f3a2e;
+  text-decoration: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+}
+
+.alts-root a.seal:hover,
+.alts-root a.seal:focus-visible {
+  border-color: rgba(227, 196, 143, 0.75);
+  box-shadow:
+    inset 0 0 18px rgba(176, 141, 87, 0.22),
+    0 0 0 2px rgba(176, 141, 87, 0.25);
+  outline: none;
+}
+
+.alts-root a.seal:active {
+  transform: scale(0.96);
+}
+
+/* Full logo mark inside seal — no italic LS letter */
+.alts-root .seal.seal-logo {
+  font-size: 0;
+  color: transparent;
+  padding: 0;
+  background: #1f3a2e;
+}
+
+.alts-root .seal.seal-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: inherit;
 }
 
 .alts-root .display {
