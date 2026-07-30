@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
-import { erpGet, erpUpdate, erpRunMethod } from "../lib/erp";
+import { erpGet, erpUpdate, erpRunMethod, erpSubmit } from "../lib/erp";
 
 export const paymentsRouter = new Hono();
 
@@ -341,40 +341,82 @@ async function squareFetch(path: string, init?: RequestInit): Promise<any> {
   return data;
 }
 
-async function resolveInvoiceContext(opts: {
+async function resolveCustomerContext(opts: {
   invoice?: string;
   ticket?: string;
   customer?: string;
+  /** When true, draft SI is auto-submitted and missing SI errors hard. */
+  forCharge?: boolean;
 }): Promise<{
   invoice: string | null;
+  invoiceDocstatus: number | null;
   customer: string | null;
   customerName: string | null;
   outstanding: number;
+  ticketTotal: number;
   mobile: string | null;
+  ticket: string | null;
 }> {
   let invoice = opts.invoice?.trim() || null;
   let customer = opts.customer?.trim() || null;
   let outstanding = 0;
+  let ticketTotal = 0;
   let customerName: string | null = null;
   let mobile: string | null = null;
+  let invoiceDocstatus: number | null = null;
+  let ticketName: string | null = opts.ticket?.trim() || null;
 
-  if (!invoice && opts.ticket) {
+  if (opts.ticket) {
     const t = await erpGet<Record<string, unknown>>("Alteration Ticket", opts.ticket);
     if (!t) throw new Error(`Ticket ${opts.ticket} not found`);
-    invoice = (t.sales_invoice as string) || null;
+    invoice = invoice || (t.sales_invoice as string) || null;
     customer = customer || (t.customer as string) || null;
     customerName = (t.customer_name as string) || null;
-    mobile = (t.customer_mobile as string) || null;
-    if (!invoice) throw new Error(`Ticket ${opts.ticket} has no Sales Invoice yet`);
+    mobile = (t.customer_mobile as string) || (t.customer_phone as string) || null;
+    ticketTotal = Number(t.ticket_total ?? 0) || 0;
   }
 
   if (invoice) {
     const inv = await erpGet<Record<string, unknown>>("Sales Invoice", invoice);
     if (!inv) throw new Error(`Sales Invoice ${invoice} not found`);
-    if (Number(inv.docstatus) !== 1) throw new Error(`Invoice ${invoice} is not submitted`);
-    outstanding = Number(inv.outstanding_amount ?? 0);
+    invoiceDocstatus = Number(inv.docstatus ?? 0);
     customer = customer || (inv.customer as string) || null;
     customerName = customerName || (inv.customer_name as string) || null;
+    // Prefer SI amounts when present (even draft has grand_total / outstanding)
+    outstanding = Number(inv.outstanding_amount ?? inv.grand_total ?? 0) || 0;
+
+    if (opts.forCharge && invoiceDocstatus === 0) {
+      // Alts often keeps SI draft until pickup — staff charge must finalize it.
+      try {
+        await erpSubmit("Sales Invoice", invoice);
+        invoiceDocstatus = 1;
+        const refreshed = await erpGet<Record<string, unknown>>("Sales Invoice", invoice);
+        if (refreshed) {
+          outstanding = Number(refreshed.outstanding_amount ?? refreshed.grand_total ?? outstanding) || 0;
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "submit failed";
+        throw new Error(`Could not submit draft invoice ${invoice}: ${msg}`);
+      }
+    }
+
+    if (opts.forCharge && invoiceDocstatus !== 1) {
+      throw new Error(`Invoice ${invoice} is not submitted (docstatus=${invoiceDocstatus})`);
+    }
+  } else if (opts.forCharge) {
+    throw new Error(
+      ticketName
+        ? `Ticket ${ticketName} has no Sales Invoice yet — open full ticket / mint SI first`
+        : "Sales Invoice required to charge",
+    );
+  } else if (!customer) {
+    // list-only path needs at least a customer
+    throw new Error("Could not resolve customer for card on file");
+  }
+
+  // List path: fall back outstanding to ticket total when SI missing/draft unpaid
+  if (!opts.forCharge && outstanding <= 0 && ticketTotal > 0) {
+    outstanding = ticketTotal;
   }
 
   if (customer && !mobile) {
@@ -383,7 +425,16 @@ async function resolveInvoiceContext(opts: {
     customerName = customerName || (cust?.customer_name as string) || null;
   }
 
-  return { invoice, customer, customerName, outstanding, mobile };
+  return {
+    invoice,
+    invoiceDocstatus,
+    customer,
+    customerName,
+    outstanding,
+    ticketTotal,
+    mobile,
+    ticket: ticketName,
+  };
 }
 
 async function resolveSquareCustomerId(
@@ -461,7 +512,7 @@ paymentsRouter.get("/cards", async (c) => {
     return c.json({ error: { message: "ticket, invoice, or customer is required" } }, 400);
   }
 
-  // Prefer ERP method when deployed
+  // Prefer ERP method when deployed — but never block on draft-SI failures
   try {
     const result = await erpRunMethod("ls_alterations.ls_square.pos.list_cards", {
       ...(ticket ? { ticket } : {}),
@@ -476,7 +527,8 @@ paymentsRouter.get("/cards", async (c) => {
   }
 
   try {
-    const ctx = await resolveInvoiceContext({ ticket, invoice, customer });
+    // List path must NOT require submitted SI — customer comes from ticket/SI draft.
+    const ctx = await resolveCustomerContext({ ticket, invoice, customer, forCharge: false });
     if (!ctx.customer) {
       return c.json({ ok: false, error: "no_customer", cards: [] }, 400);
     }
@@ -485,10 +537,12 @@ paymentsRouter.get("/cards", async (c) => {
       return c.json({
         ok: true,
         customer: ctx.customer,
+        customer_name: ctx.customerName,
         square_customer_id: null,
         invoice: ctx.invoice,
         cards: [],
-        message: "No Square customer linked — card on file not available",
+        message:
+          "No Square customer linked for this client. Save a card in Square POS first, or match phone.",
       });
     }
     const cards = await listSquareCards(sqId);
@@ -506,6 +560,8 @@ paymentsRouter.get("/cards", async (c) => {
       customer_name: ctx.customerName,
       square_customer_id: sqId,
       invoice: ctx.invoice,
+      invoice_docstatus: ctx.invoiceDocstatus,
+      outstanding: ctx.outstanding,
       cards,
     });
   } catch (e) {
@@ -548,13 +604,14 @@ paymentsRouter.post("/card-on-file", async (c) => {
       return c.json(result);
     }
   } catch {
-    /* fall through */
+    /* fall through — ERP may reject draft SI; TS path submits draft */
   }
 
   try {
-    const ctx = await resolveInvoiceContext({
+    const ctx = await resolveCustomerContext({
       ticket: body.ticket,
       invoice: body.invoice,
+      forCharge: true,
     });
     if (!ctx.invoice) {
       return c.json({ error: { message: "Could not resolve Sales Invoice" } }, 400);
@@ -584,7 +641,7 @@ paymentsRouter.post("/card-on-file", async (c) => {
     }
 
     const cards = await listSquareCards(sqId);
-    const match = cards.find((c) => c.id === body.card_id);
+    const match = cards.find((card) => card.id === body.card_id);
     if (!match) {
       return c.json({ error: { message: "Card not found on customer's Square vault" } }, 400);
     }

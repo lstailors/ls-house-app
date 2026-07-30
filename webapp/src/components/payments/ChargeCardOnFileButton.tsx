@@ -107,8 +107,10 @@ export function ChargeCardOnFileButton({
       setStage("pick");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not load cards";
-      setStage("error");
       setErrorMsg(msg);
+      setEmptyMsg(msg);
+      setCards([]);
+      setStage("pick"); // keep sheet open so staff can read the full error
       onError(msg);
     }
   }, [ticketId, invoiceId, onError]);
@@ -204,7 +206,7 @@ export function ChargeCardOnFileButton({
         {stage === "error" && (
           <>
             <AlertTriangle className="h-4 w-4 mr-2 shrink-0" />
-            {errorMsg.length > 36 ? "Error — retry" : errorMsg || "Error — retry"}
+            {errorMsg.length > 28 ? "Error — tap to retry" : errorMsg || "Error — retry"}
           </>
         )}
         {(stage === "pick" || stage === "confirming") && (

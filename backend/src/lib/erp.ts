@@ -136,10 +136,14 @@ export async function erpUpdate<T = unknown>(doctype: string, name: string, doc:
 export async function erpSubmit(doctype: string, name: string): Promise<void> {
   const { base, key, secret } = creds()
   if (!base || !key || !secret) return
+  // Load full doc — frappe.client.submit needs the document body, not just name.
+  const existing = await erpGet<Record<string, unknown>>(doctype, name)
+  if (!existing) throw new Error(`${doctype} ${name} not found`)
+  if (Number((existing as any).docstatus) === 1) return
   const res = await fetch(`${base}/api/method/frappe.client.submit`, {
     method: 'POST',
     headers: { ...authHeaders(key, secret), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ doc: JSON.stringify({ doctype, name }) }),
+    body: JSON.stringify({ doc: JSON.stringify({ ...existing, doctype, name }) }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as any

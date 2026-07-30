@@ -332,13 +332,22 @@ def list_cards(invoice=None, ticket=None, customer=None):
     """
     List vaulted Square cards for the customer on an invoice/ticket.
     Never charges. Staff picks a card in the UI, then calls charge_card_on_file.
+    Does NOT require SI to be submitted — customer comes from ticket.
     """
     erp_customer = customer
     inv_name = None
-    if not erp_customer:
-        inv_name = _resolve_invoice(invoice=invoice, ticket=ticket)
-        inv = frappe.get_doc("Sales Invoice", inv_name)
-        erp_customer = inv.customer
+    if not erp_customer and ticket:
+        row = frappe.db.get_value(
+            "Alteration Ticket", ticket,
+            ["customer", "customer_name", "sales_invoice"], as_dict=True,
+        )
+        if not row:
+            frappe.throw("Ticket {} not found".format(ticket))
+        erp_customer = row.get("customer")
+        inv_name = row.get("sales_invoice")
+    if not erp_customer and invoice:
+        inv_name = invoice
+        erp_customer = frappe.db.get_value("Sales Invoice", invoice, "customer")
     if not erp_customer:
         return {"ok": False, "error": "no_customer", "cards": []}
 
@@ -348,8 +357,9 @@ def list_cards(invoice=None, ticket=None, customer=None):
             "ok": True,
             "customer": erp_customer,
             "square_customer_id": None,
+            "invoice": inv_name,
             "cards": [],
-            "message": "No Square customer linked — card on file not available",
+            "message": "No Square customer linked for this client. Save a card in Square POS first, or match phone.",
         }
 
     cards = client.list_cards(sq_id)
@@ -371,12 +381,16 @@ def charge_card_on_file(card_id, invoice=None, ticket=None, amount=None,
     Staff-confirmed charge of a vaulted card against SI outstanding.
     NEVER called automatically from ticket create/submit.
     Amount defaults to full outstanding; partial allowed if amount provided.
+    Draft SI is submitted on charge (same moment staff takes payment).
     """
     if not card_id:
         frappe.throw("card_id required")
 
     inv_name = _resolve_invoice(invoice=invoice, ticket=ticket)
     inv = frappe.get_doc("Sales Invoice", inv_name)
+    if inv.docstatus == 0:
+        inv.submit()
+        inv.reload()
     if inv.docstatus != 1:
         frappe.throw("Invoice {} is not submitted".format(inv_name))
 
