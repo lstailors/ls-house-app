@@ -22,6 +22,9 @@ const POS_ROUTES = [
   "/quote",
   "/transfers",
   "/e-ticket",
+  "/pay",
+  "/customers",
+  "/deliveries",
 ];
 
 const NAV_EXTRA = [
@@ -32,6 +35,9 @@ const NAV_EXTRA = [
   /^\/garments\/[^/]+\/?$/,
   /^\/garments\/[^/]+\/[^/]+\/?$/,
   /^\/scanner\/?$/,
+  /^\/pay\/[^/]+\/?$/,
+  /^\/customers\/[^/]+\/?$/,
+  /^\/deliveries\/[^/]+\/?$/,
 ];
 
 export default defineConfig({

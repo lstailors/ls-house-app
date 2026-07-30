@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import {
   FileText, Scissors, Truck, Package, ArrowLeftRight, Tag,
-  CreditCard, Loader2, AlertCircle, ExternalLink, type LucideIcon,
+  CreditCard, Loader2, AlertCircle, ExternalLink, User, type LucideIcon,
 } from "lucide-react";
 import {
   Sheet, SheetContent, SheetTitle, SheetDescription,
@@ -20,6 +20,7 @@ const TYPE_ICON: Record<ScannerType, LucideIcon> = {
   tailor_transfer: ArrowLeftRight,
   payment_link: CreditCard,
   garment_tag: Tag,
+  customer: User,
 };
 
 function typeIcon(type?: ScannerType): LucideIcon {
@@ -39,24 +40,24 @@ interface ActionDef {
 // (e.g. "open" → "Open Transfer" for tailor_transfer), so resolve by type first.
 const ACTION_MAP: Partial<Record<ScannerType, Record<string, ActionDef>>> = {
   sales_invoice: {
-    open: { label: "Open record", style: "ghost" },
+    open: { label: "Open payment / ticket", style: "default" },
     mark_paid: { label: "Mark Paid", style: "success" },
-    open_payment_link: { label: "Open Payment Link", style: "default" },
+    open_payment_link: { label: "Open Payment Link", style: "ghost" },
   },
   payment_link: {
-    open: { label: "Open record", style: "ghost" },
+    open: { label: "Open payment / ticket", style: "default" },
     mark_paid: { label: "Mark Paid", style: "success" },
-    open_payment_link: { label: "Open Payment Link", style: "default" },
+    open_payment_link: { label: "Open Payment Link", style: "ghost" },
   },
   alteration_ticket: {
-    open: { label: "Open record", style: "ghost" },
+    open: { label: "Open ticket", style: "default" },
     mark_in_progress: { label: "→ In Progress", style: "success" },
     mark_ready: { label: "→ Ready", style: "success" },
     mark_picked_up: { label: "→ Picked Up", style: "success" },
     print_tag: { label: "Print Tag", style: "ghost" },
   },
   lsh_delivery: {
-    open: { label: "Open record", style: "ghost" },
+    open: { label: "Open delivery", style: "default" },
     mark_delivered: { label: "Mark Delivered", style: "success" },
     send_sms: { label: "Send SMS", style: "ghost" },
   },
@@ -70,6 +71,9 @@ const ACTION_MAP: Partial<Record<ScannerType, Record<string, ActionDef>>> = {
   },
   garment_tag: {
     open: { label: "Open", style: "ghost" },
+  },
+  customer: {
+    open: { label: "Open client", style: "default" },
   },
 };
 

@@ -25,6 +25,8 @@ import frappe
 SQUARE_DOMAINS = {"squareup.com", "square.link", "checkout.square.site"}
 DASHBOARD_DOMAINS = {"dashboard.lstailors.com", "delivered.lstailors.com"}
 MY_DOMAIN = "my.lstailors.com"
+ALTS_DOMAINS = {"alts.lstailors.com"}
+APP_DOMAINS = {"app.lstailors.com", "my.lstailors.com"}
 
 # Ordered prefix→type map (most-specific first)
 PREFIX_TYPE_MAP = [
@@ -33,6 +35,7 @@ PREFIX_TYPE_MAP = [
     (("DN-NYC-", "DN-HOU-", "DN-TX-"), "lsh_delivery", "LSH Delivery"),
     (("LST-",), "custom_order", "LSH Custom Order"),
     (("TAG-",), "garment_tag", None),
+    (("CUST-",), "customer", "Customer"),
 ]
 
 
@@ -80,6 +83,38 @@ def normalize_token(raw: str) -> dict:
                 return {"token": tok, "hint_type": "sales_invoice",
                         "hint_name": inv_name, "original_url": original_url}
 
+        # alts.lstailors.com/g/{ticket}/{garmentId} — printed garment tags
+        if any(domain == d or domain.endswith("." + d) for d in ALTS_DOMAINS):
+            m = re.match(r"^/g/([^/]+)/([^/]+)$", path)
+            if m:
+                return {
+                    "token": f"GPATH:{m.group(1)}/{m.group(2)}",
+                    "hint_type": "garment_path",
+                    "hint_name": None,
+                    "original_url": original_url,
+                    "ticket": m.group(1),
+                    "garment_id": m.group(2),
+                }
+            m = re.match(r"^/pay/([^/]+)$", path)
+            if m:
+                return {"token": m.group(1), "hint_type": "sales_invoice",
+                        "hint_name": m.group(1), "original_url": original_url}
+            m = re.match(r"^/orders/alterations/([^/]+)$", path)
+            if m:
+                return {"token": m.group(1), "hint_type": "alteration_ticket",
+                        "hint_name": m.group(1), "original_url": original_url}
+
+        # app.lstailors.com/customers/{id} · /pay/{invoice}
+        if any(domain == d or domain.endswith("." + d) for d in APP_DOMAINS):
+            m = re.match(r"^/customers/([^/]+)$", path)
+            if m and m.group(1).lower() != "new":
+                return {"token": m.group(1), "hint_type": "customer",
+                        "hint_name": m.group(1), "original_url": original_url}
+            m = re.match(r"^/pay/([^/]+)$", path)
+            if m:
+                return {"token": m.group(1), "hint_type": "sales_invoice",
+                        "hint_name": m.group(1), "original_url": original_url}
+
         # dashboard.lstailors.com or delivered.lstailors.com
         if any(domain == d or domain.endswith("." + d) for d in DASHBOARD_DOMAINS):
             # Path-style: /scan/{token}
@@ -121,6 +156,10 @@ def detect_type(token: str, hint_type: str | None) -> tuple[str | None, str | No
     Ordered: hint → prefix → fallback.
     """
     if hint_type:
+        if hint_type == "garment_path":
+            return "garment_path", None
+        if hint_type == "customer":
+            return "customer", "Customer"
         for prefixes, qtype, dt in PREFIX_TYPE_MAP:
             if hint_type == qtype:
                 return qtype, dt
@@ -174,6 +213,7 @@ def _resolve_sales_invoice(name: str) -> dict:
             "due_date": str(doc.due_date or ""),
             "square_payment_link": getattr(doc, "lsh_square_payment_link", None) or "",
             "invoice_web_url": getattr(doc, "lsh_invoice_web_url", None) or "",
+            "alteration_ticket_ref": getattr(doc, "alteration_ticket_ref", None) or "",
         },
     }
 
@@ -374,6 +414,80 @@ def _resolve_garment_tag(token: str) -> dict:
     return {"ok": False, "reason": "Garment tag not found in any active document.", "raw": token}
 
 
+def _resolve_garment_path(ticket: str, garment_id: str) -> dict:
+    """alts.lstailors.com/g/{ticket}/{garmentId} printed tags."""
+    ticket = (ticket or "").strip()
+    garment_id = (garment_id or "").strip()
+    if not ticket or not garment_id:
+        return {"ok": False, "reason": "Incomplete garment path.", "raw": f"{ticket}/{garment_id}"}
+
+    # Prefer live ticket when it exists; still return path so the app can open /g/.
+    state = ""
+    customer_name = ""
+    if frappe.db.exists("Alteration Ticket", ticket):
+        try:
+            frappe.has_permission("Alteration Ticket", doc=ticket, throw=True)
+            doc = frappe.get_doc("Alteration Ticket", ticket)
+            state = doc.workflow_state or getattr(doc, "status", None) or ""
+            customer_name = doc.customer_name or doc.customer or ""
+        except frappe.PermissionError:
+            return {"ok": False, "reason": "You do not have permission to view this ticket.", "raw": ticket}
+
+    return {
+        "ok": True,
+        "type": "garment_tag",
+        "doctype": "Alteration Ticket",
+        "name": ticket,
+        "title": f"Garment {garment_id} · {ticket}",
+        "subtitle": f"{customer_name} · {state}".strip(" ·"),
+        "state": state or "Scan",
+        "actions": ["open"],
+        "meta": {
+            "ticket": ticket,
+            "alteration_ticket": ticket,
+            "garment_id": garment_id,
+            "garment": garment_id,
+            "customer_name": customer_name,
+        },
+    }
+
+
+def _resolve_customer(name: str) -> dict:
+    """Customer by name (CUST-*) or exact Customer doc name."""
+    name = (name or "").strip()
+    if not name:
+        return {"ok": False, "reason": "Empty customer id.", "raw": name}
+    try:
+        frappe.has_permission("Customer", doc=name, throw=True)
+        doc = frappe.get_doc("Customer", name)
+    except frappe.DoesNotExistError:
+        return {"ok": False, "reason": f"Customer {name} not found.", "raw": name}
+    except frappe.PermissionError:
+        return {"ok": False, "reason": "You do not have permission to view this customer.", "raw": name}
+
+    phone = ""
+    try:
+        phone = doc.mobile_no or doc.phone or ""
+    except Exception:
+        phone = getattr(doc, "mobile_no", "") or ""
+
+    return {
+        "ok": True,
+        "type": "customer",
+        "doctype": "Customer",
+        "name": doc.name,
+        "title": doc.customer_name or doc.name,
+        "subtitle": phone or doc.customer_group or "Client",
+        "state": doc.disabled and "Disabled" or "Active",
+        "actions": ["open"],
+        "meta": {
+            "customer": doc.name,
+            "customer_name": doc.customer_name or "",
+            "customer_phone": phone,
+        },
+    }
+
+
 # ── Scan log ──────────────────────────────────────────────────────────────────
 
 def _write_scan_log(raw: str, token: str, resolved_type: str | None,
@@ -428,6 +542,21 @@ def resolve_qr(token: str) -> dict:
 
         if qr_type == "payment_link":
             result = _resolve_payment_link(tok)
+
+        elif qr_type == "garment_path":
+            ticket = norm.get("ticket") or ""
+            garment_id = norm.get("garment_id") or ""
+            # Also accept GPATH:ticket/garment packed token
+            if not ticket and tok.startswith("GPATH:"):
+                rest = tok[len("GPATH:"):]
+                parts = rest.split("/", 1)
+                if len(parts) == 2:
+                    ticket, garment_id = parts[0], parts[1]
+            result = _resolve_garment_path(ticket, garment_id)
+
+        elif qr_type == "customer":
+            name = hint_name or tok
+            result = _resolve_customer(name)
 
         elif qr_type == "sales_invoice":
             name = hint_name or tok
@@ -514,6 +643,10 @@ def _fallback_lookup(tok: str, raw: str) -> dict:
     # 5. Tailor Transfer by name
     if frappe.db.exists("Tailor Transfer", tok):
         return _resolve_tailor_transfer(tok)
+
+    # 6. Customer by name
+    if frappe.db.exists("Customer", tok):
+        return _resolve_customer(tok)
 
     return {
         "ok": False,

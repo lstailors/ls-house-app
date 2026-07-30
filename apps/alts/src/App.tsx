@@ -9,6 +9,7 @@ import HomeTiles from "@alts/pages/HomeTiles";
 import AltsShell from "@alts/components/AltsShell";
 import LandscapeGate from "@alts/components/LandscapeGate";
 import TabletOnly from "@alts/components/TabletOnly";
+import ScanFab from "@alts/components/ScanFab";
 import IntakeStepped from "@alts/pages/IntakeStepped";
 import TicketKind from "@alts/pages/TicketKind";
 import ShopFloorBoard from "@alts/pages/ShopFloorBoard";
@@ -35,6 +36,7 @@ const Deliveries = lazy(() => import("@/pages/Deliveries"));
 const DeliveryDetail = lazy(() => import("@/pages/DeliveryDetail"));
 const DeliveryLabel = lazy(() => import("@alts/pages/print/DeliveryLabelPrint"));
 const GarmentTagRedirect = lazy(() => import("@/components/garment/GarmentTagRedirect"));
+const PayInvoice = lazy(() => import("@/pages/PayInvoice"));
 
 const FOH = ["super_admin", "store_manager", "salesperson", "tailor"] as const;
 
@@ -82,6 +84,8 @@ export default function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/e-ticket/:ticketName" element={<ETicket />} />
               <Route path="/t/:ticketName" element={<ETicket />} />
+              {/* Public / staff pay surface after invoice QR scan */}
+              <Route path="/pay/:invoiceId" element={<PayInvoice />} />
               <Route
                 path="/scanner"
                 element={
@@ -270,6 +274,7 @@ export default function App() {
             </Routes>
           </Suspense>
           <LandscapeGate />
+          <ScanFab />
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>

@@ -891,6 +891,7 @@ export const ScannerType = z.enum([
   "tailor_transfer",
   "payment_link",
   "garment_tag",
+  "customer",
 ]);
 export type ScannerType = z.infer<typeof ScannerType>;
 

@@ -9,44 +9,15 @@ import { cn } from "@ls/design/utils";
 import { api } from "@/lib/api";
 import type { ScannerResult, ScannerActionResult } from "@ls/types";
 import { ScannerResultSheet } from "@/components/scanner/ScannerResultSheet";
+import {
+  parseCustomerUrl,
+  parseGarmentTagUrl,
+  openPathForResult,
+  routeForScannerResult,
+} from "@/lib/scanRoutes";
 
 const VIDEO_ID = "ls-scanner-video";
 const RESCAN_DEBOUNCE_MS = 2000;
-
-// Detect a garment-tag QR payload of the form `<scheme>://<host>/g/<ticket>/<garment>`
-// (any host) or the raw path form `host/g/<ticket>/<garment>` / `/g/<ticket>/<garment>`.
-// Returns the decoded { ticket, garment } when matched, otherwise null.
-function parseGarmentTagUrl(decoded: string): { ticket: string; garment: string } | null {
-  const value = decoded.trim();
-  if (!value) return null;
-
-  // Extract the path portion regardless of scheme/host presence.
-  let path: string;
-  try {
-    path = new URL(value).pathname;
-  } catch {
-    // Not a full URL — fall back to the substring starting at the first `/g/`.
-    const idx = value.indexOf("/g/");
-    path = idx >= 0 ? value.slice(idx) : value;
-  }
-
-  const match = path.match(/\/g\/([^/]+)\/([^/?#]+)/);
-  if (!match) return null;
-
-  const ticket = decodeURIComponent(match[1]);
-  const garment = decodeURIComponent(match[2]);
-  if (!ticket || !garment) return null;
-  return { ticket, garment };
-}
-
-// doctype → Frappe desk slug (lowercase, spaces → hyphens)
-function slugifyDoctype(doctype?: string): string {
-  return (doctype ?? "").trim().toLowerCase().replace(/\s+/g, "-");
-}
-
-function deskUrl(doctype: string | undefined, name: string): string {
-  return `https://erp.lstailors.com/app/${slugifyDoctype(doctype)}/${encodeURIComponent(name)}`;
-}
 
 function printUrl(doctype: string | undefined, name: string): string {
   const params = new URLSearchParams({
@@ -56,6 +27,21 @@ function printUrl(doctype: string | undefined, name: string): string {
     trigger_print: "1",
   });
   return `https://erp.lstailors.com/printview?${params.toString()}`;
+}
+
+function goNav(
+  navigate: ReturnType<typeof useNavigate>,
+  nav: ReturnType<typeof routeForScannerResult>,
+) {
+  if (nav.kind === "path") {
+    navigate(nav.path, { replace: !!nav.replace });
+    return true;
+  }
+  if (nav.kind === "external") {
+    window.open(nav.url, "_blank", "noopener");
+    return true;
+  }
+  return false;
 }
 
 // to_state per advance-status action key
@@ -90,6 +76,9 @@ export default function Scanner() {
   }, []);
 
   // Resolve a scanned/typed token via the backend.
+  // Successful resolves that map to an in-app page navigate immediately
+  // (ticket / pay / delivery / transfer / garment / customer). Sheet stays
+  // for unknown codes and types that need in-scanner actions only.
   const resolveToken = useCallback(async (token: string) => {
     const value = token.trim();
     if (!value) return;
@@ -99,6 +88,11 @@ export default function Scanner() {
     setResolving(true);
     try {
       const data = await api.post<ScannerResult>("/api/scanner/resolve", { token: value });
+      const dest = routeForScannerResult(data);
+      if (dest.kind === "path") {
+        navigate(dest.path, { replace: !!dest.replace });
+        return;
+      }
       setResult(data);
     } catch {
       setResult({
@@ -109,7 +103,7 @@ export default function Scanner() {
     } finally {
       setResolving(false);
     }
-  }, [stopCamera]);
+  }, [stopCamera, navigate]);
 
   const handleDecode = useCallback((decoded: string) => {
     const now = Date.now();
@@ -118,11 +112,22 @@ export default function Scanner() {
     if (last && last.value === decoded && now - last.at < RESCAN_DEBOUNCE_MS) return;
     lastScanRef.current = { value: decoded, at: now };
 
-    // Garment tag QR → open the in-app garment job card instead of resolving via backend.
+    // Garment tag QR → open the in-app garment job card (no round-trip).
     const garmentTag = parseGarmentTagUrl(decoded);
     if (garmentTag) {
       void stopCamera();
-      navigate(`/g/${encodeURIComponent(garmentTag.ticket)}/${encodeURIComponent(garmentTag.garment)}`);
+      navigate(
+        `/g/${encodeURIComponent(garmentTag.ticket)}/${encodeURIComponent(garmentTag.garment)}`,
+        { replace: true },
+      );
+      return;
+    }
+
+    // Customer deep link → customer page.
+    const customerId = parseCustomerUrl(decoded);
+    if (customerId) {
+      void stopCamera();
+      navigate(`/customers/${encodeURIComponent(customerId)}`, { replace: true });
       return;
     }
 
@@ -238,20 +243,29 @@ export default function Scanner() {
         }
         return;
       }
-      case "open":
-        window.open(deskUrl(result.doctype, name), "_blank", "noopener");
+      case "open": {
+        // In-app page first (ticket / pay / delivery / customer); desk only as fallback.
+        if (!goNav(navigate, openPathForResult(result))) {
+          toast.error("No page available for this record");
+        }
         return;
+      }
       case "print_tag":
       case "print_tags":
         window.open(printUrl(result.doctype, name), "_blank", "noopener");
         return;
       case "send_sms":
+        // Prefer delivery detail when we have it.
+        if (result.type === "lsh_delivery" && name) {
+          navigate(`/deliveries/${encodeURIComponent(name)}`);
+          return;
+        }
         toast.message("Use the delivery screen to send SMS");
         return;
       default:
         toast.error(`Unsupported action: ${key}`);
     }
-  }, [result, runBackendAction]);
+  }, [result, runBackendAction, navigate]);
 
   const submitManual = useCallback((e: React.FormEvent) => {
     e.preventDefault();
