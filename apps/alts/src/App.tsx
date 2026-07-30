@@ -37,6 +37,7 @@ const DeliveryDetail = lazy(() => import("@/pages/DeliveryDetail"));
 const DeliveryLabel = lazy(() => import("@alts/pages/print/DeliveryLabelPrint"));
 const GarmentTagRedirect = lazy(() => import("@/components/garment/GarmentTagRedirect"));
 const PayInvoice = lazy(() => import("@/pages/PayInvoice"));
+const PodCapture = lazy(() => import("@alts/pages/PodCapture"));
 
 const FOH = ["super_admin", "store_manager", "salesperson", "tailor"] as const;
 
@@ -145,6 +146,15 @@ export default function App() {
               {/* Scan / QR entry — phone tier by definition (rack + phone) */}
               <Route path="/g/:ticket/:garmentId" element={<GarmentJobCard />} />
               <Route path="/garments/:token" element={<GarmentTagRedirect />} />
+              {/* SPEC 012 — driver/staff POD capture (phone) */}
+              <Route
+                path="/deliveries/:id/pod"
+                element={
+                  <RoleGuard allow={[...FOH, "driver"]}>
+                    <PodCapture />
+                  </RoleGuard>
+                }
+              />
 
               {/* Tablet-tier (landscape counter + phone → shop-tablet card) */}
               <Route

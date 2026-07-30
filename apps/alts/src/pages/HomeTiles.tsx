@@ -255,11 +255,10 @@ export default function HomeTiles() {
     },
     {
       key: "deliveries",
-      // Board lives on app.lstailors.com — external affordance matches Reports & Admin
-      href: "https://app.lstailors.com/deliveries",
+      // Alts board + POD live here; full ops board still on app
+      to: "/deliveries",
       title: "Deliveries",
-      sub: "Dispatch board · driver route · POD",
-      external: true,
+      sub: "Board status · driver route · POD",
       badge: s.pendingBoard || null,
       badgeKind: s.outForDelivery > 0 ? "warn" : "neutral",
       icon: (
