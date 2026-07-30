@@ -601,6 +601,8 @@ export async function getCustomerSpend(customerId: string, historyLimit = 40) {
     return emptySpend();
   }
 
+  // Pull up to 500 submitted SIs so totals aren't capped to the UI history page.
+  // History returned to the client is sliced to historyLimit.
   const rows = await erpList<any>("Sales Invoice", {
     filters: [
       ["customer", "=", id],
@@ -621,7 +623,7 @@ export async function getCustomerSpend(customerId: string, historyLimit = 40) {
       "remarks",
       "company",
     ],
-    limit: Math.min(Math.max(historyLimit, 1), 200),
+    limit: 500,
     order_by: "posting_date desc",
   });
 
@@ -679,6 +681,7 @@ export async function getCustomerSpend(customerId: string, historyLimit = 40) {
     ticketCount = 0;
   }
 
+  const histCap = Math.min(Math.max(historyLimit, 1), 100);
   return {
     customerId: id,
     lifetimeInvoiced: round2(lifetimeInvoiced),
@@ -691,7 +694,7 @@ export async function getCustomerSpend(customerId: string, historyLimit = 40) {
     overdueCount,
     ticketCount,
     lastPurchaseDate,
-    history,
+    history: history.slice(0, histCap),
   };
 }
 

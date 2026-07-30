@@ -110,9 +110,10 @@ customersRouter.get("/:id/spend", async (c) => {
     return c.json({
       data: {
         ...spend,
-        // aliases used by UI
-        lifetimeSpend: spend.lifetimePaid,
+        // UI aliases — lifetime spend = total billed (not just paid)
+        lifetimeSpend: spend.lifetimeInvoiced,
         lifetimeBilled: spend.lifetimeInvoiced,
+        lifetimePaid: spend.lifetimePaid,
         openInvoiceCount: spend.unpaidCount,
         lastInvoiceDate: spend.lastPurchaseDate,
         erpLifetimeValue: Number(cust.lifetimeValue ?? 0),
