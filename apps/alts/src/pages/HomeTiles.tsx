@@ -272,6 +272,20 @@ export default function HomeTiles() {
       ),
     },
     {
+      key: "customers",
+      to: "/customers",
+      title: "Customers",
+      sub: "Profiles, phones, addresses, photo — open any client",
+      icon: (
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="26" cy="18" r="8" />
+          <path d="M10 44c2.5-10 11-14 16-14s13.5 4 16 14" />
+          <circle cx="40" cy="16" r="5" opacity=".7" />
+          <path d="M42 28c4 1.5 7 5 8 12" opacity=".55" />
+        </svg>
+      ),
+    },
+    {
       key: "admin",
       href: "https://app.lstailors.com",
       title: "Reports & Admin",

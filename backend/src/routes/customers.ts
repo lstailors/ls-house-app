@@ -8,7 +8,9 @@ import {
   updateCustomer,
   upsertCustomerDossier,
   archiveCustomer,
+  setCustomerImage,
 } from "../lib/erpnext/customers";
+import { uploadFile, erpFileAbsoluteUrl, attachFileUrl } from "../lib/erpnext/files";
 
 export const customersRouter = new Hono();
 
@@ -82,7 +84,9 @@ customersRouter.post("/", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
   const body = (await c.req.json()) as any;
-  if (!body.full_name) return c.json({ error: { message: "full_name is required" } }, 400);
+  if (!body.full_name && !body.fullName && !body.customer_name) {
+    return c.json({ error: { message: "full_name is required" } }, 400);
+  }
 
   try {
     const data = await createCustomer(body, { division: user.locationCode ?? "NYC" });
@@ -100,11 +104,46 @@ customersRouter.patch("/:id", async (c) => {
   const body = (await c.req.json()) as any;
 
   const allowed = [
-    "full_name", "first_name", "last_name", "email", "phone", "company", "title_role",
-    "address", "city", "state", "zip_code", "division", "vip_tier", "status",
-    "style_preferences", "fit_notes", "notes", "birthday", "anniversary", "tags",
-    "communication_pref", "preferred_contact", "sms_opted_out", "payment_preference",
-    "credit_terms", "casa_tier", "source_channel",
+    "full_name",
+    "first_name",
+    "last_name",
+    "preferred_name",
+    "email",
+    "phone",
+    "company",
+    "title_role",
+    "profession",
+    "pronouns",
+    "address",
+    "city",
+    "state",
+    "zip_code",
+    "division",
+    "vip_tier",
+    "vip_flag",
+    "status",
+    "style_preferences",
+    "fit_notes",
+    "lifestyle_notes",
+    "notes",
+    "birthday",
+    "anniversary",
+    "tags",
+    "communication_pref",
+    "preferred_contact",
+    "sms_opted_out",
+    "sms_opt_in",
+    "payment_preference",
+    "credit_terms",
+    "casa_tier",
+    "source_channel",
+    "referral_code",
+    "measurements",
+    "lsh_chest",
+    "lsh_seat",
+    "lsh_back_length",
+    "lsh_outseam",
+    "image",
   ];
 
   const update: Record<string, any> = {};
@@ -121,6 +160,46 @@ customersRouter.patch("/:id", async (c) => {
     return c.json({ data });
   } catch (e: any) {
     return c.json({ error: { message: e.message ?? "Failed to update customer" } }, 500);
+  }
+});
+
+/** POST /:id/image — multipart profile photo → Customer.image */
+customersRouter.post("/:id/image", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const id = c.req.param("id");
+  const formData = await c.req.formData();
+  const file = formData.get("file") as File | null;
+  if (!file) return c.json({ error: { message: "file required" } }, 400);
+
+  try {
+    const existing = await getCustomer(id);
+    if (!existing) return c.json({ error: { message: "Not found" } }, 404);
+
+    const buffer = new Uint8Array(await file.arrayBuffer());
+    const ext = (file.name || "photo.jpg").split(".").pop() || "jpg";
+    const filename = `customer-${id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40)}-${Date.now()}.${ext}`;
+
+    const { fileUrl } = await uploadFile({
+      file: buffer,
+      filename,
+      contentType: file.type || "image/jpeg",
+      doctype: "Customer",
+      docname: id,
+      isPrivate: false,
+    });
+
+    await attachFileUrl("Customer", id, "image", fileUrl);
+    const data = await setCustomerImage(id, fileUrl);
+    return c.json({
+      data: {
+        ...data,
+        image: erpFileAbsoluteUrl(fileUrl),
+      },
+    });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message ?? "Upload failed" } }, 500);
   }
 });
 

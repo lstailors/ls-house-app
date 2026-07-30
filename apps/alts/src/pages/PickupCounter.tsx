@@ -10,6 +10,7 @@ import "@alts/styles/alts-pos.css";
 
 type Ticket = {
   name: string;
+  customer?: string;
   customer_name?: string;
   customer_mobile?: string;
   customer_phone?: string;
@@ -283,11 +284,27 @@ export default function PickupCounter() {
             <div className="grid lg:grid-cols-[1fr_320px] gap-6 max-w-5xl">
               <div>
                 <div className="flex items-start gap-3 mb-5">
-                  <div className="w-14 h-14 rounded-full bg-forest-raised border border-brass/30 grid place-items-center font-bold text-brass-light text-lg">
+                  <button
+                    type="button"
+                    disabled={!t.customer}
+                    onClick={() => t.customer && nav(`/customers/${encodeURIComponent(t.customer)}`)}
+                    className="w-14 h-14 rounded-full bg-forest-raised border border-brass/30 grid place-items-center font-bold text-brass-light text-lg disabled:cursor-default hover:border-brass/50 transition-colors"
+                    title={t.customer ? "Open customer profile" : undefined}
+                  >
                     {(t.customer_name || "??").slice(0, 2).toUpperCase()}
-                  </div>
+                  </button>
                   <div>
-                    <div className="display text-3xl leading-none">{t.customer_name}</div>
+                    {t.customer ? (
+                      <button
+                        type="button"
+                        onClick={() => nav(`/customers/${encodeURIComponent(t.customer!)}`)}
+                        className="display text-3xl leading-none text-left hover:text-brass-light transition-colors"
+                      >
+                        {t.customer_name}
+                      </button>
+                    ) : (
+                      <div className="display text-3xl leading-none">{t.customer_name}</div>
+                    )}
                     <div className="flex flex-wrap gap-2 mt-2 text-xs items-center">
                       <span className="font-mono text-brass-light">{t.name}</span>
                       <span className="chip">Ready</span>

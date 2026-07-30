@@ -1132,8 +1132,16 @@ intakeAlterationsRouter.get('/customers/:id', async (c) => {
         name: cust.customer_name,
         mobile,
         email,
-        notes: cust.customer_details || '',
+        notes: cust.custom_client_notes || cust.customer_details || '',
         contactName: cust.customer_primary_contact || primaryContact?.name || null,
+        image: cust.image || null,
+        vipFlag: !!cust.vip_flag,
+        preferredName: cust.preferred_name || null,
+        profession: cust.profession || null,
+        birthday: cust.date_of_birth || null,
+        anniversary: cust.anniversary_date || null,
+        styleNotes: cust.style_notes || null,
+        fitNotes: cust.fit_notes || null,
         // backward-compat single address
         address: primaryAddr
           ? {

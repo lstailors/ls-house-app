@@ -8,6 +8,7 @@ import "@alts/styles/alts-pos.css";
 
 type Ticket = {
   name: string;
+  customer?: string;
   customer_name?: string;
   workflow_state?: string;
   due_date?: string;
@@ -141,7 +142,28 @@ export default function OrdersGlass() {
                       <span className="text-xs text-signal-amber font-bold uppercase">{t.payment_status}</span>
                     )}
                   </div>
-                  <div className="font-semibold mt-0.5 truncate">{t.customer_name}</div>
+                  <div className="font-semibold mt-0.5 truncate flex items-center gap-2">
+                    <span className="truncate">{t.customer_name}</span>
+                    {(t.customer) && (
+                      <span
+                        role="link"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          nav(`/customers/${encodeURIComponent(t.customer!)}`);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.stopPropagation();
+                            nav(`/customers/${encodeURIComponent(t.customer!)}`);
+                          }
+                        }}
+                        className="text-[10px] uppercase tracking-widest text-brass-light font-bold shrink-0 hover:underline"
+                      >
+                        Profile
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-cream-dim mt-0.5">
                     {t.origin_location || "NYC"}
                     {t.due_date ? ` · due ${t.due_date}` : ""}

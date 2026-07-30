@@ -15,7 +15,7 @@ import { cn } from "@ls/design/utils";
 // ── Types ────────────────────────────────────────────────────────────────────
 interface Customer {
   id: string;
-  customerNumber: number | null;
+  customerNumber: number | string | null;
   name: string;
   firstName: string | null;
   lastName: string | null;
@@ -26,9 +26,11 @@ interface Customer {
   locationId: string | null;
   status: string;
   vipTier: string;
+  vipFlag?: boolean;
   notes: string | null;
   tags: string[];
   casaTier: string | null;
+  image?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,15 +39,17 @@ const VIP_COLORS: Record<string, string> = {
   Platinum: "text-purple-300 border-purple-400/40 bg-purple-900/20",
   Gold:     "text-brass-shimmer border-brass/40 bg-brass/10",
   Silver:   "text-slate-300 border-slate-400/40 bg-slate-800/20",
+  VIP:      "text-brass-shimmer border-brass/40 bg-brass/10",
   Standard: "text-cream-dim border-brass/10 bg-transparent",
 };
 
-const VIP_FILTERS = ["All", "Platinum", "Gold", "Silver", "Standard"];
+const VIP_FILTERS = ["All", "VIP", "Standard"];
 const STATUS_FILTERS = ["Active", "Inactive", "Archived", "all"];
 
 // ── Customer Card ─────────────────────────────────────────────────────────────
 function CustomerCard({ c, onClick }: { c: Customer; onClick: () => void }) {
-  const isVip = c.vipTier !== "Standard";
+  const isVip = c.vipFlag || (c.vipTier && c.vipTier !== "Standard");
+  const vipLabel = isVip ? (c.vipTier === "Standard" ? "VIP" : c.vipTier) : "Standard";
   return (
     <button
       onClick={onClick}
@@ -54,10 +58,14 @@ function CustomerCard({ c, onClick }: { c: Customer; onClick: () => void }) {
       <div className="flex items-start gap-3">
         {/* Avatar */}
         <div className={cn(
-          "w-10 h-10 rounded-full border flex items-center justify-center flex-shrink-0 text-sm font-semibold",
-          isVip ? VIP_COLORS[c.vipTier] : "bg-brass/10 border-brass/20 text-brass-shimmer"
+          "w-10 h-10 rounded-full border flex items-center justify-center flex-shrink-0 text-sm font-semibold overflow-hidden",
+          isVip ? VIP_COLORS[vipLabel] || VIP_COLORS.VIP : "bg-brass/10 border-brass/20 text-brass-shimmer"
         )}>
-          {c.name.charAt(0).toUpperCase()}
+          {c.image ? (
+            <img src={c.image} alt="" className="w-full h-full object-cover" />
+          ) : (
+            c.name.charAt(0).toUpperCase()
+          )}
         </div>
 
         <div className="flex-1 min-w-0">
@@ -91,8 +99,8 @@ function CustomerCard({ c, onClick }: { c: Customer; onClick: () => void }) {
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          <span className={cn("text-[9px] tracking-wider font-bold uppercase px-1.5 py-0.5 rounded border", VIP_COLORS[c.vipTier] ?? VIP_COLORS.Standard)}>
-            {c.vipTier}
+          <span className={cn("text-[9px] tracking-wider font-bold uppercase px-1.5 py-0.5 rounded border", VIP_COLORS[vipLabel] ?? VIP_COLORS.Standard)}>
+            {vipLabel}
           </span>
           <span className="text-[10px] text-cream-dim bg-brass/8 border border-brass/10 rounded px-1.5 py-0.5">
             {c.locationId ?? "—"}

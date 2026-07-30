@@ -361,7 +361,17 @@ function CustomerCard({
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="space-y-1">
-          <p className="text-cream text-lg font-semibold">{ticket.customer_name}</p>
+          {ticket.customer ? (
+            <Link
+              to={`/customers/${encodeURIComponent(ticket.customer)}`}
+              className="text-cream text-lg font-semibold hover:text-brass-light transition-colors inline-flex items-center gap-1.5"
+            >
+              {ticket.customer_name}
+              <span className="text-[10px] uppercase tracking-widest text-brass-light font-bold">Profile</span>
+            </Link>
+          ) : (
+            <p className="text-cream text-lg font-semibold">{ticket.customer_name}</p>
+          )}
           {ticket.customer_mobile ? (
             <p className="text-cream-muted text-sm">{ticket.customer_mobile}</p>
           ) : (

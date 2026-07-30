@@ -1085,6 +1085,7 @@ export default function IntakeStepped() {
                 email={customer.email}
                 addressLine={customer.addressLine}
                 onEdit={customer.id ? () => setEditOpen(true) : undefined}
+                onProfile={customer.id ? () => nav(`/customers/${encodeURIComponent(customer.id)}`) : undefined}
                 onChange={() => {
                   setCustomer(null);
                   setQ("");
@@ -1272,6 +1273,7 @@ export default function IntakeStepped() {
                   email={customer.email}
                   addressLine={customer.addressLine}
                   onEdit={customer.id ? () => setEditOpen(true) : undefined}
+                  onProfile={customer.id ? () => nav(`/customers/${encodeURIComponent(customer.id)}`) : undefined}
                   onChange={() => {
                     setCustomer(null);
                     setStep(0);
@@ -1758,6 +1760,7 @@ export default function IntakeStepped() {
                   email={customer.email}
                   addressLine={customer.addressLine}
                   onEdit={customer.id ? () => setEditOpen(true) : undefined}
+                  onProfile={customer.id ? () => nav(`/customers/${encodeURIComponent(customer.id)}`) : undefined}
                 />
               </div>
             )}
