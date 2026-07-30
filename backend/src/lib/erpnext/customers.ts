@@ -1,4 +1,4 @@
-import { erpList, erpGet, erpCreate, erpUpdate } from "../erp";
+import { erpList, erpGet, erpCreate, erpUpdate, erpCount } from "../erp";
 import { upsertCustomerWithAddress } from "./customer";
 import { DT } from "./doctypes";
 import { storeFindOne, storeUpsert } from "./store";
@@ -344,41 +344,135 @@ async function loadLinkedContactsAndAddresses(customerId: string) {
   return { people, phones, emails, addresses, primaryContact, cust };
 }
 
-export async function searchCustomers(q: string, limit = 10) {
-  if (q.length < 2) return [];
+/**
+ * Full-book customer search (ERP fuzzy link search + name/phone/email fallbacks).
+ * Used by GET /api/customers/search and by listCustomers() when ?q= is present —
+ * always searches the FULL book (ignores pagination), not just the currently
+ * loaded page, so a real client never comes back "No clients found" just
+ * because they weren't in the first 100/500 rows.
+ */
+export async function searchCustomers(q: string, limit = 40) {
+  const needle = q.trim();
+  if (needle.length < 2) return [];
   const base = process.env.ERPNEXT_BASE_URL ?? "";
   const key = process.env.ERPNEXT_API_KEY ?? "";
   const sec = process.env.ERPNEXT_API_SECRET ?? "";
-  if (!base || !key || !sec) return [];
+  const byId = new Map<string, any>();
 
-  const searchUrl =
-    `${base}/api/method/frappe.desk.search.search_link?` +
-    `txt=${encodeURIComponent(q)}&doctype=Customer&page_length=${limit}`;
-
-  try {
-    const res = await fetch(searchUrl, {
-      headers: {
-        Authorization: `token ${key}:${sec}`,
-        Accept: "application/json",
-        "User-Agent": "Mozilla/5.0 (compatible; L&S-House-App/1.0)",
-      },
-    });
-    if (res.ok) {
-      const json: any = await res.json();
-      const hits: { value: string }[] = json.results ?? json.message ?? [];
-      const docs = await Promise.all(hits.map((h) => erpGet<any>("Customer", h.value)));
-      return docs.filter(Boolean).map(serializeCustomer);
+  const take = (rows: any[]) => {
+    for (const row of rows) {
+      if (!row?.name || byId.has(row.name)) continue;
+      byId.set(row.name, row);
+      if (byId.size >= limit) break;
     }
-  } catch {
-    /* fallback below */
+  };
+
+  // 1) Frappe link search — fuzzy on Customer name + configured search fields
+  if (base && key && sec) {
+    const searchUrl =
+      `${base}/api/method/frappe.desk.search.search_link?` +
+      `txt=${encodeURIComponent(needle)}&doctype=Customer&page_length=${limit}`;
+    try {
+      const res = await fetch(searchUrl, {
+        headers: {
+          Authorization: `token ${key}:${sec}`,
+          Accept: "application/json",
+          "User-Agent": "Mozilla/5.0 (compatible; L&S-House-App/1.0)",
+        },
+      });
+      if (res.ok) {
+        const json: any = await res.json();
+        const hits: { value: string }[] = json.results ?? json.message ?? [];
+        const docs = await Promise.all(
+          hits.slice(0, limit).map((h) => erpGet<any>("Customer", h.value).catch(() => null)),
+        );
+        take(docs.filter(Boolean));
+      }
+    } catch {
+      /* fall through to LIKE-based fallbacks below */
+    }
   }
 
-  const rows = await erpList<any>("Customer", {
-    filters: [["customer_name", "like", `%${q}%`]],
-    fields: CUSTOMER_LIST_FIELDS,
-    limit,
-  });
-  return rows.map(serializeCustomer);
+  // 2) Name / preferred name / first / last — LIKE, or-grouped
+  if (byId.size < limit) {
+    const nameOr: unknown[] = [
+      ["customer_name", "like", `%${needle}%`],
+      ["preferred_name", "like", `%${needle}%`],
+      ["first_name", "like", `%${needle}%`],
+      ["last_name", "like", `%${needle}%`],
+    ];
+    try {
+      const rows = await erpList<any>("Customer", {
+        or_filters: nameOr,
+        fields: CUSTOMER_LIST_FIELDS,
+        limit,
+        order_by: "customer_name asc",
+      });
+      take(rows);
+    } catch {
+      const rows = await erpList<any>("Customer", {
+        filters: [["customer_name", "like", `%${needle}%`]],
+        fields: CUSTOMER_LIST_FIELDS,
+        limit,
+      });
+      take(rows);
+    }
+  }
+
+  // 3) Phone digits (mobile_no)
+  const digits = needle.replace(/\D/g, "");
+  if (byId.size < limit && digits.length >= 4) {
+    try {
+      const rows = await erpList<any>("Customer", {
+        or_filters: [
+          ["mobile_no", "like", `%${digits}%`],
+          ["mobile_no", "like", `%${digits.slice(-10)}%`],
+        ],
+        fields: CUSTOMER_LIST_FIELDS,
+        limit,
+      });
+      take(rows);
+    } catch {
+      const rows = await erpList<any>("Customer", {
+        filters: [["mobile_no", "like", `%${digits}%`]],
+        fields: CUSTOMER_LIST_FIELDS,
+        limit,
+      });
+      take(rows);
+    }
+  }
+
+  // 4) Email
+  if (byId.size < limit && needle.includes("@")) {
+    const rows = await erpList<any>("Customer", {
+      filters: [["email_id", "like", `%${needle}%`]],
+      fields: CUSTOMER_LIST_FIELDS,
+      limit,
+    });
+    take(rows);
+  }
+
+  // 5) Company / home_company
+  if (byId.size < limit) {
+    const rows = await erpList<any>("Customer", {
+      filters: [["home_company", "like", `%${needle}%`]],
+      fields: CUSTOMER_LIST_FIELDS,
+      limit,
+    });
+    take(rows);
+  }
+
+  // 6) Legacy customer number (exact-ish, digits only)
+  if (byId.size < limit && digits.length >= 2) {
+    const rows = await erpList<any>("Customer", {
+      filters: [["legacy_customer_number", "like", `%${digits}%`]],
+      fields: CUSTOMER_LIST_FIELDS,
+      limit,
+    });
+    take(rows);
+  }
+
+  return Array.from(byId.values()).slice(0, limit).map(serializeCustomer);
 }
 
 export async function listCustomers(
@@ -391,13 +485,37 @@ export async function listCustomers(
     offset?: number;
   } = {},
 ) {
+  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 1000);
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const q = (opts.q ?? "").trim();
+
+  // Search path — always searches the FULL book (fuzzy, multi-field), then
+  // applies vip/status as client-side filters on the matched set. This is
+  // what fixes "500 clients loaded, search finds nobody" — search never
+  // depends on what page happened to be loaded.
+  if (q.length >= 2) {
+    let data = await searchCustomers(q, limit);
+    if (opts.status === "Archived" || opts.status === "Inactive") {
+      data = data.filter((c) => c.status === "Archived" || c.status === "Inactive");
+    } else if (opts.status && opts.status !== "all") {
+      data = data.filter((c) => c.status !== "Archived" && c.status !== "Inactive");
+    }
+    if (opts.vip && opts.vip !== "All" && opts.vip !== "Standard") {
+      data = data.filter((c) => c.vipFlag || (c.vipTier && c.vipTier !== "Standard"));
+    } else if (opts.vip === "Standard") {
+      data = data.filter((c) => !c.vipFlag && (!c.vipTier || c.vipTier === "Standard"));
+    }
+    void opts.location;
+    return { data, total: data.length, mode: "search" as const };
+  }
+
   const filters: unknown[] = [];
   if (opts.status === "Archived" || opts.status === "Inactive") {
     filters.push(["disabled", "=", 1]);
-  } else if (opts.status && opts.status !== "all") {
+  } else if (!opts.status || opts.status === "all") {
+    // no disabled filter — show everyone
+  } else {
     // Active (default)
-    filters.push(["disabled", "=", 0]);
-  } else if (!opts.status || opts.status === "Active") {
     filters.push(["disabled", "=", 0]);
   }
 
@@ -407,22 +525,25 @@ export async function listCustomers(
     filters.push(["vip_flag", "=", 0]);
   }
 
-  if (opts.q && opts.q.length >= 2) {
-    filters.push(["customer_name", "like", `%${opts.q}%`]);
-  }
-
   // location filter not on live Customer (no custom_lst_division) — ignore quietly
   void opts.location;
 
-  const rows = await erpList<any>("Customer", {
-    filters,
-    fields: CUSTOMER_LIST_FIELDS,
-    order_by: "customer_name asc",
-    limit: opts.limit ?? 100,
-    start: opts.offset ?? 0,
-  });
+  const [rows, total] = await Promise.all([
+    erpList<any>("Customer", {
+      filters,
+      fields: CUSTOMER_LIST_FIELDS,
+      order_by: "customer_name asc",
+      limit,
+      start: offset,
+    }),
+    erpCount("Customer", filters),
+  ]);
 
-  return { data: rows.map(serializeCustomer), total: rows.length };
+  return {
+    data: rows.map(serializeCustomer),
+    total: total || rows.length,
+    mode: "browse" as const,
+  };
 }
 
 export async function getCustomer(id: string) {

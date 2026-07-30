@@ -1,11 +1,10 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search, Plus, Star, Phone, Mail, Building2,
-  MapPin, Filter, ChevronRight, Users
+  Filter, ChevronRight, Users, Loader2,
 } from "lucide-react";
 import { SectionHeader } from "@ls/design";
-import { StatusPill } from "@ls/design";
 import { EmptyState } from "@ls/design";
 import { Button } from "@ls/design/ui/button";
 import { api } from "@ls/api-client";
@@ -46,6 +45,15 @@ const VIP_COLORS: Record<string, string> = {
 const VIP_FILTERS = ["All", "VIP", "Standard"];
 const STATUS_FILTERS = ["Active", "Inactive", "Archived", "all"];
 
+function useDebounced<T>(value: T, ms = 280): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
+
 // ── Customer Card ─────────────────────────────────────────────────────────────
 function CustomerCard({ c, onClick }: { c: Customer; onClick: () => void }) {
   const isVip = c.vipFlag || (c.vipTier && c.vipTier !== "Standard");
@@ -56,7 +64,6 @@ function CustomerCard({ c, onClick }: { c: Customer; onClick: () => void }) {
       className="w-full text-left glass-panel p-4 rounded-xl border border-brass/10 hover:border-brass/40 transition-all group"
     >
       <div className="flex items-start gap-3">
-        {/* Avatar */}
         <div className={cn(
           "w-10 h-10 rounded-full border flex items-center justify-center flex-shrink-0 text-sm font-semibold overflow-hidden",
           isVip ? VIP_COLORS[vipLabel] || VIP_COLORS.VIP : "bg-brass/10 border-brass/20 text-brass-shimmer"
@@ -119,44 +126,73 @@ export default function Customers() {
   const [vipFilter, setVipFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("Active");
   const [showFilters, setShowFilters] = useState(false);
+  const [browseLimit, setBrowseLimit] = useState(100);
+  const debouncedQ = useDebounced(search.trim(), 300);
+  const isSearching = debouncedQ.length >= 2;
+  const pageSize = isSearching ? 40 : browseLimit;
+
+  // Reset browse window when filters/search change
+  useEffect(() => {
+    setBrowseLimit(100);
+  }, [debouncedQ, statusFilter, vipFilter]);
 
   const params = new URLSearchParams();
   if (statusFilter !== "all") params.set("status", statusFilter);
   if (vipFilter !== "All") params.set("vip", vipFilter);
-  params.set("limit", "500");
+  if (isSearching) params.set("q", debouncedQ);
+  params.set("limit", String(pageSize));
+  params.set("offset", "0");
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["customers", statusFilter, vipFilter],
-    queryFn: () => api.get<{ data: Customer[]; total: number }>(`/api/customers?${params}`).then((r: any) => r),
-    staleTime: 60_000,
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ["customers", statusFilter, vipFilter, debouncedQ, browseLimit],
+    queryFn: async () => {
+      const res = await api.raw(`/api/customers?${params.toString()}`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error?.message ?? `Customers failed (${res.status})`);
+      }
+      const rows: Customer[] = Array.isArray(json?.data) ? json.data : [];
+      return {
+        customers: rows,
+        total: typeof json?.total === "number" ? json.total : rows.length,
+        mode: (json?.mode as string) || (isSearching ? "search" : "browse"),
+      };
+    },
+    staleTime: isSearching ? 15_000 : 60_000,
+    placeholderData: (prev) => prev,
   });
 
-  const customers: Customer[] = (data as any)?.data ?? (Array.isArray(data) ? data : []);
-  const total: number = (data as any)?.total ?? customers.length;
+  const customers: Customer[] = data?.customers ?? [];
+  const total: number = data?.total ?? customers.length;
+  const mode: string = data?.mode ?? (isSearching ? "search" : "browse");
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    if (!q) return customers;
-    return customers.filter(c =>
-      c.name.toLowerCase().includes(q) ||
-      (c.phone ?? "").includes(q) ||
-      (c.email ?? "").toLowerCase().includes(q) ||
-      (c.company ?? "").toLowerCase().includes(q)
-    );
-  }, [customers, search]);
+  // Book-wide count for KPI header
+  const { data: bookMeta } = useQuery({
+    queryKey: ["customers-book-total"],
+    queryFn: async () => {
+      const res = await api.raw(`/api/customers?status=Active&limit=1`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) return { total: 0 };
+      return { total: typeof json?.total === "number" ? json.total : 0 };
+    },
+    staleTime: 5 * 60_000,
+  });
+  const bookTotal: number = bookMeta?.total || total;
 
   const kpis = useMemo(() => ({
-    total: total,
-    vip: customers.filter(c => c.vipTier !== "Standard").length,
+    total: bookTotal,
+    vip: customers.filter(c => c.vipFlag || (c.vipTier && c.vipTier !== "Standard")).length,
     casa: customers.filter(c => !!c.casaTier).length,
-  }), [customers, total]);
+  }), [customers, bookTotal]);
+
+  const canLoadMore = !isSearching && mode === "browse" && customers.length < total && browseLimit < 500;
 
   return (
     <div className="space-y-6 animate-fade-up">
       <SectionHeader
         eyebrow="L&S House · Clients"
         title={<>Every <span className="text-brass-shimmer">gentleman</span> in the house.</>}
-        description={`${total.toLocaleString()} clients in the book.`}
+        description={`${bookTotal.toLocaleString()} clients in the book. Search the full ERP book — not just this page.`}
         actions={
           <Button className="btn-brass" onClick={() => navigate("/customers/new")}>
             <Plus className="w-4 h-4 mr-1.5" /> New Client
@@ -169,8 +205,8 @@ export default function Customers() {
         <div className="grid grid-cols-3 gap-3">
           {[
             { label: "Total Clients", value: kpis.total.toLocaleString() },
-            { label: "VIP", value: kpis.vip.toLocaleString(), gold: true },
-            { label: "Casa Members", value: kpis.casa.toLocaleString(), gold: kpis.casa > 0 },
+            { label: "VIP (page)", value: kpis.vip.toLocaleString(), gold: true },
+            { label: "Casa (page)", value: kpis.casa.toLocaleString(), gold: kpis.casa > 0 },
           ].map(({ label, value, gold }) => (
             <div key={label} className="glass-panel p-4">
               <div className="ui-label mb-1">{label}</div>
@@ -184,13 +220,29 @@ export default function Customers() {
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <div className="flex-1 flex items-center gap-2 glass-panel px-3 py-2.5 rounded-xl border border-brass/15">
-            <Search className="w-4 h-4 text-cream-muted flex-shrink-0" />
+            {isFetching && isSearching ? (
+              <Loader2 className="w-4 h-4 text-brass animate-spin flex-shrink-0" />
+            ) : (
+              <Search className="w-4 h-4 text-cream-muted flex-shrink-0" />
+            )}
             <input
               className="flex-1 bg-transparent text-cream text-base sm:text-sm placeholder:text-cream-dim focus:outline-none"
-              placeholder="Search by name, phone, email, company…"
+              placeholder="Search full book — name, phone, email…"
               value={search}
               onChange={e => setSearch(e.target.value)}
+              autoCapitalize="words"
+              autoCorrect="off"
+              spellCheck={false}
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="text-xs text-cream-dim hover:text-cream px-1"
+              >
+                Clear
+              </button>
+            )}
           </div>
           <button
             onClick={() => setShowFilters(f => !f)}
@@ -241,27 +293,57 @@ export default function Customers() {
       </div>
 
       {/* Results count */}
-      {search && (
+      {isSearching ? (
         <p className="text-xs text-cream-dim">
-          {filtered.length} result{filtered.length !== 1 ? "s" : ""} for "{search}"
+          {isFetching && customers.length === 0
+            ? `Searching full book for “${debouncedQ}”…`
+            : `${total} result${total !== 1 ? "s" : ""} in the full book for “${debouncedQ}”`}
+        </p>
+      ) : (
+        <p className="text-xs text-cream-dim">
+          Showing {customers.length.toLocaleString()}
+          {total > customers.length ? ` of ${total.toLocaleString()}` : ""} · type 2+ letters to search everyone
         </p>
       )}
 
       {/* List */}
-      {isLoading ? (
-        <div className="text-cream-muted text-sm">Loading clients…</div>
-      ) : filtered.length === 0 ? (
+      {isLoading && customers.length === 0 ? (
+        <div className="text-cream-muted text-sm flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading clients…
+        </div>
+      ) : customers.length === 0 ? (
         <EmptyState
           icon={Users}
           title="No clients found"
-          description={search ? `No match for "${search}"` : "Add the first client to get started."}
+          description={
+            isSearching
+              ? `No match for “${debouncedQ}” in the full book`
+              : "Add the first client to get started."
+          }
           action={<Button className="btn-brass" onClick={() => navigate("/customers/new")}>New Client</Button>}
         />
       ) : (
         <div className="space-y-2">
-          {filtered.map(c => (
+          {customers.map(c => (
             <CustomerCard key={c.id} c={c} onClick={() => navigate(`/customers/${c.id}`)} />
           ))}
+          {canLoadMore && (
+            <button
+              type="button"
+              disabled={isFetching}
+              onClick={() => setBrowseLimit((n) => Math.min(500, n + 100))}
+              className="w-full py-3 rounded-xl border border-brass/25 text-sm text-brass-light hover:border-brass/50 disabled:opacity-50"
+            >
+              {isFetching
+                ? "Loading…"
+                : `Load more (${Math.min(100, total - customers.length)} more · ${total.toLocaleString()} total)`}
+            </button>
+          )}
+          {!isSearching && browseLimit >= 500 && total > customers.length && (
+            <p className="text-center text-xs text-cream-dim py-2">
+              Browse capped at 500 — search by name or phone to reach anyone in the book.
+            </p>
+          )}
         </div>
       )}
     </div>

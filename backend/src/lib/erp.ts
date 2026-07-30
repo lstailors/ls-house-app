@@ -51,6 +51,7 @@ export async function erpList<T = unknown>(
   doctype: string,
   opts: {
     filters?: unknown[]
+    or_filters?: unknown[]
     fields?: string[]
     limit?: number
     start?: number
@@ -61,7 +62,8 @@ export async function erpList<T = unknown>(
   if (!base || !key || !secret) return []
 
   const url = new URL(`${base}/api/resource/${encodeURIComponent(doctype)}`)
-  if (opts.filters)  url.searchParams.set('filters',           JSON.stringify(opts.filters))
+  if (opts.filters)    url.searchParams.set('filters',           JSON.stringify(opts.filters))
+  if (opts.or_filters) url.searchParams.set('or_filters',        JSON.stringify(opts.or_filters))
   if (opts.fields)   url.searchParams.set('fields',            JSON.stringify(opts.fields))
   if (opts.limit)    url.searchParams.set('limit_page_length', String(opts.limit))
   if (opts.start)    url.searchParams.set('limit_start',       String(opts.start))
@@ -71,6 +73,20 @@ export async function erpList<T = unknown>(
   if (!res.ok) return []
   const json = await res.json() as { data: T[] }
   return json.data ?? []
+}
+
+/** Total row count for a doctype under the given `filters` (AND) — used for pagination. */
+export async function erpCount(doctype: string, filters: unknown[] = [], orFilters: unknown[] = []): Promise<number> {
+  const { base, key, secret } = creds()
+  if (!base || !key || !secret) return 0
+  const url = new URL(`${base}/api/method/frappe.client.get_count`)
+  url.searchParams.set('doctype', doctype)
+  if (filters.length)   url.searchParams.set('filters',    JSON.stringify(filters))
+  if (orFilters.length) url.searchParams.set('or_filters', JSON.stringify(orFilters))
+  const res = await fetch(url.toString(), { headers: authHeaders(key, secret) })
+  if (!res.ok) return 0
+  const json = await res.json().catch(() => null) as { message?: number } | null
+  return typeof json?.message === 'number' ? json.message : 0
 }
 
 export async function erpGet<T = unknown>(doctype: string, name: string): Promise<T | null> {

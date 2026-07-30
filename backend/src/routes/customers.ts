@@ -19,27 +19,32 @@ customersRouter.get("/search", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
   const q = (c.req.query("q") ?? "").trim();
-  if (q.length < 2) return c.json({ data: [] });
+  if (q.length < 1) return c.json({ data: [], total: 0 });
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "40", 10) || 40, 100);
 
   try {
-    const data = await searchCustomers(q, 10);
-    return c.json({ data });
+    const data = await searchCustomers(q, limit);
+    return c.json({ data, total: data.length });
   } catch {
-    return c.json({ data: [] });
+    return c.json({ data: [], total: 0 });
   }
 });
 
 customersRouter.get("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (user.role === "driver") return c.json({ data: [] });
+  if (user.role === "driver") return c.json({ data: [], total: 0 });
 
   const q = (c.req.query("q") ?? "").trim();
   const locationFilter = c.req.query("location") ?? "";
   const vipFilter = c.req.query("vip") ?? "";
   const statusFilter = c.req.query("status") ?? "Active";
-  const limit = Math.min(parseInt(c.req.query("limit") ?? "100"), 500);
-  const offset = parseInt(c.req.query("offset") ?? "0");
+  // Browse page size; search uses multi-field fuzzy inside listCustomers
+  const limit = Math.min(
+    parseInt(c.req.query("limit") ?? (q ? "50" : "100"), 10) || 100,
+    q ? 100 : 500,
+  );
+  const offset = parseInt(c.req.query("offset") ?? "0", 10) || 0;
 
   const opts: Parameters<typeof listCustomers>[0] = {
     q,
@@ -56,8 +61,8 @@ customersRouter.get("/", async (c) => {
   }
 
   try {
-    const { data, total } = await listCustomers(opts);
-    return c.json({ data, total });
+    const result = await listCustomers(opts);
+    return c.json({ data: result.data, total: result.total, mode: (result as any).mode });
   } catch (e: any) {
     return c.json({ error: { message: e.message ?? "Failed to list customers" } }, 500);
   }
