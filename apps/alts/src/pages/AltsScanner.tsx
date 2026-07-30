@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
+import jsQR from "jsqr";
+import { BrowserMultiFormatReader, BrowserCodeReader } from "@zxing/browser";
+import { BarcodeFormat, DecodeHintType } from "@zxing/library";
 import { toast } from "sonner";
-import { X, Keyboard, ArrowRight, CameraOff } from "lucide-react";
+import { X, Keyboard, ArrowRight, CameraOff, Aperture } from "lucide-react";
 import { Button } from "@ls/design/ui/button";
 import { Input } from "@ls/design/ui/input";
 import { cn } from "@ls/design/utils";
@@ -15,8 +17,11 @@ import {
   routeFromRawScan,
 } from "@alts/lib/scanRoutes";
 
-const VIDEO_ID = "ls-scanner-video";
-const RESCAN_DEBOUNCE_MS = 1200;
+const RESCAN_DEBOUNCE_MS = 900;
+const JSQR_EVERY_MS = 120;
+/** Hardware / Bluetooth wedge scanners type fast then hit Enter. */
+const WEDGE_IDLE_MS = 45;
+const WEDGE_MIN_LEN = 4;
 
 function printUrl(doctype: string | undefined, name: string): string {
   const params = new URLSearchParams({
@@ -51,19 +56,44 @@ const ADVANCE_STATE: Record<string, string> = {
 
 function buzz() {
   try {
-    if (navigator.vibrate) navigator.vibrate(40);
+    navigator.vibrate?.(50);
   } catch {
     /* ignore */
   }
 }
 
+function forceSwUpdate() {
+  try {
+    if (!("serviceWorker" in navigator)) return;
+    void navigator.serviceWorker.getRegistrations().then((regs) => {
+      for (const r of regs) void r.update();
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Floor scanner — three concurrent input paths:
+ *  1) ZXing continuous camera decode (TRY_HARDER, QR only)
+ *  2) jsQR full-frame backup on a timer
+ *  3) HID keyboard-wedge / Bluetooth gun (character buffer + Enter)
+ * Plus a manual Snap button that freezes one high-res frame.
+ */
 export default function Scanner() {
   const navigate = useNavigate();
-  const scannerRef = useRef<Html5Qrcode | null>(null);
-  const startingRef = useRef(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const zxingControlsRef = useRef<{ stop: () => void } | null>(null);
+  const jsqrTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scanningRef = useRef(true);
   const lastScanRef = useRef<{ value: string; at: number } | null>(null);
-  const handleDecodeRef = useRef<(decoded: string) => void>(() => {});
+  const handleDecodeRef = useRef<(decoded: string, via: string) => void>(() => {});
+  const wedgeBufRef = useRef("");
+  const wedgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const attemptsRef = useRef(0);
 
   const [result, setResult] = useState<ScannerResult | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -72,20 +102,38 @@ export default function Scanner() {
   const [cameraError, setCameraError] = useState<{ message: string; permission: boolean } | null>(null);
   const [showManual, setShowManual] = useState(false);
   const [manualValue, setManualValue] = useState("");
-  const [statusLine, setStatusLine] = useState("Point at any L&S QR");
+  const [statusLine, setStatusLine] = useState("Starting camera…");
+  const [debugLine, setDebugLine] = useState("v3");
+  const [snapping, setSnapping] = useState(false);
 
-  const stopCamera = useCallback(async () => {
-    const inst = scannerRef.current;
-    scannerRef.current = null;
-    startingRef.current = false;
-    if (inst) {
-      try {
-        if (inst.isScanning) await inst.stop();
-      } catch {
-        /* ignore */
+  const stopCamera = useCallback(() => {
+    scanningRef.current = false;
+    try {
+      zxingControlsRef.current?.stop();
+    } catch {
+      /* ignore */
+    }
+    zxingControlsRef.current = null;
+    if (jsqrTimerRef.current) {
+      clearInterval(jsqrTimerRef.current);
+      jsqrTimerRef.current = null;
+    }
+    const stream = streamRef.current;
+    streamRef.current = null;
+    if (stream) {
+      for (const t of stream.getTracks()) {
+        try {
+          t.stop();
+        } catch {
+          /* ignore */
+        }
       }
+    }
+    const v = videoRef.current;
+    if (v) {
       try {
-        inst.clear();
+        v.pause();
+        v.srcObject = null;
       } catch {
         /* ignore */
       }
@@ -96,7 +144,8 @@ export default function Scanner() {
     async (token: string) => {
       const value = token.trim();
       if (!value) return;
-      await stopCamera();
+      scanningRef.current = false;
+      stopCamera();
       setResult(null);
       setSheetOpen(true);
       setResolving(true);
@@ -123,107 +172,261 @@ export default function Scanner() {
   );
 
   const handleDecode = useCallback(
-    (decoded: string) => {
+    (decoded: string, via: string) => {
+      const value = decoded.trim();
+      if (!value || !scanningRef.current) return;
       const now = Date.now();
       const last = lastScanRef.current;
-      if (last && last.value === decoded && now - last.at < RESCAN_DEBOUNCE_MS) return;
-      lastScanRef.current = { value: decoded, at: now };
+      if (last && last.value === value && now - last.at < RESCAN_DEBOUNCE_MS) return;
+      lastScanRef.current = { value, at: now };
 
+      scanningRef.current = false;
       buzz();
-      setStatusLine("Got it — opening…");
+      setStatusLine(`Got it (${via}) — opening…`);
+      setDebugLine(`hit via ${via}: ${value.slice(0, 48)}`);
 
-      // Instant client routes (thermal ticket /g/ garment / pay / customer) — no network.
-      const fast = routeFromRawScan(decoded);
+      const fast = routeFromRawScan(value);
       if (fast.kind === "path") {
-        void stopCamera();
+        stopCamera();
         navigate(fast.path, { replace: !!fast.replace });
         return;
       }
-
-      void resolveToken(decoded);
+      void resolveToken(value);
     },
     [resolveToken, navigate, stopCamera],
   );
 
-  // Keep ref current so the camera effect never restarts on callback identity churn.
   handleDecodeRef.current = handleDecode;
 
+  /** Single-frame jsQR pass (also used by Snap). */
+  const decodeFrameJsQR = useCallback((): string | null => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return null;
+    if (video.readyState < 2) return null;
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return null;
+
+    // Prefer larger sample for thermal prints; cap for CPU
+    const maxEdge = 960;
+    const scale = Math.min(1, maxEdge / Math.max(vw, vh));
+    const cw = Math.max(1, Math.floor(vw * scale));
+    const ch = Math.max(1, Math.floor(vh * scale));
+    canvas.width = cw;
+    canvas.height = ch;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0, cw, ch);
+
+    // Pass 1: as-is
+    let img = ctx.getImageData(0, 0, cw, ch);
+    let code = jsQR(img.data, img.width, img.height, { inversionAttempts: "attemptBoth" });
+    if (code?.data) return code.data;
+
+    // Pass 2: boost contrast (helps light thermal ink)
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      const v = y < 140 ? 0 : 255;
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+    ctx.putImageData(img, 0, 0);
+    img = ctx.getImageData(0, 0, cw, ch);
+    code = jsQR(img.data, img.width, img.height, { inversionAttempts: "attemptBoth" });
+    return code?.data ?? null;
+  }, []);
+
   const startCamera = useCallback(async () => {
-    if (startingRef.current || scannerRef.current) return;
-    if (typeof document !== "undefined" && !document.getElementById(VIDEO_ID)) {
-      // Layout not ready — retry next frame.
-      requestAnimationFrame(() => {
-        void startCamera();
+    stopCamera();
+    scanningRef.current = true;
+    attemptsRef.current = 0;
+    setCameraError(null);
+    setStatusLine("Starting camera…");
+    setDebugLine("v3 starting");
+    forceSwUpdate();
+
+    if (!window.isSecureContext && location.hostname !== "localhost") {
+      setCameraError({
+        message: "Camera needs HTTPS — open https://alts.lstailors.com/scanner",
+        permission: false,
       });
+      setShowManual(true);
       return;
     }
 
-    startingRef.current = true;
-    setCameraError(null);
-    setStatusLine("Starting camera…");
+    const video = videoRef.current;
+    if (!video) {
+      setCameraError({ message: "Video element missing.", permission: false });
+      return;
+    }
+
+    video.setAttribute("playsinline", "true");
+    video.setAttribute("webkit-playsinline", "true");
+    video.muted = true;
+    video.playsInline = true;
 
     try {
-      // One frame for absolute container to get non-zero size (iOS).
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      // Pick rear camera if we can list devices (needs prior permission on some iOS).
+      let deviceId: string | undefined;
+      try {
+        const warm = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        for (const t of warm.getTracks()) t.stop();
+        const devices = await BrowserCodeReader.listVideoInputDevices();
+        const back =
+          devices.find((d) => /back|rear|environment/i.test(d.label)) ||
+          devices.find((d) => !/front|user|face/i.test(d.label)) ||
+          devices[devices.length - 1];
+        deviceId = back?.deviceId;
+        setDebugLine(`cams=${devices.length} pick=${(back?.label || "default").slice(0, 28)}`);
+      } catch {
+        deviceId = undefined;
+      }
 
-      const qr = new Html5Qrcode(VIDEO_ID, {
-        verbose: false,
-        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-        // Native detector when present — much better on thermal prints / iOS.
-        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-      });
-      scannerRef.current = qr;
-
-      // Full-frame scan box. A tight center crop was missing small thermal QRs
-      // held a few inches off the glass.
-      const qrbox = (vw: number, vh: number) => {
-        const w = Math.max(200, Math.floor(vw * 0.92));
-        const h = Math.max(200, Math.floor(vh * 0.92));
-        return { width: w, height: h };
+      const constraints: MediaStreamConstraints = {
+        audio: false,
+        video: deviceId
+          ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+          : {
+              facingMode: { ideal: "environment" },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+            },
       };
 
-      await qr.start(
-        { facingMode: "environment" },
-        {
-          fps: 20,
-          qrbox,
-          // Let the library pick stream size; forcing 1080p breaks some iPhones.
-          disableFlip: false,
-        },
-        (decoded) => handleDecodeRef.current(decoded),
-        () => {
-          /* per-frame miss — silent */
-        },
-      );
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+      }
 
-      if (mountedRef.current) setStatusLine("Point at any L&S QR");
+      if (!mountedRef.current) {
+        for (const t of stream.getTracks()) t.stop();
+        return;
+      }
+
+      streamRef.current = stream;
+      video.srcObject = stream;
+      await video.play();
+
+      // Wait for real frames
+      for (let i = 0; i < 50 && (!video.videoWidth || !video.videoHeight); i++) {
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      if (!video.videoWidth) {
+        setCameraError({
+          message: "Camera on but no frames. Tap Snap after a second, or type the code.",
+          permission: false,
+        });
+      }
+
+      setStatusLine("Point at any L&S QR");
+      setDebugLine(`live ${video.videoWidth}x${video.videoHeight}`);
+      scanningRef.current = true;
+
+      // --- ZXing continuous ---
+      const hints = new Map();
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
+      hints.set(DecodeHintType.TRY_HARDER, true);
+      hints.set(DecodeHintType.CHARACTER_SET, "UTF-8");
+      const reader = new BrowserMultiFormatReader(hints, {
+        delayBetweenScanAttempts: 80,
+        delayBetweenScanSuccess: 500,
+      });
+
+      const controls = await reader.decodeFromStream(stream, video, (zxResult, _err) => {
+        if (!scanningRef.current || !mountedRef.current) return;
+        attemptsRef.current += 1;
+        if (attemptsRef.current % 25 === 0) {
+          setDebugLine(
+            `zx ${video.videoWidth}x${video.videoHeight} n=${attemptsRef.current}`,
+          );
+        }
+        if (zxResult) {
+          const text = zxResult.getText();
+          if (text) handleDecodeRef.current(text, "zxing");
+        }
+      });
+      zxingControlsRef.current = controls;
+
+      // --- jsQR backup timer ---
+      jsqrTimerRef.current = setInterval(() => {
+        if (!scanningRef.current || !mountedRef.current) return;
+        try {
+          const hit = decodeFrameJsQR();
+          if (hit) handleDecodeRef.current(hit, "jsqr");
+        } catch {
+          /* ignore frame errors */
+        }
+      }, JSQR_EVERY_MS);
     } catch (e: unknown) {
-      scannerRef.current = null;
       const msg = e instanceof Error ? e.message : String(e ?? "");
-      const permission = /permission|notallowed|denied|NotAllowed/i.test(msg);
+      const permission = /permission|notallowed|denied|NotAllowed|SecurityError/i.test(msg);
       setCameraError({
         message: permission
-          ? "Camera blocked — allow camera for this site, or type the code."
-          : "Camera unavailable — type the code below.",
+          ? "Camera blocked — Settings → Safari → Camera → Allow for this site."
+          : `Camera error: ${msg.slice(0, 80) || "unavailable"}. Type the code or use a wedge scanner.`,
         permission,
       });
       setShowManual(true);
-      setStatusLine("Manual entry");
-    } finally {
-      startingRef.current = false;
+      setStatusLine("Manual / gun entry");
+      setDebugLine(`cam err: ${msg.slice(0, 60)}`);
     }
-  }, []);
+  }, [stopCamera, decodeFrameJsQR]);
 
-  // Start once on mount. Do NOT depend on startCamera identity churn.
+  // Mount camera once
   useEffect(() => {
     mountedRef.current = true;
     void startCamera();
     return () => {
       mountedRef.current = false;
-      void stopCamera();
+      stopCamera();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only camera lifecycle
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // HID / Bluetooth barcode wedge — listens even when camera fails
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!scanningRef.current) return;
+      // Don't steal typing from the manual input
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+
+      if (e.key === "Enter") {
+        const buf = wedgeBufRef.current.trim();
+        wedgeBufRef.current = "";
+        if (wedgeTimerRef.current) {
+          clearTimeout(wedgeTimerRef.current);
+          wedgeTimerRef.current = null;
+        }
+        if (buf.length >= WEDGE_MIN_LEN) {
+          e.preventDefault();
+          handleDecodeRef.current(buf, "wedge");
+        }
+        return;
+      }
+
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        wedgeBufRef.current += e.key;
+        if (wedgeTimerRef.current) clearTimeout(wedgeTimerRef.current);
+        wedgeTimerRef.current = setTimeout(() => {
+          // Slow human typing — drop buffer so we don't mis-fire
+          wedgeBufRef.current = "";
+        }, WEDGE_IDLE_MS);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      if (wedgeTimerRef.current) clearTimeout(wedgeTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (sheetOpen) scanningRef.current = false;
+  }, [sheetOpen]);
 
   const scanAgain = useCallback(() => {
     setSheetOpen(false);
@@ -234,6 +437,27 @@ export default function Scanner() {
     setStatusLine("Point at any L&S QR");
     void startCamera();
   }, [startCamera]);
+
+  const snapAndDecode = useCallback(async () => {
+    setSnapping(true);
+    setStatusLine("Snapping…");
+    try {
+      // Give autofocus a beat
+      await new Promise((r) => setTimeout(r, 120));
+      const hit = decodeFrameJsQR();
+      if (hit) {
+        handleDecodeRef.current(hit, "snap");
+      } else {
+        toast.message("No QR in frame — move closer / better light");
+        setStatusLine("No QR in snap — try again");
+        setDebugLine(
+          `snap miss ${videoRef.current?.videoWidth || 0}x${videoRef.current?.videoHeight || 0}`,
+        );
+      }
+    } finally {
+      setSnapping(false);
+    }
+  }, [decodeFrameJsQR]);
 
   const runBackendAction = useCallback(
     async (key: string, endpoint: string, body: Record<string, unknown>) => {
@@ -259,7 +483,6 @@ export default function Scanner() {
     (key: string) => {
       if (!result) return;
       const name = result.name ?? "";
-
       switch (key) {
         case "mark_paid":
           void runBackendAction(key, "/api/scanner/mark-paid", { invoice_name: name });
@@ -282,17 +505,12 @@ export default function Scanner() {
           const link = result.meta?.square_payment_link;
           if (typeof link === "string" && link.length > 0) {
             window.open(link, "_blank", "noopener");
-          } else {
-            toast.error("No payment link on record");
-          }
+          } else toast.error("No payment link on record");
           return;
         }
-        case "open": {
-          if (!goNav(navigate, openPathForResult(result))) {
-            toast.error("No page available for this record");
-          }
+        case "open":
+          if (!goNav(navigate, openPathForResult(result))) toast.error("No page for this record");
           return;
-        }
         case "print_tag":
         case "print_tags":
           window.open(printUrl(result.doctype, name), "_blank", "noopener");
@@ -317,99 +535,125 @@ export default function Scanner() {
       const value = manualValue.trim();
       if (!value) return;
       setShowManual(false);
-      handleDecode(value);
+      scanningRef.current = true;
+      handleDecode(value, "manual");
     },
     [manualValue, handleDecode],
   );
 
   const handleClose = useCallback(() => {
-    void stopCamera();
+    stopCamera();
     navigate(-1);
   }, [navigate, stopCamera]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-forest-deep overflow-hidden">
-      {/*
-        Camera host. Do NOT hide the library canvas — zxing fallback needs it.
-        Only tone down the default html5-qrcode shaded border via CSS.
-      */}
-      <div
-        id={VIDEO_ID}
-        className={cn(
-          "absolute inset-0 h-full w-full bg-black",
-          "[&>video]:h-full [&>video]:w-full [&>video]:object-cover",
-          // Soften library chrome; keep canvas in layout for decode
-          "[&_#qr-shaded-region]:border-brass/40",
-          "[&_img]:opacity-0",
-        )}
+    <div className="fixed inset-0 z-50 bg-black overflow-hidden">
+      <video
+        ref={videoRef}
+        className="absolute inset-0 h-full w-full object-cover"
+        playsInline
+        muted
+        autoPlay
       />
+      <canvas ref={canvasRef} className="hidden" aria-hidden />
 
-      <div className="pointer-events-none absolute inset-0 bg-forest-deep/20" />
+      <div className="pointer-events-none absolute inset-0 bg-forest-deep/10" />
 
       {!sheetOpen ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="relative h-[min(72vw,22rem)] w-[min(72vw,22rem)]">
-            <span className="absolute left-0 top-0 h-12 w-12 border-l-[3px] border-t-[3px] border-brass rounded-tl-2xl" />
-            <span className="absolute right-0 top-0 h-12 w-12 border-r-[3px] border-t-[3px] border-brass rounded-tr-2xl" />
-            <span className="absolute bottom-0 left-0 h-12 w-12 border-b-[3px] border-l-[3px] border-brass rounded-bl-2xl" />
-            <span className="absolute bottom-0 right-0 h-12 w-12 border-b-[3px] border-r-[3px] border-brass rounded-br-2xl" />
+          <div className="relative h-[min(80vw,26rem)] w-[min(80vw,26rem)]">
+            <span className="absolute left-0 top-0 h-14 w-14 border-l-[3px] border-t-[3px] border-brass rounded-tl-2xl" />
+            <span className="absolute right-0 top-0 h-14 w-14 border-r-[3px] border-t-[3px] border-brass rounded-tr-2xl" />
+            <span className="absolute bottom-0 left-0 h-14 w-14 border-b-[3px] border-l-[3px] border-brass rounded-bl-2xl" />
+            <span className="absolute bottom-0 right-0 h-14 w-14 border-b-[3px] border-r-[3px] border-brass rounded-br-2xl" />
+            <div className="absolute inset-x-8 top-1/2 h-px bg-brass/60 shadow-[0_0_14px_rgba(176,141,87,0.9)] animate-pulse" />
           </div>
         </div>
       ) : null}
 
-      <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3 z-10">
+      <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3">
         <button
+          type="button"
           onClick={handleClose}
           aria-label="Close scanner"
-          className="flex h-11 w-11 items-center justify-center rounded-full border border-brass/25 bg-forest-deep/70 backdrop-blur-md text-cream hover:border-brass/50 transition-colors"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-brass/25 bg-forest-deep/80 backdrop-blur-md text-cream"
         >
           <X className="h-5 w-5" />
         </button>
-        <span className="text-cream/90 text-sm font-medium text-center px-2">{statusLine}</span>
+        <div className="text-center min-w-0 flex-1">
+          <div className="text-cream text-sm font-medium truncate">{statusLine}</div>
+          <div className="text-[10px] tracking-wide text-cream/55 mt-0.5 truncate font-mono">
+            {debugLine}
+          </div>
+        </div>
         <button
+          type="button"
           onClick={() => setShowManual((v) => !v)}
           aria-label="Enter code manually"
-          className="flex h-11 w-11 items-center justify-center rounded-full border border-brass/25 bg-forest-deep/70 backdrop-blur-md text-cream hover:border-brass/50 transition-colors"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-brass/25 bg-forest-deep/80 backdrop-blur-md text-cream"
         >
           <Keyboard className="h-5 w-5" />
         </button>
       </div>
 
       {cameraError ? (
-        <div className="absolute inset-x-4 top-24 z-10 rounded-2xl border border-signal-amber/30 bg-forest-deep/90 backdrop-blur-md p-4">
+        <div className="absolute inset-x-4 top-24 z-10 rounded-2xl border border-signal-amber/30 bg-forest-deep/92 backdrop-blur-md p-4">
           <div className="flex items-start gap-3">
             <CameraOff className="h-5 w-5 text-signal-amber shrink-0 mt-0.5" />
             <div className="min-w-0">
               <div className="text-cream text-sm font-medium">{cameraError.message}</div>
-              {cameraError.permission ? (
-                <div className="text-cream-dim text-xs mt-1">
-                  Settings → Safari → Camera → Allow, then reload. Or use the keyboard.
-                </div>
-              ) : null}
+              <button
+                type="button"
+                onClick={() => void startCamera()}
+                className="mt-3 text-xs uppercase tracking-widest text-brass-light"
+              >
+                Retry camera
+              </button>
             </div>
           </div>
         </div>
       ) : null}
 
+      {/* Snap + hint */}
+      {!showManual && !sheetOpen ? (
+        <div className="absolute inset-x-0 bottom-0 z-10 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-3">
+          <p className="text-center text-cream/75 text-xs">
+            Auto-scan on · gun/wedge OK · or tap Snap
+          </p>
+          <button
+            type="button"
+            disabled={snapping}
+            onClick={() => void snapAndDecode()}
+            className="flex items-center gap-2 min-h-[52px] px-8 rounded-full border border-brass/50 bg-brass text-forest-deep font-semibold text-sm shadow-lg active:scale-95 disabled:opacity-60"
+          >
+            <Aperture className="h-5 w-5" />
+            {snapping ? "Reading…" : "Snap QR"}
+          </button>
+        </div>
+      ) : null}
+
       {showManual ? (
-        <div className="absolute inset-x-0 bottom-0 z-20 rounded-t-3xl border-t border-brass/20 bg-forest-deep/95 backdrop-blur-2xl px-5 pt-5 pb-[max(2.5rem,env(safe-area-inset-bottom))]">
+        <div className="absolute inset-x-0 bottom-0 z-20 rounded-t-3xl border-t border-brass/20 bg-forest-deep/96 backdrop-blur-2xl px-5 pt-5 pb-[max(2.5rem,env(safe-area-inset-bottom))]">
           <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-brass/30" />
-          <label className="ui-label text-[9px] text-cream-dim mb-2 block">Enter code manually</label>
+          <label className="ui-label text-[9px] text-cream-dim mb-2 block">
+            Code, ALT-…, or paste QR URL
+          </label>
           <form onSubmit={submitManual} className="flex gap-2">
             <Input
               autoFocus
               value={manualValue}
               onChange={(e) => setManualValue(e.target.value)}
-              placeholder="ALT-NYC-… or paste QR URL"
-              className="flex-1 min-h-[44px] bg-forest-raised/60 border-brass/25 text-cream placeholder:text-cream-dim/50 focus-visible:ring-brass/40"
+              placeholder="ALT-NYC-2026-00061"
+              className="flex-1 min-h-[44px] bg-forest-raised/60 border-brass/25 text-cream"
             />
             <Button type="submit" disabled={!manualValue.trim()} className="btn-brass min-h-[44px] gap-1.5">
               Go <ArrowRight className="h-4 w-4" />
             </Button>
           </form>
           <button
+            type="button"
             onClick={() => setShowManual(false)}
-            className="mt-3 w-full text-center text-xs text-cream-dim hover:text-cream transition-colors"
+            className="mt-3 w-full text-center text-xs text-cream-dim"
           >
             Cancel
           </button>
