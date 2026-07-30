@@ -17,6 +17,8 @@
     "@ls/design": "workspace:*",
     "@ls/types": "workspace:*",
     "@tanstack/react-query": "^5.90.10",
+    "@zxing/browser": "^0.2.1",
+    "@zxing/library": "^0.23.0",
     "browser-image-compression": "^2.0.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
