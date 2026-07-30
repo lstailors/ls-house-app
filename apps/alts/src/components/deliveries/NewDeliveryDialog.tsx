@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@ls/design/ui/select";
 import { useCreateDelivery, useDeliverySearchContext, type DeliverySearchResult } from "@alts/lib/queries";
+import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 
 const schema = z.object({
@@ -152,21 +153,37 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
     nav(path);
   };
 
-  const pickResult = (r: DeliverySearchResult) => {
+  const pickResult = async (r: DeliverySearchResult) => {
     setSelected(r);
     setValue("customerId", r.customer ?? r.id, { shouldValidate: true });
     if (r.garmentSummary) setValue("garmentSummary", r.garmentSummary);
 
     // Pull saved customer / SO address into the form
-    const line = (r.address || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    let line = (r.address || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     if (line) setValue("addressLine", line);
     if (r.apt) setValue("addressApt", r.apt);
     if (r.city) setValue("city", r.city);
     if (r.state) setValue("state", r.state);
     if (r.zip) setValue("zip", r.zip);
 
-    // If only a blob shipping_address (HTML stripped to one line) and no structured city —
-    // leave city/state/zip for staff to complete if missing
+    // Fallback: full customer profile when search hit has no address
+    const custId = r.customer && r.customer !== "__new__" ? r.customer : null;
+    if (custId && !line) {
+      try {
+        const d = await api.get<any>(`/api/customers/${encodeURIComponent(custId)}`);
+        if (d?.address) {
+          setValue("addressLine", String(d.address));
+          if (d.addresses?.[0]?.line2) setValue("addressApt", d.addresses[0].line2);
+          if (d.city) setValue("city", d.city);
+          if (d.state) setValue("state", d.state);
+          if (d.zipCode || d.zip) setValue("zip", d.zipCode || d.zip);
+          if (d.phone) setSelected((prev) => (prev ? { ...prev, phone: d.phone, address: d.address } : prev));
+        }
+      } catch {
+        /* leave blank for staff */
+      }
+    }
+
     setSearch("");
   };
 

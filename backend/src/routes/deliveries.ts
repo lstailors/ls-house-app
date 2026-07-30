@@ -703,6 +703,9 @@ deliveriesRouter.post("/", async (c) => {
 deliveriesRouter.post("/from-order", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!canCreateDelivery(user.role)) {
+    return c.json({ error: { message: "Forbidden" } }, 403);
+  }
 
   const body = await c.req.json().catch(() => ({})) as any;
   // body: { sales_order?, alteration_ticket?, customer_name, customer_phone?, address?, city?, apt?, notify_phone?, garment_summary?, garment_count?, location? }
