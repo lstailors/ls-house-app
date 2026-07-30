@@ -6,6 +6,7 @@ import { cn } from "@ls/design/utils";
 import { ChargeTerminalButton } from "@alts/components/payments/ChargeTerminalButton";
 import { ChargeCardOnFileButton } from "@alts/components/payments/ChargeCardOnFileButton";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
+import { payUrl } from "@alts/lib/printUrls";
 import "@alts/styles/alts-pos.css";
 
 type Item = {
@@ -202,14 +203,22 @@ export default function InvoiceDetail() {
                       onError={(msg) => toast.error(msg)}
                     />
                   )}
-                  <a
-                    href={`https://pay.lstailors.com/${encodeURIComponent(inv.id)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="h-12 inline-flex items-center justify-center rounded-xl border border-brass/30 text-brass-light text-xs font-bold uppercase tracking-widest"
-                  >
-                    Open pay link
-                  </a>
+                  {(() => {
+                    const href =
+                      (inv.squarePaymentLink && inv.squarePaymentLink.trim()) ||
+                      payUrl(inv.id);
+                    const isSquare = Boolean(inv.squarePaymentLink?.trim());
+                    return (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="h-12 inline-flex items-center justify-center rounded-xl border border-brass/30 text-brass-light text-xs font-bold uppercase tracking-widest"
+                      >
+                        {isSquare ? "Open Square link" : "Open pay page"}
+                      </a>
+                    );
+                  })()}
                 </div>
                 <p className="text-[10px] text-cream-dim">
                   Use terminal at the counter, card on file, or send the pay link.
