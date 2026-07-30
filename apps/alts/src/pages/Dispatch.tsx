@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
+import BoardStatusCard, { type BoardDelivery } from "@alts/components/BoardStatusCard";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -25,28 +26,6 @@ type Ticket = {
 
 type Method = "Pickup" | "Hand Delivery" | "Courier";
 
-/** Board status tokens after serializeDelivery (ERP title-case → snake). */
-type BoardDelivery = {
-  id: string;
-  deliveryNo?: string | null;
-  status: string;
-  method?: string | null;
-  courierName?: string | null;
-  driver?: { name?: string | null; phone?: string | null } | null;
-  scheduledAt?: string | null;
-  deliveredAt?: string | null;
-  dispatchedAt?: string | null;
-  addressLine?: string | null;
-  city?: string | null;
-  garmentSummary?: string | null;
-  garmentCount?: number | null;
-  podMethod?: string | null;
-  hasSignature?: boolean;
-  proofOfDeliveryUrl?: string | null;
-  signatureImageUrl?: string | null;
-  notes?: string | null;
-};
-
 function money(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
@@ -63,6 +42,14 @@ function methodLabel(m?: string | null): string {
   return "Not set";
 }
 
+/** SPEC 043 §1a row caps */
+function methodLabelCaps(m?: string | null): string {
+  if (m === "Pickup") return "COUNTER PICKUP";
+  if (m === "Hand Delivery") return "HAND DELIVERY";
+  if (m === "Courier") return "COURIER";
+  return "NOT SET";
+}
+
 function fmtShort(iso?: string | null): string {
   if (!iso) return "—";
   try {
@@ -77,14 +64,6 @@ function fmtShort(iso?: string | null): string {
   } catch {
     return "—";
   }
-}
-
-function boardStatusDot(status: string): string {
-  if (status === "delivered") return "bg-signal-emerald shadow-[0_0_8px_rgba(79,191,142,0.7)]";
-  if (status === "failed" || status === "cancelled") return "bg-signal-rose shadow-[0_0_8px_rgba(217,123,108,0.7)]";
-  if (status === "out_for_delivery" || status === "ready_for_pickup")
-    return "bg-signal-amber shadow-[0_0_8px_rgba(232,168,92,0.7)]";
-  return "bg-brass shadow-[0_0_8px_rgba(176,141,87,0.55)]";
 }
 
 function boardWindow(d: BoardDelivery): string {
@@ -129,6 +108,23 @@ export default function Dispatch() {
         `/api/deliveries?alterationTicket=${encodeURIComponent(selected!)}`,
       );
       return (Array.isArray(rows) ? rows : [])[0] ?? null;
+    },
+    refetchInterval: 30_000,
+  });
+
+  /** SPEC 043 1a — board status pills on ready rows (one list fetch, map by ticket). */
+  const boardIndex = useQuery({
+    queryKey: ["dispatch-board-index"],
+    queryFn: async () => {
+      const rows = await api.get<Array<BoardDelivery & { alterationTicket?: string | null }>>(
+        "/api/deliveries",
+      );
+      const map = new Map<string, BoardDelivery & { alterationTicket?: string | null }>();
+      for (const r of Array.isArray(rows) ? rows : []) {
+        const k = r.alterationTicket;
+        if (k && !map.has(k)) map.set(k, r);
+      }
+      return map;
     },
     refetchInterval: 30_000,
   });
@@ -188,6 +184,7 @@ export default function Dispatch() {
       toast.success(method === "Pickup" ? "Marked for counter pickup" : `${methodLabel(method)} queued`);
       qc.invalidateQueries({ queryKey: ["dispatch-ticket", selected] });
       qc.invalidateQueries({ queryKey: ["dispatch-board", selected] });
+      qc.invalidateQueries({ queryKey: ["dispatch-board-index"] });
       qc.invalidateQueries({ queryKey: ["dispatch-ready"] });
       qc.invalidateQueries({ queryKey: ["alts-home-stats"] });
     },
@@ -335,14 +332,22 @@ export default function Dispatch() {
                       </span>
                       <span className="text-brass-light">{money(Number(row.ticket_total) || 0)}</span>
                     </div>
-                    {/* HER-75 1a — method line (board pill needs a per-row fetch; method is on list) */}
+                    {/* HER-75 / SPEC 043 1a — method + board status pill */}
                     <div
-                      className="mt-[9px] pt-[9px] flex items-center gap-[7px]"
+                      className="mt-[9px] pt-[9px] flex items-center gap-[7px] flex-wrap"
                       style={{ borderTop: "1px solid rgba(176,141,87,.14)" }}
                     >
                       <span className="text-[12px] font-semibold tracking-[0.1em] uppercase text-[var(--cd)]">
-                        {methodLabel(row.delivery_method).toUpperCase()}
+                        {methodLabelCaps(row.delivery_method)}
                       </span>
+                      {boardIndex.data?.get(row.name) ? (
+                        <StatusPill status={boardIndex.data.get(row.name)!.status} className="ml-auto" />
+                      ) : row.delivery_method === "Pickup" || !row.delivery_method ? (
+                        <span className="pill pill-muted ml-auto">
+                          <span className="h-1.5 w-1.5 rounded-full bg-cream-dim" />
+                          {row.delivery_method === "Pickup" ? "At counter" : "No dispatch"}
+                        </span>
+                      ) : null}
                     </div>
                   </button>
                 );
@@ -364,36 +369,6 @@ export default function Dispatch() {
 
           {selected && t && (
             <>
-              {/* HER-75 — violet live-state strip (read-only board mirror). Nothing when no record. */}
-              {boardDoc && (
-                <div
-                  className="rounded-[15px] px-4 py-[13px] flex flex-wrap items-center gap-3"
-                  style={{
-                    border: "1px solid rgba(155,139,196,.30)",
-                    background: "rgba(155,139,196,.08)",
-                  }}
-                >
-                  <span className={cn("w-2 h-2 rounded-full shrink-0", boardStatusDot(boardDoc.status))} />
-                  <StatusPill status={boardDoc.status} />
-                  <span className="font-mono text-[12px] text-brass-light">
-                    {boardDoc.deliveryNo || boardDoc.id}
-                  </span>
-                  <span className="text-[12px] text-[var(--cm)]">
-                    {(boardDoc.courierName || boardDoc.driver?.name || "Unassigned") +
-                      " · " +
-                      boardWindow(boardDoc)}
-                  </span>
-                  <a
-                    href={`https://app.lstailors.com/deliveries/${encodeURIComponent(boardDoc.id)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="ml-auto min-h-11 inline-flex items-center text-[12px] font-bold tracking-widest uppercase text-[var(--violet,#9B8BC4)] hover:opacity-90"
-                  >
-                    Board →
-                  </a>
-                </div>
-              )}
-
               <div>
                 <div className="caps mb-3">How it goes out</div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -450,23 +425,24 @@ export default function Dispatch() {
                 </div>
               </div>
 
-              {/* Empty-state honesty when method needs a board record but none exists */}
-              {!boardDoc && method !== "Pickup" && storedMethod !== "Pickup" && (
-                <div className="card-glass px-[18px] py-[22px] text-center">
-                  <div className="seal mx-auto mb-3 opacity-80">LS</div>
-                  <span className="pill pill-muted">No dispatch</span>
-                  <p className="text-[12px] text-[var(--cd)] leading-relaxed mt-3 max-w-md mx-auto">
-                    No board record for this ticket yet. Choose a method above, then queue it —
-                    a silent write failure looks the same as never queued.
-                  </p>
-                </div>
-              )}
-              {!boardDoc && method === "Pickup" && storedMethod === "Pickup" && (
+              {/* SPEC 043 1b/1c — full board card or honest empty states */}
+              {boardDoc ? (
+                <BoardStatusCard board={boardDoc} />
+              ) : method === "Pickup" && storedMethod === "Pickup" ? (
                 <div className="card-glass px-[18px] py-[22px] text-center">
                   <div className="seal mx-auto mb-3 opacity-80">LS</div>
                   <span className="pill pill-muted">At counter</span>
                   <p className="text-[12px] text-[var(--cd)] leading-relaxed mt-3 max-w-md mx-auto">
                     Pickup does not create a board record. Release at the counter — no POD, no driver.
+                  </p>
+                </div>
+              ) : (
+                <div className="card-glass px-[18px] py-[22px] text-center">
+                  <div className="seal mx-auto mb-3 opacity-80">LS</div>
+                  <span className="pill pill-muted">No dispatch</span>
+                  <p className="text-[12px] text-[var(--cd)] leading-relaxed mt-3 max-w-md mx-auto">
+                    No board record yet. Choose a method above, then queue it — a silent write failure
+                    looks the same as never queued.
                   </p>
                 </div>
               )}
