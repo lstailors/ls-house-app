@@ -18,6 +18,7 @@ type Stats = {
   outForDelivery: number;
   deliveredToday: number;
   pendingBoard: number;
+  openInvoices: number;
   syncedAt: number;
 };
 
@@ -58,7 +59,7 @@ export default function HomeTiles() {
   const stats = useQuery({
     queryKey: ["alts-home-stats"],
     queryFn: async (): Promise<Stats> => {
-      const [rows, parked, deliveries] = await Promise.all([
+      const [rows, parked, deliveries, invoices] = await Promise.all([
         api.get<
           Array<{
             workflow_state?: string;
@@ -75,6 +76,21 @@ export default function HomeTiles() {
             Array<{ status?: string; deliveredAt?: string | null }>
           >("/api/deliveries")
           .catch(() => [] as Array<{ status?: string; deliveredAt?: string | null }>),
+        api
+          .raw("/api/invoices?status=open&limit=100")
+          .then(async (r) => {
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) return { openCount: 0 };
+            return {
+              openCount:
+                typeof j?.summary?.openCount === "number"
+                  ? j.summary.openCount
+                  : Array.isArray(j?.data)
+                    ? j.data.filter((i: any) => Number(i.outstandingAmount) > 0.005).length
+                    : 0,
+            };
+          })
+          .catch(() => ({ openCount: 0 })),
       ]);
       const list = Array.isArray(rows) ? rows : (rows as any)?.tickets ?? [];
       const today = new Date().toISOString().slice(0, 10);
@@ -120,6 +136,7 @@ export default function HomeTiles() {
         outForDelivery,
         deliveredToday,
         pendingBoard,
+        openInvoices: invoices.openCount || 0,
         syncedAt: Date.now(),
       };
     },
@@ -138,6 +155,7 @@ export default function HomeTiles() {
     outForDelivery: 0,
     deliveredToday: 0,
     pendingBoard: 0,
+    openInvoices: 0,
     syncedAt: Date.now(),
   };
 
@@ -271,16 +289,50 @@ export default function HomeTiles() {
       ),
     },
     {
-      key: "customers",
-      to: "/customers",
-      title: "Customers",
-      sub: "Profiles, phones, addresses, photo — open any client",
+          key: "customers",
+          to: "/customers",
+          title: "Customers",
+          sub: "Profiles, phones, addresses, photo — open any client",
+          icon: (
+            <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="26" cy="18" r="8" />
+              <path d="M10 44c2.5-10 11-14 16-14s13.5 4 16 14" />
+              <circle cx="40" cy="16" r="5" opacity=".7" />
+              <path d="M42 28c4 1.5 7 5 8 12" opacity=".55" />
+            </svg>
+          ),
+        },
+        {
+          key: "invoices",
+          to: "/invoices",
+          title: "Invoices",
+          sub: "All sales invoices — custom + alts. Charge card & close out",
+          badge: s.openInvoices || null,
+          badgeKind: s.openInvoices > 0 ? "warn" : "neutral",
+          icon: (
+            <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 6h18l10 10v30a2 2 0 0 1-2 2H14a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />
+              <path d="M32 6v10h10" />
+              <path d="M18 26h16M18 33h16M18 40h10" strokeWidth="1.4" opacity=".75" />
+              <circle cx="40" cy="40" r="8" stroke="#E3C48F" strokeWidth="1.4" />
+              <path d="M40 36.5v7M36.5 40h7" stroke="#E3C48F" strokeWidth="1.4" />
+            </svg>
+          ),
+        },
+        {
+          key: "admin",
+          href: "https://app.lstailors.com",
+          title: "Reports & Admin",
+          sub: "Workload, money, pricing, users",
+          external: true,
+      badgeKind: s.openInvoices > 0 ? "warn" : "neutral",
       icon: (
         <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="26" cy="18" r="8" />
-          <path d="M10 44c2.5-10 11-14 16-14s13.5 4 16 14" />
-          <circle cx="40" cy="16" r="5" opacity=".7" />
-          <path d="M42 28c4 1.5 7 5 8 12" opacity=".55" />
+          <path d="M14 6h18l10 10v28a3 3 0 0 1-3 3H14a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3z" />
+          <path d="M32 6v10h10" />
+          <path d="M18 24h16M18 30h16M18 36h10" opacity=".75" />
+          <circle cx="38" cy="38" r="9" stroke="#B08D57" strokeWidth="1.4" />
+          <path d="M35 38h6M38 35v6" stroke="#B08D57" strokeWidth="1.4" />
         </svg>
       ),
     },
