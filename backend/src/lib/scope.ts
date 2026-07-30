@@ -156,6 +156,16 @@ export function canManageOrders(role: UserRole): boolean {
   return role === "super_admin" || role === "store_manager";
 }
 
+/** Create LSH Delivery from FOH (alts) — floor staff need this, not only managers. */
+export function canCreateDelivery(role: UserRole): boolean {
+  return (
+    role === "super_admin" ||
+    role === "store_manager" ||
+    role === "salesperson" ||
+    role === "tailor"
+  );
+}
+
 export function canReassignTailor(role: UserRole): boolean {
   return role === "super_admin" || role === "store_manager";
 }

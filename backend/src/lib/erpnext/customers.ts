@@ -570,8 +570,8 @@ export async function getCustomer(id: string) {
     null;
 
   const primaryAddr =
-    linked.addresses.find((a) => a.isBilling) ||
     linked.addresses.find((a) => a.isShipping) ||
+    linked.addresses.find((a) => a.isBilling) ||
     linked.addresses[0] ||
     null;
 

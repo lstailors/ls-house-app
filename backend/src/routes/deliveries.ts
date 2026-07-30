@@ -32,9 +32,100 @@ function erpToIso(s: string | null | undefined): string | null {
   // Space-separated ERPNext format → ISO UTC
   return s.replace(" ", "T") + "Z";
 }
-import { getAuthedUser, resolveLocationCode } from "../lib/scope";
+import { getAuthedUser, resolveLocationCode, canCreateDelivery } from "../lib/scope";
 import { uploadFile, erpFileAbsoluteUrl } from "../lib/erpnext/files";
 import { sendSms } from "../lib/twilio";
+
+type CustomerAddressParts = {
+  line1: string | null;
+  line2: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  addressDisplay: string | null;
+};
+
+/** Primary / shipping Address linked to an ERP Customer. */
+async function fetchCustomerAddress(customerName: string): Promise<CustomerAddressParts | null> {
+  if (!customerName) return null;
+  try {
+    const rows = await erpList<any>("Address", {
+      filters: [
+        ["Dynamic Link", "link_doctype", "=", "Customer"],
+        ["Dynamic Link", "link_name", "=", customerName],
+        ["disabled", "=", 0],
+      ],
+      fields: [
+        "name",
+        "address_line1",
+        "address_line2",
+        "city",
+        "state",
+        "pincode",
+        "is_primary_address",
+        "is_shipping_address",
+        "address_type",
+      ],
+      limit: 10,
+      order_by: "modified desc",
+    });
+    if (!rows?.length) return null;
+    const preferred =
+      rows.find((a) => a.is_shipping_address) ||
+      rows.find((a) => a.is_primary_address) ||
+      rows.find((a) => String(a.address_type || "").toLowerCase() === "shipping") ||
+      rows[0];
+    if (!preferred) return null;
+    const line1 = (preferred.address_line1 || "").trim() || null;
+    const line2 = (preferred.address_line2 || "").trim() || null;
+    const city = (preferred.city || "").trim() || null;
+    const state = (preferred.state || "").trim() || null;
+    const zip = (preferred.pincode || "").trim() || null;
+    const addressDisplay =
+      [line1, line2, [city, state].filter(Boolean).join(", "), zip].filter(Boolean).join(" · ") || null;
+    return { line1, line2, city, state, zip, addressDisplay };
+  } catch (err) {
+    console.warn("fetchCustomerAddress", customerName, err);
+    return null;
+  }
+}
+
+/** Persist street address onto ERP Address for this customer (create or update primary). */
+async function saveCustomerAddress(
+  customerName: string,
+  parts: { line1?: string | null; line2?: string | null; city?: string | null; state?: string | null; zip?: string | null },
+): Promise<void> {
+  if (!customerName || !parts.line1) return;
+  const filters = [
+    ["Dynamic Link", "link_doctype", "=", "Customer"],
+    ["Dynamic Link", "link_name", "=", customerName],
+  ];
+  const existing = await erpList<any>("Address", {
+    filters,
+    fields: ["name", "is_primary_address", "is_shipping_address"],
+    limit: 5,
+  }).catch(() => [] as any[]);
+  const hit =
+    existing.find((a) => a.is_shipping_address || a.is_primary_address) || existing[0] || null;
+  const payload: Record<string, unknown> = {
+    address_title: customerName,
+    address_type: "Shipping",
+    address_line1: parts.line1 || "",
+    address_line2: parts.line2 || "",
+    city: parts.city || "",
+    state: parts.state || "",
+    pincode: parts.zip || "",
+    country: "United States",
+    is_shipping_address: 1,
+    is_primary_address: existing.length === 0 ? 1 : hit?.is_primary_address ? 1 : 0,
+    links: [{ link_doctype: "Customer", link_name: customerName }],
+  };
+  if (hit?.name) {
+    await erpUpdate("Address", hit.name, payload);
+  } else {
+    await erpCreate("Address", payload);
+  }
+}
 
 // ── Timeline helper ───────────────────────────────────────────────────────────
 // ERPNext child tables must be sent in full. Fetch existing rows, append new entry.
@@ -298,34 +389,94 @@ deliveriesRouter.get("/search-context", async (c) => {
     customerName?: string;
     phone?: string | null;
     address?: string | null;
+    apt?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zip?: string | null;
     garmentSummary?: string | null;
     orderRef?: string | null;
     alterationTicket?: string | null;
   }> = [];
 
   if (customers.status === "fulfilled") {
-    for (const c of customers.value as any[]) {
-      results.push({
-        type: "customer",
-        id: c.name,
-        label: c.customer_name ?? c.name,
-        sublabel: c.mobile_no ?? c.email_id ?? undefined,
-        customer: c.name,
-        customerName: c.customer_name,
-        phone: c.mobile_no ?? null,
-      });
-    }
+    const rows = customers.value as any[];
+    // Enrich each customer with primary address (shipping > billing > first)
+    const enriched = await Promise.all(
+      rows.map(async (cust) => {
+        let address: string | null = null;
+        let apt: string | null = null;
+        let city: string | null = null;
+        let state: string | null = null;
+        let zip: string | null = null;
+        try {
+          const { getCustomer } = await import("../lib/erpnext/customers");
+          const full = await getCustomer(cust.name);
+          if (full) {
+            address = full.address ?? null;
+            apt = full.addresses?.[0]?.line2 ?? null;
+            city = full.city ?? null;
+            state = full.state ?? null;
+            zip = full.zipCode ?? null;
+          }
+        } catch {
+          /* skip */
+        }
+        return {
+          type: "customer" as const,
+          id: cust.name,
+          label: cust.customer_name ?? cust.name,
+          sublabel: [cust.mobile_no, address].filter(Boolean).join(" · ") || cust.email_id || undefined,
+          customer: cust.name,
+          customerName: cust.customer_name,
+          phone: cust.mobile_no ?? null,
+          address,
+          apt,
+          city,
+          state,
+          zip,
+        };
+      }),
+    );
+    results.push(...enriched);
   }
 
   if (alterations.status === "fulfilled") {
     for (const a of alterations.value as any[]) {
+      let address: string | null = null;
+      let apt: string | null = null;
+      let city: string | null = null;
+      let state: string | null = null;
+      let zip: string | null = null;
+      let phone: string | null = null;
+      if (a.customer) {
+        try {
+          const { getCustomer } = await import("../lib/erpnext/customers");
+          const full = await getCustomer(a.customer);
+          if (full) {
+            address = full.address ?? null;
+            apt = full.addresses?.[0]?.line2 ?? null;
+            city = full.city ?? null;
+            state = full.state ?? null;
+            zip = full.zipCode ?? null;
+            phone = full.phone ?? null;
+          }
+        } catch {
+          /* */
+        }
+      }
       results.push({
         type: "alteration",
         id: a.name,
         label: `${a.customer_name} — ${a.name}`,
-        sublabel: `Alteration · ${a.workflow_state ?? ""}`,
+        sublabel: [`Alteration · ${a.workflow_state ?? ""}`, address].filter(Boolean).join(" · "),
         customer: a.customer,
         customerName: a.customer_name,
+        phone,
+        address,
+        apt,
+        city,
+        state,
+        zip,
         orderRef: null,
         alterationTicket: a.name,
         garmentSummary: a.name,
@@ -335,15 +486,52 @@ deliveriesRouter.get("/search-context", async (c) => {
 
   if (salesOrders.status === "fulfilled") {
     for (const so of salesOrders.value as any[]) {
+      let address: string | null = null;
+      let apt: string | null = null;
+      let city: string | null = null;
+      let state: string | null = null;
+      let zip: string | null = null;
+      let phone: string | null = so.contact_mobile ?? null;
+      if (so.customer) {
+        try {
+          const { getCustomer } = await import("../lib/erpnext/customers");
+          const full = await getCustomer(so.customer);
+          if (full) {
+            const ship =
+              full.addresses?.find((a: any) => a.isShipping) ||
+              full.addresses?.find((a: any) => a.isBilling) ||
+              full.addresses?.[0] ||
+              null;
+            address = ship?.line1 || full.address || null;
+            apt = ship?.line2 || null;
+            city = ship?.city || full.city || null;
+            state = ship?.state || full.state || null;
+            zip = ship?.zip || full.zipCode || null;
+            if (!phone) phone = full.phone ?? null;
+          }
+        } catch {
+          /* */
+        }
+      }
+      if (!address && so.shipping_address) {
+        address = String(so.shipping_address)
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
       results.push({
         type: "order",
         id: so.name,
         label: `${so.customer_name} — ${so.name}`,
-        sublabel: `Sales Order · ${so.status ?? ""}`,
+        sublabel: [`Sales Order · ${so.status ?? ""}`, address].filter(Boolean).join(" · "),
         customer: so.customer,
         customerName: so.customer_name,
-        phone: so.contact_mobile ?? null,
-        address: so.shipping_address ?? null,
+        phone,
+        address,
+        apt,
+        city,
+        state,
+        zip,
         orderRef: so.name,
         alterationTicket: null,
       });
@@ -382,7 +570,8 @@ deliveriesRouter.get("/candidates", async (c) => {
 deliveriesRouter.post("/", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  if (!["super_admin", "store_manager"].includes(user.role)) {
+  // FOH can queue deliveries (alts New Delivery). Drivers cannot create.
+  if (!canCreateDelivery(user.role)) {
     return c.json({ error: { message: "Forbidden" } }, 403);
   }
 
@@ -392,7 +581,7 @@ deliveriesRouter.post("/", async (c) => {
   }
 
   const token = generateToken();
-  const locationId = body.locationId ?? "NYC";
+  const locationId = body.locationId ?? body.origin_location ?? user.locationCode ?? "NYC";
 
   // Create a new ERPNext customer on-the-fly if requested
   let resolvedCustomer: string = body.customerId ?? body.customer;
@@ -410,21 +599,87 @@ deliveriesRouter.post("/", async (c) => {
     }
   }
 
+  // If address blank, pull primary shipping/billing from customer record
+  let addressLine = (body.addressLine ?? body.delivery_address ?? "").trim();
+  let apt = body.apt ?? body.delivery_apt ?? null;
+  let city = body.city ?? body.delivery_city ?? null;
+  let state = body.state ?? body.delivery_state ?? null;
+  let zip = body.zip ?? body.delivery_zip ?? null;
+  let phone =
+    body.customer_phone ?? body.customerPhone ?? body.notifyPhone ?? body.newCustomerPhone ?? null;
+
+  if (resolvedCustomer && resolvedCustomer !== "__new__") {
+    try {
+      const { getCustomer } = await import("../lib/erpnext/customers");
+      const cust = await getCustomer(resolvedCustomer);
+      if (cust) {
+        const ship =
+          cust.addresses?.find((a: any) => a.isShipping) ||
+          cust.addresses?.find((a: any) => a.isBilling) ||
+          cust.addresses?.[0] ||
+          null;
+        if (!addressLine && (ship?.line1 || cust.address)) addressLine = String(ship?.line1 || cust.address);
+        if (!apt && ship?.line2) apt = ship.line2;
+        if (!city && (ship?.city || cust.city)) city = ship?.city || cust.city;
+        if (!state && (ship?.state || cust.state)) state = ship?.state || cust.state;
+        if (!zip && (ship?.zip || cust.zipCode)) zip = ship?.zip || cust.zipCode;
+        if (!phone) phone = cust.phone ?? null;
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  // Optional: persist typed address back onto the customer
+  if (body.saveAddressToCustomer && resolvedCustomer && addressLine) {
+    try {
+      const { updateCustomer } = await import("../lib/erpnext/customers");
+      await updateCustomer(resolvedCustomer, {
+        address: addressLine,
+        city: city || "New York",
+        state: state || "NY",
+        zip_code: zip || undefined,
+        phone: phone || undefined,
+      });
+    } catch (e: any) {
+      console.warn("[deliveries] saveAddressToCustomer:", e?.message);
+    }
+  }
+
   try {
+    // Map UI method labels → ERP Select options
+    const methodRaw = String(body.method ?? "Hand Delivery");
+    const methodMap: Record<string, string> = {
+      "Hand Delivery": "Hand Delivery",
+      Courier: "Courier",
+      "Ship Direct": "Ship Direct",
+      Pickup: "Pickup",
+      "In-Store Pickup": "Pickup",
+      "Uber Messenger": "Courier",
+    };
+    const method = methodMap[methodRaw] || "Hand Delivery";
+
+    // Date-only → noon Eastern-ish ISO for Datetime field
+    let scheduledAt = body.scheduledAt ?? null;
+    if (scheduledAt && /^\d{4}-\d{2}-\d{2}$/.test(String(scheduledAt))) {
+      scheduledAt = `${scheduledAt} 12:00:00`;
+    }
+
     const doc = await erpCreate<any>("LSH Delivery", {
       naming_series: locationId === "HOU" ? "DN-HOU-.YYYY.-" : "DN-NYC-.YYYY.-",
       customer: resolvedCustomer,
       lsh_status: "Queued",
-      lsh_delivery_method: body.method ?? "Hand Delivery",
+      lsh_delivery_method: method,
       lsh_origin_location: locationId,
-      lsh_delivery_address: body.addressLine ?? body.delivery_address ?? "",
-      lsh_delivery_apt: body.apt ?? body.delivery_apt ?? null,
+      lsh_delivery_address: addressLine || "",
+      lsh_delivery_apt: apt,
       lsh_delivery_building: body.building ?? body.delivery_building ?? null,
-      lsh_delivery_city: body.city ?? body.delivery_city ?? "New York",
-      customer_phone:
-        body.customer_phone ?? body.customerPhone ?? body.newCustomerPhone ?? null,
-      lsh_scheduled_at: body.scheduledAt ?? null,
-      lsh_notify_phone: body.notifyPhone ?? body.newCustomerPhone ?? null,
+      lsh_delivery_city: city || "New York",
+      lsh_delivery_state: state || "NY",
+      lsh_delivery_zip: zip || null,
+      customer_phone: phone,
+      lsh_scheduled_at: scheduledAt,
+      lsh_notify_phone: body.notifyPhone ?? phone ?? null,
       lsh_qr_token: token,
       lsh_queued_at: erpDatetime(),
       lsh_garment_summary: body.garmentSummary ?? null,
@@ -432,7 +687,6 @@ deliveriesRouter.post("/", async (c) => {
       lsh_courier_name: body.courierName ?? body.driverName ?? null,
       lsh_delivery_notes: body.notes ?? null,
       lsh_sales_order: body.orderRef ?? body.sales_order ?? null,
-      // HER-75: alts Dispatch posts alteration_ticket — must land on the join key
       lsh_alteration_ticket: body.alterationTicket ?? body.alteration_ticket ?? null,
       customer_name: body.customer_name ?? body.customerName ?? null,
       lsh_timeline: [buildTimelineEntry("Queued", user.name ?? user.email ?? "Staff")],
@@ -899,6 +1153,8 @@ deliveriesRouter.get("/:id/label", async (c) => {
       delivery_apt: doc.lsh_delivery_apt,
       delivery_building: doc.lsh_delivery_building,
       delivery_city: doc.lsh_delivery_city ?? "",
+      delivery_state: doc.lsh_delivery_state ?? "",
+      delivery_zip: doc.lsh_delivery_zip ?? "",
       garment_summary: doc.lsh_garment_summary,
       garment_count: doc.lsh_garment_count,
       method: doc.lsh_delivery_method,

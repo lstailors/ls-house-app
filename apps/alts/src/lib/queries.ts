@@ -315,6 +315,10 @@ export interface DeliverySearchResult {
   customerName?: string;
   phone?: string | null;
   address?: string | null;
+  apt?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
   garmentSummary?: string | null;
   orderRef?: string | null;
   alterationTicket?: string | null;
