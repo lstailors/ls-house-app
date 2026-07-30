@@ -56,10 +56,15 @@ export async function erpList<T = unknown>(
     limit?: number
     start?: number
     order_by?: string
+    /** When true, throw instead of returning [] on non-OK / missing creds */
+    throwOnError?: boolean
   } = {}
 ): Promise<T[]> {
   const { base, key, secret } = creds()
-  if (!base || !key || !secret) return []
+  if (!base || !key || !secret) {
+    if (opts.throwOnError) throw new Error('ERPNext credentials missing')
+    return []
+  }
 
   const url = new URL(`${base}/api/resource/${encodeURIComponent(doctype)}`)
   if (opts.filters)    url.searchParams.set('filters',           JSON.stringify(opts.filters))
@@ -73,6 +78,14 @@ export async function erpList<T = unknown>(
   if (!res.ok) {
     const body = await res.text().catch(() => "")
     console.error(`erpList ${doctype} failed ${res.status}:`, body.slice(0, 300))
+    if (opts.throwOnError) {
+      let msg = `ERP list ${doctype} failed: ${res.status}`
+      try {
+        const j = JSON.parse(body)
+        msg = erpErrorMessage(j, msg)
+      } catch { /* keep msg */ }
+      throw new Error(msg)
+    }
     return []
   }
   const json = await res.json() as { data: T[] }

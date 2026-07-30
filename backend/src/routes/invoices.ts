@@ -33,8 +33,7 @@ function detectKind(row: any): "alteration" | "custom" | "other" {
   }
   if (
     /against customer order|sales order|custom|mtm|made.to.measure/i.test(remarks) ||
-    row.po_no ||
-    row.sales_order
+    row.po_no
   ) {
     return "custom";
   }
@@ -63,7 +62,8 @@ function serializeInvoice(row: any) {
     paidAmount: Number(row.paid_amount ?? 0),
     postingDate: row.posting_date ?? null,
     dueDate: row.due_date ?? null,
-    salesOrder: row.sales_order ?? row.po_no ?? null,
+    // sales_order is not list-queryable on SI — prefer po_no
+    salesOrder: row.po_no ?? null,
     poNo: row.po_no ?? null,
     alterationTicketRef: altRef,
     remarks,
@@ -168,12 +168,8 @@ invoicesRouter.get("/", async (c) => {
       ],
       limit,
       order_by: "posting_date desc",
+      throwOnError: true,
     });
-
-    if (!rows.length) {
-      // Distinguish true empty book vs ERP query failure (bad field / creds)
-      console.warn("invoices list returned 0 rows", { statusFilter, filters });
-    }
 
     let invoices = rows.map(serializeInvoice);
 
