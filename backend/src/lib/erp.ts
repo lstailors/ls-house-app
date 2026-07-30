@@ -70,7 +70,11 @@ export async function erpList<T = unknown>(
   if (opts.order_by) url.searchParams.set('order_by',          opts.order_by)
 
   const res = await fetch(url.toString(), { headers: authHeaders(key, secret) })
-  if (!res.ok) return []
+  if (!res.ok) {
+    const body = await res.text().catch(() => "")
+    console.error(`erpList ${doctype} failed ${res.status}:`, body.slice(0, 300))
+    return []
+  }
   const json = await res.json() as { data: T[] }
   return json.data ?? []
 }

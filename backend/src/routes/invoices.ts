@@ -14,13 +14,14 @@ function canAccessInvoices(role: string): boolean {
 function normalizeStatus(raw: string): string {
   if (!raw) return "draft";
   const s = raw.toLowerCase();
-  if (s === "paid") return "paid";
-  if (s === "partly paid") return "partly_paid";
-  if (s === "unpaid") return "unpaid";
-  if (s === "overdue") return "overdue";
   if (s === "cancelled") return "void";
   if (s === "draft") return "draft";
-  return s;
+  if (s.includes("overdue")) return "overdue";
+  if (s.includes("partly paid")) return "partly_paid";
+  if (s === "paid" || s.startsWith("paid ")) return "paid";
+  if (s.includes("unpaid")) return "unpaid";
+  if (s === "return" || s.includes("credit note")) return "void";
+  return s.replace(/\s+/g, "_");
 }
 
 /** Alteration SI vs custom-made / MTM / other. */
@@ -70,6 +71,7 @@ function serializeInvoice(row: any) {
     currency: row.currency ?? "USD",
     squarePaymentLink:
       (row.lsh_square_payment_link || row.square_payment_link || "").trim() || null,
+    endCustomer: row.end_customer ?? null,
   };
 }
 
@@ -125,7 +127,10 @@ invoicesRouter.get("/", async (c) => {
   const filters: any[] = [["docstatus", "=", 1]]; // submitted only — drafts not for FOH charge
   if (customerFilter) filters.push(["customer", "=", customerFilter]);
 
-  if (statusFilter && statusFilter !== "all" && statusFilter !== "open") {
+  if (statusFilter === "open") {
+    // Money still due — server-side so we don't miss open SI outside a paid-heavy first page
+    filters.push(["outstanding_amount", ">", 0]);
+  } else if (statusFilter && statusFilter !== "all") {
     const statusMap: Record<string, string> = {
       paid: "Paid",
       partly_paid: "Partly Paid",
@@ -140,6 +145,8 @@ invoicesRouter.get("/", async (c) => {
   try {
     const rows = await erpList<any>("Sales Invoice", {
       filters,
+      // NOTE: do NOT request virtual/child fields like `sales_order` — Frappe
+      // returns 417 "Field not permitted in query" and erpList silently [].
       fields: [
         "name",
         "customer",
@@ -156,21 +163,23 @@ invoicesRouter.get("/", async (c) => {
         "currency",
         "alteration_ticket_ref",
         "po_no",
-        "sales_order",
+        "lsh_square_payment_link",
+        "end_customer",
       ],
       limit,
       order_by: "posting_date desc",
     });
 
+    if (!rows.length) {
+      // Distinguish true empty book vs ERP query failure (bad field / creds)
+      console.warn("invoices list returned 0 rows", { statusFilter, filters });
+    }
+
     let invoices = rows.map(serializeInvoice);
 
-    // "open" = anything still collectable
+    // Belt-and-suspenders for open tab (already ERP-filtered)
     if (statusFilter === "open") {
-      invoices = invoices.filter(
-        (i) =>
-          i.outstandingAmount > 0.005 ||
-          ["unpaid", "overdue", "partly_paid"].includes(i.status),
-      );
+      invoices = invoices.filter((i) => i.outstandingAmount > 0.005);
     }
 
     if (kindFilter === "alteration" || kindFilter === "custom") {
@@ -214,7 +223,14 @@ invoicesRouter.get("/", async (c) => {
     });
   } catch (e: any) {
     console.error("invoices fetch failed:", e?.message);
-    return c.json({ data: [], summary: { paid: 0, outstanding: 0, openCount: 0, count: 0 } });
+    return c.json(
+      {
+        data: [],
+        summary: { paid: 0, outstanding: 0, openCount: 0, count: 0 },
+        error: { message: e?.message ?? "Failed to load invoices from ERP" },
+      },
+      502,
+    );
   }
 });
 
