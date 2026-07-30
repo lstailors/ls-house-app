@@ -29,6 +29,7 @@ import type { CartPayload } from '@alts/lib/cart/parked'
 import { ChargeTerminalButton } from '@alts/components/payments/ChargeTerminalButton'
 import { ChargeCardOnFileButton } from '@alts/components/payments/ChargeCardOnFileButton'
 import { EditTicketDrawer } from '@alts/components/alterations/EditTicketDrawer'
+import { payUrl } from '@alts/lib/printUrls'
 import {
   Dialog,
   DialogContent,
@@ -53,6 +54,7 @@ interface AlterationTicketDoc {
   is_rush: 0 | 1
   ticket_total: number
   payment_status: string
+  sales_invoice?: string | null
   assigned_tailor?: string
   assigned_tailor_name?: string
   notes?: string
@@ -1047,10 +1049,12 @@ export default function TicketDetail() {
 
   const createPaymentLinkMutation = useMutation({
     mutationFn: async () => {
+      const invoiceRef = ticket?.sales_invoice || ticket?.name
+      if (!invoiceRef) throw new Error('No invoice on this ticket yet')
       const res = await api.raw('/api/payments/link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invoice: ticket?.name }),
+        body: JSON.stringify({ invoice: invoiceRef }),
       })
       const result = await res.json().catch(() => ({})) as PaymentLinkResult | { error?: { message?: string } }
       if (!res.ok || !(result as PaymentLinkResult).url) {
@@ -1062,7 +1066,7 @@ export default function TicketDetail() {
       setPaymentLink(result)
       setPaymentLinkOpen(true)
       navigator.clipboard?.writeText(result.url).catch(() => undefined)
-      toast.success('Payment link created')
+      toast.success('Payment link ready')
     },
     onError: (e: Error) => toast.error(e.message),
   })
@@ -1285,7 +1289,7 @@ export default function TicketDetail() {
               </p>
               <div className="flex flex-wrap items-center gap-3 justify-end">
               <ChargeTerminalButton
-                invoiceId={ticket.name}
+                invoiceId={ticket.sales_invoice || ticket.name}
                 amountCents={Math.round((ticket.ticket_total ?? 0) * 100)}
                 amountDisplay={formatCurrency(ticket.ticket_total ?? 0)}
                 ticketId={ticket.name}
@@ -1293,7 +1297,7 @@ export default function TicketDetail() {
                   toast.success('Payment captured — refreshing…')
                   queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
                 }}
-                onError={(msg) => toast.error(msg)}
+                onError={(msg: string) => toast.error(msg)}
               />
               <ChargeCardOnFileButton
                 ticketId={ticket.name}
@@ -1303,8 +1307,20 @@ export default function TicketDetail() {
                   toast.success('Card on file charged — refreshing…')
                   queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
                 }}
-                onError={(msg) => toast.error(msg)}
+                onError={(msg: string) => toast.error(msg)}
               />
+              {ticket.sales_invoice ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-brass/20 text-cream-muted hover:bg-brass/10 hover:text-cream"
+                  onClick={() => {
+                    window.open(payUrl(ticket.sales_invoice!), '_blank', 'noopener,noreferrer')
+                  }}
+                >
+                  Open Pay Page
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"

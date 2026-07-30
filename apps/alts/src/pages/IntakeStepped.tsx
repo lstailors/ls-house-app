@@ -844,7 +844,12 @@ export default function IntakeStepped() {
   const create = useMutation({
     mutationFn: async () => {
       const body = buildTicketBody();
-      const res = await api.post<{ ticketName: string }>("/api/intake-alterations/tickets", body);
+      const res = await api.post<{
+        ticketName: string;
+        salesInvoice?: string | null;
+        squarePaymentLink?: string | null;
+        appPayUrl?: string | null;
+      }>("/api/intake-alterations/tickets", body);
       const ticketName = res.ticketName;
       // Upload garment + line photos after ticket exists (Lucia 023 / 030)
       if (ticketName) {
@@ -905,7 +910,15 @@ export default function IntakeStepped() {
     onSuccess: (res) => {
       clearIntakeDraft();
       clearSoCart();
-      toast.success(`Ticket ${res.ticketName} created`);
+      const inv = res.salesInvoice ? ` · ${res.salesInvoice}` : "";
+      toast.success(
+        res.squarePaymentLink || res.appPayUrl
+          ? `Ticket ${res.ticketName} created${inv} — pay link ready`
+          : `Ticket ${res.ticketName} created${inv}`,
+      );
+      if (res.squarePaymentLink) {
+        navigator.clipboard?.writeText(res.squarePaymentLink).catch(() => undefined);
+      }
       qc.invalidateQueries({ queryKey: ["alts-home-stats"] });
       qc.invalidateQueries({ queryKey: ["parked-carts"] });
       nav(`/orders/alterations/${res.ticketName}`);
