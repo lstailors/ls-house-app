@@ -11,7 +11,7 @@ import {
   openPathForResult,
   routeFromRawScan,
 } from "./scanRoutes";
-import type { ScannerResult } from "/types";
+import type { ScannerResult } from "@ls/types";
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(msg);
