@@ -643,7 +643,7 @@ async function generateRoccoFloorBrief(force = false): Promise<{
           }
           return {
             body: row.body,
-            title: row.title || "Rocco floor brief",
+            title: row.title || "Daily Espresso ☕",
             stats,
             createdAt: row.creation,
             fromCache: true,
@@ -663,16 +663,20 @@ async function generateRoccoFloorBrief(force = false): Promise<{
         {
           role: "system",
           content:
-            "You are Rocco — production and delivery manager at L&S Custom Tailors (alts floor). " +
-            "You own the floor from cradle to delivery. Be no-nonsense, floor-smart, and direct. " +
-            "Write a SHORT floor briefing for FOH/staff on the alts tablet home screen. " +
-            "3–6 short lines or tight sentences. Lead with what is behind, due today, ready for pickup, and deliveries. " +
-            "Mention open AR only if material. No markdown asterisks, no emoji spam. " +
-            "End with: — Rocco",
+            "You are Rocco — production and delivery manager at L&S Custom Tailors. " +
+            "Write the Daily Espresso ☕ — a short, lively floor brief for FOH on iPad/phone. " +
+            "FORMAT (strict):\n" +
+            "- 4 to 7 lines, each on its own line (use real newlines).\n" +
+            "- Start every line with ONE emoji then a space, then plain text.\n" +
+            "- Use: 🔴 overdue · 📅 due today · ✅ ready pickup · 🚚 delivery · 💰 AR/invoices · ☑️ calm/OK · ⚡ rush · 👉 next action.\n" +
+            "- Keep each line short (under ~90 chars). Name clients when listed.\n" +
+            "- No markdown, no asterisks, no bold markers.\n" +
+            "- Last line must be the next action starting with 👉\n" +
+            "- Sign off alone on the final line: — Rocco ☕",
         },
         {
           role: "user",
-          content: `Floor sweep data:\n${snap.dataBlock}\n\nWrite the floor briefing now.`,
+          content: `Floor sweep data:\n${snap.dataBlock}\n\nWrite the Daily Espresso now (emoji lines + newlines).`,
         },
       ],
       { maxTokens: 320, temperature: 0.25 },
@@ -683,11 +687,19 @@ async function generateRoccoFloorBrief(force = false): Promise<{
 
   if (!body) {
     const s = snap.stats;
-    body =
-      `Floor · ${nycNowLabel()}. ` +
-      `${s.overdue} overdue · ${s.dueToday} due today · ${s.ready} ready pickup · ` +
-      `${s.outForDelivery} out for delivery · ${s.openInvoices} open invoices ($${s.arOutstanding}). ` +
-      `— Rocco`;
+    body = [
+      s.overdue > 0 ? `🔴 ${s.overdue} overdue — work the late rack first` : `☑️ No overdue`,
+      s.dueToday > 0 ? `📅 ${s.dueToday} due today` : `📅 Nothing due today`,
+      s.ready > 0 ? `✅ ${s.ready} ready for pickup` : `✅ Pickup rack clear`,
+      s.outForDelivery > 0 || s.queuedDelivery > 0
+        ? `🚚 ${s.outForDelivery} out · ${s.queuedDelivery} queued`
+        : `🚚 Delivery board quiet`,
+      s.openInvoices > 0
+        ? `💰 ${s.openInvoices} open invoices · $${Number(s.arOutstanding).toLocaleString("en-US")}`
+        : `💰 AR clear`,
+      s.overdue > 0 ? `👉 Clear overdue, then ready pickups` : `👉 Keep the rack moving`,
+      `— Rocco ☕`,
+    ].join("\n");
   }
 
   const hour = parseInt(
@@ -699,7 +711,7 @@ async function generateRoccoFloorBrief(force = false): Promise<{
     10,
   );
   const period = hour < 11 ? "Morning" : hour < 15 ? "Midday" : hour < 18 ? "Afternoon" : "Close";
-  const title = `Rocco floor · ${period}`;
+  const title = `Daily Espresso · ${period} ☕`;
 
   try {
     await insertAgentBrief({

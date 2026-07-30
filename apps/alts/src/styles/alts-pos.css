@@ -324,20 +324,31 @@
     padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
   }
 
-  /* Home tiles: single column stack */
-  .home-007 .grid {
+  /* Home tiles: single column stack on phone — stats stay 2-col */
+  .home-007 .home-tiles {
     grid-template-columns: 1fr !important;
     grid-template-rows: none !important;
-    overflow-y: auto;
     gap: 12px !important;
+  }
+
+  .home-007 .home-tiles .home-tile {
+    min-height: 100px !important;
   }
 
   .home-007 {
     height: auto !important;
     min-height: 100dvh;
     overflow: auto !important;
-    padding-left: 16px !important;
-    padding-right: 16px !important;
+    padding-left: max(14px, env(safe-area-inset-left)) !important;
+    padding-right: max(14px, env(safe-area-inset-right)) !important;
+  }
+
+  .home-007 .home-quick {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .home-007 .home-quick::-webkit-scrollbar {
+    display: none;
   }
 
   /* Shop floor: horizontal board becomes scroll snap columns */
@@ -365,6 +376,43 @@
     width: 100% !important;
     max-width: 100% !important;
     min-height: 0;
+  }
+}
+
+/* Tablet / iPad (portrait & landscape under desktop lg) — no crushed tiles */
+@media (min-width: 720px) and (max-width: 1023.98px) {
+  .home-007 {
+    height: auto !important;
+    min-height: 100dvh;
+    overflow-y: auto !important;
+    overflow-x: hidden;
+  }
+
+  .home-007 .home-tiles {
+    grid-template-columns: 1fr 1fr !important;
+    grid-auto-rows: minmax(118px, auto);
+    gap: 12px !important;
+  }
+
+  .home-007 .home-tile {
+    min-height: 118px !important;
+    overflow: hidden;
+  }
+
+  .home-007 .espresso-body {
+    max-height: 20vh;
+  }
+}
+
+/* Large desktop home — fill viewport, tiles can flex */
+@media (min-width: 1024px) {
+  .home-007 {
+    height: 100dvh;
+    overflow: hidden;
+  }
+  .home-007 .home-tiles {
+    overflow-y: auto;
+    grid-auto-rows: minmax(130px, 1fr);
   }
 }
 

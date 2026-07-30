@@ -51,6 +51,42 @@ function storeHoursLine() {
   return `${day} · East 61st Street · open until 6:00 PM`;
 }
 
+function briefAge(iso?: string | null) {
+  if (!iso) return "";
+  const sec = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (sec < 60) return "just now";
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+/** Render Daily Espresso lines — one row per newline, emoji-forward. */
+function EspressoBody({ text }: { text: string }) {
+  const lines = text
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (!lines.length) return null;
+  return (
+    <ul className="espresso-lines m-0 p-0 list-none flex flex-col gap-1.5">
+      {lines.map((line, i) => {
+        const sign = /^[—–-]\s*Rocco/i.test(line);
+        return (
+          <li
+            key={`${i}-${line.slice(0, 24)}`}
+            className={cn(
+              "text-[13px] sm:text-sm leading-snug text-cream/95",
+              sign && "pt-1 text-[12px] text-brass-light/90 italic",
+            )}
+          >
+            {line}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export default function HomeTiles() {
   const { data: me } = useMe();
   const nav = useNavigate();
@@ -372,28 +408,28 @@ export default function HomeTiles() {
   ];
 
   return (
-    <div className="alts-root home-007 flex flex-col h-[100dvh] overflow-hidden px-[26px] pt-[18px] pb-3">
-      <header className="flex items-center gap-3.5 pb-3 border-b border-brass/15 shrink-0">
-        <div className="seal">LS</div>
+    <div className="alts-root home-007 flex flex-col min-h-[100dvh] h-auto lg:h-[100dvh] overflow-y-auto lg:overflow-hidden px-3.5 sm:px-5 lg:px-[26px] pt-[max(12px,env(safe-area-inset-top))] pb-[max(12px,env(safe-area-inset-bottom))]">
+      <header className="flex items-center gap-2.5 sm:gap-3.5 pb-2.5 sm:pb-3 border-b border-brass/15 shrink-0">
+        <div className="seal shrink-0">LS</div>
         <div className="min-w-0">
-          <div className="display text-[22px] leading-tight">L&S House</div>
-          <div className="text-xs tracking-[0.18em] uppercase text-[var(--cd)]">
+          <div className="display text-[18px] sm:text-[22px] leading-tight">L&S House</div>
+          <div className="text-[10px] sm:text-xs tracking-[0.14em] sm:tracking-[0.18em] uppercase text-[var(--cd)] truncate">
             Alterations · alts.lstailors.com
           </div>
         </div>
         <div className="flex-1" />
-        <div className="hidden sm:flex items-center rounded-full border border-brass/20 bg-black/30 px-[18px] py-[11px] text-xs font-bold tracking-[0.14em] uppercase text-brass-light">
+        <div className="hidden md:flex items-center rounded-full border border-brass/20 bg-black/30 px-[18px] py-[11px] text-xs font-bold tracking-[0.14em] uppercase text-brass-light">
           NYC
         </div>
         <button
           type="button"
           onClick={logout}
-          className="flex items-center gap-2.5 rounded-full border border-brass/20 bg-white/[0.04] pl-2 pr-3.5 py-1.5 min-h-[44px] hover:border-brass/40 transition-colors"
+          className="flex items-center gap-2 rounded-full border border-brass/20 bg-white/[0.04] pl-1.5 pr-2.5 sm:pl-2 sm:pr-3.5 py-1.5 min-h-[44px] hover:border-brass/40 transition-colors shrink-0"
         >
           <span className="w-8 h-8 rounded-full bg-forest-raised border border-brass/30 grid place-items-center text-xs font-bold text-brass-light">
             {initials}
           </span>
-          <span className="text-left hidden md:block">
+          <span className="text-left hidden lg:block">
             <span className="block text-xs font-semibold leading-tight">{me?.name ?? "Staff"}</span>
             <span className="block text-xs text-[var(--cd)] capitalize">
               {me?.role?.replace(/_/g, " ") || "Front of house"}
@@ -402,80 +438,84 @@ export default function HomeTiles() {
         </button>
       </header>
 
-      <div className="flex flex-wrap items-end gap-3 pt-4 pb-3 shrink-0">
-        <div>
-          <h1 className="display text-[32px] leading-none">
+      <div className="flex flex-wrap items-end gap-2 sm:gap-3 pt-3 sm:pt-4 pb-2.5 sm:pb-3 shrink-0">
+        <div className="min-w-0">
+          <h1 className="display text-[26px] sm:text-[32px] leading-none">
             {timeGreeting()}, {greetingName(me?.name)}
           </h1>
-          <p className="text-xs text-[var(--cd)] mt-1.5">{storeHoursLine()}</p>
+          <p className="text-[11px] sm:text-xs text-[var(--cd)] mt-1 sm:mt-1.5">{storeHoursLine()}</p>
         </div>
         <div className="flex-1" />
-        {s.parked > 0 && (
-          <Link
-            to="/parked"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-brass/35 bg-brass/10 text-xs text-cream hover:border-brass/55"
-          >
-            <b className="text-brass-light font-bold">{s.parked}</b> parked
-          </Link>
-        )}
-        {s.overdue > 0 && (
-          <Link
-            to="/orders/alterations?filter=overdue"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-[rgba(217,123,108,0.42)] bg-[rgba(217,123,108,0.12)] text-xs hover:border-[rgba(217,123,108,0.7)]"
-          >
-            <b className="text-[var(--ro)] font-bold">{s.overdue}</b> overdue
-          </Link>
-        )}
-        {s.dueToday > 0 && (
-          <Link
-            to="/orders/alterations?filter=due_today"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-[rgba(232,168,92,0.4)] bg-[rgba(232,168,92,0.12)] text-xs hover:border-[rgba(232,168,92,0.7)]"
-          >
-            <b className="text-[var(--am)] font-bold">{s.dueToday}</b> due today
-          </Link>
-        )}
+        <div className="flex flex-wrap gap-1.5 sm:gap-2">
+          {s.parked > 0 && (
+            <Link
+              to="/parked"
+              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full border border-brass/35 bg-brass/10 text-[11px] sm:text-xs text-cream hover:border-brass/55 min-h-[40px]"
+            >
+              <b className="text-brass-light font-bold">{s.parked}</b> parked
+            </Link>
+          )}
+          {s.overdue > 0 && (
+            <Link
+              to="/shop-floor"
+              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full border border-[rgba(217,123,108,0.42)] bg-[rgba(217,123,108,0.12)] text-[11px] sm:text-xs hover:border-[rgba(217,123,108,0.7)] min-h-[40px]"
+            >
+              <b className="text-[var(--ro)] font-bold">{s.overdue}</b> overdue
+            </Link>
+          )}
+          {s.dueToday > 0 && (
+            <Link
+              to="/shop-floor"
+              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full border border-[rgba(232,168,92,0.4)] bg-[rgba(232,168,92,0.12)] text-[11px] sm:text-xs hover:border-[rgba(232,168,92,0.7)] min-h-[40px]"
+            >
+              <b className="text-[var(--am)] font-bold">{s.dueToday}</b> due today
+            </Link>
+          )}
+        </div>
       </div>
 
-      {/* Rocco AI floor brief — top of board */}
-      <div className="shrink-0 mb-3 rounded-[18px] border border-brass/30 bg-gradient-to-br from-brass/15 via-black/30 to-black/20 px-4 py-3.5">
+      {/* Daily Espresso ☕ */}
+      <div className="espresso-card shrink-0 mb-2.5 sm:mb-3 rounded-[16px] sm:rounded-[18px] border border-brass/30 bg-gradient-to-br from-brass/15 via-black/30 to-black/20 px-3.5 sm:px-4 py-3 sm:py-3.5">
         <div className="flex items-center gap-2 mb-2">
-          <span className="w-7 h-7 rounded-full border border-brass/40 bg-brass/15 grid place-items-center text-[11px] font-bold text-brass-light">
-            R
+          <span className="w-8 h-8 rounded-full border border-brass/40 bg-brass/15 grid place-items-center text-base shrink-0" aria-hidden>
+            ☕
           </span>
-          <div className="min-w-0">
-            <div className="text-[11px] font-bold tracking-[0.16em] uppercase text-brass-light">
-              Rocco · floor brief
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] font-bold tracking-[0.14em] uppercase text-brass-light">
+              Daily Espresso
             </div>
             <div className="text-[10px] text-[var(--cd)] truncate">
-              {floorBrief.data?.title || "Daily floor sweep"}
+              {floorBrief.data?.title || "Rocco · floor sweep"}
               {floorBrief.data?.fromCache ? " · cached" : floorBrief.data ? " · fresh" : ""}
+              {floorBrief.data?.createdAt ? ` · ${briefAge(floorBrief.data.createdAt)}` : ""}
             </div>
           </div>
-          <div className="flex-1" />
           <button
             type="button"
             disabled={refreshBrief.isPending || floorBrief.isFetching}
             onClick={() => refreshBrief.mutate()}
-            className="h-9 px-3 rounded-full border border-brass/35 bg-black/30 text-[10px] font-bold tracking-widest uppercase text-brass-light hover:border-brass/55 disabled:opacity-50"
+            className="h-10 px-3 rounded-full border border-brass/35 bg-black/30 text-[10px] font-bold tracking-widest uppercase text-brass-light hover:border-brass/55 disabled:opacity-50 shrink-0"
           >
-            {refreshBrief.isPending ? "Sweeping…" : "Sweep now"}
+            {refreshBrief.isPending ? "Brewing…" : "Brew now"}
           </button>
         </div>
-        {floorBrief.isLoading && !floorBrief.data ? (
-          <p className="text-sm text-[var(--cd)] leading-relaxed">Rocco is reading the floor…</p>
-        ) : floorBrief.isError ? (
-          <p className="text-sm text-[var(--am)] leading-relaxed">
-            Brief unavailable — counts above still work. Try Sweep now.
-          </p>
-        ) : (
-          <p className="text-sm text-cream/95 leading-relaxed whitespace-pre-wrap">
-            {floorBrief.data?.body || "No brief yet — hit Sweep now."}
-          </p>
-        )}
+        <div className="espresso-body max-h-[28vh] sm:max-h-[22vh] lg:max-h-none overflow-y-auto -mx-0.5 px-0.5">
+          {floorBrief.isLoading && !floorBrief.data ? (
+            <p className="text-sm text-[var(--cd)] leading-relaxed">Brewing the floor read…</p>
+          ) : floorBrief.isError ? (
+            <p className="text-sm text-[var(--am)] leading-relaxed">
+              Espresso unavailable — counts still work. Try Brew now.
+            </p>
+          ) : floorBrief.data?.body ? (
+            <EspressoBody text={floorBrief.data.body} />
+          ) : (
+            <p className="text-sm text-[var(--cd)]">No espresso yet — tap Brew now.</p>
+          )}
+        </div>
       </div>
 
       {/* Clickable stats */}
-      <div className="rounded-[15px] border border-brass/15 bg-black/25 grid grid-cols-2 sm:grid-cols-3 overflow-hidden shrink-0 mb-3">
+      <div className="home-stats rounded-[14px] sm:rounded-[15px] border border-brass/15 bg-black/25 grid grid-cols-2 md:grid-cols-3 overflow-hidden shrink-0 mb-2.5 sm:mb-3">
         {(
           [
             { to: "/shop-floor", lab: "Open tickets", val: s.open, tone: "" },
@@ -483,51 +523,55 @@ export default function HomeTiles() {
             { to: "/transfers", lab: "Out to tailors", val: s.outToTailors, tone: "text-[var(--am)]" },
             { to: "/deliveries", lab: "Out for delivery", val: s.outForDelivery, tone: "text-[var(--am)]" },
             { to: "/deliveries", lab: "Delivered today", val: s.deliveredToday, tone: "text-[var(--em)]" },
-            {
-              to: "/shop-floor",
-              lab: "Overdue",
-              val: s.overdue,
-              tone: "text-[var(--ro)]",
-            },
+            { to: "/shop-floor", lab: "Overdue", val: s.overdue, tone: "text-[var(--ro)]" },
           ] as const
         ).map((cell, i) => (
           <Link
             key={cell.lab}
             to={cell.to}
             className={cn(
-              "px-[18px] py-[12px] flex items-baseline gap-2.5 hover:bg-white/[0.04] transition-colors min-h-[52px]",
-              i % 2 === 0 && "border-r border-brass/10",
-              i < 4 && "border-b border-brass/10",
-              i === 4 && "border-b border-r border-brass/10 sm:border-b",
-              i === 5 && "border-b border-brass/10 sm:border-b-0",
+              "px-3 sm:px-[18px] py-2.5 sm:py-[12px] flex items-baseline gap-2 hover:bg-white/[0.04] active:bg-white/[0.06] transition-colors min-h-[48px]",
+              "border-brass/10",
+              i % 2 === 0 && "border-r",
+              i < 4 && "border-b",
+              // md 3-col: items 0,1 border-r; 2 no r; row border-b on 0-2
+              "md:border-r md:[&:nth-child(3n)]:border-r-0",
+              i < 3 && "md:border-b",
+              i >= 3 && "md:border-b-0",
+              i === 4 && "border-b border-r sm:border-b",
+              i === 5 && "border-b-0",
             )}
           >
-            <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">{cell.lab}</span>
-            <span className={cn("display text-2xl ml-auto", cell.tone)}>{cell.val}</span>
+            <span className="text-[10px] sm:text-xs font-bold tracking-[0.12em] sm:tracking-[0.16em] uppercase text-[var(--cd)] leading-tight">
+              {cell.lab}
+            </span>
+            <span className={cn("display text-xl sm:text-2xl ml-auto tabular-nums", cell.tone)}>{cell.val}</span>
           </Link>
         ))}
-        <div className="col-span-2 sm:col-span-3 flex items-center gap-2 px-[18px] py-[9px] text-xs text-[var(--cd)] border-t border-brass/10">
+        <div className="col-span-2 md:col-span-3 flex items-center gap-2 px-3 sm:px-[18px] py-2 text-[11px] sm:text-xs text-[var(--cd)] border-t border-brass/10">
           <span
             className={cn(
-              "w-[7px] h-[7px] rounded-full",
+              "w-[7px] h-[7px] rounded-full shrink-0",
               stats.isError
                 ? "bg-[var(--am)] shadow-[0_0_8px_rgba(232,168,92,0.7)]"
                 : "bg-[var(--em)] shadow-[0_0_8px_rgba(79,191,142,0.7)]",
             )}
           />
-          {stats.isError ? "ERPNext unreachable · retry above" : `ERPNext live · synced ${syncAge}`}
+          <span className="truncate">
+            {stats.isError ? "ERPNext unreachable" : `ERPNext live · ${syncAge}`}
+          </span>
           <button
             type="button"
             onClick={() => stats.refetch()}
-            className="ml-auto text-[10px] font-bold tracking-widest uppercase text-brass-light hover:text-cream"
+            className="ml-auto text-[10px] font-bold tracking-widest uppercase text-brass-light hover:text-cream shrink-0 min-h-[36px] px-1"
           >
-            Refresh counts
+            Refresh
           </button>
         </div>
       </div>
 
-      {/* Quick actions */}
-      <div className="flex flex-wrap gap-2 shrink-0 pb-3">
+      {/* Quick actions — horizontal scroll on phone */}
+      <div className="home-quick flex gap-2 shrink-0 pb-2.5 sm:pb-3 overflow-x-auto -mx-1 px-1 scrollbar-none">
         {[
           { to: "/dispatch", lab: "Charge & dispatch" },
           { to: "/invoices", lab: `Invoices${s.openInvoices ? ` · ${s.openInvoices}` : ""}` },
@@ -540,7 +584,7 @@ export default function HomeTiles() {
           <Link
             key={l.to}
             to={l.to}
-            className="h-10 px-4 rounded-full border border-brass/25 bg-black/25 text-xs font-bold tracking-widest uppercase text-brass-light inline-flex items-center hover:border-brass/50 active:scale-[0.98]"
+            className="h-10 px-3.5 sm:px-4 rounded-full border border-brass/25 bg-black/25 text-[10px] sm:text-xs font-bold tracking-widest uppercase text-brass-light inline-flex items-center hover:border-brass/50 active:scale-[0.98] whitespace-nowrap shrink-0"
           >
             {l.lab}
           </Link>
@@ -557,10 +601,12 @@ export default function HomeTiles() {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 grid grid-cols-2 lg:grid-cols-3 auto-rows-fr gap-[12px] overflow-y-auto pb-1">
+      {/* Main tiles — never crush with fr rows on tablet */}
+      <div className="home-tiles flex-1 min-h-0 grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3 lg:gap-[12px] content-start pb-2">
         {tiles.map((t) => {
           const className = cn(
-            "relative rounded-[22px] border p-[18px] flex flex-col min-h-[120px] overflow-hidden",
+            "home-tile relative rounded-[18px] sm:rounded-[22px] border p-3.5 sm:p-[18px] flex flex-col",
+            "min-h-[108px] sm:min-h-[120px] lg:min-h-0",
             "transition-all duration-150 active:scale-[0.988] cursor-pointer group",
             "bg-gradient-to-br from-white/[0.045] to-white/[0.012]",
             "border-brass/25 hover:border-brass/50 hover:-translate-y-0.5 hover:shadow-[var(--sl)] hover:from-white/[0.085] hover:to-white/[0.025]",
@@ -576,7 +622,7 @@ export default function HomeTiles() {
               {t.badge != null && t.badge > 0 && (
                 <span
                   className={cn(
-                    "absolute top-[14px] right-[14px] min-w-[30px] h-[30px] px-[10px] rounded-full grid place-items-center text-sm font-bold border",
+                    "absolute top-3 right-3 min-w-[28px] h-[28px] sm:min-w-[30px] sm:h-[30px] px-2 rounded-full grid place-items-center text-xs sm:text-sm font-bold border",
                     t.badgeKind === "alert" && "bg-[rgba(217,123,108,0.9)] border-transparent text-white",
                     t.badgeKind === "warn" && "bg-[rgba(232,168,92,0.9)] border-transparent text-forest-deep",
                     (!t.badgeKind || t.badgeKind === "neutral") && "bg-white/[0.07] border-brass/30 text-cream",
@@ -587,20 +633,20 @@ export default function HomeTiles() {
               )}
               <div
                 className={cn(
-                  "text-brass-light opacity-90 mb-auto scale-90 origin-top-left",
+                  "text-brass-light opacity-90 mb-auto scale-[0.72] sm:scale-90 origin-top-left",
                   t.primary && "text-[#E3C48F] opacity-100",
                 )}
               >
                 {t.icon}
               </div>
-              <h2 className={cn("display mt-2 leading-tight", t.external ? "text-[20px]" : "text-[22px]")}>
+              <h2 className={cn("display mt-1.5 sm:mt-2 leading-tight", t.external ? "text-[18px] sm:text-[20px]" : "text-[19px] sm:text-[22px]")}>
                 {t.title}
               </h2>
-              <p className="text-[11px] text-[var(--cd)] mt-1 leading-snug pr-7">{t.sub}</p>
+              <p className="text-[10px] sm:text-[11px] text-[var(--cd)] mt-0.5 sm:mt-1 leading-snug pr-6 line-clamp-2">{t.sub}</p>
               {t.external && (
-                <div className="font-mono text-[10px] text-[var(--bd)] tracking-wide mt-1.5">app.lstailors.com ↗</div>
+                <div className="font-mono text-[10px] text-[var(--bd)] tracking-wide mt-1">app.lstailors.com ↗</div>
               )}
-              <span className="absolute bottom-4 right-[18px] text-[var(--bd)] opacity-55 group-hover:opacity-100 group-hover:text-brass-light transition-opacity">
+              <span className="absolute bottom-3 right-3.5 text-[var(--bd)] opacity-55 group-hover:opacity-100 group-hover:text-brass-light transition-opacity">
                 <Arrow external={t.external} />
               </span>
             </>
