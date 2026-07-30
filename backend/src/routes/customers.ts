@@ -4,6 +4,7 @@ import {
   searchCustomers,
   listCustomers,
   getCustomer,
+  getCustomerSpend,
   createCustomer,
   updateCustomer,
   upsertCustomerDossier,
@@ -81,6 +82,44 @@ customersRouter.get("/:id", async (c) => {
     return c.json({ data: row });
   } catch {
     return c.json({ error: { message: "Not found" } }, 404);
+  }
+});
+
+/**
+ * GET /api/customers/:id/spend
+ * Lifetime spend, outstanding AR, avg order, and recent SI history from ERP.
+ * FOH-readable (not finance-only) — counter staff need AR on the client card.
+ */
+customersRouter.get("/:id/spend", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (user.role === "driver") return c.json({ error: { message: "Forbidden" } }, 403);
+
+  const id = decodeURIComponent(c.req.param("id"));
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "40", 10) || 40, 100);
+
+  try {
+    const cust = await getCustomer(id);
+    if (!cust) return c.json({ error: { message: "Not found" } }, 404);
+    if (!canReadCustomer(user, { division: cust.locationId ?? undefined, locationId: cust.locationId ?? undefined })) {
+      return c.json({ error: { message: "Forbidden" } }, 403);
+    }
+
+    const customerKey = String(cust.erpnextCustomerId || cust.id || id);
+    const spend = await getCustomerSpend(customerKey, limit);
+    return c.json({
+      data: {
+        ...spend,
+        // aliases used by UI
+        lifetimeSpend: spend.lifetimePaid,
+        lifetimeBilled: spend.lifetimeInvoiced,
+        openInvoiceCount: spend.unpaidCount,
+        lastInvoiceDate: spend.lastPurchaseDate,
+        erpLifetimeValue: Number(cust.lifetimeValue ?? 0),
+      },
+    });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message ?? "Failed to load spend" } }, 500);
   }
 });
 
