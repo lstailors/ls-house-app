@@ -235,21 +235,36 @@ def create_sales_invoice(doc, method=None):
 
 	doc.db_set("sales_invoice", invoice.name, update_modified=False)
 
-	# Submit so outstanding is real AR and Square pay-link mint is allowed.
-	# Payment links / Terminal checkouts require docstatus=1.
-	if flt(invoice.grand_total) > 0 and invoice.docstatus == 0:
+	# Submit + mint Square pay link at create so FOH can charge immediately.
+	# ensure_invoice_ready_for_pay normalizes posting/due dates (avoids
+	# "Due Date cannot be before Posting Date") then submits and mints link.
+	if flt(invoice.grand_total) > 0:
 		try:
-			invoice.reload()
-			invoice.submit()
+			from ls_alterations.ls_alterations.api.invoices import ensure_invoice_ready_for_pay
+
+			# after_commit: Square API + field writes outside the ticket TX
+			frappe.db.after_commit.add(
+				lambda inv=invoice.name: _ensure_ready_after_commit(inv)
+			)
 		except Exception as e:
 			frappe.log_error(
-				f"SI submit failed for ticket {doc.name} / {invoice.name}: {e}",
+				f"SI ready-for-pay schedule failed for ticket {doc.name} / {invoice.name}: {e}",
 				"Alteration Ticket SI Submit",
 			)
-			return
 
-		frappe.db.after_commit.add(
-			lambda inv=invoice.name: _mint_payment_link_after_commit(inv)
+
+def _ensure_ready_after_commit(invoice_name):
+	"""after_commit: submit SI (date-safe) + mint Square payment link."""
+	if not invoice_name:
+		return
+	try:
+		from ls_alterations.ls_alterations.api.invoices import ensure_invoice_ready_for_pay
+
+		ensure_invoice_ready_for_pay(invoice_name)
+	except Exception as e:
+		frappe.log_error(
+			f"Auto ready-for-pay failed for {invoice_name}: {e}",
+			"Alteration Ticket Pay Link",
 		)
 
 
