@@ -28,8 +28,27 @@ type PublicCard = {
   last4: string;
   exp_month?: number | null;
   exp_year?: number | null;
+  expired?: boolean;
   cardholder_name?: string;
 };
+
+/** Client-side fallback — Square often leaves expired cards enabled=true. */
+function isExpiredCard(card: PublicCard): boolean {
+  if (card.expired === true) return true;
+  if (card.exp_month == null || card.exp_year == null) return false;
+  const m = Number(card.exp_month);
+  const y = Number(card.exp_year);
+  if (!Number.isFinite(m) || !Number.isFinite(y) || m < 1 || m > 12) return false;
+  const now = new Date();
+  const cy = now.getFullYear();
+  const cm = now.getMonth() + 1;
+  return y < cy || (y === cy && m < cm);
+}
+
+function expLabel(card: PublicCard): string | null {
+  if (!card.exp_month || !card.exp_year) return null;
+  return `${String(card.exp_month).padStart(2, "0")}/${String(card.exp_year).slice(-2)}`;
+}
 
 interface ChargeCardOnFileButtonProps {
   /** ALT ticket name — preferred; backend resolves SI */
@@ -96,6 +115,7 @@ export function ChargeCardOnFileButton({
       }
       const list = (data?.cards ?? []) as PublicCard[];
       setCards(list);
+      const usable = list.filter((c) => !isExpiredCard(c));
       if (!list.length) {
         setEmptyMsg(
           data?.message ||
@@ -104,7 +124,16 @@ export function ChargeCardOnFileButton({
         setStage("pick");
         return;
       }
-      setSelected(list[0]);
+      if (!usable.length) {
+        setEmptyMsg(
+          data?.message ||
+            "Cards on file are expired. Update the card in Square POS, or use Terminal / Pay Link.",
+        );
+        setSelected(null);
+        setStage("pick");
+        return;
+      }
+      setSelected(usable[0]);
       setStage("pick");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not load cards";
@@ -120,6 +149,14 @@ export function ChargeCardOnFileButton({
 
   const handleCharge = useCallback(async () => {
     if (!selected) return;
+    if (isExpiredCard(selected)) {
+      const exp = expLabel(selected) || "unknown";
+      const msg = `Card ····${selected.last4} expired ${exp}. Update card in Square POS, or use Terminal / Pay Link.`;
+      setStage("error");
+      setErrorMsg(msg);
+      onError(msg);
+      return;
+    }
     setStage("charging");
     try {
       const res = await api.raw("/api/payments/card-on-file", {
@@ -265,33 +302,51 @@ export function ChargeCardOnFileButton({
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          {!emptyMsg && cards.length > 0 && stage === "pick" && (
+          {cards.length > 0 && stage === "pick" && (
             <div className="flex flex-col gap-2 max-h-56 overflow-y-auto py-1">
               {cards.map((card) => {
+                const expired = isExpiredCard(card);
                 const active = selected?.id === card.id;
+                const exp = expLabel(card);
                 return (
                   <button
                     key={card.id}
                     type="button"
-                    onClick={() => setSelected(card)}
+                    disabled={expired}
+                    onClick={() => {
+                      if (!expired) {
+                        setEmptyMsg("");
+                        setSelected(card);
+                      }
+                    }}
                     className={cn(
                       "flex items-center justify-between rounded-md border px-3 py-3 text-left transition-colors",
-                      active
-                        ? "border-brass bg-brass/15 text-cream"
-                        : "border-brass/20 text-cream-muted hover:border-brass/40 hover:bg-brass/10",
+                      expired && "opacity-50 cursor-not-allowed border-signal-amber/30",
+                      !expired && active && "border-brass bg-brass/15 text-cream",
+                      !expired &&
+                        !active &&
+                        "border-brass/20 text-cream-muted hover:border-brass/40 hover:bg-brass/10",
                     )}
                   >
                     <span className="flex items-center gap-2">
-                      <CreditCard className="h-4 w-4 text-brass shrink-0" />
+                      <CreditCard
+                        className={cn(
+                          "h-4 w-4 shrink-0",
+                          expired ? "text-signal-amber" : "text-brass",
+                        )}
+                      />
                       <span className="font-medium">
                         {brandLabel(card.brand)} ····{card.last4}
                       </span>
                     </span>
-                    {card.exp_month && card.exp_year ? (
-                      <span className="text-xs text-cream-dim">
-                        {String(card.exp_month).padStart(2, "0")}/{String(card.exp_year).slice(-2)}
-                      </span>
-                    ) : null}
+                    <span
+                      className={cn(
+                        "text-xs",
+                        expired ? "text-signal-amber font-semibold" : "text-cream-dim",
+                      )}
+                    >
+                      {expired ? `EXPIRED ${exp || ""}`.trim() : exp || ""}
+                    </span>
                   </button>
                 );
               })}
@@ -307,7 +362,7 @@ export function ChargeCardOnFileButton({
             </AlertDialogCancel>
             {!emptyMsg && stage === "pick" && (
               <AlertDialogAction
-                disabled={!selected}
+                disabled={!selected || isExpiredCard(selected)}
                 onClick={(e) => {
                   e.preventDefault();
                   setStage("confirming");
@@ -317,7 +372,7 @@ export function ChargeCardOnFileButton({
                 Continue
               </AlertDialogAction>
             )}
-            {!emptyMsg && stage === "confirming" && selected && (
+            {!emptyMsg && stage === "confirming" && selected && !isExpiredCard(selected) && (
               <AlertDialogAction
                 onClick={(e) => {
                   e.preventDefault();

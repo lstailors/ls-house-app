@@ -308,17 +308,33 @@ type PublicCard = {
   exp_month?: number | null;
   exp_year?: number | null;
   enabled: boolean;
+  expired: boolean;
   cardholder_name?: string;
 };
 
+/** Square keeps expired cards enabled=true; end of exp month is last valid. */
+function isCardExpired(expMonth?: number | null, expYear?: number | null): boolean {
+  if (expMonth == null || expYear == null) return false;
+  const m = Number(expMonth);
+  const y = Number(expYear);
+  if (!Number.isFinite(m) || !Number.isFinite(y) || m < 1 || m > 12) return false;
+  const now = new Date();
+  const cy = now.getFullYear();
+  const cm = now.getMonth() + 1;
+  return y < cy || (y === cy && m < cm);
+}
+
 function toPublicCard(c: Record<string, unknown>): PublicCard {
+  const exp_month = (c.exp_month as number | null | undefined) ?? null;
+  const exp_year = (c.exp_year as number | null | undefined) ?? null;
   return {
     id: String(c.id ?? ""),
     brand: String(c.card_brand ?? c.card_type ?? "CARD"),
     last4: String(c.last_4 ?? ""),
-    exp_month: (c.exp_month as number | null | undefined) ?? null,
-    exp_year: (c.exp_year as number | null | undefined) ?? null,
+    exp_month,
+    exp_year,
     enabled: c.enabled !== false,
+    expired: isCardExpired(exp_month, exp_year),
     cardholder_name: String(c.cardholder_name ?? ""),
   };
 }
@@ -546,9 +562,11 @@ paymentsRouter.get("/cards", async (c) => {
       });
     }
     const cards = await listSquareCards(sqId);
+    const usable = cards.filter((card) => !card.expired);
     try {
       await erpUpdate("Customer", ctx.customer, {
-        has_stored_card: cards.length > 0 ? 1 : 0,
+        // has_stored_card = usable (non-expired) only — expired vault noise is not floor-ready
+        has_stored_card: usable.length > 0 ? 1 : 0,
         last_square_sync_at: new Date().toISOString().slice(0, 19).replace("T", " "),
       });
     } catch {
@@ -563,6 +581,12 @@ paymentsRouter.get("/cards", async (c) => {
       invoice_docstatus: ctx.invoiceDocstatus,
       outstanding: ctx.outstanding,
       cards,
+      usable_count: usable.length,
+      expired_count: cards.length - usable.length,
+      message:
+        cards.length > 0 && usable.length === 0
+          ? "Cards on file are expired. Update the card in Square POS, or use Terminal / Pay Link."
+          : undefined,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Could not list cards";
@@ -644,6 +668,20 @@ paymentsRouter.post("/card-on-file", async (c) => {
     const match = cards.find((card) => card.id === body.card_id);
     if (!match) {
       return c.json({ error: { message: "Card not found on customer's Square vault" } }, 400);
+    }
+    if (match.expired || isCardExpired(match.exp_month, match.exp_year)) {
+      const exp =
+        match.exp_month && match.exp_year
+          ? `${String(match.exp_month).padStart(2, "0")}/${String(match.exp_year).slice(-2)}`
+          : "unknown";
+      return c.json(
+        {
+          error: {
+            message: `Card ····${match.last4} expired ${exp}. Update card in Square POS, or use Terminal / Pay Link.`,
+          },
+        },
+        400,
+      );
     }
 
     const amountCents = Math.round(chargeAmt * 100);

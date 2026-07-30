@@ -315,7 +315,21 @@ def _sync_has_stored_card(erp_customer, cards):
         pass
 
 
+def _card_expired(c):
+    """Square leaves expired cards enabled=true; end of exp month is last valid."""
+    try:
+        m = int(c.get("exp_month") or 0)
+        y = int(c.get("exp_year") or 0)
+    except (TypeError, ValueError):
+        return False
+    if m < 1 or m > 12 or y < 1:
+        return False
+    today = frappe.utils.getdate()
+    return y < today.year or (y == today.year and m < today.month)
+
+
 def _card_public(c):
+    expired = _card_expired(c)
     return {
         "id": c.get("id"),
         "brand": c.get("card_brand") or c.get("card_type") or "CARD",
@@ -323,6 +337,7 @@ def _card_public(c):
         "exp_month": c.get("exp_month"),
         "exp_year": c.get("exp_year"),
         "enabled": bool(c.get("enabled", True)),
+        "expired": expired,
         "cardholder_name": c.get("cardholder_name") or "",
     }
 
@@ -364,13 +379,22 @@ def list_cards(invoice=None, ticket=None, customer=None):
 
     cards = client.list_cards(sq_id)
     enabled = [c for c in cards if c.get("enabled", True)]
-    _sync_has_stored_card(erp_customer, enabled)
+    public = [_card_public(c) for c in enabled]
+    usable = [c for c in enabled if not _card_expired(c)]
+    _sync_has_stored_card(erp_customer, usable)
     return {
         "ok": True,
         "customer": erp_customer,
         "square_customer_id": sq_id,
         "invoice": inv_name,
-        "cards": [_card_public(c) for c in enabled],
+        "cards": public,
+        "usable_count": len(usable),
+        "expired_count": len(enabled) - len(usable),
+        "message": (
+            "Cards on file are expired. Update the card in Square POS, or use Terminal / Pay Link."
+            if enabled and not usable
+            else None
+        ),
     }
 
 
@@ -414,6 +438,15 @@ def charge_card_on_file(card_id, invoice=None, ticket=None, amount=None,
     match = next((c for c in cards if c.get("id") == card_id and c.get("enabled", True)), None)
     if not match:
         frappe.throw("Card not found on customer's Square vault")
+    if _card_expired(match):
+        exp_m = match.get("exp_month")
+        exp_y = match.get("exp_year")
+        exp = "{:02d}/{}".format(int(exp_m or 0), str(exp_y or "")[-2:])
+        frappe.throw(
+            "Card ····{} expired {}. Update card in Square POS, or use Terminal / Pay Link.".format(
+                match.get("last_4") or "", exp
+            )
+        )
 
     amount_cents = int(round(charge_amt * 100))
     key = idempotency_key or "cof-{}-{}-{}".format(
