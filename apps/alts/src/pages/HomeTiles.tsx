@@ -408,7 +408,7 @@ export default function HomeTiles() {
   ];
 
   return (
-    <div className="alts-root home-007 flex flex-col min-h-[100dvh] h-auto lg:h-[100dvh] overflow-y-auto lg:overflow-hidden px-3.5 sm:px-5 lg:px-[26px] pt-[max(12px,env(safe-area-inset-top))] pb-[max(12px,env(safe-area-inset-bottom))]">
+    <div className="alts-root home-007 flex flex-col min-h-[100dvh] overflow-x-hidden overflow-y-auto px-3.5 sm:px-5 lg:px-[26px] pt-[max(12px,env(safe-area-inset-top))] pb-[max(16px,env(safe-area-inset-bottom))]">
       <header className="flex items-center gap-2.5 sm:gap-3.5 pb-2.5 sm:pb-3 border-b border-brass/15 shrink-0">
         <div className="seal shrink-0">LS</div>
         <div className="min-w-0">
@@ -601,12 +601,12 @@ export default function HomeTiles() {
         </div>
       )}
 
-      {/* Main tiles — never crush with fr rows on tablet */}
-      <div className="home-tiles flex-1 min-h-0 grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3 lg:gap-[12px] content-start pb-2">
+      {/* Main tiles — natural height; page scrolls (no fr-row crush on iPad) */}
+      <div className="home-tiles grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3 lg:gap-3 content-start pb-3">
         {tiles.map((t) => {
           const className = cn(
-            "home-tile relative rounded-[18px] sm:rounded-[22px] border p-3.5 sm:p-[18px] flex flex-col",
-            "min-h-[108px] sm:min-h-[120px] lg:min-h-0",
+            "home-tile relative rounded-[18px] sm:rounded-[20px] border p-3.5 sm:p-4 flex flex-col",
+            "min-h-[124px] sm:min-h-[132px]",
             "transition-all duration-150 active:scale-[0.988] cursor-pointer group",
             "bg-gradient-to-br from-white/[0.045] to-white/[0.012]",
             "border-brass/25 hover:border-brass/50 hover:-translate-y-0.5 hover:shadow-[var(--sl)] hover:from-white/[0.085] hover:to-white/[0.025]",

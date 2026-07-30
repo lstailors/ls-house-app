@@ -210,6 +210,44 @@
   }
 }
 
+/* iPad / tablet (incl. iPad Pro landscape ~1194): page scrolls; no fr-row crush */
+@media (min-width: 720px) and (max-width: 1279.98px) {
+  .home-007 {
+    height: auto !important;
+    min-height: 100dvh;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+  .home-007 .home-tiles {
+    flex: none !important;
+    min-height: 0 !important;
+    grid-template-columns: 1fr 1fr !important;
+    grid-auto-rows: minmax(128px, auto) !important;
+    gap: 12px !important;
+    overflow: visible !important;
+  }
+  .home-007 .home-tile {
+    min-height: 128px !important;
+    height: auto !important;
+    overflow: hidden;
+  }
+  .home-007 .espresso-card .espresso-body,
+  .home-007 .espresso-body {
+    max-height: 26vh;
+  }
+}
+
+/* Landscape iPad: slightly tighter espresso */
+@media (min-width: 720px) and (max-width: 1279.98px) and (orientation: landscape) {
+  .home-007 .espresso-card .espresso-body,
+  .home-007 .espresso-body {
+    max-height: 20vh;
+  }
+  .home-007 .home-tile {
+    min-height: 118px !important;
+  }
+}
+
 /*
  * TABLET-ONLY routes on phone — explicit card, not a broken two-column layout.
  * Children stay in DOM (display:none) so rotating a foldable back to tablet width
@@ -379,8 +417,8 @@
   }
 }
 
-/* Tablet / iPad (portrait & landscape under desktop lg) — no crushed tiles */
-@media (min-width: 720px) and (max-width: 1023.98px) {
+/* Tablet / iPad mid-range — keep 2-col tiles, no crush */
+@media (min-width: 720px) and (max-width: 1279.98px) {
   .home-007 {
     height: auto !important;
     min-height: 100dvh;
@@ -390,8 +428,9 @@
 
   .home-007 .home-tiles {
     grid-template-columns: 1fr 1fr !important;
-    grid-auto-rows: minmax(118px, auto);
+    grid-auto-rows: minmax(118px, auto) !important;
     gap: 12px !important;
+    overflow: visible !important;
   }
 
   .home-007 .home-tile {
@@ -404,8 +443,8 @@
   }
 }
 
-/* Large desktop home — fill viewport, tiles can flex */
-@media (min-width: 1024px) {
+/* Large desktop only — fill viewport; tiles may flex */
+@media (min-width: 1280px) {
   .home-007 {
     height: 100dvh;
     overflow: hidden;
