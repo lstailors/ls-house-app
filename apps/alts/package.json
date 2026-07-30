@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "alts.lstailors.com — intake + day-to-day FOH",
+  "description": "alts.lstailors.com \u2014 intake + day-to-day FOH",
   "scripts": {
     "dev": "vite --port 8010",
     "build": "vite build",
@@ -37,7 +37,9 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
-    "zod": "4.1.11"
+    "zod": "4.1.11",
+    "qrcode": "^1.5.4",
+    "leaflet": "^1.9.4"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
@@ -48,6 +50,8 @@
     "tailwindcss": "^3.4.15",
     "typescript": "5.8.3",
     "vite": "^5.4.11",
-    "vite-plugin-pwa": "^0.21.1"
+    "vite-plugin-pwa": "^0.21.1",
+    "@types/qrcode": "^1.5.6",
+    "@types/leaflet": "^1.9.21"
   }
 }

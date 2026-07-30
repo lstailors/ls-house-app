@@ -21,6 +21,9 @@
   },
   "peerDependencies": {
     "react": "^18.0.0",
-    "@tanstack/react-query": "^5.0.0"
+    "@tanstack/react-query": "^5.0.0",
+    "react-router-dom": "^6.0.0",
+    "lucide-react": "^0.400.0 || ^0.462.0",
+    "sonner": "^1.0.0"
   }
 }
