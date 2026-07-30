@@ -38,6 +38,8 @@ const DeliveryLabel = lazy(() => import("@alts/pages/print/DeliveryLabelPrint"))
 const GarmentTagRedirect = lazy(() => import("@alts/components/garment/GarmentTagRedirect"));
 const PayInvoice = lazy(() => import("@alts/pages/PayInvoice"));
 const PodCapture = lazy(() => import("@alts/pages/PodCapture"));
+const Invoices = lazy(() => import("@alts/pages/Invoices"));
+const InvoiceDetail = lazy(() => import("@alts/pages/InvoiceDetail"));
 
 const FOH = ["super_admin", "store_manager", "salesperson", "tailor"] as const;
 
@@ -259,6 +261,22 @@ export default function App() {
                   element={
                     <RoleGuard allow={[...FOH]}>
                       <CustomerDetail />
+                    </RoleGuard>
+                  }
+                />
+                <Route
+                  path="/invoices"
+                  element={
+                    <RoleGuard allow={[...FOH]}>
+                      <Invoices />
+                    </RoleGuard>
+                  }
+                />
+                <Route
+                  path="/invoices/:id"
+                  element={
+                    <RoleGuard allow={[...FOH]}>
+                      <InvoiceDetail />
                     </RoleGuard>
                   }
                 />
