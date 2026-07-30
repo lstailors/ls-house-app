@@ -11,7 +11,7 @@ import {
   openPathForResult,
   routeFromRawScan,
 } from "./scanRoutes";
-import type { ScannerResult } from "../../../backend/src/types";
+import type { ScannerResult } from "/types";
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(msg);
