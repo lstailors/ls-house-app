@@ -25,81 +25,71 @@ export function SaveCartControls(props: {
 
   function handleSave() {
     const snap = props.snapshot();
-    startTransition(() => {
-      void (async () => {
-        try {
-          const saved = await api.post<ParkedCart>("/api/carts", {
-            id: props.activeCartId,
-            createdBy: props.createdBy,
-            location: props.location,
-            customer: snap.customer,
-            customerRef: snap.customerRef,
-            cart: snap.cart,
-          });
-          props.onSaved?.(saved);
-          flash("Cart saved");
-        } catch (e: any) {
-          flash(e?.message ?? "Save failed");
-        }
-      })();
+    void withBusy(async () => {
+      try {
+        const saved = await api.post<ParkedCart>("/api/carts", {
+          id: props.activeCartId,
+          createdBy: props.createdBy,
+          location: props.location,
+          customer: snap.customer,
+          customerRef: snap.customerRef,
+          cart: snap.cart,
+        });
+        props.onSaved?.(saved);
+        flash("Cart saved");
+      } catch (e: any) {
+        flash(e?.message ?? "Save failed");
+      }
     });
   }
 
   function openDrawer() {
     setOpen(true);
-    startTransition(() => {
-      void (async () => {
-        try {
-          const url = new URL("/api/carts", window.location.origin);
-          url.searchParams.set("location", props.location);
-          const carts = await api.get<ParkedCart[]>(url.pathname + url.search);
-          setCarts(carts);
-        } catch (e: any) {
-          flash(e?.message ?? "Could not load saved carts");
-        }
-      })();
+    void withBusy(async () => {
+      try {
+        const url = new URL("/api/carts", window.location.origin);
+        url.searchParams.set("location", props.location);
+        const next = await api.get<ParkedCart[]>(url.pathname + url.search);
+        setCarts(next);
+      } catch (e: any) {
+        flash(e?.message ?? "Could not load saved carts");
+      }
     });
   }
 
   function handleResume(id: string) {
-    startTransition(() => {
-      void (async () => {
-        try {
-          const cart = await api.get<ParkedCart>(`/api/carts/${id}`);
-          props.onResume(cart);
-          setOpen(false);
-        } catch (e: any) {
-          flash(e?.message ?? "Resume failed");
-        }
-      })();
+    void withBusy(async () => {
+      try {
+        const cart = await api.get<ParkedCart>(`/api/carts/${id}`);
+        props.onResume(cart);
+        setOpen(false);
+      } catch (e: any) {
+        flash(e?.message ?? "Resume failed");
+      }
     });
   }
 
   function handleCheckout(id: string) {
-    startTransition(() => {
-      void (async () => {
-        try {
-          const result = await api.post<{ ticket: string; customer: string }>(`/api/carts/${id}/commit`, {});
-          props.onCommitted(result.ticket);
-          setOpen(false);
-          flash(`Created ${result.ticket}`);
-        } catch (e: any) {
-          flash(e?.message ?? "Checkout failed");
-        }
-      })();
+    void withBusy(async () => {
+      try {
+        const result = await api.post<{ ticket: string; customer: string }>(`/api/carts/${id}/commit`, {});
+        props.onCommitted(result.ticket);
+        setOpen(false);
+        flash(`Created ${result.ticket}`);
+      } catch (e: any) {
+        flash(e?.message ?? "Checkout failed");
+      }
     });
   }
 
   function handleRemove(id: string) {
-    startTransition(() => {
-      void (async () => {
-        try {
-          await api.delete(`/api/carts/${id}`);
-          setCarts((c) => c.filter((x) => x.id !== id));
-        } catch (e: any) {
-          flash(e?.message ?? "Remove failed");
-        }
-      })();
+    void withBusy(async () => {
+      try {
+        await api.delete(`/api/carts/${id}`);
+        setCarts((c) => c.filter((x) => x.id !== id));
+      } catch (e: any) {
+        flash(e?.message ?? "Remove failed");
+      }
     });
   }
 
@@ -109,10 +99,17 @@ export function SaveCartControls(props: {
         <button onClick={handleSave} disabled={busy} style={btn}>Save cart</button>
         <button onClick={openDrawer} disabled={busy} style={btnGhost}>Saved carts</button>
       </div>
-      {toast && (<div style={{ position: "fixed", bottom: 24, right: 24, background: PANEL, color: CREAM, border: `0.5px solid ${BRASS}55`, borderRadius: 10, padding: "10px 16px", fontSize: 13, zIndex: 60 }}>{toast}</div>)}
+      {toast && (
+        <div style={{ position: "fixed", bottom: 24, right: 24, background: PANEL, color: CREAM, border: `0.5px solid ${BRASS}55`, borderRadius: 10, padding: "10px 16px", fontSize: 13, zIndex: 60 }}>
+          {toast}
+        </div>
+      )}
       {open && (
         <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 50 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 0, right: 0, height: "100%", width: 420, maxWidth: "90vw", background: PANEL, borderLeft: `0.5px solid ${BRASS}40`, padding: 24, overflowY: "auto", color: CREAM }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ position: "absolute", top: 0, right: 0, height: "100%", width: 420, maxWidth: "90vw", background: PANEL, borderLeft: `0.5px solid ${BRASS}40`, padding: 24, overflowY: "auto", color: CREAM }}
+          >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
               <span style={{ fontSize: 18 }}>Saved carts · {props.location}</span>
               <button onClick={() => setOpen(false)} style={{ ...btnGhost, padding: "4px 10px" }}>Close</button>
@@ -121,7 +118,9 @@ export function SaveCartControls(props: {
             {carts.map((c) => (
               <div key={c.id} style={{ border: "0.5px solid rgba(241,233,214,0.12)", borderRadius: 12, padding: 14, marginBottom: 12 }}>
                 <div style={{ fontSize: 15 }}>{c.label ?? "Walk-in"}</div>
-                <div style={{ fontSize: 12, color: DIM, marginBottom: 10 }}>{c.cart?.garments?.length ?? 0} garments · {c.cart?.lines?.length ?? 0} alterations · saved {timeAgo(c.updated_at)}</div>
+                <div style={{ fontSize: 12, color: DIM, marginBottom: 10 }}>
+                  {c.cart?.garments?.length ?? 0} garments · {c.cart?.lines?.length ?? 0} alterations · saved {timeAgo(c.updated_at)}
+                </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => handleResume(c.id)} disabled={busy} style={{ ...btnGhost, flex: 1 }}>Resume</button>
                   <button onClick={() => handleCheckout(c.id)} disabled={busy} style={{ ...btn, flex: 1 }}>Checkout</button>
