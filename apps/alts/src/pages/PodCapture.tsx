@@ -9,7 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import SignatureCanvas from "react-signature-canvas";
 import imageCompression from "browser-image-compression";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api } from "@ls/api-client";
 import { StatusPill } from "@ls/design";
 import { cn } from "@ls/design/utils";
 import "@alts/styles/alts-pos.css";
