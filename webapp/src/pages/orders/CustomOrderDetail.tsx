@@ -16,6 +16,7 @@ import { GARMENT_LABEL } from "@/lib/pricing";
 import { formatUSD, formatDateTime } from "@ls/design/format";
 import { cn } from "@ls/design/utils";
 import { ChargeTerminalButton } from "@/components/payments/ChargeTerminalButton";
+import { ChargeCardOnFileButton } from "@/components/payments/ChargeCardOnFileButton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@ls/design/ui/dialog";
 
 const STAGES: CustomOrder["status"][] = [
@@ -317,6 +318,17 @@ export default function CustomOrderDetail() {
                 amountDisplay={formatUSD(balanceDue)}
                 onSuccess={() => {
                   toast.success("Payment captured — refreshing…");
+                  qc.invalidateQueries({ queryKey: ["custom-orders", "detail", id] });
+                }}
+                onError={(msg) => toast.error(msg)}
+              />
+              <ChargeCardOnFileButton
+                fullWidth
+                invoiceId={invoiceName}
+                amountDisplay={formatUSD(balanceDue)}
+                customerLabel={order.customer?.name}
+                onSuccess={() => {
+                  toast.success("Card on file charged — refreshing…");
                   qc.invalidateQueries({ queryKey: ["custom-orders", "detail", id] });
                 }}
                 onError={(msg) => toast.error(msg)}

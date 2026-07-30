@@ -17,6 +17,7 @@ import {
   Check,
 } from "lucide-react";
 import { ChargeTerminalButton } from "@/components/payments/ChargeTerminalButton";
+import { ChargeCardOnFileButton } from "@/components/payments/ChargeCardOnFileButton";
 import { api } from "@ls/api-client";
 import { GlassCard } from "@ls/design";
 import { StatusPill } from "@ls/design";
@@ -380,6 +381,16 @@ export default function InvoiceDetail() {
                     amountCents={Math.round((invoice.outstandingAmount ?? 0) * 100)}
                     amountDisplay={formatUSD(invoice.outstandingAmount ?? 0)}
                     onSuccess={() => qc.invalidateQueries({ queryKey: ["invoice", id] })}
+                    onError={(msg) => toast.error(msg)}
+                  />
+                  <ChargeCardOnFileButton
+                    invoiceId={invoice.erpnextId}
+                    amountDisplay={formatUSD(invoice.outstandingAmount ?? 0)}
+                    customerLabel={invoice.customerName ?? undefined}
+                    onSuccess={() => {
+                      toast.success("Card on file charged — refreshing…");
+                      qc.invalidateQueries({ queryKey: ["invoice", id] });
+                    }}
                     onError={(msg) => toast.error(msg)}
                   />
                   <button

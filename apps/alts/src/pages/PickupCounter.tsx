@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { billingStatusLabel } from "@alts/lib/billingLabels";
+import { ChargeCardOnFileButton } from "@alts/components/payments/ChargeCardOnFileButton";
+import { ChargeTerminalButton } from "@alts/components/payments/ChargeTerminalButton";
 import "@alts/styles/alts-pos.css";
 
 type Ticket = {
@@ -390,6 +392,30 @@ export default function PickupCounter() {
                 {unpaid && (
                   <div className="space-y-2 mb-4">
                     <div className="caps text-signal-amber">Charge at Ready / pickup</div>
+                    <ChargeCardOnFileButton
+                      fullWidth
+                      ticketId={selected!}
+                      amountDisplay={money(total)}
+                      customerLabel={t.customer_name}
+                      onSuccess={() => {
+                        toast.success("Card on file charged — refreshing…");
+                        qc.invalidateQueries({ queryKey: ["pickup-ticket", selected] });
+                        qc.invalidateQueries({ queryKey: ["pickup-ready"] });
+                      }}
+                      onError={(msg) => toast.error(msg)}
+                    />
+                    <ChargeTerminalButton
+                      invoiceId={t.sales_invoice || selected!}
+                      ticketId={selected!}
+                      amountCents={Math.round(total * 100)}
+                      amountDisplay={money(total)}
+                      onSuccess={() => {
+                        toast.success("Payment captured — refreshing…");
+                        qc.invalidateQueries({ queryKey: ["pickup-ticket", selected] });
+                        qc.invalidateQueries({ queryKey: ["pickup-ready"] });
+                      }}
+                      onError={(msg) => toast.error(msg)}
+                    />
                     <button type="button" onClick={() => payLink.mutate()} className="btn-brass w-full h-12 text-[12px]">
                       Send pay link
                     </button>
@@ -398,7 +424,7 @@ export default function PickupCounter() {
                       onClick={() => nav(`/orders/alterations/${selected}`)}
                       className="btn-ghost w-full h-12 text-[12px]"
                     >
-                      Terminal / full ticket
+                      Open full ticket
                     </button>
                     <button
                       type="button"

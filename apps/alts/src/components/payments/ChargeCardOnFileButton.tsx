@@ -40,6 +40,7 @@ interface ChargeCardOnFileButtonProps {
   /** dollars — shown in confirm; server uses SI outstanding unless overridden */
   amountDollars?: number;
   customerLabel?: string;
+  /** stretch trigger button (pickup / dispatch sidebars) */
   fullWidth?: boolean;
   className?: string;
   onSuccess: () => void;

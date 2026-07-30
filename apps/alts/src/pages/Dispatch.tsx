@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { StatusPill } from "@ls/design";
+import { ChargeCardOnFileButton } from "@alts/components/payments/ChargeCardOnFileButton";
+import { ChargeTerminalButton } from "@alts/components/payments/ChargeTerminalButton";
 import "@alts/styles/alts-pos.css";
 
 type Ticket = {
@@ -567,6 +569,30 @@ export default function Dispatch() {
               {unpaid && (
                 <div className="space-y-2 mb-4">
                   <div className="caps text-signal-amber">Charge at Ready</div>
+                  <ChargeCardOnFileButton
+                    fullWidth
+                    ticketId={selected!}
+                    amountDisplay={money(Number(t.ticket_total) || 0)}
+                    customerLabel={t.customer_name}
+                    onSuccess={() => {
+                      toast.success("Card on file charged — refreshing…");
+                      qc.invalidateQueries({ queryKey: ["dispatch-ticket", selected] });
+                      qc.invalidateQueries({ queryKey: ["dispatch-ready"] });
+                    }}
+                    onError={(msg) => toast.error(msg)}
+                  />
+                  <ChargeTerminalButton
+                    invoiceId={t.sales_invoice || selected!}
+                    ticketId={selected!}
+                    amountCents={Math.round((Number(t.ticket_total) || 0) * 100)}
+                    amountDisplay={money(Number(t.ticket_total) || 0)}
+                    onSuccess={() => {
+                      toast.success("Payment captured — refreshing…");
+                      qc.invalidateQueries({ queryKey: ["dispatch-ticket", selected] });
+                      qc.invalidateQueries({ queryKey: ["dispatch-ready"] });
+                    }}
+                    onError={(msg) => toast.error(msg)}
+                  />
                   <button type="button" onClick={() => payLink.mutate()} className="btn-brass w-full h-12 text-[12px]">
                     {payLink.isPending ? "…" : "Send pay link"}
                   </button>
@@ -575,7 +601,7 @@ export default function Dispatch() {
                     onClick={() => nav(`/orders/alterations/${selected}`)}
                     className="btn-ghost w-full h-11 text-[12px]"
                   >
-                    Terminal / full ticket
+                    Open full ticket
                   </button>
                 </div>
               )}

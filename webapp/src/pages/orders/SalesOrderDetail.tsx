@@ -27,6 +27,7 @@ import { api } from "@ls/api-client"
 import { formatUSD, formatDate } from "@ls/design/format"
 import { cn } from "@ls/design/utils"
 import { ChargeTerminalButton } from "@/components/payments/ChargeTerminalButton"
+import { ChargeCardOnFileButton } from "@/components/payments/ChargeCardOnFileButton"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -539,6 +540,15 @@ export default function SalesOrderDetail() {
                               amountDisplay={formatUSD(inv.outstanding_amount)}
                               onSuccess={() => {
                                 toast.success("Payment captured — refreshing…")
+                                qc.invalidateQueries({ queryKey: ["sales-order-detail", id] })
+                              }}
+                              onError={(msg) => toast.error(msg)}
+                            />
+                            <ChargeCardOnFileButton
+                              invoiceId={inv.name}
+                              amountDisplay={formatUSD(inv.outstanding_amount)}
+                              onSuccess={() => {
+                                toast.success("Card on file charged — refreshing…")
                                 qc.invalidateQueries({ queryKey: ["sales-order-detail", id] })
                               }}
                               onError={(msg) => toast.error(msg)}
