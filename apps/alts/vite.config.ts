@@ -3,7 +3,6 @@ import react from "@vitejs/plugin-react-swc";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 
-const webapp = path.resolve(__dirname, "../../webapp/src");
 const pkgs = path.resolve(__dirname, "../../packages");
 
 /**  POS shell + phone-tier routes — precache so floor / iPhone survive wifi drops */
@@ -151,7 +150,7 @@ export default defineConfig({
       { find: /^@ls\/design\/glass\/(.*)$/, replacement: path.join(pkgs, "design/src/glass") + "/$1" },
       { find: /^@ls\/design$/, replacement: path.join(pkgs, "design/src/index.ts") },
       // HER-64 step 2: all @/ deps extracted — alts is now self-contained
-      // { find: "@", replacement: webapp }, // REMOVED — no @/ imports remain
+      // { find: "@", replacement: path.resolve(__dirname, "../../webapp/src") }, // REMOVED — no @/ imports remain
     ],
     dedupe: ["react", "react-dom", "@tanstack/react-query", "clsx", "tailwind-merge"],
   },
