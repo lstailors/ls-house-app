@@ -103,6 +103,11 @@ def normalize_token(raw: str) -> dict:
             if m:
                 return {"token": m.group(1), "hint_type": "alteration_ticket",
                         "hint_name": m.group(1), "original_url": original_url}
+            # Thermal / e-ticket QR: /t/{ALT-…} · /e-ticket/{ALT-…}
+            m = re.match(r"^/(?:t|e-ticket)/([^/]+)$", path)
+            if m:
+                return {"token": m.group(1), "hint_type": "alteration_ticket",
+                        "hint_name": m.group(1), "original_url": original_url}
 
         # app.lstailors.com/customers/{id} · /pay/{invoice}
         if any(domain == d or domain.endswith("." + d) for d in APP_DOMAINS):

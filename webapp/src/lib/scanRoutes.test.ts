@@ -5,8 +5,11 @@
 import {
   parseGarmentTagUrl,
   parseCustomerUrl,
+  parseTicketUrl,
+  parsePayUrl,
   routeForScannerResult,
   openPathForResult,
+  routeFromRawScan,
 } from "./scanRoutes";
 import type { ScannerResult } from "../../../backend/src/types";
 
@@ -19,9 +22,28 @@ const g = parseGarmentTagUrl("https://alts.lstailors.com/g/ALT-NYC-2026-00042/G1
 assert(g?.ticket === "ALT-NYC-2026-00042" && g?.garment === "G1", "garment url");
 assert(parseGarmentTagUrl("/g/ALT-1/G2")?.garment === "G2", "garment path only");
 
+// thermal ticket QR (what C photographed)
+assert(
+  parseTicketUrl("https://alts.lstailors.com/t/ALT-NYC-2026-00061") === "ALT-NYC-2026-00061",
+  "thermal /t/ url",
+);
+assert(parseTicketUrl("https://alts.lstailors.com/e-ticket/ALT-NYC-1") === "ALT-NYC-1", "e-ticket");
+assert(parseTicketUrl("ALT-NYC-2026-00061") === "ALT-NYC-2026-00061", "bare ALT");
+
 // customer
 assert(parseCustomerUrl("https://app.lstailors.com/customers/CUST-0001") === "CUST-0001", "customer url");
 assert(parseCustomerUrl("/customers/new") === null, "customer new ignored");
+
+// pay
+assert(parsePayUrl("https://app.lstailors.com/pay/SINV-1") === "SINV-1", "pay url");
+assert(parsePayUrl("SINV-NYC-1") === "SINV-NYC-1", "bare sinv");
+
+// fast route from raw thermal scan → ticket detail (not public e-ticket)
+const fast = routeFromRawScan("https://alts.lstailors.com/t/ALT-NYC-2026-00061");
+assert(
+  fast.kind === "path" && fast.path === "/orders/alterations/ALT-NYC-2026-00061",
+  "fast thermal → TicketDetail",
+);
 
 // ticket auto-route
 const ticket: ScannerResult = {

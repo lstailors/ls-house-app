@@ -14,6 +14,18 @@ function metaStr(meta: Record<string, unknown> | undefined, key: string): string
   return typeof v === "string" && v.trim() ? v.trim() : "";
 }
 
+function pathOf(decoded: string): string {
+  const value = decoded.trim();
+  if (!value) return "";
+  try {
+    return new URL(value).pathname;
+  } catch {
+    // bare path or host/path without scheme
+    const slash = value.indexOf("/");
+    return slash >= 0 ? value.slice(value.indexOf("/", value.startsWith("http") ? 8 : 0)) : value;
+  }
+}
+
 /** Garment tag QR: any host `/g/{ticket}/{garment}`. */
 export function parseGarmentTagUrl(decoded: string): { ticket: string; garment: string } | null {
   const value = decoded.trim();
@@ -36,6 +48,41 @@ export function parseGarmentTagUrl(decoded: string): { ticket: string; garment: 
   return { ticket, garment };
 }
 
+/**
+ * Thermal ticket / e-ticket QR:
+ *   https://alts.lstailors.com/t/ALT-NYC-2026-00061
+ *   https://alts.lstailors.com/e-ticket/ALT-…
+ *   bare ALT-NYC-… / LS-ALT-…
+ * Staff scanner opens TicketDetail (not the public e-ticket).
+ */
+export function parseTicketUrl(decoded: string): string | null {
+  const value = decoded.trim();
+  if (!value) return null;
+
+  // Bare ticket name
+  if (/^(ALT-|LS-ALT-)/i.test(value) && !/\s/.test(value) && value.length < 80) {
+    return value;
+  }
+
+  let path: string;
+  try {
+    path = new URL(value).pathname;
+  } catch {
+    const m = value.match(/\/(?:t|e-ticket)\/([^/?#]+)/i);
+    if (m) return decodeURIComponent(m[1]);
+    const alt = value.match(/\b((?:LS-)?ALT-[A-Z0-9-]+)\b/i);
+    return alt ? alt[1] : null;
+  }
+
+  const m = path.match(/^\/(?:t|e-ticket)\/([^/]+)\/?$/i);
+  if (m) return decodeURIComponent(m[1]);
+
+  const orders = path.match(/^\/orders\/alterations\/([^/]+)\/?$/i);
+  if (orders) return decodeURIComponent(orders[1]);
+
+  return null;
+}
+
 /** Customer deep-link: /customers/{id} on any host. */
 export function parseCustomerUrl(decoded: string): string | null {
   const value = decoded.trim();
@@ -52,6 +99,25 @@ export function parseCustomerUrl(decoded: string): string | null {
   const id = decodeURIComponent(m[1]);
   if (!id || id === "new") return null;
   return id;
+}
+
+/** Invoice / pay deep link. */
+export function parsePayUrl(decoded: string): string | null {
+  const value = decoded.trim();
+  if (!value) return null;
+  if (/^(SINV-|ACC-SINV-|ACC-SI-)/i.test(value) && !/\s/.test(value)) return value;
+  let path: string;
+  try {
+    path = new URL(value).pathname;
+  } catch {
+    const m = value.match(/\/pay\/([^/?#]+)/i);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  const m = path.match(/^\/pay\/([^/]+)\/?$/i);
+  if (m) return decodeURIComponent(m[1]);
+  const my = path.match(/^\/i\/([^/]+)\/?$/i);
+  if (my) return decodeURIComponent(my[1]);
+  return null;
 }
 
 /**
@@ -71,7 +137,6 @@ export function routeForScannerResult(result: ScannerResult): ScanNav {
 
     case "sales_invoice":
     case "payment_link": {
-      // Prefer the ticket that minted the SI — charge lives on TicketDetail / pickup.
       const ticketRef = metaStr(meta, "alteration_ticket_ref") || metaStr(meta, "alteration_ticket");
       if (ticketRef) {
         return {
@@ -80,7 +145,6 @@ export function routeForScannerResult(result: ScannerResult): ScanNav {
           replace: true,
         };
       }
-      // Staff pay surface (public pay page also works authed)
       return { kind: "path", path: `/pay/${encodeURIComponent(name)}`, replace: true };
     }
 
@@ -88,7 +152,6 @@ export function routeForScannerResult(result: ScannerResult): ScanNav {
       return { kind: "path", path: `/deliveries/${encodeURIComponent(name)}`, replace: true };
 
     case "tailor_transfer":
-      // Keep result sheet — confirm_receipt lives there; Transfers has no deep-link yet.
       return { kind: "none" };
 
     case "garment_tag": {
@@ -101,17 +164,13 @@ export function routeForScannerResult(result: ScannerResult): ScanNav {
           replace: true,
         };
       }
-      // Tag tokens that resolved as delivery land here via type rewrite in ERP
       return { kind: "none" };
     }
 
-    case "custom_order": {
-      // No dedicated alts custom-order detail yet — stay on sheet / ERP open
+    case "custom_order":
       return { kind: "none" };
-    }
 
     default:
-      // customer (if backend adds it) or unknown
       if (type === ("customer" as ScannerType) || result.doctype === "Customer") {
         return { kind: "path", path: `/customers/${encodeURIComponent(name)}`, replace: true };
       }
@@ -128,7 +187,6 @@ export function openPathForResult(result: ScannerResult): ScanNav {
     return { kind: "path", path: `/customers/${encodeURIComponent(result.name)}` };
   }
 
-  // Fallback: Frappe desk
   if (result.ok && result.name && result.doctype) {
     const slug = result.doctype.trim().toLowerCase().replace(/\s+/g, "-");
     return {
@@ -136,5 +194,48 @@ export function openPathForResult(result: ScannerResult): ScanNav {
       url: `https://erp.lstailors.com/app/${slug}/${encodeURIComponent(result.name)}`,
     };
   }
+  return { kind: "none" };
+}
+
+/** Fast client-side routing before any network call. */
+export function routeFromRawScan(decoded: string): ScanNav {
+  const garment = parseGarmentTagUrl(decoded);
+  if (garment) {
+    return {
+      kind: "path",
+      path: `/g/${encodeURIComponent(garment.ticket)}/${encodeURIComponent(garment.garment)}`,
+      replace: true,
+    };
+  }
+
+  const ticket = parseTicketUrl(decoded);
+  if (ticket) {
+    return {
+      kind: "path",
+      path: `/orders/alterations/${encodeURIComponent(ticket)}`,
+      replace: true,
+    };
+  }
+
+  const customer = parseCustomerUrl(decoded);
+  if (customer) {
+    return {
+      kind: "path",
+      path: `/customers/${encodeURIComponent(customer)}`,
+      replace: true,
+    };
+  }
+
+  const pay = parsePayUrl(decoded);
+  if (pay) {
+    return {
+      kind: "path",
+      path: `/pay/${encodeURIComponent(pay)}`,
+      replace: true,
+    };
+  }
+
+  // silence unused helper if tree-shaken poorly
+  void pathOf;
   return { kind: "none" };
 }
