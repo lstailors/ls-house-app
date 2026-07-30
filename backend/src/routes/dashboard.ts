@@ -4,9 +4,14 @@
 import { Hono } from "hono";
 import { canSeeFinancials, getAuthedUser, resolveLocationCode } from "../lib/scope";
 import { erpList } from "../lib/erp";
-import { listSmsMessagesFiltered } from "../lib/erpnext/agents";
+import {
+  listSmsMessagesFiltered,
+  insertAgentBrief,
+  listAgentBriefsFiltered,
+} from "../lib/erpnext/agents";
 import { listLocations } from "../lib/erpnext/locations";
 import { DT } from "../lib/erpnext/doctypes";
+import { grokChat } from "../lib/grok";
 
 export const dashboardRouter = new Hono();
 
@@ -438,4 +443,332 @@ dashboardRouter.get("/financials", async (c) => {
       arOutstanding, invoiceCount,
     },
   });
+});
+
+// ── Rocco floor brief (alts home) ────────────────────────────────────────────
+// GET  /api/dashboard/floor-brief          → latest cached brief + stats (authed)
+// POST /api/dashboard/floor-brief/refresh  → force regenerate (authed FOH)
+// GET  /api/dashboard/floor-brief/trigger  → Vercel cron (no auth, work-week)
+
+const ROCCO_FLOOR_SOURCE = "rocco";
+const ROCCO_FLOOR_TYPE = "floor_brief";
+const FLOOR_BRIEF_MAX_AGE_MS = 2.5 * 60 * 60 * 1000; // 2.5h
+
+function nycToday(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function nycNowLabel(): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date());
+}
+
+function isWorkWeekNy(): boolean {
+  // Mon–Sat (0=Sun). Shop closed Sunday; summer Mon–Fri still get Sat brief if open.
+  const wd = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+  }).format(new Date());
+  return wd !== "Sun";
+}
+
+async function collectFloorSnapshot() {
+  const today = nycToday();
+  const [tickets, deliveries, openInvoices] = await Promise.all([
+    erpList<any>("Alteration Ticket", {
+      filters: [["workflow_state", "not in", ["Picked Up", "Cancelled", "Delivered"]]],
+      fields: [
+        "name",
+        "customer_name",
+        "workflow_state",
+        "due_date",
+        "origin_location",
+        "assigned_tailor",
+        "is_rush",
+        "payment_status",
+        "delivery_method",
+      ],
+      limit: 400,
+      order_by: "due_date asc",
+    }).catch(() => [] as any[]),
+    erpList<any>("LSH Delivery", {
+      filters: [["lsh_status", "not in", ["Delivered", "Cancelled", "Failed"]]],
+      fields: [
+        "name",
+        "customer_name",
+        "lsh_status",
+        "lsh_scheduled_date",
+        "lsh_scheduled_at",
+        "lsh_courier_name",
+        "lsh_origin_location",
+      ],
+      limit: 200,
+      order_by: "modified desc",
+    }).catch(() => [] as any[]),
+    erpList<any>("Sales Invoice", {
+      filters: [
+        ["docstatus", "=", 1],
+        ["outstanding_amount", ">", 0],
+      ],
+      fields: ["name", "customer_name", "outstanding_amount", "status", "due_date", "alteration_ticket_ref"],
+      limit: 100,
+      order_by: "due_date asc",
+    }).catch(() => [] as any[]),
+  ]);
+
+  let open = 0;
+  let ready = 0;
+  let dueToday = 0;
+  let overdue = 0;
+  let outToTailors = 0;
+  let rush = 0;
+  const dueTodayNames: string[] = [];
+  const overdueNames: string[] = [];
+  const readyNames: string[] = [];
+
+  for (const t of tickets) {
+    const st = t.workflow_state ?? "";
+    open += 1;
+    if (st === "Ready") {
+      ready += 1;
+      if (readyNames.length < 8) readyNames.push(`${t.name} · ${t.customer_name || "—"}`);
+    }
+    if (t.is_rush) rush += 1;
+    if (t.due_date) {
+      if (t.due_date < today) {
+        overdue += 1;
+        if (overdueNames.length < 10) overdueNames.push(`${t.name} · ${t.customer_name || "—"} due ${t.due_date}`);
+      } else if (t.due_date === today) {
+        dueToday += 1;
+        if (dueTodayNames.length < 10) dueTodayNames.push(`${t.name} · ${t.customer_name || "—"}`);
+      }
+    }
+    const ol = String(t.origin_location || "").toLowerCase();
+    if (ol.includes("home") || (t.assigned_tailor && ol && ol !== "nyc" && ol !== "hou")) {
+      outToTailors += 1;
+    }
+  }
+
+  let outForDelivery = 0;
+  let queuedDelivery = 0;
+  let deliveryToday = 0;
+  const deliveryNames: string[] = [];
+  for (const d of deliveries) {
+    const st = String(d.lsh_status || "");
+    if (st === "Out for Delivery") {
+      outForDelivery += 1;
+      if (deliveryNames.length < 8) deliveryNames.push(`${d.name} · ${d.customer_name || "—"} (out)`);
+    } else if (st === "Queued" || st === "Scheduled") {
+      queuedDelivery += 1;
+      if (deliveryNames.length < 8) deliveryNames.push(`${d.name} · ${d.customer_name || "—"} (${st})`);
+    }
+    const sched = String(d.lsh_scheduled_date || d.lsh_scheduled_at || "").slice(0, 10);
+    if (sched === today) deliveryToday += 1;
+  }
+
+  const arTotal = openInvoices.reduce((s, i) => s + Number(i.outstanding_amount || 0), 0);
+  const arNames = openInvoices.slice(0, 6).map(
+    (i) =>
+      `${i.name} · ${i.customer_name || "—"} $${Number(i.outstanding_amount || 0).toFixed(0)} (${i.status})`,
+  );
+
+  const stats = {
+    open,
+    ready,
+    dueToday,
+    overdue,
+    outToTailors,
+    rush,
+    outForDelivery,
+    queuedDelivery,
+    deliveryToday,
+    openInvoices: openInvoices.length,
+    arOutstanding: Math.round(arTotal * 100) / 100,
+  };
+
+  const dataBlock = [
+    `TIME: ${nycNowLabel()} (America/New_York)`,
+    `ALTERATIONS open=${open} ready_pickup=${ready} due_today=${dueToday} overdue=${overdue} out_to_tailors=${outToTailors} rush=${rush}`,
+    dueTodayNames.length ? `DUE TODAY: ${dueTodayNames.join("; ")}` : "DUE TODAY: none listed",
+    overdueNames.length ? `OVERDUE: ${overdueNames.join("; ")}` : "OVERDUE: none",
+    readyNames.length ? `READY: ${readyNames.join("; ")}` : "READY: none",
+    `DELIVERIES active queued/scheduled=${queuedDelivery} out_for_delivery=${outForDelivery} scheduled_today=${deliveryToday}`,
+    deliveryNames.length ? `DELIVERY BOARD: ${deliveryNames.join("; ")}` : "DELIVERY BOARD: quiet",
+    `OPEN AR: ${openInvoices.length} invoices · $${arTotal.toFixed(0)}`,
+    arNames.length ? `TOP AR: ${arNames.join("; ")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return { stats, dataBlock, today };
+}
+
+async function generateRoccoFloorBrief(force = false): Promise<{
+  body: string;
+  title: string;
+  stats: Record<string, number>;
+  createdAt: string;
+  fromCache: boolean;
+}> {
+  // Fresh cache?
+  if (!force) {
+    try {
+      const rows = await listAgentBriefsFiltered({
+        source: ROCCO_FLOOR_SOURCE,
+        type: ROCCO_FLOOR_TYPE,
+        limit: 1,
+      });
+      const row = rows[0];
+      if (row?.body && row.creation) {
+        const age = Date.now() - new Date(row.creation).getTime();
+        if (age >= 0 && age < FLOOR_BRIEF_MAX_AGE_MS) {
+          let stats: Record<string, number> = {};
+          try {
+            const meta = typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata;
+            if (meta?.stats) stats = meta.stats;
+          } catch {
+            /* ignore */
+          }
+          return {
+            body: row.body,
+            title: row.title || "Rocco floor brief",
+            stats,
+            createdAt: row.creation,
+            fromCache: true,
+          };
+        }
+      }
+    } catch {
+      /* regenerate */
+    }
+  }
+
+  const snap = await collectFloorSnapshot();
+  let body = "";
+  try {
+    body = await grokChat(
+      [
+        {
+          role: "system",
+          content:
+            "You are Rocco — production and delivery manager at L&S Custom Tailors (alts floor). " +
+            "You own the floor from cradle to delivery. Be no-nonsense, floor-smart, and direct. " +
+            "Write a SHORT floor briefing for FOH/staff on the alts tablet home screen. " +
+            "3–6 short lines or tight sentences. Lead with what is behind, due today, ready for pickup, and deliveries. " +
+            "Mention open AR only if material. No markdown asterisks, no emoji spam. " +
+            "End with: — Rocco",
+        },
+        {
+          role: "user",
+          content: `Floor sweep data:\n${snap.dataBlock}\n\nWrite the floor briefing now.`,
+        },
+      ],
+      { maxTokens: 320, temperature: 0.25 },
+    );
+  } catch {
+    body = "";
+  }
+
+  if (!body) {
+    const s = snap.stats;
+    body =
+      `Floor · ${nycNowLabel()}. ` +
+      `${s.overdue} overdue · ${s.dueToday} due today · ${s.ready} ready pickup · ` +
+      `${s.outForDelivery} out for delivery · ${s.openInvoices} open invoices ($${s.arOutstanding}). ` +
+      `— Rocco`;
+  }
+
+  const hour = parseInt(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      hour12: false,
+    }).format(new Date()),
+    10,
+  );
+  const period = hour < 11 ? "Morning" : hour < 15 ? "Midday" : hour < 18 ? "Afternoon" : "Close";
+  const title = `Rocco floor · ${period}`;
+
+  try {
+    await insertAgentBrief({
+      type: ROCCO_FLOOR_TYPE,
+      title,
+      body,
+      severity: snap.stats.overdue > 0 ? "warning" : "info",
+      source: ROCCO_FLOOR_SOURCE,
+      metadata: JSON.stringify({
+        channel: "alts_floor_sweep",
+        stats: snap.stats,
+        generated_at: new Date().toISOString(),
+      }),
+    });
+  } catch (e: any) {
+    console.error("[floor-brief] save:", e?.message);
+  }
+
+  return {
+    body,
+    title,
+    stats: snap.stats,
+    createdAt: new Date().toISOString(),
+    fromCache: false,
+  };
+}
+
+/** Latest Rocco floor brief for alts home. */
+dashboardRouter.get("/floor-brief", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (user.role === "driver") return c.json({ error: { message: "Forbidden" } }, 403);
+
+  try {
+    const brief = await generateRoccoFloorBrief(false);
+    return c.json({ data: brief });
+  } catch (e: any) {
+    console.error("[floor-brief] get:", e?.message);
+    return c.json({ error: { message: e?.message ?? "Floor brief failed" } }, 502);
+  }
+});
+
+/** Force a fresh Rocco sweep (FOH refresh button). */
+dashboardRouter.post("/floor-brief/refresh", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (user.role === "driver") return c.json({ error: { message: "Forbidden" } }, 403);
+
+  try {
+    const brief = await generateRoccoFloorBrief(true);
+    return c.json({ data: brief });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message ?? "Refresh failed" } }, 502);
+  }
+});
+
+/**
+ * Vercel cron — work-week floor sweep every few hours.
+ * No auth (same pattern as sofia/briefing/trigger).
+ */
+dashboardRouter.get("/floor-brief/trigger", async (c) => {
+  if (!isWorkWeekNy()) {
+    return c.json({ ok: true, skipped: true, reason: "weekend" });
+  }
+  try {
+    const brief = await generateRoccoFloorBrief(true);
+    return c.json({ ok: true, title: brief.title, fromCache: brief.fromCache, stats: brief.stats });
+  } catch (e: any) {
+    console.error("[floor-brief/trigger]", e?.message);
+    return c.json({ ok: false, error: e?.message ?? "failed" }, 500);
+  }
 });

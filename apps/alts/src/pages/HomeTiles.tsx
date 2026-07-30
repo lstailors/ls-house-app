@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useMe } from "@ls/auth/session";
 import { signOut } from "@ls/auth/authClient";
-import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { useMemo } from "react";
@@ -143,6 +143,40 @@ export default function HomeTiles() {
     staleTime: 30_000,
     refetchInterval: 60_000,
     retry: 2,
+  });
+
+
+  type FloorBrief = {
+    body: string;
+    title: string;
+    stats?: Record<string, number>;
+    createdAt: string;
+    fromCache: boolean;
+  };
+
+  const floorBrief = useQuery({
+    queryKey: ["alts-floor-brief"],
+    queryFn: async (): Promise<FloorBrief> => {
+      const res = await api.raw("/api/dashboard/floor-brief");
+      const j = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(j?.error?.message || "Floor brief failed");
+      return (j?.data ?? j) as FloorBrief;
+    },
+    staleTime: 5 * 60_000,
+    refetchInterval: 10 * 60_000,
+    retry: 1,
+  });
+
+  const refreshBrief = useMutation({
+    mutationFn: async () => {
+      const res = await api.raw("/api/dashboard/floor-brief/refresh", { method: "POST" });
+      const j = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(j?.error?.message || "Refresh failed");
+      return (j?.data ?? j) as FloorBrief;
+    },
+    onSuccess: (data) => {
+      qc.setQueryData(["alts-floor-brief"], data);
+    },
   });
 
   const empty: Stats = {
@@ -338,8 +372,8 @@ export default function HomeTiles() {
   ];
 
   return (
-    <div className="alts-root home-007 flex flex-col h-[100dvh] overflow-hidden px-[26px] pt-[18px] pb-4">
-      <header className="flex items-center gap-3.5 pb-4 border-b border-brass/15 shrink-0">
+    <div className="alts-root home-007 flex flex-col h-[100dvh] overflow-hidden px-[26px] pt-[18px] pb-3">
+      <header className="flex items-center gap-3.5 pb-3 border-b border-brass/15 shrink-0">
         <div className="seal">LS</div>
         <div className="min-w-0">
           <div className="display text-[22px] leading-tight">L&S House</div>
@@ -368,9 +402,9 @@ export default function HomeTiles() {
         </button>
       </header>
 
-      <div className="flex flex-wrap items-end gap-3 py-5 shrink-0">
+      <div className="flex flex-wrap items-end gap-3 pt-4 pb-3 shrink-0">
         <div>
-          <h1 className="display text-[34px] leading-none">
+          <h1 className="display text-[32px] leading-none">
             {timeGreeting()}, {greetingName(me?.name)}
           </h1>
           <p className="text-xs text-[var(--cd)] mt-1.5">{storeHoursLine()}</p>
@@ -385,15 +419,132 @@ export default function HomeTiles() {
           </Link>
         )}
         {s.overdue > 0 && (
-          <div className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-[rgba(217,123,108,0.42)] bg-[rgba(217,123,108,0.12)] text-xs">
+          <Link
+            to="/orders/alterations?filter=overdue"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-[rgba(217,123,108,0.42)] bg-[rgba(217,123,108,0.12)] text-xs hover:border-[rgba(217,123,108,0.7)]"
+          >
             <b className="text-[var(--ro)] font-bold">{s.overdue}</b> overdue
-          </div>
+          </Link>
         )}
         {s.dueToday > 0 && (
-          <div className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-[rgba(232,168,92,0.4)] bg-[rgba(232,168,92,0.12)] text-xs">
+          <Link
+            to="/orders/alterations?filter=due_today"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-[rgba(232,168,92,0.4)] bg-[rgba(232,168,92,0.12)] text-xs hover:border-[rgba(232,168,92,0.7)]"
+          >
             <b className="text-[var(--am)] font-bold">{s.dueToday}</b> due today
-          </div>
+          </Link>
         )}
+      </div>
+
+      {/* Rocco AI floor brief — top of board */}
+      <div className="shrink-0 mb-3 rounded-[18px] border border-brass/30 bg-gradient-to-br from-brass/15 via-black/30 to-black/20 px-4 py-3.5">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="w-7 h-7 rounded-full border border-brass/40 bg-brass/15 grid place-items-center text-[11px] font-bold text-brass-light">
+            R
+          </span>
+          <div className="min-w-0">
+            <div className="text-[11px] font-bold tracking-[0.16em] uppercase text-brass-light">
+              Rocco · floor brief
+            </div>
+            <div className="text-[10px] text-[var(--cd)] truncate">
+              {floorBrief.data?.title || "Daily floor sweep"}
+              {floorBrief.data?.fromCache ? " · cached" : floorBrief.data ? " · fresh" : ""}
+            </div>
+          </div>
+          <div className="flex-1" />
+          <button
+            type="button"
+            disabled={refreshBrief.isPending || floorBrief.isFetching}
+            onClick={() => refreshBrief.mutate()}
+            className="h-9 px-3 rounded-full border border-brass/35 bg-black/30 text-[10px] font-bold tracking-widest uppercase text-brass-light hover:border-brass/55 disabled:opacity-50"
+          >
+            {refreshBrief.isPending ? "Sweeping…" : "Sweep now"}
+          </button>
+        </div>
+        {floorBrief.isLoading && !floorBrief.data ? (
+          <p className="text-sm text-[var(--cd)] leading-relaxed">Rocco is reading the floor…</p>
+        ) : floorBrief.isError ? (
+          <p className="text-sm text-[var(--am)] leading-relaxed">
+            Brief unavailable — counts above still work. Try Sweep now.
+          </p>
+        ) : (
+          <p className="text-sm text-cream/95 leading-relaxed whitespace-pre-wrap">
+            {floorBrief.data?.body || "No brief yet — hit Sweep now."}
+          </p>
+        )}
+      </div>
+
+      {/* Clickable stats */}
+      <div className="rounded-[15px] border border-brass/15 bg-black/25 grid grid-cols-2 sm:grid-cols-3 overflow-hidden shrink-0 mb-3">
+        {(
+          [
+            { to: "/shop-floor", lab: "Open tickets", val: s.open, tone: "" },
+            { to: "/pickup", lab: "Ready for pickup", val: s.ready, tone: "text-[var(--em)]" },
+            { to: "/transfers", lab: "Out to tailors", val: s.outToTailors, tone: "text-[var(--am)]" },
+            { to: "/deliveries", lab: "Out for delivery", val: s.outForDelivery, tone: "text-[var(--am)]" },
+            { to: "/deliveries", lab: "Delivered today", val: s.deliveredToday, tone: "text-[var(--em)]" },
+            {
+              to: "/shop-floor",
+              lab: "Overdue",
+              val: s.overdue,
+              tone: "text-[var(--ro)]",
+            },
+          ] as const
+        ).map((cell, i) => (
+          <Link
+            key={cell.lab}
+            to={cell.to}
+            className={cn(
+              "px-[18px] py-[12px] flex items-baseline gap-2.5 hover:bg-white/[0.04] transition-colors min-h-[52px]",
+              i % 2 === 0 && "border-r border-brass/10",
+              i < 4 && "border-b border-brass/10",
+              i === 4 && "border-b border-r border-brass/10 sm:border-b",
+              i === 5 && "border-b border-brass/10 sm:border-b-0",
+            )}
+          >
+            <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">{cell.lab}</span>
+            <span className={cn("display text-2xl ml-auto", cell.tone)}>{cell.val}</span>
+          </Link>
+        ))}
+        <div className="col-span-2 sm:col-span-3 flex items-center gap-2 px-[18px] py-[9px] text-xs text-[var(--cd)] border-t border-brass/10">
+          <span
+            className={cn(
+              "w-[7px] h-[7px] rounded-full",
+              stats.isError
+                ? "bg-[var(--am)] shadow-[0_0_8px_rgba(232,168,92,0.7)]"
+                : "bg-[var(--em)] shadow-[0_0_8px_rgba(79,191,142,0.7)]",
+            )}
+          />
+          {stats.isError ? "ERPNext unreachable · retry above" : `ERPNext live · synced ${syncAge}`}
+          <button
+            type="button"
+            onClick={() => stats.refetch()}
+            className="ml-auto text-[10px] font-bold tracking-widest uppercase text-brass-light hover:text-cream"
+          >
+            Refresh counts
+          </button>
+        </div>
+      </div>
+
+      {/* Quick actions */}
+      <div className="flex flex-wrap gap-2 shrink-0 pb-3">
+        {[
+          { to: "/dispatch", lab: "Charge & dispatch" },
+          { to: "/invoices", lab: `Invoices${s.openInvoices ? ` · ${s.openInvoices}` : ""}` },
+          { to: "/quote", lab: "Send quote" },
+          { to: "/orders/alterations", lab: "Orders" },
+          { to: "/parked", lab: `Parked${s.parked ? ` · ${s.parked}` : ""}` },
+          { to: "/deliveries", lab: "Deliveries" },
+          { to: "/pickup", lab: "Pickup" },
+        ].map((l) => (
+          <Link
+            key={l.to}
+            to={l.to}
+            className="h-10 px-4 rounded-full border border-brass/25 bg-black/25 text-xs font-bold tracking-widest uppercase text-brass-light inline-flex items-center hover:border-brass/50 active:scale-[0.98]"
+          >
+            {l.lab}
+          </Link>
+        ))}
       </div>
 
       {stats.isError && (
@@ -406,27 +557,26 @@ export default function HomeTiles() {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 grid grid-cols-2 lg:grid-cols-3 auto-rows-fr gap-[15px]">
+      <div className="flex-1 min-h-0 grid grid-cols-2 lg:grid-cols-3 auto-rows-fr gap-[12px] overflow-y-auto pb-1">
         {tiles.map((t) => {
           const className = cn(
-            "relative rounded-[22px] border p-[22px] flex flex-col min-h-0 overflow-hidden",
+            "relative rounded-[22px] border p-[18px] flex flex-col min-h-[120px] overflow-hidden",
             "transition-all duration-150 active:scale-[0.988] cursor-pointer group",
             "bg-gradient-to-br from-white/[0.045] to-white/[0.012]",
             "border-brass/25 hover:border-brass/50 hover:-translate-y-0.5 hover:shadow-[var(--sl)] hover:from-white/[0.085] hover:to-white/[0.025]",
             t.primary &&
               "from-brass/20 to-brass/5 border-brass/50 hover:from-brass/28 hover:to-brass/8",
             t.external && "border-dashed border-brass/40",
-            // HER-75 Deliveries tile — violet-tinted border (board-owned surface)
             t.key === "deliveries" &&
               "border-[rgba(155,139,196,0.42)] hover:border-[rgba(155,139,196,0.65)] from-[rgba(155,139,196,0.10)] to-white/[0.012]",
           );
 
-          const body = (
+          const tileBody = (
             <>
               {t.badge != null && t.badge > 0 && (
                 <span
                   className={cn(
-                    "absolute top-[18px] right-[18px] min-w-[34px] h-[34px] px-[11px] rounded-full grid place-items-center text-sm font-bold border",
+                    "absolute top-[14px] right-[14px] min-w-[30px] h-[30px] px-[10px] rounded-full grid place-items-center text-sm font-bold border",
                     t.badgeKind === "alert" && "bg-[rgba(217,123,108,0.9)] border-transparent text-white",
                     t.badgeKind === "warn" && "bg-[rgba(232,168,92,0.9)] border-transparent text-forest-deep",
                     (!t.badgeKind || t.badgeKind === "neutral") && "bg-white/[0.07] border-brass/30 text-cream",
@@ -435,17 +585,22 @@ export default function HomeTiles() {
                   {t.badge}
                 </span>
               )}
-              <div className={cn("text-brass-light opacity-90 mb-auto", t.primary && "text-[#E3C48F] opacity-100")}>
+              <div
+                className={cn(
+                  "text-brass-light opacity-90 mb-auto scale-90 origin-top-left",
+                  t.primary && "text-[#E3C48F] opacity-100",
+                )}
+              >
                 {t.icon}
               </div>
-              <h2 className={cn("display mt-3.5 leading-tight", t.external ? "text-[23px]" : "text-[26px]")}>
+              <h2 className={cn("display mt-2 leading-tight", t.external ? "text-[20px]" : "text-[22px]")}>
                 {t.title}
               </h2>
-              <p className="text-xs text-[var(--cd)] mt-1.5 leading-snug pr-8">{t.sub}</p>
+              <p className="text-[11px] text-[var(--cd)] mt-1 leading-snug pr-7">{t.sub}</p>
               {t.external && (
-                <div className="font-mono text-xs text-[var(--bd)] tracking-wide mt-2">app.lstailors.com ↗</div>
+                <div className="font-mono text-[10px] text-[var(--bd)] tracking-wide mt-1.5">app.lstailors.com ↗</div>
               )}
-              <span className="absolute bottom-5 right-[22px] text-[var(--bd)] opacity-55 group-hover:opacity-100 group-hover:text-brass-light transition-opacity">
+              <span className="absolute bottom-4 right-[18px] text-[var(--bd)] opacity-55 group-hover:opacity-100 group-hover:text-brass-light transition-opacity">
                 <Arrow external={t.external} />
               </span>
             </>
@@ -454,73 +609,16 @@ export default function HomeTiles() {
           if (t.href) {
             return (
               <a key={t.key} href={t.href} target="_blank" rel="noreferrer" className={className}>
-                {body}
+                {tileBody}
               </a>
             );
           }
           return (
             <Link key={t.key} to={t.to!} className={className}>
-              {body}
+              {tileBody}
             </Link>
           );
         })}
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2 shrink-0">
-        {[
-          { to: "/dispatch", lab: "Charge & dispatch" },
-          { to: "/invoices", lab: `Invoices${s.openInvoices ? ` · ${s.openInvoices}` : ""}` },
-          { to: "/quote", lab: "Send quote" },
-          { to: "/orders/alterations", lab: "Orders" },
-          { to: "/parked", lab: `Parked${s.parked ? ` · ${s.parked}` : ""}` },
-        ].map((l) => (
-          <Link
-            key={l.to}
-            to={l.to}
-            className="h-10 px-4 rounded-full border border-brass/25 bg-black/25 text-xs font-bold tracking-widest uppercase text-brass-light inline-flex items-center hover:border-brass/50"
-          >
-            {l.lab}
-          </Link>
-        ))}
-      </div>
-
-      {/* HER-75: 3×2 status strip — six metrics without wrap-shear at tablet landscape */}
-      <div className="mt-[15px] rounded-[15px] border border-brass/15 bg-black/25 grid grid-cols-2 sm:grid-cols-3 overflow-hidden shrink-0">
-        <div className="px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-b border-brass/10">
-          <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Open tickets</span>
-          <span className="display text-2xl ml-auto">{s.open}</span>
-        </div>
-        <div className="px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-b border-brass/10 sm:border-r">
-          <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Ready for pickup</span>
-          <span className="display text-2xl ml-auto text-[var(--em)]">{s.ready}</span>
-        </div>
-        <div className="px-[18px] py-[13px] flex items-baseline gap-2.5 border-b border-brass/10 border-r sm:border-r-0">
-          <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Out to tailors</span>
-          <span className="display text-2xl ml-auto text-[var(--am)]">{s.outToTailors}</span>
-        </div>
-        <div className="px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
-          <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Out for delivery</span>
-          <span className="display text-2xl ml-auto text-[var(--am)]">{s.outForDelivery}</span>
-        </div>
-        <div className="px-[18px] py-[13px] flex items-baseline gap-2.5 border-r border-brass/10">
-          <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Delivered today</span>
-          <span className="display text-2xl ml-auto text-[var(--em)]">{s.deliveredToday}</span>
-        </div>
-        <div className="px-[18px] py-[13px] flex items-baseline gap-2.5">
-          <span className="text-xs font-bold tracking-[0.16em] uppercase text-[var(--cd)]">Overdue</span>
-          <span className="display text-2xl ml-auto text-[var(--ro)]">{s.overdue}</span>
-        </div>
-        <div className="col-span-2 sm:col-span-3 flex items-center gap-2 px-[18px] py-[11px] text-xs text-[var(--cd)] border-t border-brass/10">
-          <span
-            className={cn(
-              "w-[7px] h-[7px] rounded-full",
-              stats.isError
-                ? "bg-[var(--am)] shadow-[0_0_8px_rgba(232,168,92,0.7)]"
-                : "bg-[var(--em)] shadow-[0_0_8px_rgba(79,191,142,0.7)]",
-            )}
-          />
-          {stats.isError ? "ERPNext unreachable · retry above" : `ERPNext live · synced ${syncAge}`}
-        </div>
       </div>
     </div>
   );
