@@ -2,6 +2,8 @@
 
 export type SoPiece = {
   id: string;
+  /** Originating sales order (multi-SO carts) */
+  soId?: string;
   soItemId: string;
   garmentType: string;
   label: string;
@@ -11,7 +13,10 @@ export type SoPiece = {
 };
 
 export type SoCartPayload = {
+  /** Primary SO (first selected) — written to ticket.linked_sales_order */
   so: string;
+  /** All selected SOs when multi-order cart */
+  sos?: string[];
   customerId?: string;
   customerName?: string;
   customerPhone?: string;
@@ -31,9 +36,10 @@ type ApiSoItem = {
   pieces?: Array<{ garmentType: string; label: string; sourceItem: string }>;
 };
 
-export function piecesFromSoDetail(items: ApiSoItem[]): SoPiece[] {
+export function piecesFromSoDetail(items: ApiSoItem[], soId?: string): SoPiece[] {
   const out: SoPiece[] = [];
   let n = 0;
+  const soPrefix = soId ? `${soId}::` : "";
   for (const it of items || []) {
     const soItemId = it.id || it.key || `item-${n}`;
     const pieces =
@@ -43,10 +49,11 @@ export function piecesFromSoDetail(items: ApiSoItem[]): SoPiece[] {
     const qty = Math.max(1, Math.round(Number(it.qty) || 1));
     for (let q = 0; q < qty; q++) {
       for (let p = 0; p < pieces.length; p++) {
-        const piece = pieces[p];
+        const piece = pieces[p]!;
         n += 1;
         out.push({
-          id: `${soItemId}::${q}::${p}::${n}`,
+          id: `${soPrefix}${soItemId}::${q}::${p}::${n}`,
+          soId,
           soItemId,
           garmentType: piece.garmentType || "Other",
           label: qty > 1 ? `${piece.label} (${q + 1})` : piece.label,
@@ -60,9 +67,31 @@ export function piecesFromSoDetail(items: ApiSoItem[]): SoPiece[] {
   return out;
 }
 
+/** Merge pieces from several SOs; later SO wins on same id (shouldn't collide with so-prefix). */
+export function mergeSoPieces(...lists: SoPiece[][]): SoPiece[] {
+  const byId = new Map<string, SoPiece>();
+  for (const list of lists) {
+    for (const p of list) byId.set(p.id, p);
+  }
+  return Array.from(byId.values());
+}
+
 export function writeSoCart(payload: SoCartPayload) {
   try {
-    sessionStorage.setItem(ALTS_SO_CART_KEY, JSON.stringify(payload));
+    const sos =
+      payload.sos && payload.sos.length
+        ? payload.sos
+        : payload.so
+          ? [payload.so]
+          : [];
+    sessionStorage.setItem(
+      ALTS_SO_CART_KEY,
+      JSON.stringify({
+        ...payload,
+        so: payload.so || sos[0] || "",
+        sos,
+      }),
+    );
   } catch {
     /* */
   }
@@ -93,7 +122,10 @@ export function soCartToGarments(cart: SoCartPayload) {
       ref: `G${i + 1}`,
       garmentType: p.garmentType || "Other",
       color: "",
-      notes: [p.label, p.description].filter(Boolean).join(" · ").slice(0, 280),
+      notes: [p.soId && cart.sos && cart.sos.length > 1 ? p.soId : null, p.label, p.description]
+        .filter(Boolean)
+        .join(" · ")
+        .slice(0, 280),
       lines: [] as Array<{
         id: string;
         description: string;
@@ -104,5 +136,6 @@ export function soCartToGarments(cart: SoCartPayload) {
       }>,
       soItemKey: p.soItemId,
       soItemName: p.sourceItem || p.label,
+      linkedSo: p.soId || cart.so,
     }));
 }

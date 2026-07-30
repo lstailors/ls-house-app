@@ -245,6 +245,7 @@ export default function IntakeStepped() {
   const [cartOpen, setCartOpen] = useState(false);
   const [billing, setBilling] = useState<"billable" | "on_order" | "redo">(initialBilling);
   const [linkedSo, setLinkedSo] = useState<string | null>(soParam);
+  const [linkedSoLabel, setLinkedSoLabel] = useState<string | null>(null);
 
   // park drawer
   const [parkOpen, setParkOpen] = useState(false);
@@ -348,8 +349,19 @@ export default function IntakeStepped() {
     // Seed garments from SO order cart (TicketKind right rail) — first priority
     if (kindParam === "on_order" || soParam) {
       const cart = readSoCart();
-      if (cart && (!soParam || cart.so === soParam)) {
+      const cartSos = cart?.sos?.length ? cart.sos : cart?.so ? [cart.so] : [];
+      const soMatch =
+        !soParam ||
+        cart?.so === soParam ||
+        cartSos.includes(soParam);
+      if (cart && soMatch) {
         if (cart.so) setLinkedSo(cart.so);
+        // Multi-SO label for header (primary kept for ERP link)
+        if (cartSos.length > 1) {
+          setLinkedSoLabel(`${cartSos.length} orders · ${cartSos.join(" · ")}`);
+        } else {
+          setLinkedSoLabel(null);
+        }
         if (cart.customerId || cart.customerName) {
           setCustomer({
             id: cart.customerId || customerParam || undefined,
@@ -379,7 +391,11 @@ export default function IntakeStepped() {
           setActiveRef(seeded[0]?.ref ?? null);
           setExpectedGarments(seeded.length);
           setStep(2);
-          toast.message(`${seeded.length} piece${seeded.length === 1 ? "" : "s"} from order cart`);
+          toast.message(
+            `${seeded.length} piece${seeded.length === 1 ? "" : "s"} from ${
+              cartSos.length > 1 ? `${cartSos.length} orders` : "order cart"
+            }`,
+          );
           usedSoCart = true;
         }
         clearSoCart();
@@ -538,6 +554,35 @@ export default function IntakeStepped() {
     setExpectedGarments((n) => Math.max(n, garments.length + 1));
     toast.success(`${type} added`);
     if (step < 2) setStep(2);
+  };
+
+  /** Drop a piece from the ticket / order cart. Renumbers G1…Gn. */
+  const removeGarment = (ref: string) => {
+    setGarments((prev) => {
+      const idx = prev.findIndex((g) => g.ref === ref);
+      if (idx < 0) return prev;
+      const removed = prev[idx];
+      const next = prev
+        .filter((g) => g.ref !== ref)
+        .map((g, i) => ({ ...g, ref: `G${i + 1}` }));
+
+      if (next.length === 0) {
+        setActiveRef("");
+      } else if (activeRef === ref) {
+        const pick = Math.min(idx, next.length - 1);
+        setActiveRef(next[pick]!.ref);
+      } else {
+        const activeIdx = prev.findIndex((g) => g.ref === activeRef);
+        if (activeIdx >= 0) {
+          const adjusted = activeIdx > idx ? activeIdx - 1 : activeIdx;
+          setActiveRef(next[Math.min(adjusted, next.length - 1)]!.ref);
+        }
+      }
+
+      toast.message(`Removed ${removed?.garmentType || ref}`);
+      return next;
+    });
+    setExpectedGarments((n) => Math.max(0, n - 1));
   };
 
   const togglePreset = (p: Preset) => {
@@ -1065,9 +1110,13 @@ export default function IntakeStepped() {
               </Link>
             </div>
             {linkedSo && billing === "on_order" && (
-              <div className="card-glass px-4 py-3 flex items-center gap-3 text-sm">
-                <span className="caps text-[var(--vi,#9B8BC4)]">Linked order</span>
-                <span className="font-mono text-[var(--vi,#9B8BC4)]">{linkedSo}</span>
+              <div className="card-glass px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
+                <span className="caps text-[var(--vi,#9B8BC4)]">
+                  {linkedSoLabel ? "Linked orders" : "Linked order"}
+                </span>
+                <span className="font-mono text-[var(--vi,#9B8BC4)] break-all">
+                  {linkedSoLabel || linkedSo}
+                </span>
                 <span className="text-cream-dim text-xs">· full prices kept · no client invoice</span>
               </div>
             )}
@@ -1683,7 +1732,9 @@ export default function IntakeStepped() {
                 <aside className="lg:sticky lg:top-4 rounded-[20px] border border-[rgba(155,139,196,0.4)] bg-gradient-to-b from-[rgba(155,139,196,0.12)] to-black/35 overflow-hidden">
                   <div className="px-4 py-3 border-b border-[rgba(155,139,196,0.25)]">
                     <div className="display text-[18px] italic">Order cart</div>
-                    <div className="font-mono text-[12px] text-[var(--vi,#9B8BC4)] mt-0.5">{linkedSo || "—"}</div>
+                    <div className="font-mono text-[12px] text-[var(--vi,#9B8BC4)] mt-0.5 break-all">
+                      {linkedSoLabel || linkedSo || "—"}
+                    </div>
                   </div>
                   <div className="p-3 space-y-2 max-h-[55vh] overflow-y-auto">
                     {garments.map((g) => {
@@ -1691,43 +1742,59 @@ export default function IntakeStepped() {
                       const amt = g.lines.reduce((s, l) => s + l.price, 0);
                       const photoN = g.photoPreviewUrls?.length || 0;
                       return (
-                        <button
+                        <div
                           key={g.ref}
-                          type="button"
-                          onClick={() => setActiveRef(g.ref)}
                           className={cn(
-                            "w-full text-left rounded-xl border px-3 py-3 transition-all",
+                            "relative w-full rounded-xl border transition-all",
                             on
                               ? "border-[var(--vi,#9B8BC4)] bg-[rgba(155,139,196,0.2)]"
                               : "border-white/10 bg-black/25 hover:border-[rgba(155,139,196,0.35)]",
                           )}
                         >
-                          <div className="flex items-center gap-2">
-                            {photoN > 0 && g.photoPreviewUrls?.[0] ? (
-                              <img
-                                src={g.photoPreviewUrls[0]}
-                                alt=""
-                                className="w-9 h-9 rounded-lg object-cover border border-brass/30 shrink-0"
-                              />
-                            ) : (
-                              <span className="w-9 h-9 rounded-lg border border-dashed border-brass/30 grid place-items-center text-cream-dim text-sm shrink-0">
-                                📷
-                              </span>
-                            )}
-                            <span className="chip text-[12px]">{g.ref}</span>
-                            <span className="font-semibold text-[13px] flex-1">{g.garmentType}</span>
-                            <span className="display text-lg text-brass-light">{money(amt)}</span>
-                          </div>
-                          {g.notes ? <div className="text-[12px] text-cream-dim mt-1 truncate">{g.notes}</div> : null}
-                          {g.soItemName ? (
-                            <div className="text-[12px] text-[var(--vi,#9B8BC4)] mt-0.5 truncate">{g.soItemName}</div>
-                          ) : null}
-                          <div className="text-[12px] text-cream-dim mt-1">
-                            {g.lines.length} line{g.lines.length === 1 ? "" : "s"}
-                            {photoN ? ` · ${photoN} photo${photoN === 1 ? "" : "s"}` : ""}
-                            {on ? " · active" : " · tap to adjust"}
-                          </div>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveRef(g.ref)}
+                            className="w-full text-left px-3 py-3 pr-10"
+                          >
+                            <div className="flex items-center gap-2">
+                              {photoN > 0 && g.photoPreviewUrls?.[0] ? (
+                                <img
+                                  src={g.photoPreviewUrls[0]}
+                                  alt=""
+                                  className="w-9 h-9 rounded-lg object-cover border border-brass/30 shrink-0"
+                                />
+                              ) : (
+                                <span className="w-9 h-9 rounded-lg border border-dashed border-brass/30 grid place-items-center text-cream-dim text-sm shrink-0">
+                                  📷
+                                </span>
+                              )}
+                              <span className="chip text-[12px]">{g.ref}</span>
+                              <span className="font-semibold text-[13px] flex-1">{g.garmentType}</span>
+                              <span className="display text-lg text-brass-light">{money(amt)}</span>
+                            </div>
+                            {g.notes ? <div className="text-[12px] text-cream-dim mt-1 truncate">{g.notes}</div> : null}
+                            {g.soItemName ? (
+                              <div className="text-[12px] text-[var(--vi,#9B8BC4)] mt-0.5 truncate">{g.soItemName}</div>
+                            ) : null}
+                            <div className="text-[12px] text-cream-dim mt-1">
+                              {g.lines.length} line{g.lines.length === 1 ? "" : "s"}
+                              {photoN ? ` · ${photoN} photo${photoN === 1 ? "" : "s"}` : ""}
+                              {on ? " · active" : " · tap to adjust"}
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeGarment(g.ref);
+                            }}
+                            className="absolute top-2 right-2 w-8 h-8 rounded-lg border border-white/10 bg-black/40 text-cream-dim hover:text-[var(--ro,#D97B6C)] hover:border-[rgba(217,123,108,0.45)] hover:bg-[rgba(217,123,108,0.12)] grid place-items-center text-sm"
+                            aria-label={`Remove ${g.garmentType}`}
+                            title="Remove piece"
+                          >
+                            ✕
+                          </button>
+                        </div>
                       );
                     })}
                     <button
