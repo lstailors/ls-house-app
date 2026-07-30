@@ -125,19 +125,22 @@ export default function AlterationReceipt() {
         {/* Ticket info */}
         <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '6px', fontSize: '10px' }}>
           <tbody>
-            {[
-              ['Ticket', ticket.name],
-              ['Customer', ticket.customer_name],
-              ticket.customer_phone ? ['Phone', ticket.customer_phone] : null,
-              ['Date', fmt(ticket.ticket_date)],
-              ['Due', fmt(ticket.due_date) + (ticket.is_rush === 1 ? '  ★ RUSH' : '')],
-              ticket.delivery_method ? ['Delivery', ticket.delivery_method] : null,
-            ].filter(Boolean).map(([label, value]) => (
-              <tr key={label as string}>
-                <td style={{ color: '#555', paddingRight: '8px', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{label}:</td>
-                <td style={{ fontWeight: label === 'Customer' || label === 'Due' ? 'bold' : 'normal', color: label === 'Due' && ticket.is_rush === 1 ? '#cc0000' : '#000' }}>{value}</td>
-              </tr>
-            ))}
+            {(() => {
+              const rows: Array<[string, string]> = [
+                ['Ticket', String(ticket.name ?? '')],
+                ['Customer', String(ticket.customer_name ?? '')],
+                ['Date', fmt(ticket.ticket_date)],
+                ['Due', fmt(ticket.due_date) + (ticket.is_rush === 1 ? '  ★ RUSH' : '')],
+              ]
+              if (ticket.customer_phone) rows.splice(2, 0, ['Phone', String(ticket.customer_phone)])
+              if (ticket.delivery_method) rows.push(['Delivery', String(ticket.delivery_method)])
+              return rows.map(([label, value]) => (
+                <tr key={label}>
+                  <td style={{ color: '#555', paddingRight: '8px', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{label}:</td>
+                  <td style={{ fontWeight: label === 'Customer' || label === 'Due' ? 'bold' : 'normal', color: label === 'Due' && ticket.is_rush === 1 ? '#cc0000' : '#000' }}>{value}</td>
+                </tr>
+              ))
+            })()}
           </tbody>
         </table>
 

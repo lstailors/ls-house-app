@@ -24,8 +24,9 @@
       "@ls/auth": ["../../packages/auth/src/index.ts"],
       "@ls/auth/*": ["../../packages/auth/src/*"],
       "@ls/design": ["../../packages/design/src/index.ts"],
-      "@ls/design/*": ["../../packages/design/*"]
+      "@ls/design/*": ["../../packages/design/src/*"]
     }
   },
-  "include": ["src", "../../webapp/src"]
+  "include": ["src", "../../webapp/src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }

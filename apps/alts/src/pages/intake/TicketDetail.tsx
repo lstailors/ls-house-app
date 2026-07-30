@@ -926,7 +926,7 @@ export default function TicketDetail() {
         lines: [],
       }
       return api.post<{ id: string }>('/api/carts', {
-        createdBy: me?.user?.email ?? '',
+        createdBy: me?.email ?? '',
         location: ticket.origin_location ?? 'NYC',
         customer: {
           name: ticket.customer_name ?? '',
