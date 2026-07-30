@@ -86,7 +86,7 @@ export default function HomeTiles() {
                 typeof j?.summary?.openCount === "number"
                   ? j.summary.openCount
                   : Array.isArray(j?.data)
-                    ? j.data.filter((i: any) => Number(i.outstandingAmount) > 0.005).length
+                    ? j.data.filter((i) => Number(i.outstandingAmount) > 0.005).length
                     : 0,
             };
           })
@@ -289,50 +289,33 @@ export default function HomeTiles() {
       ),
     },
     {
-          key: "customers",
-          to: "/customers",
-          title: "Customers",
-          sub: "Profiles, phones, addresses, photo — open any client",
-          icon: (
-            <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="26" cy="18" r="8" />
-              <path d="M10 44c2.5-10 11-14 16-14s13.5 4 16 14" />
-              <circle cx="40" cy="16" r="5" opacity=".7" />
-              <path d="M42 28c4 1.5 7 5 8 12" opacity=".55" />
-            </svg>
-          ),
-        },
-        {
-          key: "invoices",
-          to: "/invoices",
-          title: "Invoices",
-          sub: "All sales invoices — custom + alts. Charge card & close out",
-          badge: s.openInvoices || null,
-          badgeKind: s.openInvoices > 0 ? "warn" : "neutral",
-          icon: (
-            <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 6h18l10 10v30a2 2 0 0 1-2 2H14a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />
-              <path d="M32 6v10h10" />
-              <path d="M18 26h16M18 33h16M18 40h10" strokeWidth="1.4" opacity=".75" />
-              <circle cx="40" cy="40" r="8" stroke="#E3C48F" strokeWidth="1.4" />
-              <path d="M40 36.5v7M36.5 40h7" stroke="#E3C48F" strokeWidth="1.4" />
-            </svg>
-          ),
-        },
-        {
-          key: "admin",
-          href: "https://app.lstailors.com",
-          title: "Reports & Admin",
-          sub: "Workload, money, pricing, users",
-          external: true,
+      key: "customers",
+      to: "/customers",
+      title: "Customers",
+      sub: "Profiles, phones, addresses, photo — open any client",
+      icon: (
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="26" cy="18" r="8" />
+          <path d="M10 44c2.5-10 11-14 16-14s13.5 4 16 14" />
+          <circle cx="40" cy="16" r="5" opacity=".7" />
+          <path d="M42 28c4 1.5 7 5 8 12" opacity=".55" />
+        </svg>
+      ),
+    },
+    {
+      key: "invoices",
+      to: "/invoices",
+      title: "Invoices",
+      sub: "All sales invoices — custom + alts. Charge card & close out",
+      badge: s.openInvoices || null,
       badgeKind: s.openInvoices > 0 ? "warn" : "neutral",
       icon: (
         <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M14 6h18l10 10v28a3 3 0 0 1-3 3H14a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3z" />
+          <path d="M14 6h18l10 10v30a2 2 0 0 1-2 2H14a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />
           <path d="M32 6v10h10" />
-          <path d="M18 24h16M18 30h16M18 36h10" opacity=".75" />
-          <circle cx="38" cy="38" r="9" stroke="#B08D57" strokeWidth="1.4" />
-          <path d="M35 38h6M38 35v6" stroke="#B08D57" strokeWidth="1.4" />
+          <path d="M18 26h16M18 33h16M18 40h10" strokeWidth="1.4" opacity=".75" />
+          <circle cx="40" cy="40" r="8" stroke="#E3C48F" strokeWidth="1.4" />
+          <path d="M40 36.5v7M36.5 40h7" stroke="#E3C48F" strokeWidth="1.4" />
         </svg>
       ),
     },
@@ -486,6 +469,7 @@ export default function HomeTiles() {
       <div className="mt-3 flex flex-wrap gap-2 shrink-0">
         {[
           { to: "/dispatch", lab: "Charge & dispatch" },
+          { to: "/invoices", lab: `Invoices${s.openInvoices ? ` · ${s.openInvoices}` : ""}` },
           { to: "/quote", lab: "Send quote" },
           { to: "/orders/alterations", lab: "Orders" },
           { to: "/parked", lab: `Parked${s.parked ? ` · ${s.parked}` : ""}` },
