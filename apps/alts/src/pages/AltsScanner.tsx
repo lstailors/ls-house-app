@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import jsQR from "jsqr";
-import { BrowserMultiFormatReader, BrowserCodeReader } from "@zxing/browser";
-import { BarcodeFormat, DecodeHintType } from "@zxing/library";
 import { toast } from "sonner";
 import { X, Keyboard, ArrowRight, CameraOff, Aperture } from "lucide-react";
 import { Button } from "@ls/design/ui/button";
@@ -18,10 +16,24 @@ import {
 } from "@alts/lib/scanRoutes";
 
 const RESCAN_DEBOUNCE_MS = 900;
-const JSQR_EVERY_MS = 120;
+/** How often to poll for a QR (BarcodeDetector path) */
+const POLL_MS = 150;
 /** Hardware / Bluetooth wedge scanners type fast then hit Enter. */
 const WEDGE_IDLE_MS = 45;
 const WEDGE_MIN_LEN = 4;
+
+declare global {
+  interface Window {
+    BarcodeDetector?: {
+      new (opts: { formats: string[] }): {
+        detect(src: HTMLVideoElement | HTMLCanvasElement | ImageData): Promise<
+          Array<{ rawValue: string; format: string }>
+        >;
+      };
+      getSupportedFormats?(): Promise<string[]>;
+    };
+  }
+}
 
 function printUrl(doctype: string | undefined, name: string): string {
   const params = new URLSearchParams({
@@ -74,19 +86,23 @@ function forceSwUpdate() {
 }
 
 /**
- * Floor scanner — three concurrent input paths:
- *  1) ZXing continuous camera decode (TRY_HARDER, QR only)
- *  2) jsQR full-frame backup on a timer
- *  3) HID keyboard-wedge / Bluetooth gun (character buffer + Enter)
- * Plus a manual Snap button that freezes one high-res frame.
+ * v4 — native BarcodeDetector first (iOS 17+, Chrome), jsQR fallback.
+ * ZXing removed: too heavy for mobile real-time, CPU-bound on thermal prints.
+ *
+ * Decode paths:
+ *  1) BarcodeDetector (hardware-accelerated on iOS 17+) polled every ~150ms
+ *  2) jsQR multi-threshold fallback polled every ~200ms
+ *  3) Snap QR — forces a high-res frame through both decoders
+ *  4) HID / Bluetooth wedge (keyboard buffer + Enter)
+ *  5) Manual text entry
  */
 export default function Scanner() {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const zxingControlsRef = useRef<{ stop: () => void } | null>(null);
-  const jsqrTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bdRef = useRef<InstanceType<NonNullable<typeof window.BarcodeDetector>> | null>(null);
   const scanningRef = useRef(true);
   const lastScanRef = useRef<{ value: string; at: number } | null>(null);
   const handleDecodeRef = useRef<(decoded: string, via: string) => void>(() => {});
@@ -103,30 +119,20 @@ export default function Scanner() {
   const [showManual, setShowManual] = useState(false);
   const [manualValue, setManualValue] = useState("");
   const [statusLine, setStatusLine] = useState("Starting camera…");
-  const [debugLine, setDebugLine] = useState("v3");
+  const [debugLine, setDebugLine] = useState("v4");
   const [snapping, setSnapping] = useState(false);
 
   const stopCamera = useCallback(() => {
     scanningRef.current = false;
-    try {
-      zxingControlsRef.current?.stop();
-    } catch {
-      /* ignore */
-    }
-    zxingControlsRef.current = null;
-    if (jsqrTimerRef.current) {
-      clearInterval(jsqrTimerRef.current);
-      jsqrTimerRef.current = null;
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
     }
     const stream = streamRef.current;
     streamRef.current = null;
     if (stream) {
       for (const t of stream.getTracks()) {
-        try {
-          t.stop();
-        } catch {
-          /* ignore */
-        }
+        try { t.stop(); } catch { /* ignore */ }
       }
     }
     const v = videoRef.current;
@@ -134,9 +140,7 @@ export default function Scanner() {
       try {
         v.pause();
         v.srcObject = null;
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
     }
   }, []);
 
@@ -198,7 +202,10 @@ export default function Scanner() {
 
   handleDecodeRef.current = handleDecode;
 
-  /** Single-frame jsQR pass (also used by Snap). */
+  /**
+   * Draw current video frame to off-screen canvas and run jsQR with multiple
+   * contrast passes. Returns decoded string or null.
+   */
   const decodeFrameJsQR = useCallback((): string | null => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -208,8 +215,8 @@ export default function Scanner() {
     const vh = video.videoHeight;
     if (!vw || !vh) return null;
 
-    // Prefer larger sample for thermal prints; cap for CPU
-    const maxEdge = 960;
+    // Use a generous resolution — thermal QR codes need detail
+    const maxEdge = 1024;
     const scale = Math.min(1, maxEdge / Math.max(vw, vh));
     const cw = Math.max(1, Math.floor(vw * scale));
     const ch = Math.max(1, Math.floor(vh * scale));
@@ -219,17 +226,31 @@ export default function Scanner() {
     if (!ctx) return null;
     ctx.drawImage(video, 0, 0, cw, ch);
 
-    // Pass 1: as-is
+    // Pass 1: as-is (handles high-contrast QR)
     let img = ctx.getImageData(0, 0, cw, ch);
     let code = jsQR(img.data, img.width, img.height, { inversionAttempts: "attemptBoth" });
     if (code?.data) return code.data;
 
-    // Pass 2: boost contrast (helps light thermal ink)
-    const d = img.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-      const v = y < 140 ? 0 : 255;
-      d[i] = d[i + 1] = d[i + 2] = v;
+    // Pass 2: binarise at threshold 128 (handles faded thermal ink)
+    const d1 = img.data;
+    for (let i = 0; i < d1.length; i += 4) {
+      const y = 0.299 * d1[i] + 0.587 * d1[i + 1] + 0.114 * d1[i + 2];
+      const v = y < 128 ? 0 : 255;
+      d1[i] = d1[i + 1] = d1[i + 2] = v;
+    }
+    ctx.putImageData(img, 0, 0);
+    img = ctx.getImageData(0, 0, cw, ch);
+    code = jsQR(img.data, img.width, img.height, { inversionAttempts: "attemptBoth" });
+    if (code?.data) return code.data;
+
+    // Pass 3: aggressive threshold 160 (extra-faded / cream paper)
+    ctx.drawImage(video, 0, 0, cw, ch);
+    img = ctx.getImageData(0, 0, cw, ch);
+    const d3 = img.data;
+    for (let i = 0; i < d3.length; i += 4) {
+      const y = 0.299 * d3[i] + 0.587 * d3[i + 1] + 0.114 * d3[i + 2];
+      const v = y < 160 ? 0 : 255;
+      d3[i] = d3[i + 1] = d3[i + 2] = v;
     }
     ctx.putImageData(img, 0, 0);
     img = ctx.getImageData(0, 0, cw, ch);
@@ -237,13 +258,57 @@ export default function Scanner() {
     return code?.data ?? null;
   }, []);
 
+  /**
+   * Start the polling loop — BarcodeDetector first, jsQR every other tick.
+   * Single RAF-based poll avoids multiple competing timers.
+   */
+  const startPoll = useCallback(
+    (video: HTMLVideoElement) => {
+      let tick = 0;
+      let bdFail = !bdRef.current; // if no BarcodeDetector, skip its path
+
+      pollRef.current = setInterval(() => {
+        if (!scanningRef.current || !mountedRef.current) return;
+        if (video.readyState < 2 || !video.videoWidth) return;
+        tick++;
+
+        // Every tick: try BarcodeDetector (native, async, non-blocking)
+        if (!bdFail && bdRef.current) {
+          bdRef.current.detect(video).then((results) => {
+            if (!scanningRef.current) return;
+            if (results.length > 0 && results[0].rawValue) {
+              handleDecodeRef.current(results[0].rawValue, "native");
+            }
+          }).catch(() => {
+            bdFail = true; // BarcodeDetector not working — fall through to jsQR
+          });
+        }
+
+        // Every other tick: jsQR (sync, ~3ms per frame)
+        if (tick % 2 === 0 || bdFail) {
+          attemptsRef.current += 1;
+          if (attemptsRef.current % 20 === 0) {
+            setDebugLine(
+              `v4 ${video.videoWidth}x${video.videoHeight} n=${attemptsRef.current} ${bdFail ? "jsqr" : "native+jsqr"}`,
+            );
+          }
+          try {
+            const hit = decodeFrameJsQR();
+            if (hit) handleDecodeRef.current(hit, "jsqr");
+          } catch { /* ignore frame errors */ }
+        }
+      }, POLL_MS);
+    },
+    [decodeFrameJsQR],
+  );
+
   const startCamera = useCallback(async () => {
     stopCamera();
     scanningRef.current = true;
     attemptsRef.current = 0;
     setCameraError(null);
     setStatusLine("Starting camera…");
-    setDebugLine("v3 starting");
+    setDebugLine("v4 starting");
     forceSwUpdate();
 
     if (!window.isSecureContext && location.hostname !== "localhost") {
@@ -261,43 +326,35 @@ export default function Scanner() {
       return;
     }
 
+    // Init BarcodeDetector once
+    if (!bdRef.current && window.BarcodeDetector) {
+      try {
+        bdRef.current = new window.BarcodeDetector({ formats: ["qr_code"] });
+        setDebugLine("v4 native BarcodeDetector ready");
+      } catch {
+        bdRef.current = null;
+      }
+    }
+
     video.setAttribute("playsinline", "true");
     video.setAttribute("webkit-playsinline", "true");
     video.muted = true;
     video.playsInline = true;
 
     try {
-      // Pick rear camera if we can list devices (needs prior permission on some iOS).
-      let deviceId: string | undefined;
-      try {
-        const warm = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        for (const t of warm.getTracks()) t.stop();
-        const devices = await BrowserCodeReader.listVideoInputDevices();
-        const back =
-          devices.find((d) => /back|rear|environment/i.test(d.label)) ||
-          devices.find((d) => !/front|user|face/i.test(d.label)) ||
-          devices[devices.length - 1];
-        deviceId = back?.deviceId;
-        setDebugLine(`cams=${devices.length} pick=${(back?.label || "default").slice(0, 28)}`);
-      } catch {
-        deviceId = undefined;
-      }
-
-      const constraints: MediaStreamConstraints = {
-        audio: false,
-        video: deviceId
-          ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
-          : {
-              facingMode: { ideal: "environment" },
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
-            },
-      };
-
+      // Simple camera request — no device enumeration dance that can fail on iOS
       let stream: MediaStream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        });
       } catch {
+        // Last resort: any camera
         stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
       }
 
@@ -310,56 +367,21 @@ export default function Scanner() {
       video.srcObject = stream;
       await video.play();
 
-      // Wait for real frames
-      for (let i = 0; i < 50 && (!video.videoWidth || !video.videoHeight); i++) {
+      // Wait for real frames (iOS sometimes needs a beat)
+      for (let i = 0; i < 60 && (!video.videoWidth || !video.videoHeight); i++) {
         await new Promise((r) => setTimeout(r, 40));
       }
+
       if (!video.videoWidth) {
-        setCameraError({
-          message: "Camera on but no frames. Tap Snap after a second, or type the code.",
-          permission: false,
-        });
+        setStatusLine("Camera on — tap Snap if auto-scan doesn't fire");
+        setDebugLine(`v4 no frames yet — tap Snap`);
+      } else {
+        setStatusLine("Point at any L&S QR");
+        setDebugLine(`v4 live ${video.videoWidth}x${video.videoHeight}${bdRef.current ? " native" : " jsqr"}`);
       }
 
-      setStatusLine("Point at any L&S QR");
-      setDebugLine(`live ${video.videoWidth}x${video.videoHeight}`);
       scanningRef.current = true;
-
-      // --- ZXing continuous ---
-      const hints = new Map();
-      hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
-      hints.set(DecodeHintType.TRY_HARDER, true);
-      hints.set(DecodeHintType.CHARACTER_SET, "UTF-8");
-      const reader = new BrowserMultiFormatReader(hints, {
-        delayBetweenScanAttempts: 80,
-        delayBetweenScanSuccess: 500,
-      });
-
-      const controls = await reader.decodeFromStream(stream, video, (zxResult, _err) => {
-        if (!scanningRef.current || !mountedRef.current) return;
-        attemptsRef.current += 1;
-        if (attemptsRef.current % 25 === 0) {
-          setDebugLine(
-            `zx ${video.videoWidth}x${video.videoHeight} n=${attemptsRef.current}`,
-          );
-        }
-        if (zxResult) {
-          const text = zxResult.getText();
-          if (text) handleDecodeRef.current(text, "zxing");
-        }
-      });
-      zxingControlsRef.current = controls;
-
-      // --- jsQR backup timer ---
-      jsqrTimerRef.current = setInterval(() => {
-        if (!scanningRef.current || !mountedRef.current) return;
-        try {
-          const hit = decodeFrameJsQR();
-          if (hit) handleDecodeRef.current(hit, "jsqr");
-        } catch {
-          /* ignore frame errors */
-        }
-      }, JSQR_EVERY_MS);
+      startPoll(video);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e ?? "");
       const permission = /permission|notallowed|denied|NotAllowed|SecurityError/i.test(msg);
@@ -373,7 +395,7 @@ export default function Scanner() {
       setStatusLine("Manual / gun entry");
       setDebugLine(`cam err: ${msg.slice(0, 60)}`);
     }
-  }, [stopCamera, decodeFrameJsQR]);
+  }, [stopCamera, startPoll]);
 
   // Mount camera once
   useEffect(() => {
@@ -390,7 +412,6 @@ export default function Scanner() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!scanningRef.current) return;
-      // Don't steal typing from the manual input
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
 
@@ -412,7 +433,6 @@ export default function Scanner() {
         wedgeBufRef.current += e.key;
         if (wedgeTimerRef.current) clearTimeout(wedgeTimerRef.current);
         wedgeTimerRef.current = setTimeout(() => {
-          // Slow human typing — drop buffer so we don't mis-fire
           wedgeBufRef.current = "";
         }, WEDGE_IDLE_MS);
       }
@@ -442,8 +462,21 @@ export default function Scanner() {
     setSnapping(true);
     setStatusLine("Snapping…");
     try {
-      // Give autofocus a beat
       await new Promise((r) => setTimeout(r, 120));
+
+      // Try native BarcodeDetector first for Snap too
+      const video = videoRef.current;
+      if (bdRef.current && video && video.readyState >= 2 && video.videoWidth) {
+        try {
+          const results = await bdRef.current.detect(video);
+          if (results.length > 0 && results[0].rawValue) {
+            handleDecodeRef.current(results[0].rawValue, "snap-native");
+            return;
+          }
+        } catch { /* fall through to jsqr */ }
+      }
+
+      // jsQR fallback
       const hit = decodeFrameJsQR();
       if (hit) {
         handleDecodeRef.current(hit, "snap");
@@ -555,7 +588,15 @@ export default function Scanner() {
         muted
         autoPlay
       />
-      <canvas ref={canvasRef} className="hidden" aria-hidden />
+      {/*
+        Canvas must NOT be display:none — use absolute off-screen position so
+        getImageData still works on iOS Safari.
+      */}
+      <canvas
+        ref={canvasRef}
+        aria-hidden
+        style={{ position: "absolute", left: -9999, top: -9999, width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+      />
 
       <div className="pointer-events-none absolute inset-0 bg-forest-deep/10" />
 
