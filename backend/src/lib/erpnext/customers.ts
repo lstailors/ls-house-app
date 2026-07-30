@@ -591,6 +591,131 @@ export async function getCustomer(id: string) {
   };
 }
 
+/**
+ * Live spend stats + recent invoice history from ERP Sales Invoices.
+ * ERP Customer.lifetime_value is often stale/zero — always compute from SI.
+ */
+export async function getCustomerSpend(customerId: string, historyLimit = 40) {
+  const id = customerId.trim();
+  if (!id) {
+    return emptySpend();
+  }
+
+  const rows = await erpList<any>("Sales Invoice", {
+    filters: [
+      ["customer", "=", id],
+      ["docstatus", "=", 1],
+    ],
+    fields: [
+      "name",
+      "customer",
+      "customer_name",
+      "status",
+      "grand_total",
+      "total",
+      "outstanding_amount",
+      "paid_amount",
+      "posting_date",
+      "due_date",
+      "currency",
+      "remarks",
+      "company",
+    ],
+    limit: Math.min(Math.max(historyLimit, 1), 200),
+    order_by: "posting_date desc",
+  });
+
+  let lifetimeInvoiced = 0;
+  let lifetimePaid = 0;
+  let outstanding = 0;
+  let unpaidCount = 0;
+  let overdueCount = 0;
+  let paidCount = 0;
+  let lastPurchaseDate: string | null = null;
+
+  const history = rows.map((row) => {
+    const status = String(row.status || "").toLowerCase();
+    const grand = Number(row.grand_total ?? row.total ?? 0);
+    const out = Number(row.outstanding_amount ?? 0);
+    // NOTE: ERPNext's paid_amount on Sales Invoice is not reliably populated
+    // here (payments are tracked via Payment Entry, not always mirrored back
+    // to the invoice doc) — it comes back as a literal 0 even on fully-paid
+    // invoices. Derive paid from grand_total - outstanding instead, which is
+    // always correct regardless of whether paid_amount was set.
+    const rawPaid = Number(row.paid_amount ?? 0);
+    const paid = rawPaid > 0 ? rawPaid : Math.max(0, grand - out);
+
+    lifetimeInvoiced += grand;
+    lifetimePaid += paid;
+    outstanding += out;
+
+    if (status === "paid") paidCount += 1;
+    if (["unpaid", "overdue", "partly paid"].includes(status) || out > 0.009) unpaidCount += 1;
+    if (status === "overdue") overdueCount += 1;
+    if (!lastPurchaseDate && row.posting_date) lastPurchaseDate = String(row.posting_date);
+
+    return {
+      id: row.name,
+      status: status.replace(/\s+/g, "_"),
+      total: grand,
+      outstandingAmount: out,
+      paidAmount: paid,
+      postingDate: row.posting_date ?? null,
+      dueDate: row.due_date ?? null,
+      company: row.company ?? null,
+      currency: row.currency ?? "USD",
+      remarks: row.remarks ?? null,
+    };
+  });
+
+  const invoiceCount = rows.length;
+  const avgOrder = invoiceCount > 0 ? lifetimeInvoiced / invoiceCount : 0;
+
+  // Ticket count (alterations) — soft fail
+  let ticketCount = 0;
+  try {
+    ticketCount = await erpCount("Alteration Ticket", [["customer", "=", id]]);
+  } catch {
+    ticketCount = 0;
+  }
+
+  return {
+    customerId: id,
+    lifetimeInvoiced: round2(lifetimeInvoiced),
+    lifetimePaid: round2(lifetimePaid),
+    outstanding: round2(outstanding),
+    avgOrder: round2(avgOrder),
+    invoiceCount,
+    paidCount,
+    unpaidCount,
+    overdueCount,
+    ticketCount,
+    lastPurchaseDate,
+    history,
+  };
+}
+
+function round2(n: number) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+function emptySpend() {
+  return {
+    customerId: "",
+    lifetimeInvoiced: 0,
+    lifetimePaid: 0,
+    outstanding: 0,
+    avgOrder: 0,
+    invoiceCount: 0,
+    paidCount: 0,
+    unpaidCount: 0,
+    overdueCount: 0,
+    ticketCount: 0,
+    lastPurchaseDate: null as string | null,
+    history: [] as any[],
+  };
+}
+
 export async function createCustomer(body: any, defaults: { division?: string } = {}) {
   const doc = bodyToCustomerDoc(body, defaults);
   if (!doc.customer_name) throw new Error("Customer name is required");

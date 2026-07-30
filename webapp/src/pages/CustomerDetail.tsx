@@ -6,6 +6,7 @@ import {
   Edit2, Save, X, Trash2, Plus, Tag, Calendar,
   FileText, Heart, Ruler, AlertCircle, ShoppingBag,
   Scissors, Receipt, ExternalLink, DollarSign, Camera, Users, Mail,
+  TrendingUp, History,
 } from "lucide-react";
 import { api } from "@ls/api-client";
 import { Button } from "@ls/design/ui/button";
@@ -376,19 +377,230 @@ function MeasurementsTab({ customer }: { customer: any }) {
   );
 }
 
-// ── Balance Tab ───────────────────────────────────────────────────────────────
-function BalanceTab({ erpnextCustomerId }: { erpnextCustomerId: string | null }) {
-  const { data: invoiceData, isLoading } = useQuery({
-    queryKey: ["customer-invoices", erpnextCustomerId],
-    queryFn: () => api.get<any>(`/api/invoices?customer=${encodeURIComponent(erpnextCustomerId!)}&status=unpaid`),
-    enabled: !!erpnextCustomerId,
-    select: (raw: any) => {
-      if (Array.isArray(raw)) return { invoices: raw, summary: null };
-      return { invoices: raw?.data ?? [], summary: raw?.summary ?? null };
-    },
+// ── Money helpers ─────────────────────────────────────────────────────────────
+function money(n: number, cents = true) {
+  return Number(n || 0).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: cents ? 2 : 0,
+    maximumFractionDigits: cents ? 2 : 0,
   });
+}
 
-  if (!erpnextCustomerId) {
+interface SpendStats {
+  customerId: string;
+  lifetimeSpend: number;
+  lifetimeBilled: number;
+  outstanding: number;
+  avgOrder: number;
+  invoiceCount: number;
+  openInvoiceCount: number;
+  lastInvoiceDate: string | null;
+  firstInvoiceDate?: string | null;
+  erpLifetimeValue: number;
+  ticketCount?: number;
+  history: Array<{
+    id: string;
+    status: string;
+    /** API shape */
+    total?: number;
+    grandTotal?: number;
+    outstandingAmount?: number;
+    outstanding?: number;
+    paidAmount?: number;
+    paid?: number;
+    postingDate: string | null;
+    dueDate: string | null;
+  }>;
+}
+
+function invTotal(i: SpendStats["history"][0]) {
+  return Number(i.grandTotal ?? i.total ?? 0);
+}
+function invOut(i: SpendStats["history"][0]) {
+  return Number(i.outstanding ?? i.outstandingAmount ?? 0);
+}
+function invPaid(i: SpendStats["history"][0]) {
+  return Number(i.paid ?? i.paidAmount ?? 0);
+}
+
+function useCustomerSpend(customerId: string | undefined) {
+  return useQuery({
+    queryKey: ["customer-spend", customerId],
+    queryFn: async () => {
+      const res = await api.raw(`/api/customers/${encodeURIComponent(customerId!)}/spend`);
+      const json = await res.json().catch(() => ({}));
+      if (res.status === 403) return null; // role can't see financials
+      if (!res.ok) throw new Error(json?.error?.message ?? "Spend load failed");
+      return (json?.data ?? json) as SpendStats;
+    },
+    enabled: !!customerId,
+    staleTime: 60_000,
+  });
+}
+
+/** Top-of-profile spend KPIs from live Sales Invoices. */
+function SpendStrip({ customerId }: { customerId: string }) {
+  const { data, isLoading, isError } = useCustomerSpend(customerId);
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 animate-pulse">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-20 rounded-xl bg-brass/5 border border-brass/10" />
+        ))}
+      </div>
+    );
+  }
+  if (isError || data === null) return null; // hidden if no financial access
+  if (!data) return null;
+
+  const tiles = [
+    {
+      label: "Lifetime spend",
+      value: money(data.lifetimeSpend, false),
+      sub: data.invoiceCount ? `${data.invoiceCount} invoice${data.invoiceCount === 1 ? "" : "s"}` : "No invoices yet",
+      gold: true,
+    },
+    {
+      label: "Outstanding",
+      value: money(data.outstanding),
+      sub: data.openInvoiceCount
+        ? `${data.openInvoiceCount} open`
+        : "Account clear",
+      danger: data.outstanding > 0.005,
+      ok: data.outstanding <= 0.005,
+    },
+    {
+      label: "Avg order",
+      value: money(data.avgOrder, false),
+      sub: data.lifetimeBilled > 0 ? `Billed ${money(data.lifetimeBilled, false)}` : "—",
+    },
+    {
+      label: "Last invoice",
+      value: data.lastInvoiceDate
+        ? new Date(data.lastInvoiceDate + "T12:00:00").toLocaleDateString()
+        : "—",
+      sub: data.firstInvoiceDate
+        ? `Client since ${new Date(data.firstInvoiceDate + "T12:00:00").toLocaleDateString()}`
+        : "No history",
+    },
+  ];
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 px-1">
+        <TrendingUp className="w-3.5 h-3.5 text-brass-light" />
+        <span className="ui-label text-brass-light text-[10px] tracking-wider">Spend & orders</span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {tiles.map((t) => (
+          <div
+            key={t.label}
+            className={cn(
+              "glass-panel rounded-xl p-3 border",
+              t.danger ? "border-signal-rose/25 bg-signal-rose/5" :
+              t.ok ? "border-signal-green/20 bg-signal-green/5" :
+              "border-brass/10",
+            )}
+          >
+            <p className="ui-label text-[9px] tracking-wider text-cream-muted mb-1">{t.label}</p>
+            <p className={cn(
+              "font-display italic text-xl leading-tight",
+              t.gold ? "text-brass-shimmer" :
+              t.danger ? "text-signal-rose" :
+              t.ok ? "text-signal-green" :
+              "text-cream",
+            )}>
+              {t.value}
+            </p>
+            <p className="text-[10px] text-cream-dim mt-1 truncate">{t.sub}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Billing section with live SI stats + editable prefs. */
+function BillingLive({
+  customerId,
+  fallbackLtv,
+  garments,
+  editing,
+  draft,
+  onChange,
+  c,
+  onOpenBalance,
+}: {
+  customerId: string;
+  fallbackLtv?: number;
+  garments?: number | null;
+  editing: boolean;
+  draft: Record<string, any>;
+  onChange: (k: string, v: any) => void;
+  c: Customer;
+  onOpenBalance?: () => void;
+}) {
+  const { data: spend } = useCustomerSpend(customerId);
+  const ltv = spend?.lifetimeSpend ?? fallbackLtv ?? 0;
+  const outstanding = spend?.outstanding ?? 0;
+  const avg = spend?.avgOrder ?? 0;
+  const invCount = spend?.invoiceCount ?? 0;
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={LABEL}>Lifetime spend</label>
+          <p className="text-brass-shimmer font-display italic">{money(ltv, false)}</p>
+          {invCount > 0 && (
+            <p className="text-[10px] text-cream-dim mt-0.5">{invCount} invoices · avg {money(avg, false)}</p>
+          )}
+        </div>
+        <div>
+          <label className={LABEL}>Outstanding</label>
+          <p className={cn(
+            "font-display italic",
+            outstanding > 0.005 ? "text-signal-rose" : "text-signal-green",
+          )}>
+            {money(outstanding)}
+          </p>
+          {spend && (
+            <p className="text-[10px] text-cream-dim mt-0.5">
+              {spend.openInvoiceCount} open · billed {money(spend.lifetimeBilled, false)}
+            </p>
+          )}
+        </div>
+        <div>
+          <label className={LABEL}>Garments owned</label>
+          <p className="text-cream text-sm">{garments ?? 0}</p>
+        </div>
+        <div>
+          <label className={LABEL}>Referral Code</label>
+          <p className="text-cream text-sm font-mono">{c.referralCode ?? "—"}</p>
+        </div>
+        <Field label="Payment Preference" value={c.paymentPreference} editing={editing} field="payment_preference" draft={draft} onChange={onChange} />
+        <Field label="Casa" value={c.casaTier} editing={editing} field="casa_tier" draft={draft} onChange={onChange} />
+      </div>
+      {spend && spend.history.length > 0 && onOpenBalance && (
+        <button
+          type="button"
+          onClick={onOpenBalance}
+          className="text-[10px] text-brass-light uppercase tracking-widest font-bold"
+        >
+          See full history in Balance tab →
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Balance Tab ───────────────────────────────────────────────────────────────
+function BalanceTab({ customerId, erpnextCustomerId }: { customerId: string; erpnextCustomerId: string | null }) {
+  const { data: spend, isLoading } = useCustomerSpend(customerId || erpnextCustomerId || undefined);
+
+  if (!erpnextCustomerId && !customerId) {
     return (
       <div className="glass-panel rounded-2xl p-8 border border-brass/10 text-center">
         <Receipt className="w-8 h-8 text-brass/30 mx-auto mb-3" />
@@ -405,9 +617,19 @@ function BalanceTab({ erpnextCustomerId }: { erpnextCustomerId: string | null })
     );
   }
 
-  const invoices: any[] = invoiceData?.invoices ?? [];
-  const totalOutstanding = invoices.reduce((s: number, i: any) => s + (i.outstandingAmount ?? 0), 0);
-  const hasInvoices = invoices.length > 0;
+  if (spend === null) {
+    return (
+      <div className="glass-panel rounded-2xl p-8 border border-brass/10 text-center">
+        <Receipt className="w-8 h-8 text-brass/30 mx-auto mb-3" />
+        <p className="text-cream-muted text-sm">Financials restricted for your role.</p>
+      </div>
+    );
+  }
+
+  const invoices = spend?.history ?? [];
+  const totalOutstanding = spend?.outstanding ?? 0;
+  const open = invoices.filter((i) => invOut(i) > 0.005);
+  const paid = invoices.filter((i) => invOut(i) <= 0.005);
 
   return (
     <div className="space-y-4">
@@ -415,26 +637,29 @@ function BalanceTab({ erpnextCustomerId }: { erpnextCustomerId: string | null })
         "glass-panel rounded-2xl p-5 border",
         totalOutstanding > 0 ? "border-signal-rose/20 bg-signal-rose/5" : "border-signal-green/20 bg-signal-green/5"
       )}>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <div>
             <p className="ui-label text-[10px] tracking-wider text-cream-muted mb-1">Total Outstanding</p>
             <p className={cn("font-display italic text-3xl", totalOutstanding > 0 ? "text-signal-rose" : "text-signal-green")}>
-              ${totalOutstanding.toFixed(2)}
+              {money(totalOutstanding)}
+            </p>
+            <p className="text-cream-dim text-xs mt-2">
+              Paid lifetime {money(spend?.lifetimeSpend ?? 0, false)} · Avg {money(spend?.avgOrder ?? 0, false)} · {spend?.invoiceCount ?? 0} invoices
             </p>
           </div>
-          <DollarSign className={cn("w-8 h-8", totalOutstanding > 0 ? "text-signal-rose/40" : "text-signal-green/40")} />
+          <DollarSign className={cn("w-8 h-8 shrink-0", totalOutstanding > 0 ? "text-signal-rose/40" : "text-signal-green/40")} />
         </div>
-        {!hasInvoices && <p className="text-cream-dim text-xs mt-2">No unpaid invoices — account is clear.</p>}
+        {open.length === 0 && <p className="text-cream-dim text-xs mt-2">No unpaid invoices — account is clear.</p>}
       </div>
 
-      {hasInvoices && (
+      {open.length > 0 && (
         <div className="glass-panel rounded-2xl border border-brass/10 overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-brass/10">
             <Receipt className="w-3.5 h-3.5 text-brass-light" />
-            <span className="ui-label text-brass-light text-[10px] tracking-wider">Unpaid Invoices</span>
+            <span className="ui-label text-brass-light text-[10px] tracking-wider">Open balance</span>
           </div>
           <div className="divide-y divide-brass/8">
-            {invoices.map((inv: any) => {
+            {open.map((inv) => {
               const isOverdue = inv.status === "overdue" ||
                 (inv.dueDate && new Date(inv.dueDate) < new Date() && inv.status !== "paid");
               return (
@@ -442,18 +667,58 @@ function BalanceTab({ erpnextCustomerId }: { erpnextCustomerId: string | null })
                   <div>
                     <p className="text-cream text-sm font-mono">{inv.id}</p>
                     <p className="text-cream-dim text-[10px] mt-0.5">
-                      Due: {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : "—"}
+                      {inv.postingDate ? new Date(inv.postingDate + "T12:00:00").toLocaleDateString() : "—"}
+                      {inv.dueDate && <> · Due {new Date(inv.dueDate + "T12:00:00").toLocaleDateString()}</>}
                       {isOverdue && <span className="text-signal-rose ml-2 font-bold">OVERDUE</span>}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
                     <StatusBadge status={inv.status} />
-                    <p className="text-signal-rose font-display italic">${Number(inv.outstandingAmount ?? inv.total ?? 0).toFixed(2)}</p>
+                    <p className="text-signal-rose font-display italic">{money(invOut(inv))}</p>
                   </div>
                 </div>
               );
             })}
           </div>
+        </div>
+      )}
+
+      {invoices.length > 0 && (
+        <div className="glass-panel rounded-2xl border border-brass/10 overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-brass/10">
+            <History className="w-3.5 h-3.5 text-brass-light" />
+            <span className="ui-label text-brass-light text-[10px] tracking-wider">Spend history</span>
+            <span className="text-[10px] text-cream-dim ml-auto">{invoices.length} shown</span>
+          </div>
+          <div className="divide-y divide-brass/8 max-h-[28rem] overflow-y-auto">
+            {invoices.map((inv) => (
+              <div key={inv.id} className="flex items-center justify-between px-4 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-cream text-sm font-mono truncate">{inv.id}</p>
+                  <p className="text-cream-dim text-[10px] mt-0.5">
+                    {inv.postingDate ? new Date(inv.postingDate + "T12:00:00").toLocaleDateString() : "—"}
+                    {invPaid(inv) > 0 && invOut(inv) > 0.005 && (
+                      <span className="ml-2">paid {money(invPaid(inv), false)}</span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <StatusBadge status={inv.status} />
+                  <p className={cn(
+                    "font-display italic text-sm tabular-nums",
+                    invOut(inv) > 0.005 ? "text-signal-rose" : "text-brass-shimmer",
+                  )}>
+                    {money(invTotal(inv), false)}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+          {paid.length > 0 && open.length > 0 && (
+            <p className="text-[10px] text-cream-dim px-4 py-2 border-t border-brass/10">
+              {paid.length} settled · {open.length} open
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -757,6 +1022,9 @@ export default function CustomerDetail() {
         </div>
       </div>
 
+      {/* Live spend KPIs from ERP Sales Invoices */}
+      <SpendStrip customerId={c.id} />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Contact summary */}
         <Section
@@ -1014,22 +1282,16 @@ export default function CustomerDetail() {
 
         {/* Billing */}
         <Section title="Billing" icon={Heart}>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Payment Preference" value={c.paymentPreference} editing={editing} field="payment_preference" draft={draft} onChange={onChange} />
-            <Field label="Casa" value={c.casaTier} editing={editing} field="casa_tier" draft={draft} onChange={onChange} />
-            <div>
-              <label className={LABEL}>Lifetime value</label>
-              <p className="text-brass-shimmer font-display italic">${Number(c.lifetimeValue ?? 0).toFixed(2)}</p>
-            </div>
-            <div>
-              <label className={LABEL}>Garments owned</label>
-              <p className="text-cream text-sm">{c.totalGarmentsOwned ?? 0}</p>
-            </div>
-            <div>
-              <label className={LABEL}>Referral Code</label>
-              <p className="text-cream text-sm font-mono">{c.referralCode ?? "—"}</p>
-            </div>
-          </div>
+          <BillingLive
+            customerId={c.id}
+            fallbackLtv={c.lifetimeValue}
+            garments={c.totalGarmentsOwned}
+            editing={editing}
+            draft={draft}
+            onChange={onChange}
+            c={c}
+            onOpenBalance={() => setActiveTab("balance")}
+          />
         </Section>
 
         {/* System */}
@@ -1058,7 +1320,9 @@ export default function CustomerDetail() {
           <OrdersTab customerId={c.id} erpnextCustomerId={c.erpnextCustomerId} />
         )}
         {activeTab === "measurements" && <MeasurementsTab customer={c} />}
-        {activeTab === "balance" && <BalanceTab erpnextCustomerId={c.erpnextCustomerId} />}
+        {activeTab === "balance" && (
+          <BalanceTab customerId={c.id} erpnextCustomerId={c.erpnextCustomerId} />
+        )}
       </div>
 
       {contactEditOpen && (
