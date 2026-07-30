@@ -132,8 +132,8 @@ export default function AlterationReceipt() {
               ['Date', fmt(ticket.ticket_date)],
               ['Due', fmt(ticket.due_date) + (ticket.is_rush === 1 ? '  ★ RUSH' : '')],
               ticket.delivery_method ? ['Delivery', ticket.delivery_method] : null,
-            ].filter(Boolean).map(([label, value]) => (
-              <tr key={label as string}>
+            ].filter((row): row is [string, string] => Array.isArray(row) && row.length === 2).map(([label, value]) => (
+              <tr key={label}>
                 <td style={{ color: '#555', paddingRight: '8px', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{label}:</td>
                 <td style={{ fontWeight: label === 'Customer' || label === 'Due' ? 'bold' : 'normal', color: label === 'Due' && ticket.is_rush === 1 ? '#cc0000' : '#000' }}>{value}</td>
               </tr>

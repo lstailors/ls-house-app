@@ -157,6 +157,7 @@ export async function createCustomOrder(body: any, user: { email: string; locati
         email: body.customerEmail,
         division: locCode,
       });
+      if (!created) throw new Error("Could not create customer");
       customerId = created.id;
     }
   }

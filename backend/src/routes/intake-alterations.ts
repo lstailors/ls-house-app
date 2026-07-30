@@ -658,7 +658,10 @@ intakeAlterationsRouter.patch('/tickets/:name/status', async (c) => {
     if (fi >= 0 && ti > fi) {
       const path: string[] = [];
       for (let i = fi; i < ti; i++) {
-        const a = DIRECT[FORWARD[i]]?.[FORWARD[i + 1]];
+        const fromState = FORWARD[i];
+        const toState = FORWARD[i + 1];
+        if (!fromState || !toState) return null;
+        const a = DIRECT[fromState]?.[toState];
         if (!a) return null;
         path.push(a);
       }

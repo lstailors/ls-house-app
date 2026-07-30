@@ -154,12 +154,11 @@ agentsRouter.get("/costs", async (c) => {
 
   const byAgent: Record<string, { totalCost: number; totalTokens: number; model: string; daily: any[] }> = {};
   for (const row of data) {
-    if (!byAgent[row.agent_slug]) {
-      byAgent[row.agent_slug] = { totalCost: 0, totalTokens: 0, model: row.model, daily: [] };
-    }
-    byAgent[row.agent_slug].totalCost += Number(row.cost_usd);
-    byAgent[row.agent_slug].totalTokens += row.input_tokens + row.output_tokens;
-    byAgent[row.agent_slug].daily.push(row);
+    const bucket = byAgent[row.agent_slug] ?? { totalCost: 0, totalTokens: 0, model: row.model, daily: [] as any[] };
+    if (!byAgent[row.agent_slug]) byAgent[row.agent_slug] = bucket;
+    bucket.totalCost += Number(row.cost_usd);
+    bucket.totalTokens += row.input_tokens + row.output_tokens;
+    bucket.daily.push(row);
   }
 
   return c.json({ data: byAgent });
@@ -411,7 +410,8 @@ agentsRouter.post("/:slug/messages", async (c) => {
     role: m.role as "user" | "assistant",
     content: m.content,
   }));
-  if (!messages.length || messages[messages.length - 1].content !== userContent) {
+  const last = messages[messages.length - 1];
+  if (!messages.length || !last || last.content !== userContent) {
     messages.push({ role: "user", content: userContent });
   }
 

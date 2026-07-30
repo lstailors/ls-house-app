@@ -615,7 +615,7 @@ export default function AgentDetail() {
   const [showDelegate, setShowDelegate] = useState(false);
   const updateAgent = useUpdateAgent(slug);
 
-  const showFinancials = canSeeFinancials(me?.role);
+  const showFinancials = me?.role ? canSeeFinancials(me.role) : false;
   const isSuperAdmin = me?.role === "super_admin";
 
   if (isLoading) {

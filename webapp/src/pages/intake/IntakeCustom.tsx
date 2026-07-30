@@ -60,6 +60,7 @@ export default function IntakeCustom() {
   const [isTaxable, setIsTaxable] = useState(true); // default taxable for in-store
   const [notes, setNotes] = useState("");
   const [depositAmount, setDepositAmount] = useState(0);
+  const [manualPrice, setManualPrice] = useState(0);
 
   const [paymentLinkOpen, setPaymentLinkOpen] = useState(false);
   const [paymentLink, setPaymentLink] = useState("");
@@ -179,6 +180,38 @@ export default function IntakeCustom() {
     }
   };
 
+  const handleChargeFullPayment = async () => {
+    if (!orderValid) {
+      toast.error("Complete customer, garment, and fabric first.");
+      return;
+    }
+    const amount = manualPrice > 0 ? manualPrice : breakdown.subtotal;
+    if (amount <= 0) {
+      toast.error("Set a price first.");
+      return;
+    }
+    try {
+      const order = await createOrder.mutateAsync(buildOrderPayload());
+      const invoice = (order as any).erpName ?? order.id;
+      const res = await api.raw("/api/payments/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoice, amount }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result.url) {
+        throw new Error(result.error?.message ?? "Could not create payment link");
+      }
+      setCompletedOrder(order);
+      setPaymentLink(result.url);
+      setPaymentLinkOpen(true);
+      navigator.clipboard?.writeText(result.url).catch(() => undefined);
+      toast.success("Payment link created");
+    } catch (e) {
+      toast.error((e as Error).message || "Could not start payment");
+    }
+  };
+
   const resetAll = () => {
     setCustomer({ name: "", phone: "", email: "" });
     setGarment(undefined);
@@ -186,6 +219,7 @@ export default function IntakeCustom() {
     setNotes("");
     setPriceTbd(false);
     setDepositAmount(0);
+    setManualPrice(0);
     setPaymentLink("");
     setCompletedOrder(undefined);
     setCompletedReceipt(undefined);
@@ -317,6 +351,9 @@ export default function IntakeCustom() {
               onTbdChange={onTbdChange}
               depositAmount={depositAmount}
               onDepositChange={setDepositAmount}
+              manualPrice={manualPrice}
+              onManualPriceChange={setManualPrice}
+              onChargeFullPayment={handleChargeFullPayment}
               canSubmit={canSubmit}
               onChargeDeposit={handleChargeDeposit}
               onSaveQuote={handleSaveQuote}
@@ -336,6 +373,9 @@ export default function IntakeCustom() {
             onTbdChange={onTbdChange}
             depositAmount={depositAmount}
             onDepositChange={setDepositAmount}
+              manualPrice={manualPrice}
+              onManualPriceChange={setManualPrice}
+              onChargeFullPayment={handleChargeFullPayment}
             canSubmit={canSubmit}
             onChargeDeposit={handleChargeDeposit}
             onSaveQuote={handleSaveQuote}

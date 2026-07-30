@@ -263,7 +263,7 @@ async function isValidTwilioWebhook(c: any, params: URLSearchParams): Promise<bo
 }
 
 
-function mapClientRow(row) {
+function mapClientRow(row: any) {
   return {
     id: row.name,
     first_name: row.first_name ?? String(row.customer_name ?? "").split(" ")[0] ?? "",
@@ -479,7 +479,7 @@ async function getAlterationTicketByName(ticketName: string) {
   return rows[0] ?? null;
 }
 
-async function lookupClients(q, field) {
+async function lookupClients(q: any, field: any) {
   if (field === "phone" || field === "any") {
     const norm = normalizePhone(q);
     const row = await findCustomerByPhone(norm);
@@ -504,7 +504,7 @@ async function lookupClients(q, field) {
   return [];
 }
 
-async function lookupClientByPhone(phone) {
+async function lookupClientByPhone(phone: any) {
   const norm = normalizePhone(phone);
   let row = await findCustomerByPhone(norm);
   if (!row) row = await findCustomerByPhone(phone);
@@ -531,10 +531,10 @@ const SB_TABLE_DT = {
   sofia2_activity_log: DT.SOFIA_ACTIVITY_LOG,
 };
 
-async function sbInsert(table, row) {
+async function sbInsert(table: keyof typeof SB_TABLE_DT, row: any) {
   const dt = SB_TABLE_DT[table];
   if (!dt) { console.error("sbInsert unknown table:", table); return; }
-  try { await storeInsert(dt, row); } catch (e) { console.error("sbInsert error:", table, e.message); }
+  try { await storeInsert(dt, row); } catch (e) { console.error("sbInsert error:", table, (e as Error).message); }
 }
 
 // ── Substitute merge tags ──
@@ -1294,11 +1294,12 @@ async function processMessage(from: string, body: string, messageSid: string = "
     let escalationId: string | null = null;
     if (isAssistant) {
       const esc = await storeList(DT.ESCALATION, { filters: [["status", "=", "pending"]], orderBy: "creation desc", limit: 1 });
-      if (esc?.length) {
-        const age = Date.now() - new Date(String(esc[0].creation)).getTime();
+      const esc0 = esc?.[0];
+      if (esc0) {
+        const age = Date.now() - new Date(String(esc0.creation)).getTime();
         if (age < 90_000) {
           isEscalationReply = true;
-          escalationId = String(esc[0].name);
+          escalationId = String(esc0.name);
         }
       }
     }
@@ -1692,7 +1693,7 @@ sofiaRouter.post("/conversations/:phone/handoff", async (c) => {
       previous_sofia_state: JSON.stringify({ agent_name: agentName }),
     });
   } catch (e) {
-    console.error("[sofia/handoff] insert error:", e.message);
+    console.error("[sofia/handoff] insert error:", (e as Error).message);
     return c.json({ error: { message: "Failed to log handoff" } }, 500);
   }
 

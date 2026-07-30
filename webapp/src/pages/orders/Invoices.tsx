@@ -21,12 +21,13 @@ const FILTERS = [
 ];
 
 // Extended Invoice type with extra fields the new backend returns
-interface ErpInvoice extends Invoice {
+interface ErpInvoice extends Omit<Invoice, "salesOrderId" | "status"> {
   alterationTicketRef?: string | null;
   outstandingAmount?: number;
   dueDate?: string | null;
   postingDate?: string | null;
   salesOrderId?: string | null;
+  status: Invoice["status"] | "unpaid" | "overdue" | string;
 }
 
 export default function Invoices() {

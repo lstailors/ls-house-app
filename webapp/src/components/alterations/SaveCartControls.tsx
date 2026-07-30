@@ -1,4 +1,4 @@
-import { useState, useTransition } from "react";
+import { useState, type CSSProperties } from "react";
 import { api } from "@/lib/api";
 import type { ParkedCart, CartPayload } from "@/lib/cart/parked";
 import type { CustomerInput } from "@/lib/erpnext/customer";
@@ -13,78 +13,93 @@ export function SaveCartControls(props: {
 }) {
   const [open, setOpen] = useState(false);
   const [carts, setCarts] = useState<ParkedCart[]>([]);
-  const [busy, startTransition] = useTransition();
+  const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   function flash(msg: string) { setToast(msg); setTimeout(() => setToast(null), 2500); }
 
+  async function withBusy(fn: () => Promise<void>) {
+    setBusy(true);
+    try { await fn(); } finally { setBusy(false); }
+  }
+
   function handleSave() {
     const snap = props.snapshot();
-    startTransition(async () => {
-      try {
-        const saved = await api.post<ParkedCart>("/api/carts", {
-          id: props.activeCartId,
-          createdBy: props.createdBy,
-          location: props.location,
-          customer: snap.customer,
-          customerRef: snap.customerRef,
-          cart: snap.cart,
-        });
-        props.onSaved?.(saved);
-        flash("Cart saved");
-      } catch (e: any) {
-        flash(e?.message ?? "Save failed");
-      }
+    startTransition(() => {
+      void (async () => {
+        try {
+          const saved = await api.post<ParkedCart>("/api/carts", {
+            id: props.activeCartId,
+            createdBy: props.createdBy,
+            location: props.location,
+            customer: snap.customer,
+            customerRef: snap.customerRef,
+            cart: snap.cart,
+          });
+          props.onSaved?.(saved);
+          flash("Cart saved");
+        } catch (e: any) {
+          flash(e?.message ?? "Save failed");
+        }
+      })();
     });
   }
 
   function openDrawer() {
     setOpen(true);
-    startTransition(async () => {
-      try {
-        const url = new URL("/api/carts", window.location.origin);
-        url.searchParams.set("location", props.location);
-        const carts = await api.get<ParkedCart[]>(url.pathname + url.search);
-        setCarts(carts);
-      } catch (e: any) {
-        flash(e?.message ?? "Could not load saved carts");
-      }
+    startTransition(() => {
+      void (async () => {
+        try {
+          const url = new URL("/api/carts", window.location.origin);
+          url.searchParams.set("location", props.location);
+          const carts = await api.get<ParkedCart[]>(url.pathname + url.search);
+          setCarts(carts);
+        } catch (e: any) {
+          flash(e?.message ?? "Could not load saved carts");
+        }
+      })();
     });
   }
 
   function handleResume(id: string) {
-    startTransition(async () => {
-      try {
-        const cart = await api.get<ParkedCart>(`/api/carts/${id}`);
-        props.onResume(cart);
-        setOpen(false);
-      } catch (e: any) {
-        flash(e?.message ?? "Resume failed");
-      }
+    startTransition(() => {
+      void (async () => {
+        try {
+          const cart = await api.get<ParkedCart>(`/api/carts/${id}`);
+          props.onResume(cart);
+          setOpen(false);
+        } catch (e: any) {
+          flash(e?.message ?? "Resume failed");
+        }
+      })();
     });
   }
 
   function handleCheckout(id: string) {
-    startTransition(async () => {
-      try {
-        const result = await api.post<{ ticket: string; customer: string }>(`/api/carts/${id}/commit`, {});
-        props.onCommitted(result.ticket);
-        setOpen(false);
-        flash(`Created ${result.ticket}`);
-      } catch (e: any) {
-        flash(e?.message ?? "Checkout failed");
-      }
+    startTransition(() => {
+      void (async () => {
+        try {
+          const result = await api.post<{ ticket: string; customer: string }>(`/api/carts/${id}/commit`, {});
+          props.onCommitted(result.ticket);
+          setOpen(false);
+          flash(`Created ${result.ticket}`);
+        } catch (e: any) {
+          flash(e?.message ?? "Checkout failed");
+        }
+      })();
     });
   }
 
   function handleRemove(id: string) {
-    startTransition(async () => {
-      try {
-        await api.delete(`/api/carts/${id}`);
-        setCarts((c) => c.filter((x) => x.id !== id));
-      } catch (e: any) {
-        flash(e?.message ?? "Remove failed");
-      }
+    startTransition(() => {
+      void (async () => {
+        try {
+          await api.delete(`/api/carts/${id}`);
+          setCarts((c) => c.filter((x) => x.id !== id));
+        } catch (e: any) {
+          flash(e?.message ?? "Remove failed");
+        }
+      })();
     });
   }
 
@@ -121,8 +136,8 @@ export function SaveCartControls(props: {
   );
 }
 
-const btn: React.CSSProperties = { background: BRASS, color: "#0D1A10", border: "none", borderRadius: 10, padding: "10px 18px", fontSize: 14, cursor: "pointer", minHeight: 44 };
-const btnGhost: React.CSSProperties = { background: "transparent", color: CREAM, border: `0.5px solid ${BRASS}66`, borderRadius: 10, padding: "10px 18px", fontSize: 14, cursor: "pointer", minHeight: 44 };
+const btn: CSSProperties = { background: BRASS, color: "#0D1A10", border: "none", borderRadius: 10, padding: "10px 18px", fontSize: 14, cursor: "pointer", minHeight: 44 };
+const btnGhost: CSSProperties = { background: "transparent", color: CREAM, border: `0.5px solid ${BRASS}66`, borderRadius: 10, padding: "10px 18px", fontSize: 14, cursor: "pointer", minHeight: 44 };
 
 function timeAgo(iso: string) {
   const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);

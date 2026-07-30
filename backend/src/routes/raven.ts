@@ -421,8 +421,8 @@ ravenRouter.get("/sofia-poll", async (c) => {
     }
     return c.json({ data: { ok: true, processed } });
   } catch (e) {
-    console.error("[raven/sofia-poll] error:", e.message);
-    return c.json({ data: { ok: false, error: e.message } }, 500);
+    console.error("[raven/sofia-poll] error:", (e as Error).message);
+    return c.json({ data: { ok: false, error: (e as Error).message } }, 500);
   }
 });
 
@@ -477,7 +477,7 @@ ravenRouter.post("/sofia-webhook", async (c) => {
     }
     return c.json({ data: { ok: true, processed } });
   } catch (e) {
-    console.error("[raven/sofia-webhook] error:", e.message);
-    return c.json({ data: { ok: false, error: e.message } }, 500);
+    console.error("[raven/sofia-webhook] error:", (e as Error).message);
+    return c.json({ data: { ok: false, error: (e as Error).message } }, 500);
   }
 });

@@ -145,7 +145,8 @@ export function resolveLocationFilter(
 
 // ─── Role predicates ──────────────────────────────────────────────────────────
 
-export function canSeeFinancials(role: UserRole): boolean {
+export function canSeeFinancials(role: UserRole | undefined | null): boolean {
+  if (!role) return false;
   return role === "super_admin" || role === "store_manager";
 }
 

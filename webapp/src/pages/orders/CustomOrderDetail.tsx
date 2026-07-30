@@ -46,19 +46,20 @@ export default function CustomOrderDetail() {
 
   const createDelivery = useMutation({
     mutationFn: async () => {
-      const summary = order?.garments?.map((g: any) => `${g.garmentType || g.type}`).join(", ")
-        || order?.spec?.garment || "Custom Order";
+      const o = order as any;
+      const summary = o?.garments?.map((g: any) => `${g.garmentType || g.type}`).join(", ")
+        || o?.spec?.garment || "Custom Order";
 
       return api.post<{ id: string; qrToken: string }>("/api/deliveries/from-order", {
-        sales_order: order?.erpName ?? order?.erpnextName ?? null,
-        customer_name: order?.customer?.name ?? "Walk-in",
-        customer_phone: order?.customer?.phone ?? null,
-        customer_erp_name: order?.customer?.name ?? null,
-        address: order?.customer?.address ?? null,
-        notify_phone: order?.customer?.phone ?? null,
+        sales_order: o?.erpName ?? o?.erpnextName ?? null,
+        customer_name: o?.customer?.name ?? "Walk-in",
+        customer_phone: o?.customer?.phone ?? null,
+        customer_erp_name: o?.customer?.name ?? null,
+        address: o?.customer?.address ?? null,
+        notify_phone: o?.customer?.phone ?? null,
         garment_summary: summary,
-        garment_count: order?.garments?.length ?? 1,
-        location: order?.locationId ?? "NYC",
+        garment_count: o?.garments?.length ?? 1,
+        location: o?.locationId ?? "NYC",
       });
     },
     onSuccess: (result) => {

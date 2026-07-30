@@ -13,6 +13,8 @@ export const OrderStatus = z.enum([
   "in_progress",
   "ready",
   "picked_up",
+  "complete",
+  "delivered",
   "cancelled",
 ]);
 export type OrderStatus = z.infer<typeof OrderStatus>;
@@ -32,6 +34,7 @@ export const DeliveryStatus = z.enum([
   "out_for_delivery",
   "delivered",
   "failed",
+  "cancelled",
 ]);
 export type DeliveryStatus = z.infer<typeof DeliveryStatus>;
 
@@ -60,7 +63,7 @@ export type StyleCategory = z.infer<typeof StyleCategory>;
 export const CommChannel = z.enum(["call", "sms"]);
 export type CommChannel = z.infer<typeof CommChannel>;
 
-export const InvoiceStatus = z.enum(["draft", "sent", "paid", "void"]);
+export const InvoiceStatus = z.enum(["draft", "sent", "paid", "void", "unpaid", "overdue"]);
 export type InvoiceStatus = z.infer<typeof InvoiceStatus>;
 
 // ─── Domain models ──────────────────────────────────────────────────────
@@ -116,6 +119,7 @@ export const Customer = z.object({
   dossier: CustomerDossier,
   createdAt: z.string(),
   updatedAt: z.string(),
+  address: z.string().nullable().optional(),
 });
 export type Customer = z.infer<typeof Customer>;
 
@@ -238,6 +242,9 @@ export const CustomOrder = z.object({
   createdBy: Profile.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  garments: z.array(z.record(z.string(), z.unknown())).optional(),
+  erpName: z.string().nullable().optional(),
+  erpnextName: z.string().nullable().optional(),
 });
 export type CustomOrder = z.infer<typeof CustomOrder>;
 
@@ -256,7 +263,7 @@ export type SalesOrder = z.infer<typeof SalesOrder>;
 
 export const Invoice = z.object({
   id: z.string(),
-  salesOrderId: z.string().nullable(),
+  salesOrderId: z.string().nullable().optional(),
   locationId: z.string(),
   erpnextId: z.string().nullable(),
   status: InvoiceStatus,
@@ -891,9 +898,9 @@ export const ScannerType = z.enum([
   "tailor_transfer",
   "payment_link",
   "garment_tag",
+  "customer",
 ]);
 export type ScannerType = z.infer<typeof ScannerType>;
-
 export const ScannerResolveRequest = z.object({
   token: z.string().min(1),
 });

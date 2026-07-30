@@ -139,9 +139,21 @@ export default function Appointments() {
     }
   }
 
-  async function handleBlock(data: BlockTimeRequest) {
+  async function handleBlock(data: {
+    start: string;
+    end?: string;
+    reason?: string;
+    all_day?: boolean;
+    whole_shop?: boolean;
+  }) {
     try {
-      await blockMutation.mutateAsync(data);
+      await blockMutation.mutateAsync({
+        start: data.start,
+        end: data.end,
+        reason: data.reason,
+        all_day: data.all_day ?? false,
+        whole_shop: data.whole_shop ?? false,
+      });
       setBlockModalOpen(false);
       toast.success("Time blocked");
     } catch {

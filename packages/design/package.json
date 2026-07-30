@@ -14,6 +14,8 @@
     "./utils": "./src/utils.ts",
     "./ui/*": "./src/ui/*.tsx",
     "./hooks/*": "./src/hooks/*",
+    "./hooks/use-mobile": "./src/hooks/use-mobile.tsx",
+    "./hooks/use-mobile.tsx": "./src/hooks/use-mobile.tsx",
     "./glass/*": "./src/glass/*.tsx",
     "./src/index.css": "./src/index.css"
   },

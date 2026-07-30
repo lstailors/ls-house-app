@@ -265,7 +265,8 @@ export default function SalesOrders() {
         if (!a.dueDate) return <span className="text-cream-dim text-xs">—</span>
         const dd = new Date(a.dueDate)
         dd.setHours(0, 0, 0, 0)
-        const isPast = dd < today && a.status !== "picked_up" && a.status !== "complete" && a.status !== "delivered"
+        const st = a.status as string
+        const isPast = dd < today && st !== "picked_up" && st !== "complete" && st !== "delivered"
         return (
           <span className={cn("text-xs", isPast ? "text-rose-400 font-medium" : "text-cream-dim")}>
             {formatDate(a.dueDate)}

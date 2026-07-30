@@ -155,7 +155,7 @@ function stripFactoryCost(desc: string | null | undefined): string {
   if (!desc) return '';
   const plain = String(desc).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   if (plain.includes('factory $')) {
-    return plain.split('factory $')[0].replace(/[·\s]+$/g, '').trim();
+    return (plain.split('factory $')[0] ?? plain).replace(/[·\s]+$/g, '').trim();
   }
   return plain;
 }

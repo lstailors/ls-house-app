@@ -56,6 +56,7 @@ export async function verifyToken(token: string): Promise<{ sub: string; name: s
     const parts = token.split(".");
     if (parts.length !== 3) return null;
     const [header, body, sig] = parts;
+    if (!header || !body || !sig) return null;
     const key = await importKey(getSecret());
     const sigBytes = Uint8Array.from(atob(sig.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
     const valid = await crypto.subtle.verify("HMAC", key, sigBytes, new TextEncoder().encode(`${header}.${body}`));

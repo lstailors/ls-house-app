@@ -252,6 +252,7 @@ function CustomerSearch({
             customerId={customer.id}
             customerName={customer.name}
             onClose={() => setEditOpen(false)}
+            onSaved={() => setEditOpen(false)}
           />
         )}
       </>
@@ -1515,16 +1516,31 @@ function IntakeAlterationsInner() {
   }), [customer, garments])
 
   const handleResume = useCallback((cart: ParkedCart) => {
-    const snap = cart.customer_snapshot as any
+    const anyCart = cart as ParkedCart & { customer_snapshot?: any; customer_ref?: string | null }
+    const snap = anyCart.customer_snapshot ?? (cart as any).customerSnapshot
     setCustomer(snap ? {
-      id: cart.customer_ref ?? snap.id ?? undefined,
+      id: anyCart.customer_ref ?? cart.customerRef ?? snap.id ?? undefined,
       name: snap.name ?? snap.fullName ?? snap.customer_name ?? '',
       phone: snap.phone ?? snap.mobile_no ?? '',
       email: snap.email ?? snap.email_id ?? '',
     } : null)
-    setGarments(cart.cart?.garments ?? [])
+    const g = (cart.cart?.garments ?? []) as any[]
+    setGarments(g.map((x) => ({
+      id: x.id ?? crypto.randomUUID(),
+      ref: x.ref ?? '',
+      garmentType: x.garmentType ?? x.garment_type ?? 'Other',
+      description: x.description ?? '',
+      color: x.color ?? '',
+      notes: x.notes ?? '',
+      lines: x.lines ?? [],
+      fabric: x.fabric ?? '',
+      condition: x.condition ?? '',
+      fitAreas: x.fitAreas ?? [],
+      complexity: x.complexity ?? 'standard',
+      photos: x.photos ?? [],
+    })))
     setActiveGarmentId(null)
-    setIsRush(cart.cart?.isRush ?? false)
+    setIsRush(Boolean((cart.cart as any)?.isRush ?? (cart.cart as any)?.is_rush))
     setPaymentMethod('pay_now')
     setDeposit('')
   }, [])

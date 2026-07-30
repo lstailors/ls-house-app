@@ -421,7 +421,8 @@ deliveriesRouter.post("/", async (c) => {
       lsh_delivery_apt: body.apt ?? body.delivery_apt ?? null,
       lsh_delivery_building: body.building ?? body.delivery_building ?? null,
       lsh_delivery_city: body.city ?? body.delivery_city ?? "New York",
-      customer_phone: body.newCustomerPhone ?? null,
+      customer_phone:
+        body.customer_phone ?? body.customerPhone ?? body.newCustomerPhone ?? null,
       lsh_scheduled_at: body.scheduledAt ?? null,
       lsh_notify_phone: body.notifyPhone ?? body.newCustomerPhone ?? null,
       lsh_qr_token: token,
@@ -434,8 +435,6 @@ deliveriesRouter.post("/", async (c) => {
       // HER-75: alts Dispatch posts alteration_ticket — must land on the join key
       lsh_alteration_ticket: body.alterationTicket ?? body.alteration_ticket ?? null,
       customer_name: body.customer_name ?? body.customerName ?? null,
-      customer_phone:
-        body.customer_phone ?? body.customerPhone ?? body.newCustomerPhone ?? null,
       lsh_timeline: [buildTimelineEntry("Queued", user.name ?? user.email ?? "Staff")],
     });
 

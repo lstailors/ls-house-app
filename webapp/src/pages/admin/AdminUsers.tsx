@@ -15,7 +15,7 @@ import {
   useLocations,
 } from "@/lib/queries";
 import { initials } from "@ls/design/format";
-import type { Profile } from "@ls/types";
+import type { Profile, UserRole } from "@ls/types";
 import { toast } from "sonner";
 
 const FILTERS = [
@@ -112,7 +112,7 @@ function InviteModal({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label className="ui-label block mb-1.5">Role</label>
-            <select value={role} onChange={(e) => setRole(e.target.value)} className={INPUT_CLS}>
+            <select value={role} onChange={(e) => setRole(e.target.value as typeof role)} className={INPUT_CLS}>
               {ROLES.map((r) => (
                 <option key={r.value} value={r.value}>
                   {r.label}
@@ -216,7 +216,7 @@ function EditModal({ user, onClose }: { user: Profile; onClose: () => void }) {
           </div>
           <div>
             <label className="ui-label block mb-1.5">Role</label>
-            <select value={role} onChange={(e) => setRole(e.target.value)} className={INPUT_CLS}>
+            <select value={role} onChange={(e) => setRole(e.target.value as typeof role)} className={INPUT_CLS}>
               {ROLES.map((r) => (
                 <option key={r.value} value={r.value}>
                   {r.label}

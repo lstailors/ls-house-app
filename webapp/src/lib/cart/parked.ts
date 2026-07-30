@@ -12,6 +12,11 @@ export interface CartPayload {
       price: number
       estMinutes: number | null
     }>
+    fabric?: string
+    condition?: string
+    fitAreas?: string[]
+    complexity?: string
+    photos?: string[]
   }>
   lines: Array<{
     preset: string
@@ -19,6 +24,7 @@ export interface CartPayload {
     price: number
     estMinutes: number | null
   }>
+  isRush?: boolean
 }
 
 export interface ParkedCart {
@@ -32,6 +38,10 @@ export interface ParkedCart {
     email: string
   }
   customerRef: string | null
+  /** @deprecated use customer */
+  customer_snapshot?: ParkedCart["customer"] | null
+  /** @deprecated use customerRef */
+  customer_ref?: string | null
   cart: CartPayload
   label?: string
   updated_at: string

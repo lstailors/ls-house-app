@@ -133,7 +133,7 @@ export default function DeliveryDetail() {
 
   const isOut = delivery.status === "out_for_delivery";
   const isDelivered = delivery.status === "delivered";
-  const isCancelled = delivery.status === "cancelled";
+  const isCancelled = (delivery.status as string) === "cancelled";
   const isScheduled = delivery.status === "scheduled";
   const isPickup = (delivery as any).method === "Pickup";
   const canMarkReadyForPickup = isPickup && isScheduled;
