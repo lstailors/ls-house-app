@@ -107,6 +107,38 @@ def _resolve_invoice(code=None, invoice=None, ticket=None):
     return _invoice_from_code(code)
 
 
+def _ensure_invoice_submitted(inv):
+    """Submit draft SI so Terminal / pay-link can run (legacy alts were draft-until-pickup)."""
+    if inv.docstatus == 1:
+        return inv
+    if inv.docstatus == 2:
+        frappe.throw("Invoice {} is cancelled".format(inv.name))
+    if flt(inv.grand_total) <= 0:
+        frappe.throw("Invoice {} has no amount to charge".format(inv.name))
+
+    # Stale drafts often fail party due-date rules when posting is backdated.
+    from frappe.utils import getdate, today
+
+    tod = getdate(today())
+    post = getdate(inv.posting_date) if inv.posting_date else tod
+    due = getdate(inv.due_date) if inv.due_date else post
+    if due < post:
+        due = post
+    if post < tod or due < tod:
+        post = tod
+        due = tod
+        inv.set_posting_time = 1
+    inv.posting_date = post
+    inv.due_date = due
+    for s in inv.payment_schedule or []:
+        s.due_date = due
+    inv.flags.ignore_permissions = True
+    inv.save()
+    inv.submit()
+    inv.reload()
+    return inv
+
+
 @frappe.whitelist()
 def create_checkout(code=None, invoice=None, ticket=None):
     """
@@ -115,12 +147,12 @@ def create_checkout(code=None, invoice=None, ticket=None):
     `ticket`.
 
     HER-63 P0-3: reuse an open Terminal Square Checkout when present.
+    Auto-submits draft alteration invoices so intake can charge immediately.
     """
     inv_name = _resolve_invoice(code=code, invoice=invoice, ticket=ticket)
 
     inv = frappe.get_doc("Sales Invoice", inv_name)
-    if inv.docstatus != 1:
-        frappe.throw("Invoice {} is not submitted/finalized yet".format(inv_name))
+    inv = _ensure_invoice_submitted(inv)
 
     outstanding = flt(inv.outstanding_amount)
     if outstanding <= 0:
@@ -169,16 +201,31 @@ def create_payment_link(code=None, invoice=None, ticket=None):
 
     HER-63 P0-3: reuse the newest open Payment Link for this invoice instead
     of minting a new Square idempotency key every call.
+
+    Auto-submits draft invoices (legacy alts created SI as draft until pickup)
+    so pay links work the moment a billable ticket exists.
     """
     inv_name = _resolve_invoice(code=code, invoice=invoice, ticket=ticket)
 
     inv = frappe.get_doc("Sales Invoice", inv_name)
-    if inv.docstatus != 1:
-        frappe.throw("Invoice {} is not submitted/finalized yet".format(inv_name))
+    inv = _ensure_invoice_submitted(inv)
 
     outstanding = flt(inv.outstanding_amount)
     if outstanding <= 0:
         return {"ok": False, "status": "already_paid", "invoice": inv_name}
+
+    # Prefer link already on the SI
+    prior = (getattr(inv, "lsh_square_payment_link", None) or "").strip()
+    if prior.startswith("http"):
+        return {
+            "ok": True,
+            "status": "reused_si_field",
+            "method": "qr",
+            "invoice": inv_name,
+            "amount": outstanding,
+            "url": prior,
+            "reused": True,
+        }
 
     existing = _open_checkout(inv_name, "Payment Link")
     if existing and existing.get("url"):

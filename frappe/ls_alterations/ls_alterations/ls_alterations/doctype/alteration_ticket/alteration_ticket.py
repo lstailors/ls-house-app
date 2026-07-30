@@ -138,13 +138,34 @@ def ensure_custom_alteration_item():
 	).insert(ignore_permissions=True)
 
 
-def create_sales_invoice(doc, method=None):
-	"""after_insert hook: create draft Sales Invoice mirroring ticket lines.
+def _mint_payment_link_after_commit(invoice_name):
+	"""After ticket+SI commit: submit is already done — mint Square pay link.
 
-	Skipped when the ticket is included in a custom order AND the total is $0
-	(staff warranty / complimentary work). If staff later adds a charge the
-	billing_status flips to Billable, but the invoice must be created manually
-	or via a future save-triggered path — we never auto-create a $0 invoice.
+	Must run after_commit so Square Checkout mapping + SI field write don't
+	race the open ticket transaction (same pattern as notify_n8n).
+	"""
+	if not invoice_name:
+		return
+	try:
+		from ls_alterations.ls_square.pos import create_payment_link
+
+		create_payment_link(invoice=invoice_name)
+	except Exception as e:
+		frappe.log_error(
+			f"Auto pay-link mint failed for {invoice_name}: {e}",
+			"Alteration Ticket Pay Link",
+		)
+
+
+def create_sales_invoice(doc, method=None):
+	"""after_insert hook: create + submit Sales Invoice so pay links work at intake.
+
+	Billable tickets get a **submitted** SI immediately (not draft-until-pickup).
+	Square payment link is minted after_commit so FOH / thermal / SMS can charge
+	as soon as the ticket exists — not only after Ready/Picked Up.
+
+	Skipped for Warranty / Included in Custom Order, and for Billable $0
+	(create later when a charge is added).
 	"""
 	if doc.sales_invoice:
 		return
@@ -161,6 +182,7 @@ def create_sales_invoice(doc, method=None):
 		create_service_item,
 		item_code_for,
 	)
+	from frappe.utils import flt
 
 	items = []
 	for line in doc.lines or []:
@@ -213,6 +235,23 @@ def create_sales_invoice(doc, method=None):
 
 	doc.db_set("sales_invoice", invoice.name, update_modified=False)
 
+	# Submit so outstanding is real AR and Square pay-link mint is allowed.
+	# Payment links / Terminal checkouts require docstatus=1.
+	if flt(invoice.grand_total) > 0 and invoice.docstatus == 0:
+		try:
+			invoice.reload()
+			invoice.submit()
+		except Exception as e:
+			frappe.log_error(
+				f"SI submit failed for ticket {doc.name} / {invoice.name}: {e}",
+				"Alteration Ticket SI Submit",
+			)
+			return
+
+		frappe.db.after_commit.add(
+			lambda inv=invoice.name: _mint_payment_link_after_commit(inv)
+		)
+
 
 def handle_workflow_state_change(doc, method=None):
 	"""on_update hook: sync ticket workflow state to Sales Invoice docstatus."""
@@ -221,18 +260,36 @@ def handle_workflow_state_change(doc, method=None):
 	if not doc.sales_invoice:
 		return
 
+	from frappe.utils import flt
+
 	invoice = frappe.get_doc("Sales Invoice", doc.sales_invoice)
 
+	# Legacy path: older tickets still have draft SI until pickup.
+	# New tickets already submit at create — this is a no-op when docstatus=1.
 	if doc.workflow_state == "Picked Up" and invoice.docstatus == 0:
 		invoice.submit()
 	elif doc.workflow_state == "Cancelled" and invoice.docstatus == 0:
 		invoice.cancel()
 	elif doc.workflow_state == "Cancelled" and invoice.docstatus == 1:
-		frappe.log_error(
-			f"Ticket {doc.name} cancelled but Sales Invoice {invoice.name} is already submitted. "
-			"Manual credit note required.",
-			"Alteration Ticket Cancel",
-		)
+		# Fully unpaid → cancel SI so open AR doesn't linger.
+		# Partial/full payment → needs credit note (don't auto-cancel).
+		outstanding = flt(invoice.outstanding_amount)
+		grand = flt(invoice.grand_total)
+		if grand > 0 and outstanding >= (grand - 0.01):
+			try:
+				invoice.cancel()
+			except Exception as e:
+				frappe.log_error(
+					f"Ticket {doc.name} cancel: could not cancel unpaid SI {invoice.name}: {e}",
+					"Alteration Ticket Cancel",
+				)
+		else:
+			frappe.log_error(
+				f"Ticket {doc.name} cancelled but Sales Invoice {invoice.name} is submitted "
+				f"with payments (outstanding {outstanding} / grand {grand}). "
+				"Manual credit note required.",
+				"Alteration Ticket Cancel",
+			)
 
 
 def get_invoice_pdf_url(invoice_name):

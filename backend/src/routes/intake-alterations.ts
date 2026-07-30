@@ -453,7 +453,51 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
       console.error('[intake-alterations] billing patch after create failed:', e?.message);
     }
 
-    return c.json({ data: { ticketName } });
+    // Billable: ensure SI is submitted + Square pay link minted immediately
+    // so intake/print/pay work before Ready/Picked Up.
+    let salesInvoice: string | null = null;
+    let squarePaymentLink: string | null = null;
+    let appPayUrl: string | null = null;
+    if (billingStatus === 'Billable') {
+      try {
+        const prep = await erpRunMethod(
+          'ls_alterations.ls_alterations.api.invoices.prepare_alteration_invoice',
+          { ticket: ticketName },
+        ).catch(() => null) as any;
+        const msg = prep?.message ?? prep;
+        if (msg?.invoice) {
+          salesInvoice = String(msg.invoice);
+          squarePaymentLink = msg.square_payment_link ? String(msg.square_payment_link) : null;
+          appPayUrl = msg.app_pay_url
+            ? String(msg.app_pay_url)
+            : `https://app.lstailors.com/pay/${encodeURIComponent(salesInvoice)}`;
+        } else {
+          // Fallback: read ticket SI + call create_payment_link
+          const t = await erpGetDoc<any>('Alteration Ticket', ticketName).catch(() => null);
+          salesInvoice = t?.sales_invoice ? String(t.sales_invoice) : null;
+          if (salesInvoice) {
+            const linkRes = await erpRunMethod(
+              'ls_alterations.ls_square.pos.create_payment_link',
+              { invoice: salesInvoice },
+            ).catch(() => null) as any;
+            const lm = linkRes?.message ?? linkRes;
+            if (lm?.url) squarePaymentLink = String(lm.url);
+            appPayUrl = `https://app.lstailors.com/pay/${encodeURIComponent(salesInvoice)}`;
+          }
+        }
+      } catch (e: any) {
+        console.error('[intake-alterations] prepare pay link after create:', e?.message);
+      }
+    }
+
+    return c.json({
+      data: {
+        ticketName,
+        salesInvoice,
+        squarePaymentLink,
+        appPayUrl,
+      },
+    });
   } catch (e: any) {
     console.error('[intake-alterations] ticket create error:', e?.message);
     return c.json({ error: { message: e?.message || 'Failed to create ticket' } }, 502);
