@@ -12,6 +12,7 @@
     "@hono/zod-validator": "^0.8.0",
     "hono": "4.6.0",
     "html5-qrcode": "^2.3.8",
+    "jsqr": "^1.4.0",
     "qrcode.react": "^4.2.0",
     "zod": "4.1.11"
   },
