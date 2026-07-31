@@ -301,15 +301,16 @@ export default function TicketKind() {
           >
             <div className="flex items-center gap-3">
               <span className="text-brass-light text-xl">◎</span>
-              <span className="display text-[22px] flex-1">Walk-in alteration</span>
+              <span className="display text-[22px] flex-1">Walk-in</span>
               <span className="text-brass/70">→</span>
             </div>
             <p className="text-[12px] text-[var(--cd)] mt-2 leading-relaxed">
-              Client brings in their own garments. Normal pricing, client pays.
+              Counter ticket — alterations, stock or special-order items, or both. Client pays.
             </p>
             <div className="flex flex-wrap gap-1.5 mt-3">
               <span className="chip">Billable</span>
               <span className="chip">Invoice created</span>
+              <span className="chip">Alts + items</span>
             </div>
           </button>
 
@@ -395,17 +396,17 @@ export default function TicketKind() {
         <main className="overflow-hidden min-w-0 flex flex-col bg-black/15">
           {kind === "walk_in" && (
             <div className="max-w-xl mx-auto pt-8 text-center p-5">
-              <h2 className="display text-3xl mb-2">Walk-in alteration</h2>
+              <h2 className="display text-3xl mb-2">Walk-in</h2>
               <p className="text-sm text-cream-dim mb-8">
-                Client garments, normal pricing. Invoice will be created when the ticket is
-                submitted.
+                Billable counter ticket. Add garments to alter now; stock and special-order items
+                join this cart next. Invoice on submit.
               </p>
               <button
                 type="button"
                 onClick={continueWalkIn}
                 className="btn-brass h-16 px-10 text-[12px] w-full max-w-md"
               >
-                Continue to client & garments
+                Continue to client & cart
               </button>
             </div>
           )}
