@@ -342,3 +342,84 @@ def latest_thread_for_phone(phone):
     )
 
     return records[0] if records else None
+
+
+@frappe.whitelist()
+def list_threads(limit=500, start=0, search=None):
+	"""Every SMS conversation with its latest message, newest activity first.
+
+	The ops console previously built this list by loading the most recent 500
+	messages and grouping them in Node. With 3,000+ messages that meant only
+	the threads active inside that window were visible — 93 of 321. Every
+	older conversation was silently absent from the console, which made it
+	look like Sofia had spoken to far fewer people than she had.
+
+	Grouping in SQL instead returns every thread regardless of age, in one
+	query (~15ms), and pages properly.
+
+	Phones are grouped on their last 10 digits: the same person appears as
+	'+1646...' and '646...' across older rows, which split two threads in two.
+	"""
+	limit = min(int(limit or 500), 1000)
+	start = int(start or 0)
+
+	where = "WHERE IFNULL(client_phone,'') != ''"
+	params = {"limit": limit, "start": start}
+	if search:
+		where += " AND (client_phone LIKE %(q)s OR IFNULL(client_name,'') LIKE %(q)s)"
+		params["q"] = f"%{search}%"
+
+	rows = frappe.db.sql(
+		f"""
+		SELECT a.pkey, a.msg_count, a.last_at, a.inbound_count,
+		       m.name, m.client_phone, m.client_name, m.customer, m.direction,
+		       m.content, m.body, m.context_tag, m.status, m.delivery_status
+		FROM (
+			SELECT RIGHT(REGEXP_REPLACE(client_phone,'[^0-9]',''),10) AS pkey,
+			       COUNT(*) AS msg_count,
+			       MAX(creation) AS last_at,
+			       SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) AS inbound_count
+			FROM `tabLSH SMS Message`
+			{where}
+			GROUP BY pkey
+		) a
+		JOIN `tabLSH SMS Message` m
+		  ON RIGHT(REGEXP_REPLACE(m.client_phone,'[^0-9]',''),10) = a.pkey
+		 AND m.creation = a.last_at
+		GROUP BY a.pkey
+		ORDER BY a.last_at DESC
+		LIMIT %(limit)s OFFSET %(start)s
+		""",
+		params,
+		as_dict=True,
+	)
+
+	total = frappe.db.sql(
+		f"""SELECT COUNT(DISTINCT RIGHT(REGEXP_REPLACE(client_phone,'[^0-9]',''),10))
+		    FROM `tabLSH SMS Message` {where}""",
+		params,
+	)[0][0]
+
+	threads = []
+	for r in rows:
+		threads.append({
+			"phone": r.client_phone,
+			"clientName": r.client_name,
+			"customer": r.customer,
+			"messageCount": r.msg_count,
+			"inboundCount": r.inbound_count,
+			# The console treats a thread whose last word came from the client
+			# as needing attention.
+			"unread": r.direction == "inbound",
+			"context_tag": r.context_tag,
+			"lastMessage": {
+				"body": r.content or r.body,
+				"direction": r.direction,
+				"created_at": str(r.last_at),
+				"timestamp": str(r.last_at),
+				"status": r.status,
+				"delivery_status": r.delivery_status,
+			},
+		})
+
+	return {"threads": threads, "total": total, "start": start, "limit": limit}

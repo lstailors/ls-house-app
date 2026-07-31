@@ -402,6 +402,31 @@ async function loadThreadControl(): Promise<Map<string, boolean>> {
   return map;
 }
 
+/**
+ * Full thread list, grouped in SQL by ERPNext.
+ *
+ * This used to load the most recent 500 messages and group them here. With
+ * 3,000+ messages that surfaced only the threads active inside that window —
+ * 93 of 321 — so the console silently showed a fraction of the people Sofia
+ * had actually spoken to. `lsh_house.sms.list_threads` groups server-side and
+ * returns every thread regardless of age, in about 15ms.
+ */
+async function buildSofiaThreads(opts: { limit?: number; start?: number; search?: string } = {}) {
+  const control = await loadThreadControl();
+  const res: any = await erpRunMethod("lsh_house.sms.list_threads", {
+    limit: opts.limit ?? 500,
+    start: opts.start ?? 0,
+    search: opts.search ?? null,
+  });
+
+  const threads = (res?.threads ?? []).map((t: any) => ({
+    ...t,
+    sofiaActive: control.get(phoneLast10(t.phone) ?? "") ?? true,
+  }));
+
+  return { threads, total: res?.total ?? threads.length };
+}
+
 async function buildLocalSofiaConversations() {
   const messages = await loadLocalSofiaMessages({ limit: 500 });
   const control = await loadThreadControl();
@@ -1675,8 +1700,22 @@ sofiaRouter.get("/conversations", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (user.role === "driver") return c.json({ data: [] });
 
-  const data = await buildLocalSofiaConversations();
-  return c.json({ data });
+  // ?search= filters by phone or client name; ?limit/?start page through.
+  // Defaults to every thread — 321 today, ~15ms — so the console is a true
+  // mirror of everyone Sofia has spoken to, not just recent activity.
+  const search = c.req.query("search")?.trim() || undefined;
+  const limit = Math.min(Number(c.req.query("limit") ?? 500) || 500, 1000);
+  const start = Number(c.req.query("start") ?? 0) || 0;
+
+  try {
+    const { threads, total } = await buildSofiaThreads({ limit, start, search });
+    return c.json({ data: threads, meta: { total, limit, start } });
+  } catch (e: any) {
+    // Fall back to the old in-Node grouping rather than showing an empty console.
+    console.error("[sofia/conversations] list_threads failed, falling back:", e?.message);
+    const data = await buildLocalSofiaConversations();
+    return c.json({ data, meta: { total: data.length, degraded: true } });
+  }
 });
 
 // ── GET /api/sofia/conversations/:phone ── full thread
@@ -1686,7 +1725,7 @@ sofiaRouter.get("/conversations/:phone", async (c) => {
   if (user.role === "driver") return c.json({ error: { message: "Forbidden" } }, 403);
 
   const phone = decodeURIComponent(c.req.param("phone"));
-  const data = await loadLocalSofiaMessages({ phone, limit: 300, ascending: true });
+  const data = await loadLocalSofiaMessages({ phone, limit: 2000, ascending: true });
   return c.json({ data });
 });
 
@@ -1802,7 +1841,7 @@ sofiaRouter.get("/thread/:phone", async (c) => {
   
 
   const phone = decodeURIComponent(c.req.param("phone"));
-  const data = await loadLocalSofiaMessages({ phone, limit: 300, ascending: true });
+  const data = await loadLocalSofiaMessages({ phone, limit: 2000, ascending: true });
   return c.json({ data });
 });
 
