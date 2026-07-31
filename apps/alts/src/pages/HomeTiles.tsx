@@ -8,6 +8,7 @@ import { useMemo, useState, useCallback } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import { UniversalSearchInline } from "@alts/components/UniversalSearch";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
@@ -498,17 +499,17 @@ export default function HomeTiles() {
 
   return (
     <div className="alts-root home-007 flex flex-col min-h-[100dvh] overflow-x-hidden overflow-y-auto px-3.5 sm:px-5 lg:px-[26px] pt-[max(12px,env(safe-area-inset-top))] pb-[max(16px,env(safe-area-inset-bottom))]">
-      <header className="flex items-center gap-2.5 sm:gap-3.5 pb-2.5 sm:pb-3 border-b border-brass/15 shrink-0">
+      <header className="flex items-center gap-2 sm:gap-3 pb-2.5 sm:pb-3 border-b border-brass/15 shrink-0">
         {/* Official CUSTOM L&S TAILORS mark → home */}
         <BrandSeal className="shrink-0" size={44} />
-        <div className="min-w-0">
+        <div className="min-w-0 hidden sm:block shrink-0">
           <div className="display text-[18px] sm:text-[22px] leading-tight">L&S House</div>
           <div className="text-[10px] sm:text-xs tracking-[0.14em] sm:tracking-[0.18em] uppercase text-[var(--cd)] truncate">
             Alterations · alts.lstailors.com
           </div>
         </div>
-        <div className="flex-1" />
-        <div className="hidden md:flex items-center rounded-full border border-brass/20 bg-black/30 px-[18px] py-[11px] text-xs font-bold tracking-[0.14em] uppercase text-brass-light">
+        <UniversalSearchInline className="mx-0.5 sm:mx-1" />
+        <div className="hidden lg:flex items-center rounded-full border border-brass/20 bg-black/30 px-3.5 py-2.5 text-xs font-bold tracking-[0.14em] uppercase text-brass-light shrink-0">
           NYC
         </div>
         <button
@@ -519,7 +520,7 @@ export default function HomeTiles() {
           <span className="w-8 h-8 rounded-full bg-forest-raised border border-brass/30 grid place-items-center text-xs font-bold text-brass-light">
             {initials}
           </span>
-          <span className="text-left hidden lg:block">
+          <span className="text-left hidden xl:block">
             <span className="block text-xs font-semibold leading-tight">{me?.name ?? "Staff"}</span>
             <span className="block text-xs text-[var(--cd)] capitalize">
               {me?.role?.replace(/_/g, " ") || "Front of house"}

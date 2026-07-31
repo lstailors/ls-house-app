@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import { UniversalSearchInline } from "@alts/components/UniversalSearch";
 
 function money(n?: number) {
   if (n == null || Number.isNaN(Number(n))) return "";
@@ -14,8 +15,17 @@ function money(n?: number) {
 
 export default function Lookup() {
   const nav = useNavigate();
-  const [q, setQ] = useState("");
-  const [go, setGo] = useState("");
+  const [params] = useSearchParams();
+  const seed = (params.get("q") || "").trim();
+  const [q, setQ] = useState(seed);
+  const [go, setGo] = useState(seed);
+
+  useEffect(() => {
+    if (seed) {
+      setQ(seed);
+      setGo(seed);
+    }
+  }, [seed]);
 
   const universal = useQuery({
     queryKey: ["lookup-universal", go],
@@ -69,17 +79,17 @@ export default function Lookup() {
 
   return (
     <div className="alts-root min-h-dvh flex flex-col">
-      <header className="flex items-center gap-3 px-5 py-4 border-b border-brass/20">
+      <header className="flex items-center gap-2.5 sm:gap-3 px-4 sm:px-5 py-3 border-b border-brass/20">
         <BrandSeal />
-        <div>
+        <div className="hidden sm:block shrink-0">
           <div className="display text-xl">Lookup</div>
           <div className="caps">Ticket · client · SO · scan</div>
         </div>
-        <div className="flex-1" />
-        <Link to="/scanner" className="btn-ghost h-11 px-4 text-[12px] inline-flex items-center">
-          Scanner
+        <UniversalSearchInline />
+        <Link to="/scanner" className="btn-ghost h-11 px-3 sm:px-4 text-[12px] inline-flex items-center shrink-0">
+          Scan
         </Link>
-        <Link to="/pickup" className="btn-brass h-11 px-4 text-[12px] inline-flex items-center">
+        <Link to="/pickup" className="btn-brass h-11 px-3 sm:px-4 text-[12px] inline-flex items-center shrink-0">
           Pickup
         </Link>
       </header>

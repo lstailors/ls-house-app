@@ -10,6 +10,7 @@ import AltsShell from "@alts/components/AltsShell";
 import LandscapeGate from "@alts/components/LandscapeGate";
 import TabletOnly from "@alts/components/TabletOnly";
 import ScanFab from "@alts/components/ScanFab";
+import UniversalSearchHost from "@alts/components/UniversalSearch";
 import IntakeStepped from "@alts/pages/IntakeStepped";
 import TicketKind from "@alts/pages/TicketKind";
 import ShopFloorBoard from "@alts/pages/ShopFloorBoard";
@@ -302,6 +303,7 @@ export default function App() {
             </Routes>
           </Suspense>
           <LandscapeGate />
+          <UniversalSearchHost />
           <ScanFab />
         </BrowserRouter>
       </TooltipProvider>
