@@ -7,6 +7,21 @@ from frappe.utils import cstr, now_datetime
 
 TWILIO_MESSAGES_URL = "https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
 
+# LSH SMS Message.status is a Select limited to these values.
+ALLOWED_LOG_STATUSES = {"received", "sent", "failed"}
+
+# Twilio create-message statuses that mean the message was accepted and is in flight.
+TWILIO_ACCEPTED_STATUSES = {"queued", "accepted", "scheduled", "sending", "sent", "delivered"}
+
+
+def normalize_log_status(status):
+    value = cstr(status).strip().lower()
+    if value in ALLOWED_LOG_STATUSES:
+        return value
+    if value in TWILIO_ACCEPTED_STATUSES:
+        return "sent"
+    return "failed"
+
 
 def normalize_e164(phone):
     raw_phone = cstr(phone).strip()
@@ -63,7 +78,7 @@ def _log_sms_message(
             "sender": sender,
             "timestamp": now_datetime(),
             "twilio_sid": twilio_sid,
-            "status": status,
+            "status": normalize_log_status(status),
             "customer": customer,
             "reference_doctype": reference_doctype,
             "reference_name": reference_name,
@@ -152,10 +167,27 @@ def send_and_log(
                 error_message="LSH SMS Settings is missing Twilio credentials or from number.",
             )
 
+        payload = {"From": from_number, "To": normalized_phone, "Body": message}
+
+        # Per-message delivery receipts.
+        #
+        # These messages go out with From=<number>, not through the Messaging
+        # Service, so the Messaging Service's own StatusCallback never fires for
+        # them. Without this, `status` stays at whatever Twilio returned at
+        # submit time ("queued"/"accepted") and a message that silently failed
+        # to deliver is indistinguishable from one the client read.
+        #
+        # Blank setting = no callback, same behaviour as before.
+        status_callback = cstr(
+            getattr(settings, "twilio_status_callback_url", "") or ""
+        ).strip()
+        if status_callback:
+            payload["StatusCallback"] = status_callback
+
         response = requests.post(
             TWILIO_MESSAGES_URL.format(account_sid=account_sid),
             auth=(account_sid, auth_token),
-            data={"From": from_number, "To": normalized_phone, "Body": message},
+            data=payload,
             timeout=15,
         )
 
