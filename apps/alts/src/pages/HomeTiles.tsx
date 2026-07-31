@@ -4,10 +4,53 @@ import { signOut } from "@ls/auth/authClient";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
-import { useMemo } from "react";
+import { useMemo, useState, useCallback } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
+
+const ESPRESSO_OPEN_KEY = "alts.espresso.open";
+
+/** Phone default collapsed; tablet (≥720) default open. Honor localStorage if set. */
+function readEspressoOpenDefault(): boolean {
+  try {
+    const v = localStorage.getItem(ESPRESSO_OPEN_KEY);
+    if (v === "0") return false;
+    if (v === "1") return true;
+  } catch {
+    /* private mode */
+  }
+  if (typeof window !== "undefined") {
+    return window.matchMedia("(min-width: 720px)").matches;
+  }
+  return false;
+}
+
+function peelLeadingIcon(line: string): { icon: string | null; text: string } {
+  // Leading emoji / pictograph cluster (⚡ 👉 🔴 etc.)
+  const m = line.match(/^((?:[\p{Extended_Pictographic}\p{Emoji_Presentation}]|\uFE0F|\u200D)+)\s*(.*)$/u);
+  if (m) return { icon: m[1], text: m[2] ?? "" };
+  return { icon: null, text: line };
+}
+
+function isSignatureLine(line: string) {
+  return /^[—–-]\s*Rocco/i.test(line.trim());
+}
+
+function isActionLine(line: string) {
+  const t = line.trim();
+  if (/^(⚡|👉)/u.test(t)) return true;
+  if (/\bneeds eyes\b/i.test(t) || /\bChase\b/.test(t)) return true;
+  return false;
+}
+
+function espressoContentLines(body?: string | null): string[] {
+  if (!body) return [];
+  return body
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter((l) => l && !isSignatureLine(l));
+}
 
 type Stats = {
   open: number;
@@ -61,7 +104,7 @@ function briefAge(iso?: string | null) {
   return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-/** Render Daily Espresso lines — one row per newline, emoji-forward. */
+/** Render Daily Espresso lines — icon column + action brass wash. */
 function EspressoBody({ text }: { text: string }) {
   const lines = text
     .split(/\n+/)
@@ -69,18 +112,35 @@ function EspressoBody({ text }: { text: string }) {
     .filter(Boolean);
   if (!lines.length) return null;
   return (
-    <ul className="espresso-lines m-0 p-0 list-none flex flex-col gap-1.5">
+    <ul className="espresso-lines m-0 p-0 list-none flex flex-col gap-0">
       {lines.map((line, i) => {
-        const sign = /^[—–-]\s*Rocco/i.test(line);
+        const sign = isSignatureLine(line);
+        if (sign) {
+          return (
+            <li
+              key={`${i}-${line.slice(0, 24)}`}
+              className="es-line sign flex justify-end pt-2.5 pb-1 px-1.5 text-[11.5px] italic text-[var(--cd)] border-0"
+            >
+              <span className="tx">{line}</span>
+            </li>
+          );
+        }
+        const { icon, text: rest } = peelLeadingIcon(line);
+        const action = isActionLine(line);
         return (
           <li
             key={`${i}-${line.slice(0, 24)}`}
             className={cn(
-              "text-[13px] sm:text-sm leading-snug text-cream/95",
-              sign && "pt-1 text-[12px] text-brass-light/90 italic",
+              "es-line flex items-start gap-2.5 py-[9px] px-1.5 text-[13px] leading-snug text-cream/95 border-b border-brass/[0.08] last:border-b-0",
+              action && "es-line-action rounded-[10px] border border-brass/[0.14] bg-[rgba(176,141,87,0.06)] mt-1 border-b-0",
             )}
           >
-            {line}
+            <span className="ic w-[22px] shrink-0 text-center text-[14px] leading-tight mt-px" aria-hidden>
+              {icon ?? ""}
+            </span>
+            <span className={cn("tx flex-1 min-w-0", action && "font-semibold text-brass-light")}>
+              {rest || line}
+            </span>
           </li>
         );
       })}
@@ -88,10 +148,38 @@ function EspressoBody({ text }: { text: string }) {
   );
 }
 
+function espressoSubline(data?: { fromCache?: boolean; createdAt?: string } | null) {
+  if (!data) return "Rocco · floor sweep";
+  const freshness = data.fromCache ? "cached" : "fresh";
+  const age = data.createdAt ? briefAge(data.createdAt) : "";
+  return age ? `Rocco · ${freshness} · ${age}` : `Rocco · ${freshness}`;
+}
+
+function espressoIsStale(data?: { fromCache?: boolean; createdAt?: string } | null) {
+  if (!data) return true;
+  if (data.fromCache) return true;
+  if (!data.createdAt) return false;
+  const hours = (Date.now() - new Date(data.createdAt).getTime()) / 3_600_000;
+  return hours > 6;
+}
+
 export default function HomeTiles() {
   const { data: me } = useMe();
   const nav = useNavigate();
   const qc = useQueryClient();
+  const [espressoOpen, setEspressoOpen] = useState(readEspressoOpenDefault);
+
+  const toggleEspresso = useCallback(() => {
+    setEspressoOpen((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(ESPRESSO_OPEN_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
 
   const stats = useQuery({
     queryKey: ["alts-home-stats"],
@@ -476,44 +564,144 @@ export default function HomeTiles() {
         </div>
       </div>
 
-      {/* Daily Espresso ☕ */}
-      <div className="espresso-card shrink-0 mb-2.5 sm:mb-3 rounded-[16px] sm:rounded-[18px] border border-brass/30 bg-gradient-to-br from-brass/15 via-black/30 to-black/20 px-3.5 sm:px-4 py-3 sm:py-3.5">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="w-8 h-8 rounded-full border border-brass/40 bg-brass/15 grid place-items-center text-base shrink-0" aria-hidden>
+      {/* Daily Espresso ☕ — collapsible (SPEC 054) */}
+      <div
+        className={cn(
+          "espresso-card shrink-0 mb-2.5 sm:mb-3 rounded-[16px] sm:rounded-[18px] border border-brass/30",
+          "bg-gradient-to-br from-brass/15 via-black/30 to-black/20 overflow-hidden",
+          espressoOpen && "is-open",
+        )}
+      >
+        <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={espressoOpen}
+          aria-controls="espresso-body"
+          onClick={toggleEspresso}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              if ((e.target as HTMLElement).closest("[data-brew]")) return;
+              toggleEspresso();
+            }
+          }}
+          className="espresso-hd flex items-center gap-2.5 px-3 sm:px-3.5 py-3 min-h-[64px] w-full text-left cursor-pointer hover:bg-white/[0.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-brass/55 focus-visible:outline-offset-[-2px]"
+        >
+          <span
+            className="w-9 h-9 rounded-full border border-brass/40 bg-brass/15 grid place-items-center text-base shrink-0"
+            aria-hidden
+          >
             ☕
           </span>
           <div className="min-w-0 flex-1">
-            <div className="text-[11px] font-bold tracking-[0.14em] uppercase text-brass-light">
+            <div className="text-[11px] font-bold tracking-[0.16em] uppercase text-brass-light flex items-center gap-1.5">
+              <span
+                className={cn(
+                  "inline-block w-1.5 h-1.5 rounded-full shrink-0",
+                  espressoIsStale(floorBrief.data)
+                    ? "bg-[var(--am)] shadow-[0_0_0_3px_rgba(232,168,92,0.15)]"
+                    : "bg-[var(--em)] shadow-[0_0_0_3px_rgba(79,191,142,0.15)]",
+                )}
+                aria-hidden
+              />
               Daily Espresso
             </div>
-            <div className="text-[10px] text-[var(--cd)] truncate">
-              {floorBrief.data?.title || "Rocco · floor sweep"}
-              {floorBrief.data?.fromCache ? " · cached" : floorBrief.data ? " · fresh" : ""}
-              {floorBrief.data?.createdAt ? ` · ${briefAge(floorBrief.data.createdAt)}` : ""}
+            <div className="text-[11px] text-[var(--cd)] truncate mt-0.5">
+              {espressoSubline(floorBrief.data)}
             </div>
           </div>
-          <button
-            type="button"
-            disabled={refreshBrief.isPending || floorBrief.isFetching}
-            onClick={() => refreshBrief.mutate()}
-            className="h-10 px-3 rounded-full border border-brass/35 bg-black/30 text-[10px] font-bold tracking-widest uppercase text-brass-light hover:border-brass/55 disabled:opacity-50 shrink-0"
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              data-brew
+              disabled={refreshBrief.isPending || floorBrief.isFetching}
+              onClick={(e) => {
+                e.stopPropagation();
+                refreshBrief.mutate();
+              }}
+              className={cn(
+                "h-9 px-3 rounded-full border border-brass/40 bg-black/30 text-[9.5px] font-bold tracking-[0.14em] uppercase text-brass-light hover:border-brass min-w-[44px] disabled:opacity-50",
+                refreshBrief.isPending && "border-[rgba(232,168,92,0.5)] text-[var(--am)]",
+              )}
+              title="Refresh brief"
+            >
+              {refreshBrief.isPending ? (
+                "Brewing…"
+              ) : (
+                <>
+                  <span className="sm:hidden">Brew</span>
+                  <span className="hidden sm:inline">Brew now</span>
+                </>
+              )}
+            </button>
+            <span
+              className={cn(
+                "espresso-chev w-8 h-8 rounded-[10px] border border-brass/22 bg-black/20 grid place-items-center text-brass-light shrink-0 transition-transform duration-200",
+                espressoOpen && "rotate-180 border-brass/45",
+              )}
+              aria-hidden
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <path d="M3 5l4 4 4-4" />
+              </svg>
+            </span>
+          </div>
+        </div>
+
+        {/* Collapsed peek */}
+        {!espressoOpen && (
+          <div className="espresso-peek px-3.5 pb-3 pl-[58px]">
+            {floorBrief.isLoading && !floorBrief.data ? (
+              <p className="text-[12.5px] leading-snug text-[var(--cd)]">Brewing the floor read…</p>
+            ) : floorBrief.isError ? (
+              <p className="text-[12.5px] leading-snug text-[var(--am)]">
+                Espresso unavailable — try Brew.
+              </p>
+            ) : (() => {
+              const content = espressoContentLines(floorBrief.data?.body);
+              if (!content.length) {
+                return (
+                  <p className="text-[12.5px] leading-snug text-[var(--cd)]">
+                    No espresso yet — tap Brew.
+                  </p>
+                );
+              }
+              const more = Math.max(0, content.length - 1);
+              return (
+                <>
+                  <div className="peek-line text-[12.5px] leading-snug text-cream line-clamp-2">
+                    {content[0]}
+                  </div>
+                  {more > 0 && (
+                    <div className="mt-1.5 text-[10px] font-semibold tracking-[0.08em] uppercase text-[var(--cd)]">
+                      <b className="text-brass-light font-bold">{more}</b> more · tap to open
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Expanded body */}
+        {espressoOpen && (
+          <div
+            id="espresso-body"
+            className="espresso-body border-t border-brass/16 px-3 sm:px-3.5 pt-2.5 pb-3 max-h-[42vh] overflow-y-auto"
           >
-            {refreshBrief.isPending ? "Brewing…" : "Brew now"}
-          </button>
-        </div>
-        <div className="espresso-body max-h-[28vh] sm:max-h-[22vh] lg:max-h-none overflow-y-auto -mx-0.5 px-0.5">
-          {floorBrief.isLoading && !floorBrief.data ? (
-            <p className="text-sm text-[var(--cd)] leading-relaxed">Brewing the floor read…</p>
-          ) : floorBrief.isError ? (
-            <p className="text-sm text-[var(--am)] leading-relaxed">
-              Espresso unavailable — counts still work. Try Brew now.
-            </p>
-          ) : floorBrief.data?.body ? (
-            <EspressoBody text={floorBrief.data.body} />
-          ) : (
-            <p className="text-sm text-[var(--cd)]">No espresso yet — tap Brew now.</p>
-          )}
-        </div>
+            {floorBrief.isLoading && !floorBrief.data ? (
+              <p className="text-sm text-[var(--cd)] leading-relaxed">Brewing the floor read…</p>
+            ) : floorBrief.isError ? (
+              <p className="text-sm text-[var(--am)] leading-relaxed">
+                Espresso unavailable — counts still work. Try Brew now.
+              </p>
+            ) : floorBrief.data?.body ? (
+              <EspressoBody text={floorBrief.data.body} />
+            ) : (
+              <p className="text-sm text-[var(--cd)]">No espresso yet — tap Brew now.</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Clickable stats */}

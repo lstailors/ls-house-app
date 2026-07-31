@@ -245,6 +245,19 @@
   }
 }
 
+/* SPEC 054 — Daily Espresso collapsible */
+.espresso-card.is-open {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(212, 178, 122, 0.1);
+}
+.espresso-card .es-line-action .tx {
+  color: var(--bl, #d4b27a);
+}
+@media (min-width: 1280px) {
+  .home-007 .espresso-card.is-open .espresso-body {
+    max-height: none;
+  }
+}
+
 /* iPad / tablet (incl. iPad Pro landscape ~1194): page scrolls; no fr-row crush */
 @media (min-width: 720px) and (max-width: 1279.98px) {
   .home-007 {
@@ -266,17 +279,18 @@
     height: auto !important;
     overflow: hidden;
   }
-  .home-007 .espresso-card .espresso-body,
-  .home-007 .espresso-body {
-    max-height: 26vh;
+  /* SPEC 054: body max-height only when open */
+  .home-007 .espresso-card.is-open .espresso-body,
+  .home-007 .espresso-card .espresso-body {
+    max-height: 42vh;
   }
 }
 
-/* Landscape iPad: slightly tighter espresso */
+/* Landscape iPad: slightly tighter espresso when open */
 @media (min-width: 720px) and (max-width: 1279.98px) and (orientation: landscape) {
-  .home-007 .espresso-card .espresso-body,
-  .home-007 .espresso-body {
-    max-height: 20vh;
+  .home-007 .espresso-card.is-open .espresso-body,
+  .home-007 .espresso-card .espresso-body {
+    max-height: 28vh;
   }
   .home-007 .home-tile {
     min-height: 118px !important;
@@ -473,8 +487,9 @@
     overflow: hidden;
   }
 
+  .home-007 .espresso-card.is-open .espresso-body,
   .home-007 .espresso-body {
-    max-height: 20vh;
+    max-height: 28vh;
   }
 }
 
