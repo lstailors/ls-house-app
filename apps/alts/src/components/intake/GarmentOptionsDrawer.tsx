@@ -1,5 +1,6 @@
 import { cn } from "@ls/design/utils";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 function money(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -83,29 +84,27 @@ export default function GarmentOptionsDrawer({
   photoStrip,
   icon,
 }: Props) {
-  return (
+  return typeof document === "undefined"
+    ? null
+    : createPortal(
     <>
       <div
         className={cn(
-          "absolute inset-0 z-40 bg-[rgba(5,12,8,0.52)] transition-opacity duration-200 md:right-[340px]",
+          "fixed inset-0 z-[70] bg-[rgba(5,12,8,0.55)] transition-opacity duration-200 md:right-[340px]",
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
         )}
         onClick={onClose}
         aria-hidden={!open}
       />
+      {/* Phone bottom sheet */}
       <div
         className={cn(
-          "absolute z-[45] flex flex-col border border-brass/30 shadow-[0_-20px_60px_rgba(0,0,0,0.5)]",
-          "transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)]",
-          // phone bottom sheet
-          "inset-x-0 bottom-0 max-h-[88%] rounded-t-[22px] border-b-0",
+          "fixed inset-x-0 bottom-0 z-[75] md:hidden flex flex-col border border-brass/30 border-b-0",
+          "max-h-[min(88dvh,88%)] rounded-t-[22px]",
+          "shadow-[0_-20px_60px_rgba(0,0,0,0.55)]",
           "pb-[env(safe-area-inset-bottom,0px)]",
-          open ? "translate-y-0" : "translate-y-[105%]",
-          // tablet side drawer
-          "md:inset-y-0 md:left-auto md:right-[340px] md:bottom-auto md:max-h-none",
-          "md:w-[min(420px,calc(100%-340px))] md:rounded-none md:border-b md:border-l md:border-r",
-          "md:shadow-[-24px_0_60px_rgba(0,0,0,0.5)] md:pb-0",
-          open ? "md:translate-x-0 md:translate-y-0" : "md:translate-x-[104%] md:translate-y-0",
+          "transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] will-change-transform",
+          open ? "translate-y-0" : "translate-y-full pointer-events-none",
         )}
         style={{ background: "linear-gradient(180deg,#152A1E 0%,#0D1A10 100%)" }}
         role="dialog"
@@ -113,14 +112,13 @@ export default function GarmentOptionsDrawer({
         aria-hidden={!open}
         aria-label={garment ? `Options for ${garment.garmentType}` : "Garment options"}
       >
-        {/* phone grab */}
-        <div className="md:hidden flex-none flex justify-center pt-2.5 pb-1" aria-hidden>
+        <div className="flex-none flex justify-center pt-2.5 pb-1" aria-hidden>
           <i className="block w-10 h-1 rounded-full bg-brass/40" />
         </div>
 
         {garment ? (
           <>
-            <div className="flex-none px-4 pt-2 md:pt-4 pb-3.5 border-b border-brass/20 flex items-start gap-3">
+            <div className="flex-none px-4 pt-2 pb-3.5 border-b border-brass/20 flex items-start gap-3">
               <span className="w-[52px] h-[60px] rounded-xl flex-none border border-brass/30 bg-brass/10 grid place-items-center text-brass-light">
                 {icon(garment.garmentType)}
               </span>
@@ -141,6 +139,171 @@ export default function GarmentOptionsDrawer({
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3.5 overscroll-contain">
+              <GarmentDrawerFields
+                garment={garment}
+                presets={presets}
+                presetsLoading={presetsLoading}
+                customDesc={customDesc}
+                customPrice={customPrice}
+                noteOpenFor={noteOpenFor}
+                onColor={onColor}
+                onNotes={onNotes}
+                onTogglePreset={onTogglePreset}
+                onRemoveLine={onRemoveLine}
+                onCustomDesc={onCustomDesc}
+                onCustomPrice={onCustomPrice}
+                onAddCustom={onAddCustom}
+                onNoteOpen={onNoteOpen}
+                onLineNotes={onLineNotes}
+                onLinePhoto={onLinePhoto}
+                photoStrip={photoStrip}
+              />
+            </div>
+
+            <div className="flex-none px-4 py-3 border-t border-brass/20 flex gap-2 bg-black/30">
+              <button
+                type="button"
+                onClick={onRemovePiece}
+                className="flex-1 h-[50px] rounded-xl border border-brass/30 text-[10.5px] font-bold tracking-[0.14em] uppercase text-cream-muted hover:text-[var(--ro,#D97B6C)] hover:border-[rgba(217,123,108,0.45)]"
+              >
+                Remove piece
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-[1.4] h-[50px] rounded-xl bg-brass text-forest-deep text-[10.5px] font-bold tracking-[0.14em] uppercase shadow-[0_8px_22px_rgba(176,141,87,0.25)]"
+              >
+                Done
+              </button>
+            </div>
+          </>
+        ) : null}
+      </div>
+
+      {/* Tablet side drawer */}
+      <div
+        className={cn(
+          "fixed inset-y-0 z-[75] hidden md:flex flex-col",
+          "right-[340px] w-[min(420px,calc(100vw-340px))]",
+          "border-l border-r border-brass/30",
+          "shadow-[-24px_0_60px_rgba(0,0,0,0.5)]",
+          "transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] will-change-transform",
+          open ? "translate-x-0" : "translate-x-full pointer-events-none",
+        )}
+        style={{ background: "linear-gradient(180deg,#152A1E 0%,#0D1A10 100%)" }}
+        role="dialog"
+        aria-modal="true"
+        aria-hidden={!open}
+        aria-label={garment ? `Options for ${garment.garmentType}` : "Garment options"}
+      >
+        {garment ? (
+          <>
+            <div className="flex-none px-4 pt-4 pb-3.5 border-b border-brass/20 flex items-start gap-3">
+              <span className="w-[52px] h-[60px] rounded-xl flex-none border border-brass/30 bg-brass/10 grid place-items-center text-brass-light">
+                {icon(garment.garmentType)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <h3 className="display text-[26px] italic font-semibold leading-tight">{garment.garmentType}</h3>
+                <p className="text-[11.5px] text-cream-dim mt-1 leading-snug">
+                  {garment.ref} · options for this piece
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-11 h-11 rounded-xl border border-brass/25 bg-black/30 grid place-items-center text-cream-muted hover:border-brass hover:text-cream flex-none"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3.5 overscroll-contain">
+              <GarmentDrawerFields
+                garment={garment}
+                presets={presets}
+                presetsLoading={presetsLoading}
+                customDesc={customDesc}
+                customPrice={customPrice}
+                noteOpenFor={noteOpenFor}
+                onColor={onColor}
+                onNotes={onNotes}
+                onTogglePreset={onTogglePreset}
+                onRemoveLine={onRemoveLine}
+                onCustomDesc={onCustomDesc}
+                onCustomPrice={onCustomPrice}
+                onAddCustom={onAddCustom}
+                onNoteOpen={onNoteOpen}
+                onLineNotes={onLineNotes}
+                onLinePhoto={onLinePhoto}
+                photoStrip={photoStrip}
+              />
+            </div>
+
+            <div className="flex-none px-4 py-3 border-t border-brass/20 flex gap-2 bg-black/30">
+              <button
+                type="button"
+                onClick={onRemovePiece}
+                className="flex-1 h-[50px] rounded-xl border border-brass/30 text-[10.5px] font-bold tracking-[0.14em] uppercase text-cream-muted hover:text-[var(--ro,#D97B6C)] hover:border-[rgba(217,123,108,0.45)]"
+              >
+                Remove piece
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-[1.4] h-[50px] rounded-xl bg-brass text-forest-deep text-[10.5px] font-bold tracking-[0.14em] uppercase shadow-[0_8px_22px_rgba(176,141,87,0.25)]"
+              >
+                Done
+              </button>
+            </div>
+          </>
+        ) : null}
+      </div>
+    </>,
+    document.body,
+  );
+}
+
+/** Inner fields shared by phone sheet + tablet drawer */
+function GarmentDrawerFields({
+  garment,
+  presets,
+  presetsLoading,
+  customDesc,
+  customPrice,
+  noteOpenFor,
+  onColor,
+  onNotes,
+  onTogglePreset,
+  onRemoveLine,
+  onCustomDesc,
+  onCustomPrice,
+  onAddCustom,
+  onNoteOpen,
+  onLineNotes,
+  onLinePhoto,
+  photoStrip,
+}: {
+  garment: DrawerGarment;
+  presets: DrawerPreset[];
+  presetsLoading?: boolean;
+  customDesc: string;
+  customPrice: string;
+  noteOpenFor: string | null;
+  onColor: (v: string) => void;
+  onNotes: (v: string) => void;
+  onTogglePreset: (p: DrawerPreset) => void;
+  onRemoveLine: (lineId: string) => void;
+  onCustomDesc: (v: string) => void;
+  onCustomPrice: (v: string) => void;
+  onAddCustom: () => void;
+  onNoteOpen: (lineId: string | null) => void;
+  onLineNotes: (lineId: string, notes: string) => void;
+  onLinePhoto: (lineId: string, file: File) => void;
+  photoStrip: ReactNode;
+}) {
+  return (
+    <>
               <div className="text-[9px] font-bold tracking-[0.16em] uppercase text-brass-light mb-2">
                 Piece details
               </div>
@@ -343,27 +506,7 @@ export default function GarmentOptionsDrawer({
                 Intake photos
               </div>
               {photoStrip}
-            </div>
-
-            <div className="flex-none px-4 py-3 border-t border-brass/20 flex gap-2 bg-black/30">
-              <button
-                type="button"
-                onClick={onRemovePiece}
-                className="flex-1 h-[50px] rounded-xl border border-brass/30 text-[10.5px] font-bold tracking-[0.14em] uppercase text-cream-muted hover:text-[var(--ro,#D97B6C)] hover:border-[rgba(217,123,108,0.45)]"
-              >
-                Remove piece
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-[1.4] h-[50px] rounded-xl bg-brass text-forest-deep text-[10.5px] font-bold tracking-[0.14em] uppercase shadow-[0_8px_22px_rgba(176,141,87,0.25)]"
-              >
-                Done
-              </button>
-            </div>
-          </>
-        ) : null}
-      </div>
     </>
   );
 }
+

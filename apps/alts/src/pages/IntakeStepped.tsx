@@ -647,7 +647,13 @@ export default function IntakeStepped() {
     if (item.availability === "out") return;
     const ref = `I${sellItems.length + 1}`;
     const colors = item.attributes?.Color || (item.color_label ? [item.color_label] : []);
-    const sizes = item.attributes?.Size || [];
+    // Prefer ERP sizes; bottoms default 28–38 when API omitted attributes
+    const sizes =
+      item.attributes?.Size?.length
+        ? item.attributes.Size
+        : /jean|pant|chino|trouser|bermuda|short|bottom/i.test(`${item.item_group} ${item.item_name}`)
+          ? ["28", "30", "32", "34", "36", "38"]
+          : ["S", "M", "L", "XL"];
     const line: SellItem = {
       ref,
       item_code: item.item_code,
@@ -681,6 +687,26 @@ export default function IntakeStepped() {
 
   const closeSellDrawer = () => {
     setSellDrawerOpen(false);
+  };
+
+  /** Done on sell options — lock line into cart and keep the flow moving. */
+  const finishSellDrawer = () => {
+    const line = sellItems.find((s) => s.ref === activeSellRef);
+    if (line) {
+      const sizes = line.sizeOptions || [];
+      if (sizes.length > 0 && !String(line.size || "").trim()) {
+        toast.error("Pick a size");
+        return;
+      }
+    }
+    setSellDrawerOpen(false);
+    // Phone has no always-visible rail — open cart sheet so Done feels finished.
+    const phone = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
+    if (phone && sellItems.length + garments.length > 0) {
+      window.setTimeout(() => setCartOpen(true), 260);
+    } else if (line) {
+      toast.success(`${line.item_name} in cart`);
+    }
   };
 
   const updateSellField = <K extends keyof SellItem>(ref: string, field: K, value: SellItem[K]) => {
@@ -1237,8 +1263,8 @@ export default function IntakeStepped() {
   ) : null;
 
   return (
-    <div className="alts-root flex flex-col min-h-dvh">
-      <header className="px-5 pt-4 pb-0 border-b border-brass/20 bg-black/20 backdrop-blur-xl sticky top-0 z-30">
+    <div className="alts-root flex flex-col h-dvh max-h-dvh overflow-hidden">
+      <header className="px-5 pt-4 pb-0 border-b border-brass/20 bg-black/20 backdrop-blur-xl sticky top-0 z-30 shrink-0">
         <div className="flex items-center gap-3 mb-3">
           <BrandSeal />
           <div>
@@ -1328,7 +1354,7 @@ export default function IntakeStepped() {
 
       <div
         className={cn(
-          "flex-1 min-h-0",
+          "flex-1 min-h-0 flex flex-col",
           step === 1 ? "overflow-hidden px-5 py-6" : "overflow-y-auto px-5 py-6 pb-40",
         )}
       >
@@ -1653,7 +1679,7 @@ export default function IntakeStepped() {
               icon={garmentIcon}
             />
             <GarmentOptionsDrawer
-              open={drawerOpen && !!active && !sellDrawerOpen}
+              open={drawerOpen && !sellDrawerOpen}
               garment={active}
               presets={filteredPresets}
               presetsLoading={presets.isLoading}
@@ -1691,11 +1717,12 @@ export default function IntakeStepped() {
             />
             {allowSellMode && (
               <SellItemDrawer
-                open={sellDrawerOpen && !!activeSell}
+                open={sellDrawerOpen}
                 line={activeSell}
                 sizes={activeSell?.sizeOptions || []}
                 colors={activeSell?.colorOptions || []}
                 onClose={closeSellDrawer}
+                onDone={finishSellDrawer}
                 onRemove={() => {
                   if (!activeSell) return;
                   removeSellItem(activeSell.ref);
@@ -1811,6 +1838,47 @@ export default function IntakeStepped() {
                   ))}
                 </div>
               ))}
+              {sellItems.map((s) => {
+                const amt = (Number(s.rate) || 0) * (Number(s.qty) || 1);
+                const sub = [s.color, s.size ? `sz ${s.size}` : "", s.qty > 1 ? `×${s.qty}` : "", s.availability === "order" ? s.eta || "special order" : ""]
+                  .filter(Boolean)
+                  .join(" · ");
+                return (
+                  <div key={s.ref} className="border-b border-brass/10 last:border-b-0">
+                    <div className="flex items-center gap-2.5 px-5 py-3.5 bg-black/25">
+                      <span className="chip border-[rgba(79,191,142,0.45)] bg-[rgba(79,191,142,0.12)] text-[var(--em,#4FBF8E)]">
+                        {s.ref}
+                      </span>
+                      <span className="text-[8px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded border border-[rgba(79,191,142,0.4)] text-[var(--em,#4FBF8E)] bg-[rgba(79,191,142,0.1)]">
+                        Sell
+                      </span>
+                      <span className="font-semibold text-[13.5px] min-w-0 flex-1 truncate">{s.item_name}</span>
+                      <span className="ml-auto display text-xl text-brass-light flex-none">{money(amt)}</span>
+                    </div>
+                    <div className="flex items-center gap-3 px-5 py-3 text-[13px]">
+                      <span className="flex-1 text-cream-muted">{sub || s.item_code}</span>
+                      <button
+                        type="button"
+                        className="text-[11px] font-bold tracking-wider uppercase text-brass-light"
+                        onClick={() => {
+                          setStep(1);
+                          setCatalogMode("sell");
+                          openSellDrawer(s.ref);
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="w-10 h-10 rounded-[10px] bg-white/[0.04] text-cream-dim"
+                        onClick={() => removeSellItem(s.ref)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
               {ticketNote.trim() ? (
                 <p className="text-xs text-cream-dim px-5 py-3 border-t border-brass/15">
                   <span className="caps text-brass">{ticketNoteKind === "customer" ? "On receipt" : "Internal"} · </span>
@@ -1823,6 +1891,14 @@ export default function IntakeStepped() {
                     ? "On custom order — full prices kept for value; no client invoice."
                     : "Re-do — full prices kept for value; no SI / no AR."}
                 </p>
+              )}
+              {allowSellMode && sellItems.length > 0 && (
+                <div className="flex items-baseline justify-between px-5 py-3.5 border-t border-brass/20 bg-black/20">
+                  <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-cream-dim">
+                    Work {money(workTotal)} · Items {money(itemsTotal)}
+                  </span>
+                  <span className="display text-2xl text-brass-light font-semibold">{money(total)}</span>
+                </div>
               )}
             </div>
             <div className="mt-5 rounded-[17px] border border-brass/25 bg-black/25 p-4">
