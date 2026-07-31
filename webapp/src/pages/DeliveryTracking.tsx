@@ -149,6 +149,7 @@ function DeliveryCard({ delivery }: { delivery: TrackingData }) {
 
 function CapturePage({ delivery, token, onSuccess }: { delivery: TrackingData; token: string; onSuccess: () => void }) {
   const sigPadRef = useRef<SignatureCanvas>(null);
+  const errRef = useRef<HTMLDivElement>(null);
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [receivedBy, setReceivedBy] = useState("");
@@ -158,6 +159,7 @@ function CapturePage({ delivery, token, onSuccess }: { delivery: TrackingData; t
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [sigPresent, setSigPresent] = useState(false);
 
   useEffect(() => {
     setGpsStatus("fetching");
@@ -168,38 +170,130 @@ function CapturePage({ delivery, token, onSuccess }: { delivery: TrackingData; t
     );
   }, []);
 
+  useEffect(() => {
+    if (err && errRef.current) {
+      errRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [err]);
+
   const addPhotos = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []).slice(0, 3 - photos.length);
     const out: File[] = [];
     for (const f of files) {
       try {
-        const c = await imageCompression(f, { maxWidthOrHeight: 1600, useWebWorker: true });
+        const c = await imageCompression(f, {
+          maxWidthOrHeight: 1600,
+          maxSizeMB: 1.5,
+          useWebWorker: true,
+          fileType: "image/jpeg",
+        });
         out.push(new File([c], f.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg" }));
-      } catch { out.push(f); }
+      } catch {
+        // Compression can fail on some iOS HEIC paths — still send original
+        out.push(f);
+      }
     }
     setPhotos((p) => [...p, ...out].slice(0, 3));
     setPreviews((p) => [...p, ...out.map((f) => URL.createObjectURL(f))].slice(0, 3));
     e.target.value = "";
   }, [photos.length]);
 
+  const hasSig = () => {
+    try {
+      return sigPresent || !!(sigPadRef.current && !sigPadRef.current.isEmpty());
+    } catch {
+      return sigPresent;
+    }
+  };
+
+  const refreshSig = () => {
+    try {
+      setSigPresent(!!(sigPadRef.current && !sigPadRef.current.isEmpty()));
+    } catch {
+      setSigPresent(false);
+    }
+  };
+
   const submit = async () => {
-    setSubmitting(true); setErr(null);
+    if (submitting) return;
+    setErr(null);
+
+    // Soft gate: need photo OR signature so empty taps don't look "broken"
+    if (photos.length === 0 && !hasSig()) {
+      setErr("Add at least one photo or a signature, then tap Confirm.");
+      return;
+    }
+
+    setSubmitting(true);
     try {
       const fd = new FormData();
-      photos.forEach((f, i) => fd.append(`photo_${i + 1}`, f));
-      if (sigPadRef.current && !sigPadRef.current.isEmpty()) {
-        const blob = await (await fetch(sigPadRef.current.getCanvas().toDataURL("image/png"))).blob();
-        fd.append("signature", new File([blob], "sig.png", { type: "image/png" }));
+      photos.forEach((f, i) => fd.append(`photo_${i + 1}`, f, f.name || `photo_${i + 1}.jpg`));
+
+      if (hasSig() && sigPadRef.current) {
+        try {
+          const dataUrl = sigPadRef.current.getCanvas().toDataURL("image/png");
+          const blob = await (await fetch(dataUrl)).blob();
+          if (blob.size > 0) {
+            fd.append("signature", new File([blob], "sig.png", { type: "image/png" }));
+          }
+        } catch {
+          // Signature export failed — still submit photos/GPS
+        }
       }
-      if (receivedBy) fd.append("received_by", receivedBy);
-      if (driverName) fd.append("driver_name", driverName);
-      if (gps) { fd.append("lat", String(gps.lat)); fd.append("lng", String(gps.lng)); fd.append("accuracy", String(gps.acc)); }
-      const res = await fetch(`/api/scan/${token}/pod`, { method: "POST", body: fd });
-      const json = await res.json() as any;
-      if (!res.ok) throw new Error(json?.error?.message ?? "Submission failed");
-      setDone(true); onSuccess();
-    } catch (e) { setErr((e as Error).message); }
-    finally { setSubmitting(false); }
+
+      if (receivedBy.trim()) fd.append("received_by", receivedBy.trim());
+      if (driverName.trim()) fd.append("driver_name", driverName.trim());
+      if (gps) {
+        fd.append("lat", String(gps.lat));
+        fd.append("lng", String(gps.lng));
+        fd.append("accuracy", String(gps.acc));
+      }
+
+      const controller = new AbortController();
+      const kill = window.setTimeout(() => controller.abort(), 90_000);
+      let res: Response;
+      try {
+        res = await fetch(`/api/scan/${token}/pod`, {
+          method: "POST",
+          body: fd,
+          signal: controller.signal,
+          // credentials not required — public endpoint
+        });
+      } finally {
+        window.clearTimeout(kill);
+      }
+
+      const text = await res.text();
+      let json: any = null;
+      try {
+        json = text ? JSON.parse(text) : null;
+      } catch {
+        throw new Error(
+          res.ok
+            ? "Got a bad response from the server. Pull to refresh and try again."
+            : `Submit failed (${res.status}). Check connection and try again.`,
+        );
+      }
+      if (!res.ok) {
+        const msg =
+          json?.error?.message ||
+          json?.message ||
+          (Array.isArray(json?.error?.uploadErrors) ? json.error.uploadErrors.join("; ") : null) ||
+          `Submission failed (${res.status})`;
+        throw new Error(String(msg));
+      }
+
+      setDone(true);
+      onSuccess();
+    } catch (e) {
+      const msg =
+        (e as Error)?.name === "AbortError"
+          ? "Submit timed out — weak signal. Stay on this screen and try again."
+          : (e as Error)?.message || "Couldn't submit. Check signal and try again.";
+      setErr(msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (done) {
@@ -214,8 +308,10 @@ function CapturePage({ delivery, token, onSuccess }: { delivery: TrackingData; t
     );
   }
 
+  const canSubmit = photos.length > 0 || sigPresent;
+
   return (
-    <div>
+    <div style={{ paddingBottom: 120 }}>
       <div style={{ marginBottom: 24 }}>
         <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 30, fontStyle: "italic", color: C.cream, marginBottom: 4 }}>Mark Delivered</div>
         <div style={{ fontSize: 12, color: C.creamDm }}>Capture proof and confirm the drop.</div>
@@ -232,7 +328,7 @@ function CapturePage({ delivery, token, onSuccess }: { delivery: TrackingData; t
       </div>
 
       {/* Photos */}
-      <Section label="Photos" icon={<Camera size={12} />} note="Up to 3">
+      <Section label="Photos" icon={<Camera size={12} />} note="Up to 3 · 1 recommended">
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {previews.map((url, i) => (
             <div key={i} style={{ position: "relative", width: 86, height: 86, borderRadius: 8, overflow: "hidden", border: `1px solid ${C.border}` }}>
@@ -254,10 +350,27 @@ function CapturePage({ delivery, token, onSuccess }: { delivery: TrackingData; t
 
       {/* Signature */}
       <Section label="Signature" icon={<PenLine size={12} />} note="Optional">
-        <div style={{ borderRadius: 8, overflow: "hidden", border: `1px solid ${C.border}`, background: "#fff" }}>
-          <SignatureCanvas ref={sigPadRef} penColor="#0D1A10" canvasProps={{ height: 140, style: { width: "100%", height: 140, display: "block" } }} />
+        <div style={{ borderRadius: 8, overflow: "hidden", border: `1px solid ${C.border}`, background: "#fff", touchAction: "none" }}>
+          <SignatureCanvas
+            ref={sigPadRef}
+            penColor="#0D1A10"
+            onEnd={refreshSig}
+            canvasProps={{
+              height: 140,
+              style: { width: "100%", height: 140, display: "block", touchAction: "none" },
+            }}
+          />
         </div>
-        <button type="button" onClick={() => sigPadRef.current?.clear()} style={{ marginTop: 6, fontSize: 10, color: C.creamXm, background: "none", border: "none", cursor: "pointer", letterSpacing: "0.1em" }}>CLEAR</button>
+        <button
+          type="button"
+          onClick={() => {
+            sigPadRef.current?.clear();
+            setSigPresent(false);
+          }}
+          style={{ marginTop: 6, fontSize: 10, color: C.creamXm, background: "none", border: "none", cursor: "pointer", letterSpacing: "0.1em" }}
+        >
+          CLEAR
+        </button>
       </Section>
 
       {/* Received by */}
@@ -271,13 +384,66 @@ function CapturePage({ delivery, token, onSuccess }: { delivery: TrackingData; t
       </Section>
 
       {err ? (
-        <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "12px 14px", fontSize: 12, color: "#FCA5A5", marginBottom: 16 }}>{err}</div>
+        <div
+          ref={errRef}
+          style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 8, padding: "12px 14px", fontSize: 13, color: "#FCA5A5", marginBottom: 16, lineHeight: 1.45 }}
+        >
+          {err}
+        </div>
       ) : null}
 
-      <button type="button" onClick={submit} disabled={submitting} style={{ width: "100%", padding: "16px", borderRadius: 10, background: submitting ? `rgba(176,141,87,0.35)` : C.brass, border: "none", color: "#0D1A10", fontFamily: "Montserrat, sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: "0.12em", cursor: submitting ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, boxShadow: "0 4px 20px rgba(176,141,87,0.2)" }}>
-        {submitting ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
-        {submitting ? "SUBMITTING…" : "CONFIRM DELIVERED"}
-      </button>
+      {/* Sticky confirm — always above iOS Safari chrome */}
+      <div
+        style={{
+          position: "fixed",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 50,
+          padding: "12px 16px calc(12px + env(safe-area-inset-bottom, 0px))",
+          background: "linear-gradient(180deg, rgba(22,53,36,0) 0%, rgba(22,53,36,0.92) 28%, #163524 100%)",
+          backdropFilter: "blur(10px)",
+          WebkitBackdropFilter: "blur(10px)",
+        }}
+      >
+        <div style={{ maxWidth: 520, margin: "0 auto" }}>
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={submitting}
+            style={{
+              width: "100%",
+              minHeight: 56,
+              padding: "16px",
+              borderRadius: 12,
+              background: submitting ? "rgba(176,141,87,0.45)" : canSubmit ? C.brass : "rgba(176,141,87,0.35)",
+              border: "none",
+              color: "#0D1A10",
+              fontFamily: "Montserrat, sans-serif",
+              fontSize: 14,
+              fontWeight: 700,
+              letterSpacing: "0.12em",
+              cursor: submitting ? "default" : "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              boxShadow: "0 4px 24px rgba(176,141,87,0.28)",
+              WebkitTapHighlightColor: "transparent",
+            }}
+          >
+            {submitting ? <Loader2 size={18} className="spin" /> : <CheckCircle2 size={18} />}
+            {submitting ? "SUBMITTING…" : "CONFIRM DELIVERED"}
+          </button>
+          <div style={{ textAlign: "center", marginTop: 8, fontSize: 10, color: C.creamXm, letterSpacing: "0.06em" }}>
+            {photos.length > 0
+              ? `${photos.length} photo${photos.length === 1 ? "" : "s"}${sigPresent ? " · signature" : ""} ready`
+              : sigPresent
+                ? "Signature ready · photo optional"
+                : "Add a photo, then confirm"}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
