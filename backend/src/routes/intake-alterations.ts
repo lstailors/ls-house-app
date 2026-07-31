@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { getAuthedUser } from '../lib/scope';
 import { uploadFile, erpFileAbsoluteUrl } from '../lib/erpnext/files';
-import { erpList, erpGet as erpGetDoc, erpUpdate, erpPdf, erpRunMethod } from '../lib/erp';
+import { erpList, erpGet as erpGetDoc, erpUpdate, erpPdf, erpRunMethod, erpCreate, erpSubmit } from '../lib/erp';
 import { sendSms } from '../lib/twilio';
 
 // ---------------------------------------------------------------------------
@@ -321,21 +321,245 @@ intakeAlterationsRouter.get('/tickets/:name', async (c) => {
   }
 });
 
+
+// SPEC 057 — append Walk-in sell lines onto the ticket SI (stock/item rows).
+// SI is usually already submitted by create_sales_invoice; we cancel unpaid SI,
+// rebuild with original + sell rows, resubmit, re-link ticket, re-mint pay link.
+type SellLineIn = {
+  item_code: string;
+  item_name?: string;
+  qty?: number;
+  rate?: number;
+  color?: string;
+  size?: string;
+  availability?: string;
+  eta?: string;
+  source?: string;
+};
+
+async function ensureItemExists(code: string, name: string, rate: number): Promise<string> {
+  const existing = await erpGetDoc<any>("Item", code).catch(() => null);
+  if (existing && !existing.disabled) return code;
+  if (existing && existing.disabled) {
+    await erpUpdate("Item", code, { disabled: 0 }).catch(() => {});
+    return code;
+  }
+  // Seed codes (SEED-*) or unknown: fall back to custom alt service line item
+  if (code.startsWith("SEED-") || !code) {
+    return "ALT-CUSTOM-ALTERATION";
+  }
+  try {
+    await erpCreate("Item", {
+      item_code: code,
+      item_name: name || code,
+      item_group: "Stock Garments",
+      stock_uom: "Nos",
+      is_stock_item: 0, // non-stock until ops sets inventory
+      is_sales_item: 1,
+      standard_rate: rate || 0,
+      description: name || code,
+    });
+    return code;
+  } catch {
+    return "ALT-CUSTOM-ALTERATION";
+  }
+}
+
+function sellLineDescription(s: SellLineIn): string {
+  const bits = [s.item_name || s.item_code];
+  if (s.color) bits.push(s.color);
+  if (s.size) bits.push(`sz ${s.size}`);
+  if (s.qty && s.qty !== 1) bits.push(`×${s.qty}`);
+  if (s.availability === "order" && s.eta) bits.push(`ETA ${s.eta}`);
+  return bits.join(" · ");
+}
+
+async function appendSellItemsToTicketInvoice(opts: {
+  ticketName: string;
+  customer: string;
+  company?: string;
+  origin: string;
+  sellItems: SellLineIn[];
+  existingInvoice: string | null;
+}): Promise<{ salesInvoice: string | null; squarePaymentLink: string | null; appPayUrl: string | null; warnings: string[] }> {
+  const warnings: string[] = [];
+  const warehouse =
+    process.env.ALTS_SELL_WAREHOUSE ||
+    (opts.origin === "HOU" ? "Finished Goods - LSTX" : "NYC Showroom - LSTNY");
+
+  const sellRows: any[] = [];
+  for (const s of opts.sellItems) {
+    const qty = Math.max(1, Number(s.qty) || 1);
+    const rate = Number(s.rate) || 0;
+    const code = await ensureItemExists(s.item_code, s.item_name || s.item_code, rate);
+    if (code === "ALT-CUSTOM-ALTERATION" && s.item_code && !s.item_code.startsWith("SEED-")) {
+      warnings.push(`Item ${s.item_code} missing — billed as custom line`);
+    } else if (s.item_code?.startsWith("SEED-")) {
+      warnings.push(`Seed SKU ${s.item_code} → custom service line until RTW catalog stocked`);
+    }
+    const row: Record<string, unknown> = {
+      item_code: code,
+      qty,
+      rate,
+      description: sellLineDescription(s),
+    };
+    // Only set warehouse for real stock items
+    const itemDoc = await erpGetDoc<any>("Item", code).catch(() => null);
+    if (itemDoc?.is_stock_item) {
+      row.warehouse = warehouse;
+    }
+    sellRows.push(row);
+  }
+  if (!sellRows.length) {
+    return { salesInvoice: opts.existingInvoice, squarePaymentLink: null, appPayUrl: null, warnings };
+  }
+
+  let baseItems: any[] = [];
+  let company = opts.company || "L&S Tailors NY LLC";
+  let customer = opts.customer;
+  let oldName = opts.existingInvoice;
+
+  if (oldName) {
+    const inv = await erpGetDoc<any>("Sales Invoice", oldName).catch(() => null);
+    if (inv) {
+      company = inv.company || company;
+      customer = inv.customer || customer;
+      baseItems = (inv.items || []).map((it: any) => ({
+        item_code: it.item_code,
+        qty: it.qty,
+        rate: it.rate,
+        description: it.description,
+        warehouse: it.warehouse || undefined,
+        income_account: it.income_account || undefined,
+        cost_center: it.cost_center || undefined,
+      }));
+      if (Number(inv.docstatus) === 1) {
+        // Cancel unpaid SI so we can rebuild with sell lines
+        const outstanding = Number(inv.outstanding_amount ?? inv.grand_total ?? 0);
+        const paid = Number(inv.paid_amount || 0);
+        if (paid > 0.01) {
+          warnings.push(`SI ${oldName} already has payment — sell lines not merged; create separate invoice manually`);
+          return {
+            salesInvoice: oldName,
+            squarePaymentLink: inv.lsh_square_payment_link || null,
+            appPayUrl: `https://app.lstailors.com/pay/${encodeURIComponent(oldName)}`,
+            warnings,
+          };
+        }
+        try {
+          await erpRunMethod("frappe.client.cancel", { doctype: "Sales Invoice", name: oldName });
+        } catch (e: any) {
+          warnings.push(`Could not cancel ${oldName} to add sell lines: ${e?.message || e}`);
+          return { salesInvoice: oldName, squarePaymentLink: null, appPayUrl: null, warnings };
+        }
+      } else if (Number(inv.docstatus) === 0) {
+        // Draft: update in place
+        const merged = [...baseItems, ...sellRows];
+        await erpUpdate("Sales Invoice", oldName, { items: merged });
+        try {
+          await erpSubmit("Sales Invoice", oldName);
+        } catch (e: any) {
+          warnings.push(`Submit draft SI failed: ${e?.message || e}`);
+        }
+        await erpUpdate("Alteration Ticket", opts.ticketName, { sales_invoice: oldName }).catch(() => {});
+        let squarePaymentLink: string | null = null;
+        try {
+          const linkRes = (await erpRunMethod("ls_alterations.ls_square.pos.create_payment_link", {
+            invoice: oldName,
+          }).catch(() => null)) as any;
+          const lm = linkRes?.message ?? linkRes;
+          if (lm?.url) squarePaymentLink = String(lm.url);
+        } catch { /* */ }
+        return {
+          salesInvoice: oldName,
+          squarePaymentLink,
+          appPayUrl: `https://app.lstailors.com/pay/${encodeURIComponent(oldName)}`,
+          warnings,
+        };
+      }
+    }
+  }
+
+  const merged = [...baseItems, ...sellRows];
+  const today = new Date().toISOString().split("T")[0];
+  let newInv: any = null;
+  try {
+    newInv = await erpCreate<any>("Sales Invoice", {
+      customer,
+      company,
+      posting_date: today,
+      due_date: today,
+      is_pos: 0,
+      update_stock: 0, // avoid stock entry failures for showroom edge cases
+      items: merged,
+      remarks: `Alteration ticket ${opts.ticketName} (incl. sell items)`,
+      alteration_ticket_ref: opts.ticketName,
+    });
+  } catch (e: any) {
+    warnings.push(`Create SI with sell lines failed: ${e?.message || e}`);
+    return { salesInvoice: oldName, squarePaymentLink: null, appPayUrl: null, warnings };
+  }
+  const newName = newInv?.name;
+  if (!newName) {
+    warnings.push("SI create returned no name");
+    return { salesInvoice: oldName, squarePaymentLink: null, appPayUrl: null, warnings };
+  }
+  try {
+    await erpSubmit("Sales Invoice", newName);
+  } catch (e: any) {
+    warnings.push(`Submit new SI failed: ${e?.message || e}`);
+  }
+  await erpUpdate("Alteration Ticket", opts.ticketName, { sales_invoice: newName }).catch(() => {});
+  let squarePaymentLink: string | null = null;
+  try {
+    const linkRes = (await erpRunMethod("ls_alterations.ls_square.pos.create_payment_link", {
+      invoice: newName,
+    }).catch(() => null)) as any;
+    const lm = linkRes?.message ?? linkRes;
+    if (lm?.url) squarePaymentLink = String(lm.url);
+  } catch { /* */ }
+  return {
+    salesInvoice: newName,
+    squarePaymentLink,
+    appPayUrl: `https://app.lstailors.com/pay/${encodeURIComponent(newName)}`,
+    warnings,
+  };
+}
+
 // 6. POST /tickets
 intakeAlterationsRouter.post('/tickets', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   const body = (await c.req.json()) as any;
-  const { customer, newCustomer, garments, isRush, origin, paymentMethod, deposit, ticket_date } = body;
+  const { customer, newCustomer, isRush, origin, paymentMethod, deposit, ticket_date } = body;
+  let garments = body.garments;
 
-  // Validate
-  if (!garments || !Array.isArray(garments) || garments.length === 0) {
-    return c.json({ error: 'garments is required' }, 400);
+  // Validate — SPEC 057: Walk-in may be items-only (sell lines, no alter garments)
+  const sellItemsIn: SellLineIn[] = Array.isArray(body.sellItems)
+    ? body.sellItems
+    : Array.isArray(body.sell_items)
+      ? body.sell_items
+      : [];
+  let garmentsIn = Array.isArray(garments) ? garments : [];
+  if (garmentsIn.length === 0 && sellItemsIn.length > 0) {
+    // Synthetic shell so create_ticket still has a garment row
+    garmentsIn = [{
+      ref: 'G1',
+      garmentType: 'Other',
+      description: 'Retail / stock sale',
+      color: '',
+      notes: sellItemsIn.map((s: SellLineIn) => sellLineDescription(s)).join('; '),
+      lines: [],
+    }];
+  }
+  if (!garmentsIn.length) {
+    return c.json({ error: 'garments or sellItems required' }, 400);
   }
   if (!customer && !(newCustomer && newCustomer.name)) {
     return c.json({ error: 'customer or newCustomer.name is required' }, 400);
   }
+  garments = garmentsIn;
 
   // Build payload
   const today = new Date().toISOString().split('T')[0];
@@ -490,12 +714,45 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
       }
     }
 
+    // SPEC 057 — attach sell stock/item rows onto SI (Walk-in mixed cart)
+    let sellWarnings: string[] = [];
+    if (billingStatus === 'Billable' && sellItemsIn.length > 0) {
+      try {
+        const tdoc = await erpGetDoc<any>('Alteration Ticket', ticketName).catch(() => null);
+        const cust = (tdoc?.customer as string) || (customer?.id ?? customer?.name) || '';
+        const company =
+          (origin ?? 'NYC') === 'HOU' ? 'L&S Tailors TX, LLC' : 'L&S Tailors NY LLC';
+        const merged = await appendSellItemsToTicketInvoice({
+          ticketName,
+          customer: cust,
+          company,
+          origin: origin ?? 'NYC',
+          sellItems: sellItemsIn,
+          existingInvoice: salesInvoice || (tdoc?.sales_invoice ? String(tdoc.sales_invoice) : null),
+        });
+        if (merged.salesInvoice) salesInvoice = merged.salesInvoice;
+        if (merged.squarePaymentLink) squarePaymentLink = merged.squarePaymentLink;
+        if (merged.appPayUrl) appPayUrl = merged.appPayUrl;
+        sellWarnings = merged.warnings || [];
+        if (sellWarnings.length) {
+          const note = `Sell lines: ${sellItemsIn.map((s) => sellLineDescription(s)).join('; ')}`;
+          await erpUpdate('Alteration Ticket', ticketName, {
+            internal_notes: [tdoc?.internal_notes, note, sellWarnings.join(' · ')].filter(Boolean).join('\n'),
+          }).catch(() => {});
+        }
+      } catch (e: any) {
+        console.error('[intake-alterations] sell items merge failed:', e?.message);
+        sellWarnings.push(String(e?.message || e));
+      }
+    }
+
     return c.json({
       data: {
         ticketName,
         salesInvoice,
         squarePaymentLink,
         appPayUrl,
+        sellWarnings: sellWarnings.length ? sellWarnings : undefined,
       },
     });
   } catch (e: any) {

@@ -16,6 +16,16 @@ import {
 import { REDO_DISPLAY } from "@alts/lib/billingLabels";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import GarmentCatalog, { type GarmentFilterId } from "@alts/components/intake/GarmentCatalog";
+import TicketCartRail from "@alts/components/intake/TicketCartRail";
+import TicketCartDock from "@alts/components/intake/TicketCartDock";
+import TicketCartSheet from "@alts/components/intake/TicketCartSheet";
+import GarmentOptionsDrawer from "@alts/components/intake/GarmentOptionsDrawer";
+import SellItemCatalog, {
+  type SellFilterId,
+  type SellableItem,
+} from "@alts/components/intake/SellItemCatalog";
+import SellItemDrawer from "@alts/components/intake/SellItemDrawer";
 
 const GARMENT_TYPES = [
   "Jacket",
@@ -60,6 +70,23 @@ type CustomerHit = {
   phone?: string;
   email?: string;
   addressLine?: string;
+};
+
+
+type SellItem = {
+  ref: string;
+  item_code: string;
+  item_name: string;
+  color: string;
+  size: string;
+  qty: number;
+  rate: number;
+  availability: "in" | "order" | "out";
+  eta?: string;
+  source?: "erp" | "seed";
+  /** attribute options from catalog at add-time */
+  sizeOptions?: string[];
+  colorOptions?: string[];
 };
 
 type Preset = {
@@ -243,6 +270,15 @@ export default function IntakeStepped() {
   const [activeRef, setActiveRef] = useState<string | null>(null);
   const [notifyReady, setNotifyReady] = useState(true);
   const [cartOpen, setCartOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [catalogFilter, setCatalogFilter] = useState<GarmentFilterId>("All");
+  /** SPEC 057 — Walk-in only Alter | Sell */
+  const [catalogMode, setCatalogMode] = useState<"alter" | "sell">("alter");
+  const [sellItems, setSellItems] = useState<SellItem[]>([]);
+  const [sellFilter, setSellFilter] = useState<SellFilterId>("all");
+  const [sellQuery, setSellQuery] = useState("");
+  const [sellDrawerOpen, setSellDrawerOpen] = useState(false);
+  const [activeSellRef, setActiveSellRef] = useState<string | null>(null);
   const [billing, setBilling] = useState<"billable" | "on_order" | "redo">(initialBilling);
   const [linkedSo, setLinkedSo] = useState<string | null>(soParam);
   const [linkedSoLabel, setLinkedSoLabel] = useState<string | null>(null);
@@ -289,6 +325,23 @@ export default function IntakeStepped() {
     queryFn: () => api.get<Preset[]>(`/api/intake-alterations/presets?origin=${origin}`),
   });
 
+  const sellable = useQuery({
+    queryKey: ["sellable-items", origin, sellFilter, sellQuery],
+    enabled: billing === "billable" && catalogMode === "sell" && kindParam !== "on_order" && kindParam !== "redo" && kindParam !== "warranty" && kindParam !== "custom",
+    queryFn: async () => {
+      const qs = new URLSearchParams({
+        origin,
+        filter: sellFilter,
+        limit: "60",
+      });
+      if (sellQuery.trim()) qs.set("q", sellQuery.trim());
+      const res = await api.raw(`/api/alts/sellable-items?${qs.toString()}`);
+      if (!res.ok) throw new Error(`sellable-items ${res.status}`);
+      const json = (await res.json()) as { data?: SellableItem[]; meta?: { seeded?: boolean } };
+      return { items: json.data ?? [], seeded: !!json.meta?.seeded };
+    },
+  });
+
   // Resume parked cart
   useEffect(() => {
     if (!resumeId) return;
@@ -316,10 +369,19 @@ export default function IntakeStepped() {
           setGarments(intake.garments);
           setActiveRef(intake.garments[0]?.ref ?? null);
         }
+        if (Array.isArray(intake.sellItems)) {
+          setSellItems(intake.sellItems);
+          if (!intake.garments?.length && intake.sellItems[0]?.ref) {
+            setActiveSellRef(intake.sellItems[0].ref);
+          }
+        }
+        if (intake.catalogMode === "sell" || intake.catalogMode === "alter") {
+          setCatalogMode(intake.catalogMode);
+        }
         if (typeof intake.notifyReady === "boolean") setNotifyReady(intake.notifyReady);
         if (intake.expectedGarmentCount) setExpectedGarments(Number(intake.expectedGarmentCount) || 0);
         if (cart.label) setParkLabel(cart.label);
-        setStep(intake.garments?.length ? 2 : 1);
+        setStep(1);
         toast.message("Resumed parked cart");
       } catch {
         toast.error("Could not load parked cart");
@@ -390,7 +452,7 @@ export default function IntakeStepped() {
           setGarments(seeded);
           setActiveRef(seeded[0]?.ref ?? null);
           setExpectedGarments(seeded.length);
-          setStep(2);
+          setStep(1);
           toast.message(
             `${seeded.length} piece${seeded.length === 1 ? "" : "s"} from ${
               cartSos.length > 1 ? `${cartSos.length} orders` : "order cart"
@@ -435,6 +497,16 @@ export default function IntakeStepped() {
             );
             setActiveRef(draft!.activeRef || draft!.garments[0]?.ref || null);
           }
+          if (draft!.sellItems?.length) {
+            setSellItems(draft!.sellItems.map((s) => ({ ...s })));
+            const firstSell = draft!.sellItems[0]?.ref;
+            if (draft!.activeRef?.startsWith("I") || (!draft!.garments?.length && firstSell)) {
+              setActiveSellRef(draft!.activeRef?.startsWith("I") ? draft!.activeRef : firstSell || null);
+            }
+          }
+          if (draft!.catalogMode === "sell" || draft!.catalogMode === "alter") {
+            setCatalogMode(draft!.catalogMode);
+          }
           if (typeof draft!.notifyReady === "boolean") setNotifyReady(draft!.notifyReady);
           if (draft!.ticketNote) setTicketNote(draft!.ticketNote);
           if (draft!.ticketNoteKind) setTicketNoteKind(draft!.ticketNoteKind);
@@ -444,7 +516,7 @@ export default function IntakeStepped() {
           if (draft!.parkedCartId) setParkedCartId(draft!.parkedCartId);
           if (draft!.customDesc) setCustomDesc(draft!.customDesc);
           if (draft!.customPrice) setCustomPrice(draft!.customPrice);
-          if (typeof draft!.step === "number") setStep(Math.min(3, Math.max(0, draft!.step)));
+          if (typeof draft!.step === "number") setStep(Math.min(2, Math.max(0, draft!.step)));
           toast.message("Restored unfinished intake", {
             description: "Recovered from a refresh or dropped connection.",
             action: {
@@ -495,7 +567,9 @@ export default function IntakeStepped() {
         newZip,
         showNewForm,
         garments,
-        activeRef,
+        sellItems,
+        catalogMode,
+        activeRef: activeSellRef || activeRef,
         notifyReady,
         ticketNote,
         ticketNoteKind,
@@ -527,7 +601,10 @@ export default function IntakeStepped() {
     newZip,
     showNewForm,
     garments,
+    sellItems,
+    catalogMode,
     activeRef,
+    activeSellRef,
     notifyReady,
     ticketNote,
     ticketNoteKind,
@@ -539,21 +616,120 @@ export default function IntakeStepped() {
     customPrice,
   ]);
 
-  const total = useMemo(
+  const allowSellMode = billing === "billable" && kindParam !== "on_order" && kindParam !== "redo" && kindParam !== "warranty" && kindParam !== "custom";
+  const workTotal = useMemo(
     () => garments.reduce((s, g) => s + g.lines.reduce((a, l) => a + (Number(l.price) || 0), 0), 0),
     [garments],
   );
-  const lineCount = garments.reduce((s, g) => s + g.lines.length, 0);
-  const active = garments.find((g) => g.ref === activeRef) ?? garments[0] ?? null;
+  const itemsTotal = useMemo(
+    () => sellItems.reduce((s, it) => s + (Number(it.rate) || 0) * (Number(it.qty) || 1), 0),
+    [sellItems],
+  );
+  const total = workTotal + itemsTotal;
+  const lineCount = garments.reduce((s, g) => s + g.lines.length, 0) + sellItems.length;
+  const active = garments.find((g) => g.ref === activeRef) ?? null;
+  const activeSell = sellItems.find((s) => s.ref === activeSellRef) ?? null;
 
   const addGarment = (type: string) => {
     const ref = `G${garments.length + 1}`;
     const g: Garment = { ref, garmentType: type, color: "", notes: "", lines: [] };
     setGarments((prev) => [...prev, g]);
     setActiveRef(ref);
+    setActiveSellRef(null);
+    setSellDrawerOpen(false);
+    setCartOpen(false);
     setExpectedGarments((n) => Math.max(n, garments.length + 1));
+    setDrawerOpen(true);
     toast.success(`${type} added`);
-    if (step < 2) setStep(2);
+  };
+
+  const addSellItem = (item: SellableItem) => {
+    if (item.availability === "out") return;
+    const ref = `I${sellItems.length + 1}`;
+    const colors = item.attributes?.Color || (item.color_label ? [item.color_label] : []);
+    const sizes = item.attributes?.Size || [];
+    const line: SellItem = {
+      ref,
+      item_code: item.item_code,
+      item_name: item.item_name,
+      color: item.color_label || colors[0] || "",
+      size: sizes[0] || "",
+      qty: 1,
+      rate: Number(item.rate) || 0,
+      availability: item.availability,
+      eta: item.eta || (item.availability === "order" ? "Special order" : undefined),
+      source: item.source,
+      sizeOptions: sizes,
+      colorOptions: colors,
+    };
+    setSellItems((prev) => [...prev, line]);
+    setActiveSellRef(ref);
+    setActiveRef(null);
+    setDrawerOpen(false);
+    setCartOpen(false);
+    setSellDrawerOpen(true);
+    toast.success(`${item.item_name} added`);
+  };
+
+  const openSellDrawer = (ref: string) => {
+    setActiveSellRef(ref);
+    setActiveRef(null);
+    setDrawerOpen(false);
+    setCartOpen(false);
+    setSellDrawerOpen(true);
+  };
+
+  const closeSellDrawer = () => {
+    setSellDrawerOpen(false);
+  };
+
+  const updateSellField = <K extends keyof SellItem>(ref: string, field: K, value: SellItem[K]) => {
+    setSellItems((prev) => prev.map((s) => (s.ref === ref ? { ...s, [field]: value } : s)));
+  };
+
+  const removeSellItem = (ref: string) => {
+    setSellItems((prev) => {
+      const next = prev.filter((s) => s.ref !== ref).map((s, i) => ({ ...s, ref: `I${i + 1}` }));
+      if (activeSellRef === ref) {
+        setActiveSellRef(next[0]?.ref ?? null);
+        if (!next.length) setSellDrawerOpen(false);
+      } else if (activeSellRef) {
+        const idx = prev.findIndex((s) => s.ref === activeSellRef);
+        const removedIdx = prev.findIndex((s) => s.ref === ref);
+        if (idx >= 0) {
+          const adjusted = idx > removedIdx ? idx - 1 : idx;
+          setActiveSellRef(next[Math.min(adjusted, next.length - 1)]?.ref ?? null);
+        }
+      }
+      return next;
+    });
+  };
+
+  const openGarmentDrawer = (ref: string) => {
+    setActiveRef(ref);
+    setActiveSellRef(null);
+    setSellDrawerOpen(false);
+    setCartOpen(false);
+    setDrawerOpen(true);
+  };
+
+  const closeGarmentDrawer = () => {
+    setDrawerOpen(false);
+    setNoteOpenFor(null);
+  };
+
+  const openCartSheet = () => {
+    setDrawerOpen(false);
+    setSellDrawerOpen(false);
+    setNoteOpenFor(null);
+    setCartOpen(true);
+  };
+
+  const updateActiveGarmentField = (field: "color" | "notes", value: string) => {
+    if (!activeRef) return;
+    setGarments((prev) =>
+      prev.map((g) => (g.ref === activeRef ? { ...g, [field]: value } : g)),
+    );
   };
 
   /** Drop a piece from the ticket / order cart. Renumbers G1…Gn. */
@@ -567,7 +743,8 @@ export default function IntakeStepped() {
         .map((g, i) => ({ ...g, ref: `G${i + 1}` }));
 
       if (next.length === 0) {
-        setActiveRef("");
+        setActiveRef(null);
+        setDrawerOpen(false);
       } else if (activeRef === ref) {
         const pick = Math.min(idx, next.length - 1);
         setActiveRef(next[pick]!.ref);
@@ -797,8 +974,15 @@ export default function IntakeStepped() {
 
   const buildTicketBody = () => {
     if (!customer && !newName.trim()) throw new Error("Pick or create a customer");
-    if (garments.length === 0) throw new Error("Add at least one garment");
-    if (lineCount === 0 && billing === "billable") throw new Error("Add work lines");
+    if (garments.length === 0 && sellItems.length === 0) throw new Error("Add at least one garment or item");
+    const alterWorkCount = garments.reduce((s, g) => s + g.lines.length, 0);
+    if (billing === "billable" && alterWorkCount === 0 && sellItems.length === 0) {
+      throw new Error("Add work lines or sell items");
+    }
+    // Alter garments present without work still OK if sell items carry the ticket — warn if bare alter pieces
+    if (billing === "billable" && garments.some((g) => g.lines.length === 0) && sellItems.length === 0) {
+      throw new Error("Add work lines to each garment");
+    }
 
     const body: any = {
       origin,
@@ -821,6 +1005,17 @@ export default function IntakeStepped() {
           notes: l.notes || undefined,
           preset: l.presetId || null,
         })),
+      })),
+      sellItems: sellItems.map((s) => ({
+        item_code: s.item_code,
+        item_name: s.item_name,
+        qty: s.qty,
+        rate: s.rate,
+        color: s.color,
+        size: s.size,
+        availability: s.availability,
+        eta: s.eta,
+        source: s.source,
       })),
       billing_status:
         billing === "on_order" ? "Included in Custom Order" : billing === "redo" ? "Warranty" : "Billable",
@@ -958,6 +1153,8 @@ export default function IntakeStepped() {
           billing,
           linkedSo,
           garments,
+          sellItems,
+          catalogMode,
           notifyReady,
           total,
           expectedGarmentCount: expected,
@@ -1007,8 +1204,37 @@ export default function IntakeStepped() {
     setParkOpen(true);
   };
 
-  const steps = ["Customer", "Garments", "Work", "Review"] as const;
+  const steps = ["Customer", allowSellMode ? "Cart" : "Garments", "Review"] as const;
   const displayName = customer?.name || newName || "";
+
+  const catalogModeSwitch = allowSellMode ? (
+    <div className="flex w-full md:w-auto md:inline-flex p-0.5 rounded-full border border-brass/30 bg-black/35 mb-3 shrink-0">
+      <button
+        type="button"
+        onClick={() => setCatalogMode("alter")}
+        className={cn(
+          "flex-1 md:flex-none h-11 md:h-9 px-4 rounded-full text-[10.5px] font-bold tracking-[0.14em] uppercase",
+          catalogMode === "alter"
+            ? "bg-brass/22 text-brass-light border border-brass/45"
+            : "text-cream-dim hover:text-cream",
+        )}
+      >
+        ◎ Alter
+      </button>
+      <button
+        type="button"
+        onClick={() => setCatalogMode("sell")}
+        className={cn(
+          "flex-1 md:flex-none h-11 md:h-9 px-4 rounded-full text-[10.5px] font-bold tracking-[0.14em] uppercase",
+          catalogMode === "sell"
+            ? "bg-brass/22 text-brass-light border border-brass/45"
+            : "text-cream-dim hover:text-cream",
+        )}
+      >
+        ◈ Sell
+      </button>
+    </div>
+  ) : null;
 
   return (
     <div className="alts-root flex flex-col min-h-dvh">
@@ -1063,7 +1289,20 @@ export default function IntakeStepped() {
             <button
               key={label}
               type="button"
-              onClick={() => setStep(i)}
+              onClick={() => {
+                if (i === 2 && garments.length + sellItems.length < 1) {
+                  toast.error(allowSellMode ? "Add a garment or item first" : "Add at least one garment first");
+                  return;
+                }
+                if (i >= 1 && !customer && !newName.trim()) {
+                  toast.error("Select a customer first");
+                  return;
+                }
+                setDrawerOpen(false);
+                setSellDrawerOpen(false);
+                setCartOpen(false);
+                setStep(i);
+              }}
               className={cn(
                 "flex-1 flex items-center justify-center gap-2 px-2 py-3.5 border-b-2 text-xs font-semibold tracking-widest uppercase transition-colors",
                 i === step && "border-brass text-cream",
@@ -1087,7 +1326,12 @@ export default function IntakeStepped() {
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-5 py-6 pb-40">
+      <div
+        className={cn(
+          "flex-1 min-h-0",
+          step === 1 ? "overflow-hidden px-5 py-6" : "overflow-y-auto px-5 py-6 pb-40",
+        )}
+      >
         {/* ── Customer ── */}
         {step === 0 && (
           <div className="max-w-3xl mx-auto space-y-5">
@@ -1317,519 +1561,178 @@ export default function IntakeStepped() {
 
             {customer && (
               <button type="button" onClick={() => setStep(1)} className="btn-brass h-14 px-8 text-[12px]">
-                Continue to garments →
+                Continue to cart →
               </button>
             )}
           </div>
         )}
 
-        {/* ── Garments ── */}
+        {/* ── Cart: catalog + cart + drawer (SPEC 053 + 057 Sell) ── */}
         {step === 1 && (
-          <div className="max-w-4xl mx-auto">
-            {customer && (
-              <div className="mb-5">
-                <SelectedCustomerCard
-                  name={customer.name}
-                  phone={customer.phone}
-                  email={customer.email}
-                  addressLine={customer.addressLine}
-                  onEdit={customer.id ? () => setEditOpen(true) : undefined}
-                  onProfile={customer.id ? () => nav(`/customers/${encodeURIComponent(customer.id!)}`) : undefined}
-                  onChange={() => {
-                    setCustomer(null);
-                    setStep(0);
-                  }}
-                />
-              </div>
-            )}
-            <h2 className="display text-[34px] mb-1">
-              What did {(displayName || "they").split(" ")[0]} bring in?
-            </h2>
-            <p className="text-[12.5px] text-cream-dim mb-6">Tap each piece. Tap again for another of the same kind.</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3.5">
-              {GARMENT_TYPES.map((t) => {
-                const count = garments.filter((g) => g.garmentType === t).length;
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => addGarment(t)}
-                    className="relative card-glass min-h-[168px] flex flex-col items-center justify-center gap-3 p-4 active:scale-95"
-                  >
-                    {count > 0 && (
-                      <span className="absolute top-2.5 right-2.5 min-w-[26px] h-[26px] rounded-full bg-brass text-forest-deep text-xs font-bold grid place-items-center">
-                        {count}
-                      </span>
-                    )}
-                    {garmentIcon(t)}
-                    <span className="text-xs font-semibold tracking-widest uppercase text-cream-muted text-center">{t}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Per-garment condition photos (Lucia 023) */}
-            {garments.length > 0 && (
-              <div className="mt-6 space-y-3">
-                <div className="flex items-end justify-between gap-3">
-                  <div>
-                    <div className="display text-[22px] italic">Photograph at intake</div>
-                    <p className="text-[12px] text-cream-dim mt-1">
-                      Take or attach photos before we touch the piece — damage claim proof.
-                    </p>
-                  </div>
-                </div>
-                {garments.map((g) => (
-                  <div
-                    key={g.ref}
-                    className="card-glass p-4 flex flex-col sm:flex-row gap-4 sm:items-center"
-                  >
-                    <div className="min-w-[120px]">
-                      <span className="chip mb-1.5">{g.ref}</span>
-                      <div className="font-semibold text-[14px]">{g.garmentType}</div>
-                      <div className="text-[12px] text-cream-dim mt-1">
-                        {(g.photoPreviewUrls || []).length} photo
-                        {(g.photoPreviewUrls || []).length === 1 ? "" : "s"}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2 flex-1 items-center">
-                      {(g.photoPreviewUrls || []).map((src, i) => (
-                        <div key={i} className="relative w-16 h-16 rounded-xl overflow-hidden border border-brass/30">
-                          <img src={src} alt="" className="w-full h-full object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => removeGarmentPhoto(g.ref, i)}
-                            className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/70 text-[12px] text-cream grid place-items-center"
-                            aria-label="Remove photo"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                      <label className="h-16 min-w-[7.5rem] px-3 rounded-xl border border-brass/40 bg-brass/15 text-brass-light text-[12px] font-bold tracking-wider uppercase grid place-items-center text-center cursor-pointer hover:bg-brass/25">
-                        📷 Take photo
-                        <input
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          multiple
-                          className="hidden"
-                          onChange={(e) => {
-                            const files = e.target.files;
-                            if (files) Array.from(files).forEach((f) => addGarmentPhoto(g.ref, f));
-                            e.target.value = "";
-                          }}
-                        />
-                      </label>
-                      <label className="h-16 min-w-[7.5rem] px-3 rounded-xl border border-dashed border-brass/35 text-cream-dim text-[12px] font-bold tracking-wider uppercase grid place-items-center text-center cursor-pointer hover:border-brass/55 hover:text-brass-light">
-                        Upload
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          className="hidden"
-                          onChange={(e) => {
-                            const files = e.target.files;
-                            if (files) Array.from(files).forEach((f) => addGarmentPhoto(g.ref, f));
-                            e.target.value = "";
-                          }}
-                        />
-                      </label>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {garments.length > 0 && (
-              <button type="button" onClick={() => setStep(2)} className="btn-brass mt-6 h-14 px-8 text-[12px]">
-                Price the work →
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* ── Work (Lucia 030) ── */}
-        {step === 2 && (
-          <div className={cn("mx-auto", billing === "on_order" ? "max-w-6xl" : "max-w-4xl")}>
-            <h2 className="display text-[34px] mb-1">What needs doing?</h2>
-            <p className="text-[12.5px] text-cream-dim mb-4">
-              {billing === "on_order"
-                ? "Pieces from the order cart are on the right — select one, price the work."
-                : "Presets · custom lines · notes. Prices stay for internal value even on Re-do / custom order."}
-            </p>
-
-            <div className={cn(billing === "on_order" ? "grid lg:grid-cols-[1fr_280px] gap-4 items-start" : "")}>
-              <div className="min-w-0">
-                {billing !== "on_order" && (
-                  <div className="flex gap-2.5 overflow-x-auto pb-4 mb-2">
-                    {garments.map((g) => (
-                      <button
-                        key={g.ref}
-                        type="button"
-                        onClick={() => setActiveRef(g.ref)}
-                        className={cn(
-                          "min-w-[174px] card-glass p-3.5 text-left",
-                          active?.ref === g.ref && "border-brass bg-brass/15",
-                        )}
-                      >
-                        <span className="chip mb-2">{g.ref}</span>
-                        <div className="font-semibold text-[13px]">{g.garmentType}</div>
-                        <div className="display text-lg text-brass-light mt-1">
-                          {money(g.lines.reduce((s, l) => s + l.price, 0))}
-                        </div>
-                        {(g.photoPreviewUrls || []).length > 0 && (
-                          <div className="text-[12px] text-cream-dim mt-1">
-                            📷 {(g.photoPreviewUrls || []).length}
-                          </div>
-                        )}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setStep(1)}
-                      className="min-w-[96px] rounded-[15px] border border-dashed border-brass/35 grid place-items-center text-2xl text-brass-light"
-                    >
-                      +
-                    </button>
-                  </div>
+          <div className="relative flex flex-1 min-h-0 -mx-5 -my-6 overflow-hidden">
+            {catalogMode === "sell" && allowSellMode ? (
+              <SellItemCatalog
+                firstName={(displayName || "them").split(" ")[0] || "them"}
+                items={sellable.data?.items ?? []}
+                loading={sellable.isLoading}
+                seeded={sellable.data?.seeded}
+                filter={sellFilter}
+                onFilter={setSellFilter}
+                query={sellQuery}
+                onQuery={setSellQuery}
+                cartCounts={sellItems.reduce(
+                  (acc, s) => {
+                    acc[s.item_code] = (acc[s.item_code] || 0) + s.qty;
+                    return acc;
+                  },
+                  {} as Record<string, number>,
                 )}
-                {billing !== "on_order" && active && (
-                  <div className="mb-4">
-                    <GarmentPhotoStrip
-                      large
-                      garment={active}
-                      onAdd={(file) => addGarmentPhoto(active.ref, file)}
-                      onRemove={(idx) => removeGarmentPhoto(active.ref, idx)}
-                    />
-                  </div>
-                )}
-                {billing === "on_order" && active && (
-                  <div className="mb-4 card-glass px-4 py-3 space-y-3">
-                    <div className="flex items-center gap-3">
-                      <span className="chip bg-[rgba(155,139,196,0.25)] text-[var(--vi,#9B8BC4)] border-[rgba(155,139,196,0.45)]">
-                        {active.ref}
-                      </span>
-                      <span className="font-semibold">{active.garmentType}</span>
-                      {active.notes ? (
-                        <span className="text-[12px] text-cream-dim truncate flex-1">{active.notes}</span>
-                      ) : null}
-                      <span className="ml-auto display text-xl text-brass-light shrink-0">
-                        {money(active.lines.reduce((s, l) => s + l.price, 0))}
-                      </span>
-                    </div>
-                    <GarmentPhotoStrip
-                      large
-                      garment={active}
-                      onAdd={(file) => addGarmentPhoto(active.ref, file)}
-                      onRemove={(idx) => removeGarmentPhoto(active.ref, idx)}
-                    />
-                  </div>
-                )}
-
-            {/* Selected lines first (with note affordance) */}
-            {active && active.lines.length > 0 && (
-              <div className="grid sm:grid-cols-2 gap-3 mb-4">
-                {active.lines.map((l) => {
-                  const custom = !l.presetId;
-                  const open = noteOpenFor === l.id || !!(l.notes && l.notes.trim()) || !!(l.photoPreviewUrls?.length);
-                  return (
-                    <div key={l.id} className="min-w-0">
-                      <div
-                        className={cn(
-                          "w-full flex items-center gap-3.5 min-h-[72px] px-4 py-3.5 rounded-2xl border text-left",
-                          custom
-                            ? "border-signal-amber/45 bg-signal-amber/10"
-                            : "border-brass bg-brass/15",
-                        )}
-                      >
-                        <span className="w-[30px] h-[30px] rounded-full border grid place-items-center text-sm font-bold shrink-0 bg-brass text-forest-deep border-brass">
-                          ✓
-                        </span>
-                        <span className="flex-1 min-w-0">
-                          <span className="block font-semibold text-sm">
-                            {l.description}
-                            {custom ? (
-                              <span className="ml-2 text-[7.5px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded border border-signal-amber/50 text-signal-amber">
-                                custom
-                              </span>
-                            ) : null}
-                          </span>
-                          <span className="text-[12px] text-cream-dim">
-                            {custom ? "Out of scope · priced on the spot" : l.estMinutes ? `${l.estMinutes} min` : "—"}
-                          </span>
-                        </span>
-                        <span className="display text-2xl text-brass-light shrink-0">{money(l.price)}</span>
-                        <button
-                          type="button"
-                          className="w-9 h-9 rounded-lg bg-white/[0.04] text-cream-dim shrink-0"
-                          onClick={() => removeLine(active.ref, l.id)}
-                          aria-label="Remove line"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                      {!open ? (
-                        <button
-                          type="button"
-                          onClick={() => setNoteOpenFor(l.id)}
-                          className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-bold tracking-widest uppercase text-cream-dim border border-brass/25 bg-black/20 rounded-md px-2.5 py-1.5 hover:border-brass/50 hover:text-brass-light"
-                        >
-                          ✎ Note / photo
-                        </button>
-                      ) : (
-                        <div className="mt-2 border-l-2 border-brass pl-3 py-2">
-                          <span className="caps text-[12px] text-brass block mb-1.5">Note on this line</span>
-                          <textarea
-                            value={l.notes || ""}
-                            onChange={(e) => updateLineNotes(active.ref, l.id, e.target.value)}
-                            placeholder="Working buttonholes — open and re-sew…"
-                            rows={2}
-                            className="w-full rounded-xl bg-black/40 border border-brass/30 px-3 py-2 text-[12px] text-cream resize-none"
-                          />
-                          <div className="flex flex-wrap gap-2 mt-2 items-center">
-                            {(l.photoPreviewUrls || []).map((src, i) => (
-                              <img
-                                key={i}
-                                src={src}
-                                alt=""
-                                className="w-10 h-10 rounded-lg object-cover border border-brass/30"
-                              />
-                            ))}
-                            <label className="w-10 h-10 rounded-lg border border-dashed border-brass/35 grid place-items-center text-cream-dim text-lg cursor-pointer hover:border-brass">
-                              +
-                              <input
-                                type="file"
-                                accept="image/*"
-                                capture="environment"
-                                className="hidden"
-                                onChange={(e) => {
-                                  const f = e.target.files?.[0];
-                                  if (f) addLinePhoto(active.ref, l.id, f);
-                                  e.target.value = "";
-                                }}
-                              />
-                            </label>
-                            {!l.notes?.trim() && !(l.photoPreviewUrls?.length) && (
-                              <button
-                                type="button"
-                                className="text-[12px] text-cream-dim ml-auto"
-                                onClick={() => setNoteOpenFor(null)}
-                              >
-                                Collapse
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Preset picker */}
-            <div className="grid sm:grid-cols-2 gap-3">
-              {filteredPresets.map((p) => {
-                const on = !!active?.lines.find((l) => l.presetId === p.id);
-                if (on) return null;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => togglePreset(p)}
-                    className="w-full flex items-center gap-3.5 min-h-[92px] px-4 py-4 rounded-2xl border text-left border-brass/20 bg-black/20 hover:border-brass/40"
-                  >
-                    <span className="w-[30px] h-[30px] rounded-full border grid place-items-center text-sm font-bold shrink-0 border-brass/40 text-transparent">
-                      ✓
-                    </span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block font-semibold text-sm">{p.preset_name}</span>
-                      <span className="text-[12px] text-cream-dim">{p.est_minutes ? `${p.est_minutes} min` : "—"}</span>
-                    </span>
-                    <span className="display text-2xl text-brass-light shrink-0">{money(Number(p.price) || 0)}</span>
-                  </button>
-                );
-              })}
-            </div>
-            {!presets.data?.length && !presets.isLoading && (
-              <p className="text-cream-dim text-sm mt-3">No presets loaded — check API / ERP.</p>
-            )}
-
-            {/* Custom line */}
-            <div className="mt-4 rounded-[17px] border border-dashed border-brass/40 bg-brass/[0.05] p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="display text-[19px] italic">Custom alteration line</span>
-                <span className="text-[12px] font-bold tracking-wider uppercase px-2 py-0.5 rounded border border-signal-amber/50 text-signal-amber bg-signal-amber/10">
-                  out of scope
-                </span>
-              </div>
-              <div className="grid sm:grid-cols-[1fr_150px] gap-2.5">
-                <input
-                  value={customDesc}
-                  onChange={(e) => setCustomDesc(e.target.value)}
-                  placeholder="Describe the work — e.g. re-cut lapel roll, hand-pad"
-                  className="h-[52px] rounded-[13px] bg-black/40 border border-brass/30 px-4 text-sm text-cream placeholder:text-cream-dim"
-                />
-                <input
-                  value={customPrice}
-                  onChange={(e) => setCustomPrice(e.target.value)}
-                  placeholder="$0.00"
-                  inputMode="decimal"
-                  className="h-[52px] rounded-[13px] bg-black/40 border border-brass/30 px-4 text-right display text-xl italic text-brass-light placeholder:text-cream-dim"
-                />
-              </div>
-              <div className="flex flex-wrap gap-3 mt-3 items-center">
-                <p className="text-[12px] text-cream-dim flex-1 leading-relaxed min-w-[180px]">
-                  Normal line with <b className="text-cream-muted">no preset</b>. Full shop price kept for tailor
-                  stats — never $0 (use Re-do for free work).
-                </p>
-                <button
-                  type="button"
-                  onClick={addCustomLine}
-                  disabled={!customDesc.trim() || !(Number(customPrice.replace(/[^0-9.]/g, "")) > 0)}
-                  className="btn-brass h-11 px-6 text-[12px] disabled:opacity-40"
-                >
-                  Add line
-                </button>
-              </div>
-            </div>
-
-            {/* Ticket note */}
-            <div className="mt-5 rounded-[17px] border border-brass/25 bg-black/25 p-4">
-              <div className="flex items-center gap-3 mb-3 flex-wrap">
-                <span className="display text-[19px] italic flex-1">Ticket note</span>
-                <div className="flex rounded-lg overflow-hidden border border-brass/30">
-                  <button
-                    type="button"
-                    onClick={() => setTicketNoteKind("internal")}
-                    className={cn(
-                      "px-3 py-1.5 text-[12px] font-bold tracking-wider uppercase",
-                      ticketNoteKind === "internal" ? "bg-brass/20 text-brass-light" : "text-cream-dim",
-                    )}
-                  >
-                    Internal
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTicketNoteKind("customer")}
-                    className={cn(
-                      "px-3 py-1.5 text-[12px] font-bold tracking-wider uppercase",
-                      ticketNoteKind === "customer" ? "bg-brass/20 text-brass-light" : "text-cream-dim",
-                    )}
-                  >
-                    On the receipt
-                  </button>
-                </div>
-              </div>
-              <textarea
-                value={ticketNote}
-                onChange={(e) => setTicketNote(e.target.value)}
-                placeholder="Anything about this ticket as a whole — client travelling Thursday, fabric fragile…"
-                rows={3}
-                className="w-full rounded-[13px] bg-black/40 border border-brass/30 px-4 py-3 text-[13px] text-cream-muted resize-none placeholder:text-cream-dim"
+                onAdd={addSellItem}
+                modeSwitch={catalogModeSwitch}
               />
-              <p className="text-[12px] text-cream-dim mt-2 leading-relaxed">
-                <b className="text-signal-amber">Internal</b> is staff-only.{" "}
-                <b className="text-cream-muted">On the receipt</b> appears on thermal + e-ticket — deliberate tap.
-              </p>
-            </div>
-
-            <button type="button" onClick={() => setStep(3)} className="btn-brass mt-6 h-14 px-8 text-[12px]">
-              Review →
-            </button>
-              </div>
-
-              {/* Right order cart — on custom-order path only */}
-              {billing === "on_order" && (
-                <aside className="lg:sticky lg:top-4 rounded-[20px] border border-[rgba(155,139,196,0.4)] bg-gradient-to-b from-[rgba(155,139,196,0.12)] to-black/35 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-[rgba(155,139,196,0.25)]">
-                    <div className="display text-[18px] italic">Order cart</div>
-                    <div className="font-mono text-[12px] text-[var(--vi,#9B8BC4)] mt-0.5 break-all">
-                      {linkedSoLabel || linkedSo || "—"}
-                    </div>
-                  </div>
-                  <div className="p-3 space-y-2 max-h-[55vh] overflow-y-auto">
-                    {garments.map((g) => {
-                      const on = active?.ref === g.ref;
-                      const amt = g.lines.reduce((s, l) => s + l.price, 0);
-                      const photoN = g.photoPreviewUrls?.length || 0;
-                      return (
-                        <div
-                          key={g.ref}
-                          className={cn(
-                            "relative w-full rounded-xl border transition-all",
-                            on
-                              ? "border-[var(--vi,#9B8BC4)] bg-[rgba(155,139,196,0.2)]"
-                              : "border-white/10 bg-black/25 hover:border-[rgba(155,139,196,0.35)]",
-                          )}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => setActiveRef(g.ref)}
-                            className="w-full text-left px-3 py-3 pr-10"
-                          >
-                            <div className="flex items-center gap-2">
-                              {photoN > 0 && g.photoPreviewUrls?.[0] ? (
-                                <img
-                                  src={g.photoPreviewUrls[0]}
-                                  alt=""
-                                  className="w-9 h-9 rounded-lg object-cover border border-brass/30 shrink-0"
-                                />
-                              ) : (
-                                <span className="w-9 h-9 rounded-lg border border-dashed border-brass/30 grid place-items-center text-cream-dim text-sm shrink-0">
-                                  📷
-                                </span>
-                              )}
-                              <span className="chip text-[12px]">{g.ref}</span>
-                              <span className="font-semibold text-[13px] flex-1">{g.garmentType}</span>
-                              <span className="display text-lg text-brass-light">{money(amt)}</span>
-                            </div>
-                            {g.notes ? <div className="text-[12px] text-cream-dim mt-1 truncate">{g.notes}</div> : null}
-                            {g.soItemName ? (
-                              <div className="text-[12px] text-[var(--vi,#9B8BC4)] mt-0.5 truncate">{g.soItemName}</div>
-                            ) : null}
-                            <div className="text-[12px] text-cream-dim mt-1">
-                              {g.lines.length} line{g.lines.length === 1 ? "" : "s"}
-                              {photoN ? ` · ${photoN} photo${photoN === 1 ? "" : "s"}` : ""}
-                              {on ? " · active" : " · tap to adjust"}
-                            </div>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removeGarment(g.ref);
-                            }}
-                            className="absolute top-2 right-2 w-8 h-8 rounded-lg border border-white/10 bg-black/40 text-cream-dim hover:text-[var(--ro,#D97B6C)] hover:border-[rgba(217,123,108,0.45)] hover:bg-[rgba(217,123,108,0.12)] grid place-items-center text-sm"
-                            aria-label={`Remove ${g.garmentType}`}
-                            title="Remove piece"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      onClick={() => setStep(1)}
-                      className="w-full rounded-xl border border-dashed border-[rgba(155,139,196,0.4)] py-3 text-[12px] text-[var(--vi,#9B8BC4)] font-semibold"
-                    >
-                      + Add piece
-                    </button>
-                  </div>
-                  <div className="px-4 py-3 border-t border-[rgba(155,139,196,0.25)] flex items-center justify-between">
-                    <span className="caps text-[12px] text-cream-dim">Ticket value</span>
-                    <span className="display text-xl text-brass-light">{money(total)}</span>
-                  </div>
-                </aside>
-              )}
-            </div>
+            ) : (
+              <GarmentCatalog
+                firstName={(displayName || "they").split(" ")[0] || "they"}
+                types={GARMENT_TYPES}
+                garments={garments}
+                filter={catalogFilter}
+                onFilter={setCatalogFilter}
+                onAdd={addGarment}
+                icon={garmentIcon}
+                title={
+                  allowSellMode
+                    ? `What are we doing for ${(displayName || "them").split(" ")[0] || "them"}?`
+                    : undefined
+                }
+                lede={
+                  allowSellMode
+                    ? "Alter client garments, or switch to Sell for stock / special-order."
+                    : undefined
+                }
+                modeSwitch={catalogModeSwitch}
+              />
+            )}
+            <TicketCartRail
+              garments={garments}
+              sellItems={allowSellMode ? sellItems.map((s) => ({ ...s, kind: "sell" as const })) : []}
+              activeRef={activeSellRef || activeRef}
+              workTotal={workTotal}
+              itemsTotal={allowSellMode ? itemsTotal : 0}
+              showSellChrome={allowSellMode}
+              onSelect={(ref) => {
+                if (ref.startsWith("I")) openSellDrawer(ref);
+                else openGarmentDrawer(ref);
+              }}
+              onEdit={(ref) => {
+                if (ref.startsWith("I")) openSellDrawer(ref);
+                else openGarmentDrawer(ref);
+              }}
+              onRemove={(ref) => {
+                if (ref.startsWith("I")) {
+                  removeSellItem(ref);
+                  if (activeSellRef === ref) closeSellDrawer();
+                } else {
+                  removeGarment(ref);
+                  if (activeRef === ref) closeGarmentDrawer();
+                }
+              }}
+              onAddOther={() => {
+                setCatalogMode("alter");
+                addGarment("Other");
+              }}
+              onContinue={() => {
+                if (garments.length + sellItems.length < 1) {
+                  toast.error(allowSellMode ? "Add a garment or item" : "Add at least one garment");
+                  return;
+                }
+                closeGarmentDrawer();
+                closeSellDrawer();
+                setStep(2);
+              }}
+              onPark={openPark}
+              icon={garmentIcon}
+            />
+            <GarmentOptionsDrawer
+              open={drawerOpen && !!active && !sellDrawerOpen}
+              garment={active}
+              presets={filteredPresets}
+              presetsLoading={presets.isLoading}
+              customDesc={customDesc}
+              customPrice={customPrice}
+              noteOpenFor={noteOpenFor}
+              onClose={closeGarmentDrawer}
+              onRemovePiece={() => {
+                if (!active) return;
+                const ref = active.ref;
+                removeGarment(ref);
+                closeGarmentDrawer();
+              }}
+              onColor={(v) => updateActiveGarmentField("color", v)}
+              onNotes={(v) => updateActiveGarmentField("notes", v)}
+              onTogglePreset={togglePreset}
+              onRemoveLine={(lineId) => active && removeLine(active.ref, lineId)}
+              onCustomDesc={setCustomDesc}
+              onCustomPrice={setCustomPrice}
+              onAddCustom={addCustomLine}
+              onNoteOpen={setNoteOpenFor}
+              onLineNotes={(lineId, notes) => active && updateLineNotes(active.ref, lineId, notes)}
+              onLinePhoto={(lineId, file) => active && addLinePhoto(active.ref, lineId, file)}
+              icon={garmentIcon}
+              photoStrip={
+                active ? (
+                  <GarmentPhotoStrip
+                    large
+                    garment={active}
+                    onAdd={(file) => addGarmentPhoto(active.ref, file)}
+                    onRemove={(idx) => removeGarmentPhoto(active.ref, idx)}
+                  />
+                ) : null
+              }
+            />
+            {allowSellMode && (
+              <SellItemDrawer
+                open={sellDrawerOpen && !!activeSell}
+                line={activeSell}
+                sizes={activeSell?.sizeOptions || []}
+                colors={activeSell?.colorOptions || []}
+                onClose={closeSellDrawer}
+                onRemove={() => {
+                  if (!activeSell) return;
+                  removeSellItem(activeSell.ref);
+                  closeSellDrawer();
+                }}
+                onColor={(v) => activeSell && updateSellField(activeSell.ref, "color", v)}
+                onSize={(v) => activeSell && updateSellField(activeSell.ref, "size", v)}
+                onQty={(n) => activeSell && updateSellField(activeSell.ref, "qty", n)}
+                onRate={(n) => activeSell && updateSellField(activeSell.ref, "rate", n)}
+                onEta={(v) => activeSell && updateSellField(activeSell.ref, "eta", v)}
+              />
+            )}
+            <TicketCartDock
+              lineCount={garments.length + sellItems.length}
+              workTotal={workTotal}
+              itemsTotal={allowSellMode ? itemsTotal : 0}
+              showBreak={allowSellMode}
+              summary={
+                garments.length + sellItems.length === 0
+                  ? "Empty"
+                  : [
+                      garments[0] ? `${garments[0].garmentType}` : "",
+                      sellItems[0] ? sellItems[0].item_name : "",
+                      garments.length + sellItems.length > 1
+                        ? `+${garments.length + sellItems.length - 1}`
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+              }
+              onOpen={openCartSheet}
+            />
           </div>
         )}
 
         {/* ── Review ── */}
-        {step === 3 && (
+        {step === 2 && (
           <div className="max-w-2xl mx-auto">
             {customer && (
               <div className="mb-5">
@@ -1843,9 +1746,18 @@ export default function IntakeStepped() {
                 />
               </div>
             )}
-            <h2 className="display text-[34px] mb-1">
-              Read it back to {(displayName || "the client").split(" ")[0]}
-            </h2>
+            <div className="flex items-end justify-between gap-3 mb-1 flex-wrap">
+              <h2 className="display text-[34px] leading-none">
+                Read it back to {(displayName || "the client").split(" ")[0]}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="text-[12px] font-bold tracking-widest uppercase text-brass-light"
+              >
+                ← Edit cart
+              </button>
+            </div>
             <p className="text-[12.5px] text-cream-dim mb-5">Confirm before write to ERPNext.</p>
             <div className="card-glass overflow-hidden">
               {garments.map((g) => (
@@ -1913,6 +1825,40 @@ export default function IntakeStepped() {
                 </p>
               )}
             </div>
+            <div className="mt-5 rounded-[17px] border border-brass/25 bg-black/25 p-4">
+              <div className="flex items-center gap-3 mb-3 flex-wrap">
+                <span className="display text-[19px] italic flex-1">Ticket note</span>
+                <div className="flex rounded-lg overflow-hidden border border-brass/30">
+                  <button
+                    type="button"
+                    onClick={() => setTicketNoteKind("internal")}
+                    className={cn(
+                      "px-3 py-1.5 text-[12px] font-bold tracking-wider uppercase",
+                      ticketNoteKind === "internal" ? "bg-brass/20 text-brass-light" : "text-cream-dim",
+                    )}
+                  >
+                    Internal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTicketNoteKind("customer")}
+                    className={cn(
+                      "px-3 py-1.5 text-[12px] font-bold tracking-wider uppercase",
+                      ticketNoteKind === "customer" ? "bg-brass/20 text-brass-light" : "text-cream-dim",
+                    )}
+                  >
+                    On the receipt
+                  </button>
+                </div>
+              </div>
+              <textarea
+                value={ticketNote}
+                onChange={(e) => setTicketNote(e.target.value)}
+                placeholder="Anything about this ticket as a whole — client travelling Thursday, fabric fragile…"
+                rows={3}
+                className="w-full rounded-[13px] bg-black/40 border border-brass/30 px-4 py-3 text-[13px] text-cream-muted resize-none placeholder:text-cream-dim"
+              />
+            </div>
             <button
               type="button"
               onClick={() => setNotifyReady((v) => !v)}
@@ -1936,11 +1882,12 @@ export default function IntakeStepped() {
         )}
       </div>
 
-      {/* sticky bar */}
+      {/* sticky bar — garments/cart step uses rail (tablet) or dock (phone) */}
+      {step !== 1 && (
       <div className="fixed bottom-0 inset-x-0 z-40 px-5 py-4 border-t border-brass/25 bg-gradient-to-b from-forest-deep/55 to-forest-deep/97 backdrop-blur-xl flex items-center gap-4">
         <button
           type="button"
-          onClick={() => setCartOpen(true)}
+          onClick={openCartSheet}
           className="flex items-center gap-3.5 min-w-0 rounded-[14px] border border-brass/25 bg-white/[0.04] pl-2 pr-4 py-2"
         >
           <span className="relative w-[46px] h-[46px] rounded-xl border border-brass/20 bg-black/30 grid place-items-center text-brass-light">
@@ -1949,7 +1896,7 @@ export default function IntakeStepped() {
               <path d="M9 8V6a3 3 0 0 1 6 0v2" />
             </svg>
             <span className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] rounded-full bg-brass text-forest-deep text-[12px] font-bold grid place-items-center">
-              {lineCount}
+              {garments.length + sellItems.length}
             </span>
           </span>
           <span className="text-left">
@@ -1964,52 +1911,63 @@ export default function IntakeStepped() {
         <button
           type="button"
           onClick={() => create.mutate()}
-          disabled={create.isPending || garments.length === 0 || (!customer && !newName.trim())}
+          disabled={create.isPending || garments.length + sellItems.length === 0 || (!customer && !newName.trim())}
           className="btn-brass h-[74px] px-8 text-[13px] disabled:opacity-40 shadow-[0_12px_34px_rgba(176,141,87,0.25)]"
         >
           {create.isPending ? "Writing…" : billing === "billable" ? "Submit ticket →" : "Submit (no charge) →"}
         </button>
       </div>
-
-      {/* cart peek drawer */}
-      {cartOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => setCartOpen(false)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div
-            className="relative w-full max-w-lg max-h-[70vh] overflow-y-auto rounded-t-[26px] border border-brass/30 p-5"
-            style={{ background: "linear-gradient(180deg,#1C3D2C,#163524)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="w-[52px] h-1 rounded-full bg-brass/40 mx-auto mb-4" />
-            <div className="flex items-center mb-4">
-              <h3 className="display text-[25px]">
-                Ticket — {garments.length} garments, {lineCount} lines
-              </h3>
-              <button type="button" className="ml-auto w-11 h-11 rounded-xl border border-brass/25" onClick={() => setCartOpen(false)}>
-                ✕
-              </button>
-            </div>
-            {garments.map((g) => (
-              <div key={g.ref} className="mb-3">
-                <div className="font-semibold text-sm mb-1">
-                  {g.ref} · {g.garmentType}
-                </div>
-                {g.lines.map((l) => (
-                  <div key={l.id} className="flex text-sm text-cream-muted py-1">
-                    <span className="flex-1">{l.description}</span>
-                    <span>{money(l.price)}</span>
-                  </div>
-                ))}
-              </div>
-            ))}
-            <p className="text-xs text-cream-dim mt-3">No tax — alterations are a service, not goods.</p>
-            <div className="display text-3xl text-brass-light mt-4">{money(total)}</div>
-            <button type="button" onClick={() => { setCartOpen(false); openPark(); }} className="btn-ghost w-full h-12 mt-4 text-[12px]">
-              Park this ticket…
-            </button>
-          </div>
-        </div>
       )}
+
+      {/* SPEC 057b — phone cart bottom sheet (cart step + peek from other steps) */}
+      <TicketCartSheet
+        open={cartOpen}
+        onClose={() => setCartOpen(false)}
+        garments={garments}
+        sellItems={allowSellMode ? sellItems : []}
+        workTotal={workTotal}
+        itemsTotal={allowSellMode ? itemsTotal : 0}
+        showSellChrome={allowSellMode}
+        showContinue={step === 1}
+        icon={garmentIcon}
+        onEdit={(ref) => {
+          setCartOpen(false);
+          if (ref.startsWith("I")) openSellDrawer(ref);
+          else openGarmentDrawer(ref);
+        }}
+        onRemove={(ref) => {
+          if (ref.startsWith("I")) {
+            removeSellItem(ref);
+            if (activeSellRef === ref) closeSellDrawer();
+          } else {
+            removeGarment(ref);
+            if (activeRef === ref) closeGarmentDrawer();
+          }
+        }}
+        onContinue={() => {
+          if (garments.length + sellItems.length < 1) {
+            toast.error(allowSellMode ? "Add a garment or item" : "Add at least one garment");
+            return;
+          }
+          setCartOpen(false);
+          closeGarmentDrawer();
+          closeSellDrawer();
+          setStep(2);
+        }}
+        onPark={() => {
+          setCartOpen(false);
+          openPark();
+        }}
+        onAddOther={
+          step === 1
+            ? () => {
+                setCartOpen(false);
+                setCatalogMode("alter");
+                addGarment("Other");
+              }
+            : undefined
+        }
+      />
 
       <ParkDrawer
         open={parkOpen}

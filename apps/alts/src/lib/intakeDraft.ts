@@ -8,7 +8,7 @@
  *  JSON.stringify/localStorage — attempting to serialize them throws or
  *  silently drops data, and blob: URLs are invalidated on reload anyway.
  *  Everything else (customer, garment type/color/notes/lines/prices/
- *  soItemKey, top-level notes) is fair game. Do NOT "fix" this by trying to
+ *  soItemKey, sell items, top-level notes) is fair game. Do NOT "fix" this by trying to
  *  persist photos — re-attach photos after a recovered draft instead.
  */
 
@@ -43,6 +43,20 @@ export type IntakeDraftGarment = {
   soItemName?: string;
 };
 
+/** SPEC 057 — sell lines on Walk-in cart */
+export type IntakeDraftSellItem = {
+  ref: string;
+  item_code: string;
+  item_name: string;
+  color: string;
+  size: string;
+  qty: number;
+  rate: number;
+  availability: "in" | "order" | "out";
+  eta?: string;
+  source?: "erp" | "seed";
+};
+
 export type IntakeDraftPayload = {
   v: 1;
   savedAt: number;
@@ -63,6 +77,9 @@ export type IntakeDraftPayload = {
   newZip: string;
   showNewForm: boolean;
   garments: IntakeDraftGarment[];
+  /** SPEC 057 */
+  sellItems?: IntakeDraftSellItem[];
+  catalogMode?: "alter" | "sell";
   activeRef: string | null;
   notifyReady: boolean;
   ticketNote: string;
@@ -116,9 +133,28 @@ function stripGarmentsForDraft(
   }));
 }
 
+function stripSellItemsForDraft(
+  sellItems: IntakeDraftSellItem[] | undefined | null,
+): IntakeDraftSellItem[] {
+  if (!Array.isArray(sellItems)) return [];
+  return sellItems.map((s) => ({
+    ref: s.ref,
+    item_code: s.item_code,
+    item_name: s.item_name,
+    color: s.color || "",
+    size: s.size || "",
+    qty: Math.max(1, Number(s.qty) || 1),
+    rate: Number(s.rate) || 0,
+    availability: s.availability || "in",
+    eta: s.eta,
+    source: s.source,
+  }));
+}
+
 export function writeIntakeDraft(
-  payload: Omit<IntakeDraftPayload, "v" | "savedAt" | "garments"> & {
+  payload: Omit<IntakeDraftPayload, "v" | "savedAt" | "garments" | "sellItems"> & {
     garments: Parameters<typeof stripGarmentsForDraft>[0];
+    sellItems?: IntakeDraftSellItem[];
   },
 ) {
   try {
@@ -127,11 +163,26 @@ export function writeIntakeDraft(
       v: 1,
       savedAt: Date.now(),
       garments: stripGarmentsForDraft(payload.garments),
+      sellItems: stripSellItemsForDraft(payload.sellItems),
     };
     localStorage.setItem(ALTS_INTAKE_DRAFT_KEY, JSON.stringify(full));
   } catch {
     /* quota / private mode */
   }
+}
+
+/**
+ * SPEC 053 collapsed Work into Garments.
+ * Old map: 0 Customer · 1 Garments · 2 Work · 3 Review
+ * New map: 0 Customer · 1 Cart (catalog+cart+drawer) · 2 Review
+ * Map parked/old drafts so they don't land on a missing screen.
+ */
+export function migrateIntakeStep(step: number): number {
+  const n = Number(step);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  if (n >= 3) return 2; // old Review
+  if (n === 2) return 1; // old Work → combined Garments/Cart
+  return Math.min(2, Math.max(0, Math.floor(n)));
 }
 
 export function readIntakeDraft(): IntakeDraftPayload | null {
@@ -140,6 +191,8 @@ export function readIntakeDraft(): IntakeDraftPayload | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as IntakeDraftPayload;
     if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.garments)) return null;
+    parsed.step = migrateIntakeStep(parsed.step);
+    if (!Array.isArray(parsed.sellItems)) parsed.sellItems = [];
     return parsed;
   } catch {
     return null;
@@ -154,10 +207,11 @@ export function clearIntakeDraft() {
   }
 }
 
-/** True if draft has anything worth restoring (customer or a garment) — see requirement #2. */
+/** True if draft has anything worth restoring (customer, garment, or sell item). */
 export function intakeDraftHasWork(d: IntakeDraftPayload | null | undefined): boolean {
   if (!d) return false;
   if (d.customer?.name) return true;
   if (d.garments?.length) return true;
+  if (d.sellItems?.length) return true;
   return false;
 }
