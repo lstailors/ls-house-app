@@ -26,6 +26,7 @@ import SellItemCatalog, {
   type SellableItem,
 } from "@alts/components/intake/SellItemCatalog";
 import SellItemDrawer from "@alts/components/intake/SellItemDrawer";
+import PromiseSchedule, { type DayLoad } from "@alts/components/intake/PromiseSchedule";
 
 const GARMENT_TYPES = [
   "Jacket",
@@ -279,6 +280,10 @@ export default function IntakeStepped() {
   const [sellQuery, setSellQuery] = useState("");
   const [sellDrawerOpen, setSellDrawerOpen] = useState(false);
   const [activeSellRef, setActiveSellRef] = useState<string | null>(null);
+  /** Last step — promised due date/time */
+  const [promiseDate, setPromiseDate] = useState<string | null>(null);
+  const [promiseTime, setPromiseTime] = useState<string | null>("18:00");
+  const [isRush, setIsRush] = useState(false);
   const [billing, setBilling] = useState<"billable" | "on_order" | "redo">(initialBilling);
   const [linkedSo, setLinkedSo] = useState<string | null>(soParam);
   const [linkedSoLabel, setLinkedSoLabel] = useState<string | null>(null);
@@ -339,6 +344,22 @@ export default function IntakeStepped() {
       if (!res.ok) throw new Error(`sellable-items ${res.status}`);
       const json = (await res.json()) as { data?: SellableItem[]; meta?: { seeded?: boolean } };
       return { items: json.data ?? [], seeded: !!json.meta?.seeded };
+    },
+  });
+
+  const scheduleLoad = useQuery({
+    queryKey: ["schedule-load", origin],
+    enabled: step === 3,
+    queryFn: async () => {
+      const from = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+      const res = await api.raw(`/api/alts/schedule-load?origin=${origin}&from=${from}&days=14`);
+      if (!res.ok) throw new Error(`schedule-load ${res.status}`);
+      const json = (await res.json()) as {
+        data?: { days?: DayLoad[]; origin?: string } | DayLoad[];
+      };
+      const d = json.data;
+      if (Array.isArray(d)) return { days: d as DayLoad[] };
+      return { days: (d?.days ?? []) as DayLoad[] };
     },
   });
 
@@ -516,7 +537,7 @@ export default function IntakeStepped() {
           if (draft!.parkedCartId) setParkedCartId(draft!.parkedCartId);
           if (draft!.customDesc) setCustomDesc(draft!.customDesc);
           if (draft!.customPrice) setCustomPrice(draft!.customPrice);
-          if (typeof draft!.step === "number") setStep(Math.min(2, Math.max(0, draft!.step)));
+          if (typeof draft!.step === "number") setStep(Math.min(3, Math.max(0, draft!.step)));
           toast.message("Restored unfinished intake", {
             description: "Recovered from a refresh or dropped connection.",
             action: {
@@ -1012,9 +1033,12 @@ export default function IntakeStepped() {
 
     const body: any = {
       origin,
-      isRush: false,
+      isRush,
       paymentMethod: "on_account",
       deposit: 0,
+      due_date: promiseDate || undefined,
+      promised_date: promiseDate || undefined,
+      due_time: promiseTime || undefined,
       garments: garments.map((g) => ({
         ref: g.ref,
         garmentType: g.garmentType,
@@ -1064,6 +1088,9 @@ export default function IntakeStepped() {
 
   const create = useMutation({
     mutationFn: async () => {
+      if (!promiseDate || !promiseTime) {
+        throw new Error("Pick a promised date and time");
+      }
       const body = buildTicketBody();
       const res = await api.post<{
         ticketName: string;
@@ -1230,7 +1257,7 @@ export default function IntakeStepped() {
     setParkOpen(true);
   };
 
-  const steps = ["Customer", allowSellMode ? "Cart" : "Garments", "Review"] as const;
+  const steps = ["Customer", allowSellMode ? "Cart" : "Garments", "Review", "Schedule"] as const;
   const displayName = customer?.name || newName || "";
 
   const catalogModeSwitch = allowSellMode ? (
@@ -1316,7 +1343,7 @@ export default function IntakeStepped() {
               key={label}
               type="button"
               onClick={() => {
-                if (i === 2 && garments.length + sellItems.length < 1) {
+                if (i >= 2 && garments.length + sellItems.length < 1) {
                   toast.error(allowSellMode ? "Add a garment or item first" : "Add at least one garment first");
                   return;
                 }
@@ -1785,7 +1812,7 @@ export default function IntakeStepped() {
                 ← Edit cart
               </button>
             </div>
-            <p className="text-[12.5px] text-cream-dim mb-5">Confirm before write to ERPNext.</p>
+            <p className="text-[12.5px] text-cream-dim mb-5">Confirm the work — next you pick the promised date & time.</p>
             <div className="card-glass overflow-hidden">
               {garments.map((g) => (
                 <div key={g.ref}>
@@ -1956,10 +1983,40 @@ export default function IntakeStepped() {
             </button>
           </div>
         )}
+
+        {/* ── Schedule (SPEC 058) — last step before write ── */}
+        {step === 3 && (
+          <div className="flex-1 min-h-0 flex flex-col pb-4">
+            <PromiseSchedule
+              origin={origin}
+              days={scheduleLoad.data?.days ?? []}
+              loading={scheduleLoad.isLoading}
+              selectedDate={promiseDate}
+              selectedTime={promiseTime}
+              isRush={isRush}
+              clientLabel={displayName}
+              onSelectDate={(d) => {
+                setPromiseDate(d);
+                if (!promiseTime) setPromiseTime("18:00");
+              }}
+              onSelectTime={setPromiseTime}
+              onRush={setIsRush}
+              onBack={() => setStep(2)}
+              confirming={create.isPending}
+              onConfirm={() => {
+                if (!promiseDate || !promiseTime) {
+                  toast.error("Pick a promised date and time");
+                  return;
+                }
+                create.mutate();
+              }}
+            />
+          </div>
+        )}
       </div>
 
-      {/* sticky bar — garments/cart step uses rail (tablet) or dock (phone) */}
-      {step !== 1 && (
+      {/* sticky bar — cart uses rail/dock; schedule has its own CTA */}
+      {step !== 1 && step !== 3 && (
       <div className="fixed bottom-0 inset-x-0 z-40 px-5 py-4 border-t border-brass/25 bg-gradient-to-b from-forest-deep/55 to-forest-deep/97 backdrop-blur-xl flex items-center gap-4">
         <button
           type="button"
@@ -1984,14 +2041,34 @@ export default function IntakeStepped() {
         <button type="button" onClick={openPark} className="btn-ghost h-[74px] px-6 text-[12px] hidden sm:inline-flex items-center">
           Park
         </button>
-        <button
-          type="button"
-          onClick={() => create.mutate()}
-          disabled={create.isPending || garments.length + sellItems.length === 0 || (!customer && !newName.trim())}
-          className="btn-brass h-[74px] px-8 text-[13px] disabled:opacity-40 shadow-[0_12px_34px_rgba(176,141,87,0.25)]"
-        >
-          {create.isPending ? "Writing…" : billing === "billable" ? "Submit ticket →" : "Submit (no charge) →"}
-        </button>
+        {step === 2 ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (garments.length + sellItems.length === 0) {
+                toast.error(allowSellMode ? "Add a garment or item" : "Add at least one garment");
+                return;
+              }
+              if (!customer && !newName.trim()) {
+                toast.error("Pick or create a customer");
+                return;
+              }
+              setStep(3);
+            }}
+            disabled={garments.length + sellItems.length === 0 || (!customer && !newName.trim())}
+            className="btn-brass h-[74px] px-8 text-[13px] disabled:opacity-40 shadow-[0_12px_34px_rgba(176,141,87,0.25)]"
+          >
+            Promise date & time →
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setStep(Math.min(2, step + 1))}
+            className="btn-brass h-[74px] px-8 text-[13px]"
+          >
+            Continue →
+          </button>
+        )}
       </div>
       )}
 

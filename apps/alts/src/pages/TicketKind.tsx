@@ -291,12 +291,11 @@ export default function TicketKind() {
               setKind("walk_in");
               setSelectedSos([]);
               setCartPieces([]);
+              continueWalkIn();
             }}
             className={cn(
               "w-full text-left rounded-[18px] p-[18px] mb-3 border transition-all",
-              kind === "walk_in"
-                ? "border-brass bg-gradient-to-br from-brass/20 to-brass/5"
-                : "border-brass/25 bg-black/20 hover:border-brass/45",
+              "border-brass/25 bg-black/20 hover:border-brass hover:bg-gradient-to-br hover:from-brass/20 hover:to-brass/5 active:scale-[0.99]",
             )}
           >
             <div className="flex items-center gap-3">
@@ -355,19 +354,18 @@ export default function TicketKind() {
           </button>
 
           <button
-            type="button"
-            onClick={() => {
-              setKind("redo");
-              setSelectedSos([]);
-              setCartPieces([]);
-            }}
-            className={cn(
-              "w-full text-left rounded-[18px] p-[18px] mb-3 border transition-all",
-              kind === "redo"
-                ? "border-signal-emerald/50 bg-gradient-to-br from-signal-emerald/15 to-transparent"
-                : "border-brass/25 bg-black/20 hover:border-signal-emerald/40",
-            )}
-          >
+                        type="button"
+                        onClick={() => {
+                          setKind("redo");
+                          setSelectedSos([]);
+                          setCartPieces([]);
+                          continueRedo();
+                        }}
+                        className={cn(
+                          "w-full text-left rounded-[18px] p-[18px] mb-3 border transition-all",
+                          "border-brass/25 bg-black/20 hover:border-signal-emerald/50 hover:bg-gradient-to-br hover:from-signal-emerald/15 hover:to-transparent active:scale-[0.99]",
+                        )}
+                      >
             <div className="flex items-center gap-3">
               <span className="text-signal-emerald text-xl">✓</span>
               <span className="display text-[22px] flex-1">{REDO_DISPLAY.kindTitle}</span>
@@ -397,33 +395,18 @@ export default function TicketKind() {
           {kind === "walk_in" && (
             <div className="max-w-xl mx-auto pt-8 text-center p-5">
               <h2 className="display text-3xl mb-2">Walk-in</h2>
-              <p className="text-sm text-cream-dim mb-8">
-                Billable counter ticket. Add garments to alter now; stock and special-order items
-                join this cart next. Invoice on submit.
+              <p className="text-sm text-cream-dim mb-4">
+                Opening client & cart…
               </p>
-              <button
-                type="button"
-                onClick={continueWalkIn}
-                className="btn-brass h-16 px-10 text-[12px] w-full max-w-md"
-              >
-                Continue to client & cart
-              </button>
+              <div className="h-10 w-10 mx-auto rounded-full border-2 border-brass/40 border-t-brass animate-spin" />
             </div>
           )}
 
           {kind === "redo" && (
             <div className="max-w-xl mx-auto pt-8 text-center p-5">
               <h2 className="display text-3xl mb-2">{REDO_DISPLAY.kindTitle}</h2>
-              <p className="text-sm text-cream-dim mb-8">
-                {REDO_DISPLAY.kindBody} ERP tag stays non-billable — no client invoice, no AR.
-              </p>
-              <button
-                type="button"
-                onClick={continueRedo}
-                className="w-full max-w-md h-16 rounded-2xl font-bold tracking-widest uppercase text-sm bg-signal-emerald text-forest-deep"
-              >
-                Continue re-do ticket
-              </button>
+              <p className="text-sm text-cream-dim mb-4">Opening client & cart…</p>
+              <div className="h-10 w-10 mx-auto rounded-full border-2 border-signal-emerald/40 border-t-signal-emerald animate-spin" />
             </div>
           )}
 

@@ -585,6 +585,8 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
     deposit_amount: paymentMethod === 'deposit' ? parseFloat(deposit) || 0 : 0,
     ticket_date: ticketDateStr,
     due_date: body.due_date ?? defaultDue,
+    promised_date: body.promised_date ?? body.due_date ?? defaultDue,
+    due_time: body.due_time || body.dueTime || null,
     // Billing intent on create so ERP never mints SI for Warranty / Included
     billing_status: billingStatus,
     included_in_custom: includedInCustom,
@@ -652,6 +654,15 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
       if (linkedSo) patch.linked_sales_order = linkedSo;
       if (body.internal_notes) patch.internal_notes = body.internal_notes;
       if (body.customer_notes) patch.customer_notes = body.customer_notes;
+      if (body.due_date || body.due_time || body.dueTime || body.promised_date) {
+        if (body.due_date) patch.due_date = body.due_date;
+        if (body.promised_date || body.due_date) patch.promised_date = body.promised_date || body.due_date;
+        const dt = body.due_time || body.dueTime;
+        if (dt) patch.due_time = dt.length === 5 ? `${dt}:00` : dt;
+      }
+      if (typeof body.isRush === 'boolean' || typeof body.is_rush !== 'undefined') {
+        patch.is_rush = body.isRush || body.is_rush ? 1 : 0;
+      }
       if (billingStatus === 'Warranty' || billingStatus === 'Included in Custom Order') {
         patch.payment_status = 'N/A';
       }

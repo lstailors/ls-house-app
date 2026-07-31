@@ -563,3 +563,146 @@ altsRouter.get("/sellable-items", async (c) => {
     });
   }
 });
+
+/**
+ * GET /api/alts/schedule-load?origin=NYC|HOU&from=YYYY-MM-DD&days=14
+ * Day-bucket capacity for promised due dates (airline load chart).
+ * Stage 1 = ticket counts. Later = estimated_minutes × tailor hours.
+ */
+altsRouter.get("/schedule-load", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const origin = (c.req.query("origin") || "NYC").toUpperCase() === "HOU" ? "HOU" : "NYC";
+  const from =
+    c.req.query("from") ||
+    new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const nDays = Math.min(28, Math.max(7, Number(c.req.query("days") || 14) || 14));
+
+  const start = new Date(`${from}T12:00:00`);
+  const dates: string[] = [];
+  for (let i = 0; i < nDays; i++) {
+    const d = new Date(start.getTime() + i * 86400000);
+    // Skip Sundays for shop strip (still allow if selected later via expand)
+    const iso = d.toISOString().slice(0, 10);
+    const wd = d.getUTCDay(); // careful with TZ — rebuild with local
+    dates.push(iso);
+  }
+
+  // Rebuild dates in America/New_York day boundaries
+  const nyDates: string[] = [];
+  {
+    const base = new Date(`${from}T12:00:00-04:00`);
+    for (let i = 0; i < nDays + 4; i++) {
+      const d = new Date(base.getTime() + i * 86400000);
+      const iso = d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+      const wd = new Date(`${iso}T12:00:00`).getDay();
+      if (wd === 0) continue; // skip Sunday
+      if (!nyDates.includes(iso)) nyDates.push(iso);
+      if (nyDates.length >= nDays) break;
+    }
+  }
+
+  const rangeStart = nyDates[0];
+  const rangeEnd = nyDates[nyDates.length - 1];
+
+  const tickets = await erpList<any>("Alteration Ticket", {
+    filters: [
+      ["due_date", ">=", rangeStart],
+      ["due_date", "<=", rangeEnd],
+      ["origin_location", "=", origin],
+      ["workflow_state", "not in", ["Picked Up", "Cancelled"]],
+    ],
+    fields: [
+      "name",
+      "customer_name",
+      "due_date",
+      "due_time",
+      "is_rush",
+      "workflow_state",
+      "ticket_total",
+    ],
+    limit: 500,
+    order_by: "due_date asc",
+  }).catch(() => [] as any[]);
+
+  // Appointments (optional — store DT may fail)
+  let appts: any[] = [];
+  try {
+    const { storeList } = await import("../lib/erpnext/store");
+    const { DT } = await import("../lib/erpnext/doctypes");
+    appts = await storeList<any>(DT.APPOINTMENT, {
+      filters: [
+        ["start_time", ">=", `${rangeStart}T00:00:00`],
+        ["start_time", "<=", `${rangeEnd}T23:59:59`],
+        ["status", "!=", "cancelled"],
+      ],
+      fields: ["name", "customer", "event_type", "start_time", "end_time", "location", "status"],
+      orderBy: "start_time asc",
+      limit: 200,
+    });
+    // filter origin loosely
+    appts = appts.filter((a) => {
+      const loc = String(a.location || "").toLowerCase();
+      if (origin === "HOU") return loc.includes("hou") || loc.includes("houston") || loc.includes("tx");
+      return !loc.includes("hou") && !loc.includes("houston");
+    });
+  } catch {
+    appts = [];
+  }
+
+  const byDate: Record<
+    string,
+    {
+      date: string;
+      count: number;
+      rush: number;
+      tickets: any[];
+      appointments: any[];
+    }
+  > = {};
+  for (const iso of nyDates) {
+    byDate[iso] = { date: iso, count: 0, rush: 0, tickets: [], appointments: [] };
+  }
+
+  for (const t of tickets) {
+    const d = String(t.due_date || "").slice(0, 10);
+    if (!byDate[d]) continue;
+    byDate[d].count += 1;
+    if (t.is_rush) byDate[d].rush += 1;
+    byDate[d].tickets.push({
+      name: t.name,
+      customer_name: t.customer_name,
+      due_time: t.due_time || null,
+      is_rush: t.is_rush,
+      workflow_state: t.workflow_state,
+    });
+  }
+
+  for (const a of appts) {
+    const d = String(a.start_time || "").slice(0, 10);
+    if (!byDate[d]) continue;
+    byDate[d].appointments.push({
+      id: a.name,
+      title: a.event_type || "Appointment",
+      start: a.start_time,
+      end: a.end_time,
+    });
+    // appointments count toward visual load lightly
+    byDate[d].count += 1;
+  }
+
+  // Sort tickets in day by time
+  for (const d of Object.values(byDate)) {
+    d.tickets.sort((a, b) => String(a.due_time || "99").localeCompare(String(b.due_time || "99")));
+  }
+
+  return c.json({
+    data: {
+      origin,
+      from: rangeStart,
+      to: rangeEnd,
+      days: nyDates.map((iso) => byDate[iso]),
+    },
+  });
+});
