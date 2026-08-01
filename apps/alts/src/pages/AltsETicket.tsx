@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
 import { api } from '@ls/api-client'
@@ -10,9 +10,10 @@ interface PublicTicket {
   workflow_state: string
   ticket_date: string
   due_date: string
-  ticket_total: number
-  payment_status: string
+  ticket_total: number | null
+  payment_status: string | null
   origin_location: string
+  locked?: boolean
   garments?: Array<{
     name: string
     garment_id: string
@@ -46,10 +47,15 @@ function formatCurrency(n: number) {
 
 export default function ETicket() {
   const { ticketName } = useParams<{ ticketName: string }>()
+  const [params] = useSearchParams()
+  const key = params.get('k') || params.get('key') || ''
 
   const { data: ticket, isLoading, isError } = useQuery<PublicTicket>({
-    queryKey: ['public-ticket', ticketName],
-    queryFn: () => api.get<PublicTicket>(`/api/intake-alterations/public/tickets/${ticketName}`),
+    queryKey: ['public-ticket', ticketName, key],
+    queryFn: () =>
+      api.get<PublicTicket>(
+        `/api/intake-alterations/public/tickets/${encodeURIComponent(ticketName!)}${key ? `?k=${encodeURIComponent(key)}` : ''}`,
+      ),
     enabled: !!ticketName,
     retry: 1,
     staleTime: 60_000,
@@ -58,6 +64,7 @@ export default function ETicket() {
   const eTicketUrl = window.location.href
   const isReady = ticket?.workflow_state === 'Ready'
   const status = ticket ? (STATUS_CONFIG[ticket.workflow_state] ?? STATUS_CONFIG['Received']) : null
+  const locked = !!ticket?.locked
 
   if (isLoading) {
     return (
@@ -133,10 +140,18 @@ export default function ETicket() {
             </div>
             <div className="col-span-2 flex items-center justify-between pt-1 border-t border-white/[0.04]">
               <p className="text-cream-dim/50 text-[10px] tracking-widest uppercase">Total</p>
-              <p className="text-brass-shimmer font-bold text-lg">{formatCurrency(ticket.ticket_total)}</p>
+              <p className="text-brass-shimmer font-bold text-lg">
+                {locked || ticket.ticket_total == null ? '—' : formatCurrency(ticket.ticket_total)}
+              </p>
             </div>
           </div>
         </div>
+
+        {locked ? (
+          <p className="text-center text-cream-dim/70 text-xs px-2">
+            Status view — open the link from your L&amp;S text for full ticket details.
+          </p>
+        ) : null}
 
         {/* ── QR code ── */}
         <div

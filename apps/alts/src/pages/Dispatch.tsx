@@ -338,7 +338,7 @@ export default function Dispatch() {
         </span>
       </header>
 
-      <div className="flex-1 grid lg:grid-cols-[1fr_400px] min-h-0">
+      <div className="flex-1 grid lg:grid-cols-[1fr_400px] min-h-0 phone-stack">
         <main className="overflow-y-auto p-5 space-y-5">
           <div>
             <div className="caps mb-3">Ready tickets</div>

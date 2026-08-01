@@ -15,9 +15,10 @@ export function garmentJobUrl(ticket: string, garmentId: string): string {
   return `${ALTS_ORIGIN}/g/${encodeURIComponent(ticket)}/${encodeURIComponent(garmentId)}`;
 }
 
-/** Store / e-ticket scan target. */
-export function ticketPublicUrl(ticket: string): string {
-  return `${ALTS_ORIGIN}/t/${encodeURIComponent(ticket)}`;
+/** Store / e-ticket scan target — pass `key` from ticket.e_ticket_key (server-signed). */
+export function ticketPublicUrl(ticket: string, key?: string): string {
+  const base = `${ALTS_ORIGIN}/t/${encodeURIComponent(ticket)}`;
+  return key ? `${base}?k=${encodeURIComponent(key)}` : base;
 }
 
 /** Pay link when billable. */

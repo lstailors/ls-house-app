@@ -6,6 +6,7 @@ import { cn } from "@ls/design/utils";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import { storeToday } from "@alts/lib/storeDate";
 
 type Ticket = {
   name: string;
@@ -38,13 +39,13 @@ export default function OrdersGlass() {
 
   const tickets = useQuery({
     queryKey: ["orders-glass"],
-    queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=200"),
+    queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=500"),
     refetchInterval: 45_000,
   });
 
   const rows = useMemo(() => {
     let list = tickets.data ?? [];
-    const today = new Date().toISOString().slice(0, 10);
+    const today = storeToday();
     if (tab === "open")
       list = list.filter((t) => t.workflow_state !== "Picked Up" && t.workflow_state !== "Cancelled");
     if (tab === "due") list = list.filter((t) => t.due_date === today || daysLate(t.due_date) > 0);

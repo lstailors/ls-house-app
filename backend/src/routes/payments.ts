@@ -520,6 +520,9 @@ async function listSquareCards(squareCustomerId: string): Promise<PublicCard[]> 
 paymentsRouter.get("/cards", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!["super_admin", "store_manager", "salesperson"].includes(user.role)) {
+    return c.json({ error: { message: "Forbidden" } }, 403);
+  }
 
   const ticket = c.req.query("ticket") || undefined;
   const invoice = c.req.query("invoice") || undefined;
@@ -599,6 +602,9 @@ paymentsRouter.get("/cards", async (c) => {
 paymentsRouter.post("/card-on-file", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!["super_admin", "store_manager", "salesperson"].includes(user.role)) {
+    return c.json({ error: { message: "Forbidden" } }, 403);
+  }
 
   const body = (await c.req.json().catch(() => null)) as {
     card_id?: string;

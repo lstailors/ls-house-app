@@ -278,7 +278,7 @@ export default function TicketKind() {
         </div>
       </header>
 
-      <div className="flex-1 grid lg:grid-cols-[360px_1fr] min-h-0">
+      <div className="flex-1 grid lg:grid-cols-[360px_1fr] min-h-0 phone-stack">
         <aside className="border-r border-brass/15 p-5 flex flex-col overflow-y-auto">
           <h2 className="display text-[27px] leading-tight">What kind of ticket?</h2>
           <p className="text-[12px] text-[var(--cd)] mt-2 mb-5 leading-relaxed">
@@ -411,7 +411,7 @@ export default function TicketKind() {
           )}
 
           {kind === "on_order" && (
-            <div className="flex-1 grid lg:grid-cols-[1fr_340px] min-h-0">
+            <div className="flex-1 grid lg:grid-cols-[1fr_340px] min-h-0 phone-stack">
               <div className="overflow-y-auto p-5 min-w-0 border-r border-brass/10">
                 <h2 className="display text-[27px] leading-tight">Pull the custom order</h2>
                 <p className="text-[12px] text-[var(--cd)] mt-2 mb-4">

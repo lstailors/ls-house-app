@@ -511,6 +511,65 @@
   .alts-rotate-gate,
   .alts-landscape-block,
   .alts-tablet-route-block,
-  .alts-tablet-phone-card { display: none !important; }
+  .alts-tablet-phone-card,
+  .alts-print-phone-tip { display: none !important; }
   .alts-tablet-desk       { display: contents !important; }
 }
+
+/* Print surfaces — always show content; tip only on phone */
+.alts-print-phone-tip {
+  display: none;
+}
+@media (max-width: 719.98px) {
+  .alts-print-phone-tip {
+    display: block;
+    padding: 10px 14px;
+    background: rgba(176, 141, 87, 0.12);
+    border-bottom: 1px solid rgba(176, 141, 87, 0.25);
+    color: #f1e9d6;
+    font-size: 12px;
+    line-height: 1.4;
+    font-family: Montserrat, system-ui, sans-serif;
+  }
+  .alts-print-phone-tip strong {
+    color: #d4b27a;
+  }
+  .alts-print-surface {
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Ticket detail: wrap header actions, scrollable stepper */
+  .ticket-detail-actions {
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+    width: 100%;
+  }
+  .ticket-detail-stepper .flex > button {
+    min-width: 4.5rem;
+  }
+  .ticket-detail-stepper > div > .flex {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Board: card stack instead of wide grid */
+  .alts-board-desk {
+    display: none !important;
+  }
+  .alts-board-phone {
+    display: flex !important;
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+
+@media (min-width: 720px) {
+  .alts-board-desk {
+    display: block;
+  }
+  .alts-board-phone {
+    display: none !important;
+  }
+}
+

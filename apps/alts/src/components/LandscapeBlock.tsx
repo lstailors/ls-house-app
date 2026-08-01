@@ -1,12 +1,18 @@
 /**
- * CSS-only landscape interstitial for shop tablets (≥768px + portrait).
- * Always mounted — visibility pure CSS in alts-pos.css.
+ * CSS-only landscape interstitial — ONLY for print / counter-print routes.
+ * Public + phone-first FOH pages must work in iPad portrait.
  * Never unmounts routes; never calls screen.orientation.lock().
- * Phones (<768px) never see this gate.
  */
+import { useLocation } from "react-router-dom";
 import "@alts/styles/alts-pos.css";
 
+const PRINT_PATH =
+  /\/(tags|thermal|receipt|label)(\/|$)/i;
+
 export default function LandscapeBlock() {
+  const { pathname } = useLocation();
+  if (!PRINT_PATH.test(pathname)) return null;
+
   return (
     <div
       className="alts-landscape-block"
@@ -16,7 +22,7 @@ export default function LandscapeBlock() {
     >
       <div>
         <p className="alts-landscape-block__line">Rotate the tablet to landscape</p>
-        <p className="alts-landscape-block__hint">Shop floor · landscape only</p>
+        <p className="alts-landscape-block__hint">Print layout · landscape</p>
       </div>
     </div>
   );

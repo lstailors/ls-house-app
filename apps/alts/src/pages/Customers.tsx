@@ -202,7 +202,7 @@ export default function Customers() {
 
       {/* KPI bar */}
       {!isLoading && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
             { label: "Total Clients", value: kpis.total.toLocaleString() },
             { label: "VIP (page)", value: kpis.vip.toLocaleString(), gold: true },

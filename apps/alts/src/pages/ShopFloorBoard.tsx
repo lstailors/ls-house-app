@@ -8,6 +8,7 @@ import { billingStatusLabel } from "@alts/lib/billingLabels";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import { storeToday } from "@alts/lib/storeDate";
 
 type Ticket = {
   name: string;
@@ -59,7 +60,7 @@ export default function ShopFloorBoard() {
 
   const tickets = useQuery({
     queryKey: ["shop-floor-tickets"],
-    queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=200"),
+    queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=500"),
     refetchInterval: 60_000,
   });
 
@@ -95,7 +96,7 @@ export default function ShopFloorBoard() {
       );
     }
     if (filter === "today") {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = storeToday();
       rows = rows.filter((t) => t.due_date === today);
     }
     if (filter === "unassigned") {
@@ -127,7 +128,7 @@ export default function ShopFloorBoard() {
   const kpis = useMemo(() => {
     const open = list.filter((t) => t.workflow_state !== "Picked Up" && t.workflow_state !== "Cancelled");
     const overdue = open.filter((t) => daysLate(t.due_date) > 0).length;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = storeToday();
     const dueToday = open.filter((t) => t.due_date === today).length;
     const unassigned = open.filter((t) => !t.assigned_tailor).length;
     const ready = list.filter((t) => t.workflow_state === "Ready").length;

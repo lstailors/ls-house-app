@@ -8,7 +8,7 @@ import Login from "@ls/auth/Login";
 import HomeTiles from "@alts/pages/HomeTiles";
 import AltsShell from "@alts/components/AltsShell";
 import LandscapeGate from "@alts/components/LandscapeGate";
-import TabletOnly from "@alts/components/TabletOnly";
+import PrintSurface from "@alts/components/PrintSurface";
 import ScanFab from "@alts/components/ScanFab";
 import UniversalSearchHost from "@alts/components/UniversalSearch";
 import IntakeStepped from "@alts/pages/IntakeStepped";
@@ -58,9 +58,9 @@ function Spin() {
   );
 }
 
-/** Tablet-tier: wrap so phone widths get “open on shop tablet” card (CSS). */
-function tablet(node: ReactNode, feature?: string) {
-  return <TabletOnly feature={feature}>{node}</TabletOnly>;
+/** Print routes: preview on any device; tip on phone for counter printers. */
+function printSurface(node: ReactNode, feature?: string) {
+  return <PrintSurface feature={feature}>{node}</PrintSurface>;
 }
 
 export default function App() {
@@ -79,8 +79,8 @@ export default function App() {
         <BrowserRouter>
           {/*
             Routes always stay mounted.
-            Tablet portrait → CSS LandscapeGate overlay (does not unmount).
-            Phone width + tablet-tier path → CSS TabletOnly card (not a rotate prompt).
+            Print routes: LandscapeGate only on tags/thermal/receipt/label when tablet portrait.
+            Dispatch / Transfers / Quote adapt via phone-stack (no TabletOnly gate).
           */}
           <Suspense fallback={<Spin />}>
             <Routes>
@@ -161,20 +161,23 @@ export default function App() {
                 }
               />
 
-              {/* Tablet-tier (landscape counter + phone → shop-tablet card) */}
+              {/* Print surfaces — preview on any device; landscape tip on tablet print routes */}
               <Route
                 path="/orders/alterations/:ticketName/tags"
-                element={tablet(<AlterationTags />, "Garment tags")}
+                element={printSurface(<AlterationTags />, "Garment tags")}
               />
               <Route
                 path="/orders/alterations/:ticketName/thermal"
-                element={tablet(<ThermalTicketPrint />, "Thermal ticket")}
+                element={printSurface(<ThermalTicketPrint />, "Thermal ticket")}
               />
               <Route
                 path="/orders/alterations/:ticketName/receipt"
-                element={tablet(<AlterationReceipt />, "Receipt print")}
+                element={printSurface(<AlterationReceipt />, "Receipt print")}
               />
-              <Route path="/deliveries/:id/label" element={tablet(<DeliveryLabel />, "Delivery label")} />
+              <Route
+                path="/deliveries/:id/label"
+                element={printSurface(<DeliveryLabel />, "Delivery label")}
+              />
 
               {/* Intake is phone-first — C creates tickets on iPhone (HER-71) */}
               <Route
@@ -193,11 +196,12 @@ export default function App() {
                   </RoleGuard>
                 }
               />
+              {/* Dispatch / Transfers / Quote — adaptive (phone stack + tablet/desktop columns) */}
               <Route
                 path="/transfers"
                 element={
                   <RoleGuard allow={[...FOH]}>
-                    {tablet(<Transfers />, "Transfers")}
+                    <Transfers />
                   </RoleGuard>
                 }
               />
@@ -205,7 +209,7 @@ export default function App() {
                 path="/dispatch"
                 element={
                   <RoleGuard allow={[...FOH]}>
-                    {tablet(<Dispatch />, "Dispatch")}
+                    <Dispatch />
                   </RoleGuard>
                 }
               />
@@ -213,7 +217,7 @@ export default function App() {
                 path="/quote"
                 element={
                   <RoleGuard allow={[...FOH]}>
-                    {tablet(<QuoteComposer />, "Quote")}
+                    <QuoteComposer />
                   </RoleGuard>
                 }
               />

@@ -9,6 +9,7 @@ import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
+import { storeToday } from "@alts/lib/storeDate";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
@@ -194,7 +195,7 @@ export default function HomeTiles() {
             origin_location?: string;
             assigned_tailor?: string;
           }>
-        >("/api/intake-alterations/tickets?limit=200"),
+        >("/api/intake-alterations/tickets?limit=500"),
         api.get<Array<unknown>>("/api/carts").catch(() => [] as unknown[]),
         // HER-75: board counts for Deliveries tile + status strip
         api
@@ -219,7 +220,7 @@ export default function HomeTiles() {
           .catch(() => ({ openCount: 0 })),
       ]);
       const list = Array.isArray(rows) ? rows : (rows as any)?.tickets ?? [];
-      const today = new Date().toISOString().slice(0, 10);
+      const today = storeToday();
       let open = 0;
       let ready = 0;
       let dueToday = 0;

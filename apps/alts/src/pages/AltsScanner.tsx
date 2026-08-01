@@ -156,12 +156,9 @@ export default function Scanner() {
       setStatusLine("Looking up…");
       try {
         const data = await api.post<ScannerResult>("/api/scanner/resolve", { token: value });
-        const dest = routeForScannerResult(data);
-        if (dest.kind === "path") {
-          navigate(dest.path, { replace: !!dest.replace });
-          return;
-        }
+        // Always show the action sheet — do not auto-navigate past Mark Ready / Paid / etc.
         setResult(data);
+        setStatusLine(data.ok ? "Ready" : "Not found");
       } catch {
         setResult({
           ok: false,
@@ -172,7 +169,7 @@ export default function Scanner() {
         if (mountedRef.current) setResolving(false);
       }
     },
-    [stopCamera, navigate],
+    [stopCamera],
   );
 
   const handleDecode = useCallback(
@@ -190,7 +187,8 @@ export default function Scanner() {
       setDebugLine(`hit via ${via}: ${value.slice(0, 48)}`);
 
       const fast = routeFromRawScan(value);
-      if (fast.kind === "path") {
+      // Only auto-open garment job cards (rack scan). Everything else → action sheet.
+      if (fast.kind === "path" && fast.path.startsWith("/g/")) {
         stopCamera();
         navigate(fast.path, { replace: !!fast.replace });
         return;

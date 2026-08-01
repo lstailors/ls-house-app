@@ -29,7 +29,7 @@ export default function Transfers() {
 
   const tickets = useQuery({
     queryKey: ["xfer-tickets"],
-    queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=200"),
+    queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=500"),
   });
 
   const tailors = useQuery({
@@ -99,7 +99,7 @@ export default function Transfers() {
         />
       )}
 
-      <div className="flex-1 grid lg:grid-cols-[1fr_360px] min-h-0">
+      <div className="flex-1 grid lg:grid-cols-[1fr_360px] min-h-0 phone-stack">
         <div className="overflow-y-auto p-4 space-y-2">
           <div className="caps px-1 mb-2">Open tickets · {list.length}</div>
           {list.map((t) => (

@@ -32,6 +32,8 @@ interface TicketDoc {
   customer_notes?: string;
   internal_notes?: string;
   sales_invoice?: string;
+  e_ticket_key?: string;
+  e_ticket_url?: string;
   taken_by?: string;
   owner?: string;
   garments?: Array<{
@@ -246,9 +248,9 @@ export default function ThermalTicketPrint() {
     );
   }
 
-  const scanUrl = ticket.sales_invoice
-    ? payUrl(ticket.sales_invoice)
-    : ticketPublicUrl(ticket.name);
+  const eticket =
+    ticket.e_ticket_url || ticketPublicUrl(ticket.name, ticket.e_ticket_key);
+  const scanUrl = ticket.sales_invoice ? payUrl(ticket.sales_invoice) : eticket;
   const payStatus = (ticket.payment_status || "Unpaid").toUpperCase();
   const pieces = ticket.garments?.length ?? 0;
   const exit = (ticket.delivery_method || "Counter pickup").toUpperCase();
@@ -273,7 +275,7 @@ export default function ThermalTicketPrint() {
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
           <Link
-            to={`/t/${ticket.name}`}
+            to={eticket.replace(/^https?:\/\/[^/]+/, "") || `/t/${ticket.name}`}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-brass/40 text-cream text-xs uppercase tracking-wide"
           >
             <MessageSquare size={13} /> E-ticket
@@ -404,7 +406,7 @@ export default function ThermalTicketPrint() {
           )}
           <div className="qrp">
             <div style={{ border: "3px solid #000", padding: 6 }}>
-              <QRCodeSVG value={ticketPublicUrl(ticket.name)} size={120} level="M" />
+              <QRCodeSVG value={eticket} size={120} level="M" />
             </div>
           </div>
           <div className="qcap">SCAN TO OPEN IN ALTS</div>

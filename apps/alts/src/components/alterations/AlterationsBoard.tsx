@@ -73,6 +73,9 @@ export function AlterationsBoard({ rows }: { rows: AlterationRow[] }) {
         <Metric label="Ready" value={stats.ready} tone="green" />
         <Metric label="Unpaid" value={`$${Math.round(stats.unpaid).toLocaleString()}`} tone="brass" />
       </div>
+
+      {/* Desktop / tablet table */}
+      <div className="alts-board-desk">
       <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 10, padding: "0 4px 12px", borderBottom: "0.5px solid rgba(241,233,214,0.12)" }}>
         <Th k="customerName" label="Customer" />
         <span style={hLabel}>Garments</span>
@@ -115,6 +118,48 @@ export function AlterationsBoard({ rows }: { rows: AlterationRow[] }) {
           </div>
         );
       })}
+      </div>
+
+      {/* Phone card list */}
+      <div className="alts-board-phone" style={{ display: "none" }}>
+        {sorted.map((r) => {
+          const blocked = isPickupBlocked(r);
+          return (
+            <button
+              key={`m-${r.name}`}
+              type="button"
+              onClick={() => navigate(`/orders/alterations/${r.name}`)}
+              style={{
+                textAlign: "left",
+                width: "100%",
+                background: "rgba(241,233,214,0.04)",
+                border: "0.5px solid rgba(241,233,214,0.12)",
+                borderLeft: blocked ? `3px solid ${RED}` : "3px solid transparent",
+                borderRadius: 12,
+                padding: "14px 14px 14px 12px",
+                color: CREAM,
+                cursor: "pointer",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
+                <div style={{ fontSize: 16, fontWeight: 600 }}>{r.customerName}</div>
+                <div style={{ fontSize: 15, color: BRASS }}>${r.price.toFixed(0)}</div>
+              </div>
+              <div style={{ fontSize: 12, color: CREAM_DIM, marginBottom: 8 }}>{r.name} · {r.location}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                <span style={statusPill(r.status)}>{r.status}</span>
+                <span style={r.paymentStatus === "Paid" ? pill("rgba(93,202,165,0.14)", GREEN) : pill("rgba(226,75,74,0.14)", RED)}>{r.paymentStatus}</span>
+                {r.isRush && <span style={pill("rgba(239,159,39,0.18)", "#EFB45C")}>RUSH</span>}
+                <span style={{ fontSize: 12, color: dueColor(r.dueDate) }}>{fmtDate(r.dueDate)} · {relDue(r.dueDate)}</span>
+              </div>
+              <div style={{ fontSize: 12, color: CREAM_DIM, marginTop: 8 }}>
+                {r.garmentCount} garment{r.garmentCount === 1 ? "" : "s"}
+                {r.tailor ? ` · ${r.tailor}` : " · Unassigned"}
+              </div>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

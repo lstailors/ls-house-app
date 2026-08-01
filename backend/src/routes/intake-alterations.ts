@@ -3,6 +3,7 @@ import { getAuthedUser } from '../lib/scope';
 import { uploadFile, erpFileAbsoluteUrl } from '../lib/erpnext/files';
 import { erpList, erpGet as erpGetDoc, erpUpdate, erpPdf, erpRunMethod, erpCreate, erpSubmit } from '../lib/erp';
 import { sendSms } from '../lib/twilio';
+import { eTicketKey, eTicketKeyValid, eTicketPublicUrl } from '../lib/eticket-token';
 
 // ---------------------------------------------------------------------------
 // ERPNext config
@@ -14,7 +15,7 @@ const MCP_TOKEN = process.env.ERPNEXT_MCP_TOKEN ?? '';
 const APP_URL = process.env.APP_URL ?? 'https://app.lstailors.com';
 
 function eTicketQrUrl(ticketName: string): string {
-  const link = `${APP_URL}/e-ticket/${encodeURIComponent(ticketName)}`;
+  const link = eTicketPublicUrl(ticketName);
   return `https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=20&format=png&data=${encodeURIComponent(link)}`;
 }
 
@@ -97,11 +98,34 @@ function parseErpFail(status: number, body: string): string {
 // ---------------------------------------------------------------------------
 export const intakeAlterationsRouter = new Hono();
 
-// 0. GET /public/tickets/:name — no auth, customer-safe data for e-ticket page
+// 0. GET /public/tickets/:name — no auth; full detail requires signed ?k=
 intakeAlterationsRouter.get('/public/tickets/:name', async (c) => {
   const ticketName = c.req.param('name');
+  const key = c.req.query('k') || c.req.query('key') || '';
   try {
     const doc = await mcpGet<any>('Alteration Ticket', ticketName);
+    const unlocked = eTicketKeyValid(ticketName, key);
+
+    // Minimal public status without key (stops casual IDOR of prices/lines)
+    if (!unlocked) {
+      const first = String(doc.customer_name || 'Client').split(/\s+/)[0] || 'Client';
+      return c.json({
+        data: {
+          name: doc.name,
+          customer_name: first,
+          workflow_state: doc.workflow_state,
+          ticket_date: doc.ticket_date,
+          due_date: doc.due_date,
+          ticket_total: null,
+          payment_status: null,
+          origin_location: doc.origin_location,
+          garments: [],
+          lines: [],
+          locked: true,
+        },
+      });
+    }
+
     return c.json({
       data: {
         name: doc.name,
@@ -124,6 +148,8 @@ intakeAlterationsRouter.get('/public/tickets/:name', async (c) => {
           description: l.description,
           price: l.price ?? 0,
         })),
+        locked: false,
+        e_ticket_key: eTicketKey(ticketName),
       },
     });
   } catch {
@@ -286,7 +312,7 @@ intakeAlterationsRouter.get('/tickets', async (c) => {
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   const status = c.req.query('status') ?? '';
-  const limit = c.req.query('limit') ?? '100';
+  const limit = Math.min(Math.max(parseInt(c.req.query('limit') ?? '100', 10) || 100, 1), 500);
 
   try {
     const filters = status ? [['workflow_state','=',status]] : [['workflow_state','!=','Cancelled']];
@@ -315,7 +341,15 @@ intakeAlterationsRouter.get('/tickets/:name', async (c) => {
         customerEmail = cust.email_id ?? '';
       }
     } catch { /* non-fatal */ }
-    return c.json({ data: { ...doc, customer_mobile: doc.customer_phone ?? '', customer_email: customerEmail } });
+    return c.json({
+      data: {
+        ...doc,
+        customer_mobile: doc.customer_phone ?? '',
+        customer_email: customerEmail,
+        e_ticket_key: eTicketKey(ticketName),
+        e_ticket_url: eTicketPublicUrl(ticketName),
+      },
+    });
   } catch (e: any) {
     return c.json({ error: { message: e.message } }, 404);
   }
@@ -1061,7 +1095,7 @@ async function notifyUnpaidRelease(
   const amt = outstanding.toLocaleString("en-US", { style: "currency", currency: "USD" });
   const payUrl = invoiceName
     ? `${APP_URL}/pay/${encodeURIComponent(invoiceName)}`
-    : `${APP_URL}/e-ticket/${encodeURIComponent(ticketName)}`;
+    : eTicketPublicUrl(ticketName);
 
   // Bubble 1 prose only; 2 app pay; 3 Square if present (SMS v5 shape).
   const b1 = `Hi ${first}, your alterations were released from L&S Custom Tailors. Balance due ${amt} — pay anytime when convenient.`;

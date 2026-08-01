@@ -1148,11 +1148,11 @@ export default function TicketDetail() {
   // ── Main render ────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-dvh bg-forest-deep text-cream">
-      <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+    <div className="alts-root min-h-dvh bg-forest-deep text-cream">
+      <div className="max-w-3xl mx-auto px-4 py-6 space-y-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
 
         {/* ── Header ── */}
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <h1 className="text-brass-shimmer italic text-2xl font-bold tracking-wide">
@@ -1173,14 +1173,14 @@ export default function TicketDetail() {
             </div>
           </div>
 
-          <div className="flex flex-col items-end gap-2">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto">
+            <div className="flex items-center gap-2 ticket-detail-actions">
               <button
                 type="button"
                 onClick={() => openInIntakeMutation.mutate()}
                 disabled={openInIntakeMutation.isPending}
                 className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all',
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all min-h-11',
                   'bg-forest-raised border-brass/25 text-cream-muted',
                   'hover:border-brass/50 hover:text-cream',
                   'disabled:opacity-50 disabled:cursor-not-allowed'
@@ -1193,7 +1193,7 @@ export default function TicketDetail() {
                 type="button"
                 onClick={() => setEditOpen(true)}
                 className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all',
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all min-h-11',
                   'bg-forest-raised border-brass/25 text-cream-muted',
                   'hover:border-brass/50 hover:text-cream'
                 )}
@@ -1207,6 +1207,7 @@ export default function TicketDetail() {
         </div>
 
         {/* ── Workflow Stepper ── */}
+        <div className="ticket-detail-stepper">
         <WorkflowStepper
           current={ticket.workflow_state}
           isPending={updateStatusMutation.isPending}
@@ -1227,6 +1228,7 @@ export default function TicketDetail() {
             }
           }}
         />
+        </div>
 
         {/* ── Customer Card ── */}
         <CustomerCard ticket={ticket} ticketName={ticketName!} />
