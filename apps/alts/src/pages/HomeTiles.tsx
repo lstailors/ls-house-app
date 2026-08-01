@@ -9,7 +9,7 @@ import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
-import { storeToday } from "@alts/lib/storeDate";
+import { storeToday, STORE_ADDRESS_SHORT } from "@alts/lib/storeDate";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
@@ -94,7 +94,7 @@ function timeGreeting() {
 function storeHoursLine() {
   const d = new Date();
   const day = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-  return `${day} · East 61st Street · open until 6:00 PM`;
+  return `${day} · ${STORE_ADDRESS_SHORT} · open until 6:00 PM`;
 }
 
 function briefAge(iso?: string | null) {

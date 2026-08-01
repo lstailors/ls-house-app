@@ -182,22 +182,38 @@ export default function App() {
                 }
               />
 
-              {/* Print surfaces — preview on any device; landscape tip on tablet print routes */}
+              {/* Print surfaces — RoleGuard + preview; landscape tip on tablet */}
               <Route
                 path="/orders/alterations/:ticketName/tags"
-                element={printSurface(<AlterationTags />, "Garment tags")}
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    {printSurface(<AlterationTags />, "Garment tags")}
+                  </RoleGuard>
+                }
               />
               <Route
                 path="/orders/alterations/:ticketName/thermal"
-                element={printSurface(<ThermalTicketPrint />, "Thermal ticket")}
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    {printSurface(<ThermalTicketPrint />, "Thermal ticket")}
+                  </RoleGuard>
+                }
               />
               <Route
                 path="/orders/alterations/:ticketName/receipt"
-                element={printSurface(<AlterationReceipt />, "Receipt print")}
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    {printSurface(<AlterationReceipt />, "Receipt print")}
+                  </RoleGuard>
+                }
               />
               <Route
                 path="/deliveries/:id/label"
-                element={printSurface(<DeliveryLabel />, "Delivery label")}
+                element={
+                  <RoleGuard allow={[...FOH, "driver"]}>
+                    {printSurface(<DeliveryLabel />, "Delivery label")}
+                  </RoleGuard>
+                }
               />
 
               {/* Intake is phone-first — C creates tickets on iPhone (HER-71) */}

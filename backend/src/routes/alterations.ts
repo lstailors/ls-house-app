@@ -714,7 +714,7 @@ alterationsRouter.post("/erp-webhook/ready", async (c) => {
     return c.json({ error: { message: "No customer phone" } }, 400);
   }
 
-  const store = body.origin_location === "HOU" ? "Houston" : "New York";
+  const store = "New York";
   const message = `Hi ${body.customer_name || "there"}, your alteration${body.garment_count !== 1 ? "s are" : " is"} ready for pickup at our ${store} location! Reply or call us with any questions. — L&S Custom Tailors`;
 
   await sendSms(body.customer_phone, message);

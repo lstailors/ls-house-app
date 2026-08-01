@@ -24,7 +24,7 @@ export default function Transfers() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
-  const [dest, setDest] = useState<"NYC" | "HOU" | "Home">("Home");
+  const [dest, setDest] = useState<"NYC" | "Home">("Home");
   const [tailorId, setTailorId] = useState("");
 
   const tickets = useQuery({
@@ -50,7 +50,7 @@ export default function Transfers() {
     return rows;
   }, [tickets.data, q]);
 
-  // At-home = assigned tailor (origin_location stays NYC|HOU only)
+  // At-home = assigned tailor (origin_location stays NYC)
   const atHome = list.filter((t) => !!t.assigned_tailor);
 
   const transfer = useMutation({
@@ -133,7 +133,7 @@ export default function Transfers() {
               <div className="display text-2xl mb-1">{sel.customer_name}</div>
               <div className="font-mono text-xs text-brass-light mb-4">{sel.name}</div>
               <div className="flex flex-col gap-2 mb-4">
-                {(["NYC", "HOU", "Home"] as const).map((d) => (
+                {(["NYC", "Home"] as const).map((d) => (
                   <button
                     key={d}
                     type="button"
@@ -143,7 +143,7 @@ export default function Transfers() {
                       dest === d ? "bg-brass text-forest-deep border-brass" : "border-brass/30 text-cream-dim",
                     )}
                   >
-                    {d === "Home" ? "At-home employee" : d}
+                    {d === "Home" ? "At-home employee" : "NYC Store"}
                   </button>
                 ))}
               </div>

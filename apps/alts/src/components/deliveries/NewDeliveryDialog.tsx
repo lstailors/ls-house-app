@@ -378,16 +378,13 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-[11px] uppercase tracking-widest text-[#8a7560]">Origin</Label>
-                <Select defaultValue="NYC" onValueChange={(v) => setValue("originLocation", v)}>
+                <Select defaultValue="NYC" onValueChange={(v) => setValue("originLocation", v)} disabled>
                   <SelectTrigger className="bg-[#162118]/60 border-[#c9a84c]/20 text-[#f5f0e8]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-[#0e1a14] border-[#c9a84c]/25 text-[#f5f0e8]">
                     <SelectItem value="NYC" className="focus:bg-[#c9a84c]/15 focus:text-[#f5f0e8]">
                       NYC
-                    </SelectItem>
-                    <SelectItem value="HOU" className="focus:bg-[#c9a84c]/15 focus:text-[#f5f0e8]">
-                      HOU
                     </SelectItem>
                   </SelectContent>
                 </Select>

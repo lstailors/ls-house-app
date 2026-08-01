@@ -253,9 +253,8 @@ export default function IntakeStepped() {
 
   const [step, setStep] = useState(0);
   const { data: me } = useMe();
-  const meOrigin: "NYC" | "HOU" =
-    (me?.locationId || "").toUpperCase().includes("HOU") ? "HOU" : "NYC";
-  const [origin, setOrigin] = useState<"NYC" | "HOU">(meOrigin);
+  /** Alts FOH is NYC-only — ignore HOU location claims from /me. */
+  const origin = "NYC" as const;
   const [q, setQ] = useState("");
   const [customer, setCustomer] = useState<CustomerHit | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -387,7 +386,9 @@ export default function IntakeStepped() {
             ? [snap.address.line1, snap.address.city, snap.address.state].filter(Boolean).join(", ")
             : "",
         });
-        if (intake.origin === "HOU" || intake.origin === "NYC") setOrigin(intake.origin);
+        if (intake.origin === "NYC") {
+          /* origin locked NYC */
+        }
         if (intake.billing) setBilling(intake.billing);
         if (intake.linkedSo) setLinkedSo(intake.linkedSo);
         if (Array.isArray(intake.garments)) {
@@ -509,7 +510,9 @@ export default function IntakeStepped() {
         if (!kindClash) {
           if (draft!.billing) setBilling(draft!.billing);
           if (draft!.linkedSo) setLinkedSo(draft!.linkedSo);
-          if (draft!.origin === "HOU" || draft!.origin === "NYC") setOrigin(draft!.origin);
+          if (draft!.origin && draft!.origin !== "NYC") {
+            /* ignore legacy HOU drafts — origin locked NYC */
+          }
           if (draft!.promiseDate) setPromiseDate(draft!.promiseDate);
           if (draft!.promiseTime) setPromiseTime(draft!.promiseTime);
           if (typeof draft!.isRush === "boolean") setIsRush(draft!.isRush);
@@ -582,13 +585,10 @@ export default function IntakeStepped() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeId, customerParam, customerNameParam, soParam, kindParam]);
 
-  // Prefer staff location once /api/me resolves (don't override restored draft/park).
+  // Prefer staff location once /api/me resolves — NYC-only, no-op (kept for draftReady gate).
   useEffect(() => {
     if (!draftReady || resumeId) return;
-    const draft = readIntakeDraft();
-    if (intakeDraftHasWork(draft) && (draft?.origin === "NYC" || draft?.origin === "HOU")) return;
-    if (me?.locationId) setOrigin(meOrigin);
-  }, [me?.locationId, meOrigin, draftReady, resumeId]);
+  }, [draftReady, resumeId]);
 
   // Persist intake to localStorage (debounced) — wifi drop / refresh safe
   useEffect(() => {
@@ -1363,20 +1363,8 @@ export default function IntakeStepped() {
               </span>
             </button>
           )}
-          <div className="flex gap-1 rounded-full border border-brass/20 bg-black/30 p-1">
-            {(["NYC", "HOU"] as const).map((loc) => (
-              <button
-                key={loc}
-                type="button"
-                onClick={() => setOrigin(loc)}
-                className={cn(
-                  "px-3 py-2 rounded-full text-[12px] font-bold tracking-widest uppercase",
-                  origin === loc ? "bg-brass text-forest-deep" : "text-cream-dim",
-                )}
-              >
-                {loc}
-              </button>
-            ))}
+          <div className="flex items-center rounded-full border border-brass/20 bg-black/30 px-3 py-2 text-[12px] font-bold tracking-widest uppercase text-brass-light">
+            NYC
           </div>
         </div>
         <div className="flex gap-0.5">

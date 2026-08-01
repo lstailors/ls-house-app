@@ -21,9 +21,9 @@ export function ticketPublicUrl(ticket: string, key?: string): string {
   return key ? `${base}?k=${encodeURIComponent(key)}` : base;
 }
 
-/** Pay link when billable. */
+/** Pay link — canonical on alts FOH (same host as scanner /pay). */
 export function payUrl(salesInvoice: string): string {
-  return `${APP_ORIGIN}/pay/${encodeURIComponent(salesInvoice)}`;
+  return `${ALTS_ORIGIN}/pay/${encodeURIComponent(salesInvoice)}`;
 }
 
 /** Short ticket for rack (ALT-NYC-2026-00061 → A00061). */

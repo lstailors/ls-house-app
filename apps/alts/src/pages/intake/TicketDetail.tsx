@@ -604,8 +604,7 @@ function TailorSection({
 // ── TransferSection ───────────────────────────────────────────────────────
 
 const TRANSFER_OPTIONS = [
-  { id: 'NYC', label: 'NYC Store', sub: 'New York City location' },
-  { id: 'HOU', label: 'HOU Store', sub: 'Houston location' },
+  { id: 'NYC', label: 'NYC Store', sub: '138 East 61st Street' },
 ] as const
 
 function TransferSection({
@@ -808,9 +807,12 @@ function InlineDueDate({
 
   const dueDateMutation = useMutation({
     mutationFn: (due_date: string) =>
-      api.patch(`/api/intake-alterations/tickets/${ticketName}/due-date`, { due_date }),
+      api.patch(`/api/intake-alterations/tickets/${ticketName}/due-date`, {
+        due_date,
+        promised_date: due_date,
+      }),
     onSuccess: () => {
-      toast.success('Due date updated')
+      toast.success('Due / promised date updated')
       queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
       setEditing(false)
     },
@@ -832,7 +834,7 @@ function InlineDueDate({
     <div className="text-right shrink-0">
       <p className="text-cream-dim text-xs ui-label">Ticket Date</p>
       <p className="text-cream-muted text-sm">{formatDate(ticket.ticket_date)}</p>
-      <p className="text-cream-dim text-xs ui-label mt-2">Due</p>
+      <p className="text-cream-dim text-xs ui-label mt-2">Due / promised</p>
       {editing ? (
         <input
           ref={inputRef}
@@ -1047,10 +1049,16 @@ export default function TicketDetail() {
 
   const printReceiptMutation = useMutation({
     mutationFn: async () => {
+      // Paid → SI payment receipt; otherwise ticket office/customer receipt copies
+      const invoiceRef =
+        ticket?.payment_status === 'Paid' && ticket?.sales_invoice
+          ? ticket.sales_invoice
+          : ticket?.name
+      if (!invoiceRef) throw new Error('No ticket/invoice to print')
       const res = await api.raw('/api/print/receipt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invoice: ticket?.name }),
+        body: JSON.stringify({ invoice: invoiceRef }),
       })
       const result = await res.json().catch(() => ({}))
       if (!result.ok) throw new Error(result.error?.message ?? result.error ?? 'Receipt print failed')
@@ -1559,7 +1567,7 @@ export default function TicketDetail() {
         ticketName={ticketName!}
         initialGarments={ticket.garments ?? []}
         initialLines={ticket.lines ?? []}
-        origin={ticket.origin_location === "HOU" ? "HOU" : "NYC"}
+        origin="NYC"
       />
     </div>
   )

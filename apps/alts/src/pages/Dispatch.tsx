@@ -103,18 +103,12 @@ export default function Dispatch() {
     queryFn: () => api.get<Ticket>(`/api/intake-alterations/tickets/${selected}`),
   });
 
-  // Prefill city/state from ticket origin when selecting a ticket
+  // Prefill city/state for NYC store deliveries
   useEffect(() => {
-    const loc = (detail.data?.origin_location || "").toUpperCase();
-    if (!loc || !detail.data?.name) return;
-    if (loc.includes("HOU")) {
-      setCity((c) => c || "Houston");
-      setState((s) => s || "TX");
-    } else {
-      setCity((c) => c || "New York");
-      setState((s) => s || "NY");
-    }
-  }, [detail.data?.origin_location, detail.data?.name]);
+    if (!detail.data?.name) return;
+    setCity((c) => c || "New York");
+    setState((s) => s || "NY");
+  }, [detail.data?.name]);
 
   const board = useQuery({
     queryKey: ["dispatch-board", selected],
@@ -179,7 +173,7 @@ export default function Dispatch() {
       });
 
       if (method !== "Pickup") {
-        const originLoc = (t?.origin_location || "").toUpperCase().includes("HOU") ? "HOU" : "NYC";
+        const originLoc = "NYC";
         // from-order is the path that already writes lsh_alteration_ticket (join key).
         // POST / now also accepts the key, but from-order matches alts' payload shape.
         await api.post("/api/deliveries/from-order", {

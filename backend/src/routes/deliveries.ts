@@ -667,7 +667,7 @@ deliveriesRouter.post("/", async (c) => {
     }
 
     const doc = await erpCreate<any>("LSH Delivery", {
-      naming_series: locationId === "HOU" ? "DN-HOU-.YYYY.-" : "DN-NYC-.YYYY.-",
+      naming_series: "DN-NYC-.YYYY.-",
       customer: resolvedCustomer,
       lsh_status: "Queued",
       lsh_delivery_method: method,
@@ -745,17 +745,17 @@ deliveriesRouter.post("/from-order", async (c) => {
     notifyPhone = cust?.mobile_no ?? cust?.phone ?? null;
   }
 
-  const defaultCity = location === "HOU" ? "Houston" : "New York";
-  const defaultState = location === "HOU" ? "TX" : "NY";
+  const defaultCity = "New York";
+  const defaultState = "NY";
 
   const erpDoc: Record<string, unknown> = {
-    naming_series: location === "HOU" ? "DN-HOU-.YYYY.-" : "DN-NYC-.YYYY.-",
+    naming_series: "DN-NYC-.YYYY.-",
     customer: body.customer_erp_name ?? body.customer_name ?? "Walk-in",
     customer_name: body.customer_name ?? "Walk-in",
     customer_phone: body.customer_phone ?? notifyPhone ?? null,
     lsh_status: isHandDeliver ? "Delivered" : "Queued",
     lsh_delivery_method: body.method ?? "Hand Delivery",
-    lsh_origin_location: location,
+    lsh_origin_location: "NYC",
     lsh_sales_order: body.sales_order ?? null,
     lsh_alteration_ticket: altTicket,
     lsh_delivery_address: body.address ?? null,

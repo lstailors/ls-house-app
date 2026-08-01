@@ -118,7 +118,7 @@ export default function AlterationReceipt() {
         <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '6px', marginBottom: '6px' }}>
           <div style={{ fontFamily: 'Georgia, serif', fontSize: '16px', fontWeight: 'bold' }}>L&S Custom Tailors</div>
           <div style={{ fontSize: '10px', marginTop: '2px' }}>
-            {ticket.origin_location === 'HOU' ? 'Houston' : 'New York City'}
+            New York City · 138 East 61st Street
           </div>
         </div>
 

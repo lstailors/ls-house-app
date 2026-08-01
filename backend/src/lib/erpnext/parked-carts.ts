@@ -127,10 +127,7 @@ function buildCreateTicketPayload(
   const intake = cart.cart.intake && typeof cart.cart.intake === "object" ? cart.cart.intake : null;
 
   if (intake && (Array.isArray(intake.garments) || Array.isArray(intake.sellItems))) {
-    const origin =
-      intake.origin === "HOU" || intake.origin === "NYC"
-        ? intake.origin
-        : cart.location || "NYC";
+    const origin = "NYC";
     const promiseDate =
       (typeof intake.promiseDate === "string" && intake.promiseDate) ||
       cart.cart.dueDate ||

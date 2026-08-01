@@ -56,7 +56,6 @@ export default function ShopFloorBoard() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "today" | "unassigned" | "unpaid">("all");
-  const [loc, setLoc] = useState<"NYC" | "HOU" | "All">("All");
 
   const tickets = useQuery({
     queryKey: ["shop-floor-tickets"],
@@ -84,7 +83,6 @@ export default function ShopFloorBoard() {
 
   const list = useMemo(() => {
     let rows = tickets.data ?? [];
-    if (loc !== "All") rows = rows.filter((t) => (t.origin_location || "NYC") === loc);
     if (q.trim()) {
       const s = q.trim().toLowerCase();
       rows = rows.filter(
@@ -112,7 +110,7 @@ export default function ShopFloorBoard() {
       );
     }
     return rows;
-  }, [tickets.data, q, filter, loc]);
+  }, [tickets.data, q, filter]);
 
   const byCol = useMemo(() => {
     const m: Record<string, Ticket[]> = {};
@@ -153,20 +151,8 @@ export default function ShopFloorBoard() {
             className="bg-transparent outline-none text-sm flex-1 text-cream placeholder:text-cream-dim"
           />
         </div>
-        <div className="flex gap-1 rounded-full border border-brass/20 bg-black/30 p-1">
-          {(["NYC", "HOU", "All"] as const).map((l) => (
-            <button
-              key={l}
-              type="button"
-              onClick={() => setLoc(l)}
-              className={cn(
-                "px-3 py-2 rounded-full text-[12px] font-bold tracking-widest uppercase",
-                loc === l ? "bg-brass text-forest-deep" : "text-cream-dim",
-              )}
-            >
-              {l}
-            </button>
-          ))}
+        <div className="flex items-center rounded-full border border-brass/20 bg-black/30 px-3 py-2 text-[12px] font-bold tracking-widest uppercase text-brass-light">
+          NYC
         </div>
       </header>
 

@@ -21,7 +21,7 @@ export type DayLoad = {
 };
 
 export type PromiseScheduleProps = {
-  origin: "NYC" | "HOU";
+  origin: "NYC";
   days: DayLoad[];
   loading?: boolean;
   selectedDate: string | null;

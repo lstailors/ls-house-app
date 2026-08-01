@@ -97,7 +97,7 @@ export default function ETicket() {
             L&S Tailors
           </p>
           <p className="text-cream-dim/50 text-[10px] tracking-[0.3em] uppercase">
-            {ticket.origin_location === 'HOU' ? 'Houston' : 'New York City'}
+            New York City · 138 East 61st Street
           </p>
         </div>
 

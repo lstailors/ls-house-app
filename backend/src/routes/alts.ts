@@ -381,11 +381,11 @@ altsRouter.get("/sellable-items", async (c) => {
   const q = (c.req.query("q") || "").trim().toLowerCase();
   const filter = (c.req.query("filter") || "all").toLowerCase(); // all|in|order|tops|bottoms
   const limit = Math.min(Math.max(Number(c.req.query("limit") || 60) || 60, 1), 120);
-  const origin = (c.req.query("origin") || "NYC").toUpperCase() === "HOU" ? "HOU" : "NYC";
+  const origin = "NYC";
   const warehouse =
     c.req.query("warehouse") ||
     process.env.ALTS_SELL_WAREHOUSE ||
-    (origin === "HOU" ? "Finished Goods - LSTX" : NYC_WAREHOUSES[0]);
+    NYC_WAREHOUSES[0];
 
   try {
     // 1) Prefer allow-listed groups
@@ -464,7 +464,7 @@ altsRouter.get("/sellable-items", async (c) => {
             fields: ["item_code", "actual_qty", "warehouse"],
             filters: [
               ["item_code", "in", codes],
-              ["warehouse", "in", origin === "NYC" ? NYC_WAREHOUSES : [warehouse]],
+              ["warehouse", "in", NYC_WAREHOUSES],
             ],
             limit: 500,
           }).catch(() => [])
@@ -565,7 +565,7 @@ altsRouter.get("/sellable-items", async (c) => {
 });
 
 /**
- * GET /api/alts/schedule-load?origin=NYC|HOU&from=YYYY-MM-DD&days=14
+ * GET /api/alts/schedule-load?origin=NYC&from=YYYY-MM-DD&days=14
  * Day-bucket capacity for promised due dates (airline load chart).
  * Stage 1 = ticket counts. Later = estimated_minutes × tailor hours.
  */
@@ -573,7 +573,7 @@ altsRouter.get("/schedule-load", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
-  const origin = (c.req.query("origin") || "NYC").toUpperCase() === "HOU" ? "HOU" : "NYC";
+  const origin = "NYC";
   const from =
     c.req.query("from") ||
     new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
@@ -641,10 +641,9 @@ altsRouter.get("/schedule-load", async (c) => {
       orderBy: "start_time asc",
       limit: 200,
     });
-    // filter origin loosely
+    // NYC appointments only (alts FOH)
     appts = appts.filter((a) => {
       const loc = String(a.location || "").toLowerCase();
-      if (origin === "HOU") return loc.includes("hou") || loc.includes("houston") || loc.includes("tx");
       return !loc.includes("hou") && !loc.includes("houston");
     });
   } catch {

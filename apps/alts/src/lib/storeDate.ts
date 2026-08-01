@@ -1,25 +1,15 @@
-/** Store-local calendar date helpers — avoid UTC day drift for NYC/HOU FOH. */
+/** Store-local calendar date helpers — NYC FOH only (America/New_York). */
 
-const STORE_TZ: Record<string, string> = {
-  NYC: "America/New_York",
-  HOU: "America/Chicago",
-  NY: "America/New_York",
-  TX: "America/Chicago",
-};
+export const STORE_ORIGIN = "NYC" as const;
+export const STORE_TZ = "America/New_York";
+export const STORE_ADDRESS_LINE = "138 East 61st Street · New York, NY 10065";
+export const STORE_ADDRESS_SHORT = "138 East 61st Street · NYC";
 
-export function storeTimeZone(origin?: string | null): string {
-  const key = String(origin || "NYC").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3);
-  if (key.startsWith("HOU") || key === "TX") return STORE_TZ.HOU;
-  return STORE_TZ.NYC;
-}
-
-/** YYYY-MM-DD in the store timezone (defaults NYC). */
-export function storeToday(origin?: string | null): string {
-  const tz = storeTimeZone(origin);
+/** YYYY-MM-DD in NYC store timezone. */
+export function storeToday(_origin?: string | null): string {
   try {
-    // en-CA → YYYY-MM-DD
     return new Intl.DateTimeFormat("en-CA", {
-      timeZone: tz,
+      timeZone: STORE_TZ,
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -27,4 +17,8 @@ export function storeToday(origin?: string | null): string {
   } catch {
     return new Date().toISOString().slice(0, 10);
   }
+}
+
+export function storeTimeZone(_origin?: string | null): string {
+  return STORE_TZ;
 }

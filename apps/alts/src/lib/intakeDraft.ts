@@ -65,8 +65,8 @@ export type IntakeDraftPayload = {
   step: number;
   billing: "billable" | "on_order" | "redo";
   linkedSo: string | null;
-  /** NYC | HOU — restore location after refresh */
-  origin?: "NYC" | "HOU";
+  /** Store origin — always NYC for alts FOH */
+  origin?: "NYC";
   promiseDate?: string | null;
   promiseTime?: string | null;
   isRush?: boolean;

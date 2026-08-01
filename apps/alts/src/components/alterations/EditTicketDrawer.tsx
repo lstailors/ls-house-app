@@ -54,7 +54,7 @@ interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   ticketName: string
-  origin?: "NYC" | "HOU" | string
+  origin?: "NYC" | string
   initialGarments: Array<{
     name: string
     garment_id: string
@@ -113,7 +113,7 @@ export function EditTicketDrawer({
   origin = "NYC",
 }: Props) {
   const queryClient = useQueryClient()
-  const presetOrigin = origin === "HOU" ? "HOU" : "NYC"
+  const presetOrigin = "NYC"
 
   const { data: presets = [] } = useQuery<Preset[]>({
     queryKey: ['presets', presetOrigin],

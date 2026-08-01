@@ -13,6 +13,7 @@ const ERP_TOKEN = process.env.ERPNEXT_API_TOKEN ?? process.env.ERPNEXT_MCP_TOKEN
 const MCP_BASE = process.env.ERPNEXT_MCP_URL ?? 'https://erp-mcp.lstailors.com';
 const MCP_TOKEN = process.env.ERPNEXT_MCP_TOKEN ?? '';
 const APP_URL = process.env.APP_URL ?? 'https://app.lstailors.com';
+const ALTS_URL = (process.env.ALTS_URL || process.env.VITE_ALTS_PUBLIC_URL || 'https://alts.lstailors.com').replace(/\/$/, '');
 
 function eTicketQrUrl(ticketName: string): string {
   const link = eTicketPublicUrl(ticketName);
@@ -157,15 +158,14 @@ intakeAlterationsRouter.get('/public/tickets/:name', async (c) => {
   }
 });
 
-// 1. GET /presets?origin=NYC|HOU
+// 1. GET /presets — NYC shop prices only (alts FOH)
 intakeAlterationsRouter.get('/presets', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: 'Unauthorized' } }, 401);
 
-  const origin = c.req.query('origin') ?? 'NYC';
   try {
     const list = await mcpList<any>('Alteration Preset',
-      ['name','preset_name','garment_type','alteration_category','default_price','default_price_hou','estimated_minutes','is_active'],
+      ['name','preset_name','garment_type','alteration_category','default_price','estimated_minutes','is_active'],
       [['is_active','=','1']], 200, 'garment_type asc, preset_name asc');
     const normalized = list.map((p: any) => ({
       id: p.name,
@@ -175,8 +175,8 @@ intakeAlterationsRouter.get('/presets', async (c) => {
       // Frontend expects garment_types as array; also include 'All' catch-all
       garment_types: p.garment_type ? [p.garment_type] : ['All'],
       category: p.alteration_category,
-      price: (origin === 'HOU' && p.default_price_hou > 0) ? p.default_price_hou : p.default_price,
-      display_price: (origin === 'HOU' && p.default_price_hou > 0) ? p.default_price_hou : p.default_price,
+      price: p.default_price,
+      display_price: p.default_price,
       est_minutes: p.estimated_minutes ?? null,
     }));
     return c.json({ data: normalized });
@@ -418,8 +418,7 @@ async function appendSellItemsToTicketInvoice(opts: {
 }): Promise<{ salesInvoice: string | null; squarePaymentLink: string | null; appPayUrl: string | null; warnings: string[] }> {
   const warnings: string[] = [];
   const warehouse =
-    process.env.ALTS_SELL_WAREHOUSE ||
-    (opts.origin === "HOU" ? "Finished Goods - LSTX" : "NYC Showroom - LSTNY");
+    process.env.ALTS_SELL_WAREHOUSE || "NYC Showroom - LSTNY";
 
   const sellRows: any[] = [];
   for (const s of opts.sellItems) {
@@ -476,7 +475,7 @@ async function appendSellItemsToTicketInvoice(opts: {
           return {
             salesInvoice: oldName,
             squarePaymentLink: inv.lsh_square_payment_link || null,
-            appPayUrl: `https://app.lstailors.com/pay/${encodeURIComponent(oldName)}`,
+            appPayUrl: `${ALTS_URL}/pay/${encodeURIComponent(oldName)}`,
             warnings,
           };
         }
@@ -507,7 +506,7 @@ async function appendSellItemsToTicketInvoice(opts: {
         return {
           salesInvoice: oldName,
           squarePaymentLink,
-          appPayUrl: `https://app.lstailors.com/pay/${encodeURIComponent(oldName)}`,
+          appPayUrl: `${ALTS_URL}/pay/${encodeURIComponent(oldName)}`,
           warnings,
         };
       }
@@ -555,7 +554,7 @@ async function appendSellItemsToTicketInvoice(opts: {
   return {
     salesInvoice: newName,
     squarePaymentLink,
-    appPayUrl: `https://app.lstailors.com/pay/${encodeURIComponent(newName)}`,
+    appPayUrl: `${ALTS_URL}/pay/${encodeURIComponent(newName)}`,
     warnings,
   };
 }
@@ -624,7 +623,8 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
     billingStatus === 'Included in Custom Order' || body.included_in_custom === 1 || body.included_in_custom === true ? 1 : 0;
 
   const payload: Record<string, any> = {
-    origin_location: origin ?? 'NYC',
+    // Alts FOH is NYC-only — coerce any HOU claim
+    origin_location: 'NYC',
     is_rush: isRush ? 1 : 0,
     taxes_and_charges: '',   // Alterations are tax-exempt
     payment_method: paymentMethod ?? 'on_account',
@@ -753,7 +753,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
           squarePaymentLink = msg.square_payment_link ? String(msg.square_payment_link) : null;
           appPayUrl = msg.app_pay_url
             ? String(msg.app_pay_url)
-            : `https://app.lstailors.com/pay/${encodeURIComponent(salesInvoice)}`;
+            : `${ALTS_URL}/pay/${encodeURIComponent(salesInvoice)}`;
         } else {
           // Fallback: read ticket SI + call create_payment_link
           const t = await erpGetDoc<any>('Alteration Ticket', ticketName).catch(() => null);
@@ -765,7 +765,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
             ).catch(() => null) as any;
             const lm = linkRes?.message ?? linkRes;
             if (lm?.url) squarePaymentLink = String(lm.url);
-            appPayUrl = `https://app.lstailors.com/pay/${encodeURIComponent(salesInvoice)}`;
+            appPayUrl = `${ALTS_URL}/pay/${encodeURIComponent(salesInvoice)}`;
           }
         }
       } catch (e: any) {
@@ -779,13 +779,12 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
       try {
         const tdoc = await erpGetDoc<any>('Alteration Ticket', ticketName).catch(() => null);
         const cust = (tdoc?.customer as string) || (customer?.id ?? customer?.name) || '';
-        const company =
-          (origin ?? 'NYC') === 'HOU' ? 'L&S Tailors TX, LLC' : 'L&S Tailors NY LLC';
+        const company = 'L&S Tailors NY LLC';
         const merged = await appendSellItemsToTicketInvoice({
           ticketName,
           customer: cust,
           company,
-          origin: origin ?? 'NYC',
+          origin: 'NYC',
           sellItems: sellItemsIn,
           existingInvoice: salesInvoice || (tdoc?.sales_invoice ? String(tdoc.sales_invoice) : null),
         });
@@ -1108,7 +1107,7 @@ async function notifyUnpaidRelease(
   const first = String(ticket.customer_name || "there").split(/\s+/)[0] || "there";
   const amt = outstanding.toLocaleString("en-US", { style: "currency", currency: "USD" });
   const payUrl = invoiceName
-    ? `${APP_URL}/pay/${encodeURIComponent(invoiceName)}`
+    ? `${ALTS_URL}/pay/${encodeURIComponent(invoiceName)}`
     : eTicketPublicUrl(ticketName);
 
   // Bubble 1 prose only; 2 app pay; 3 Square if present (SMS v5 shape).
@@ -1159,25 +1158,27 @@ intakeAlterationsRouter.post("/tickets/:name/notify-unpaid-release", async (c) =
   }
 });
 
-// 9. PATCH /tickets/:name/due-date
+// 9. PATCH /tickets/:name/due-date — also syncs promised_date (P2-11)
 intakeAlterationsRouter.patch('/tickets/:name/due-date', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   const ticketName = c.req.param('name');
   const body = (await c.req.json()) as any;
-  const { due_date } = body;
+  const due_date = body.due_date;
+  if (!due_date) return c.json({ error: 'due_date required' }, 400);
+  const promised_date = body.promised_date || due_date;
 
   try {
-    await erpUpdate('Alteration Ticket', ticketName, { due_date });
-    return c.json({ data: { ok: true } });
+    await erpUpdate('Alteration Ticket', ticketName, { due_date, promised_date });
+    return c.json({ data: { ok: true, due_date, promised_date } });
   } catch (e: any) {
     return c.json({ error: { message: e.message } }, 502);
   }
 });
 
 // 10. PATCH /tickets/:name/transfer (location and/or at-home tailor)
-// origin_location Select is NYC|HOU only. "Home" is at-home work via assigned_tailor —
+// origin_location is NYC-only for alts. "Home" is at-home work via assigned_tailor —
 // never write origin_location="Home" (Frappe 417 ValidationError).
 intakeAlterationsRouter.patch('/tickets/:name/transfer', async (c) => {
   const user = await getAuthedUser(c);
@@ -1206,14 +1207,19 @@ intakeAlterationsRouter.patch('/tickets/:name/transfer', async (c) => {
     }
     // Keep existing origin_location (store of record). Only assign tailor.
     doc.assigned_tailor = tailorId;
-  } else if (locUpper === 'NYC' || locUpper === 'HOU') {
-    doc.origin_location = locUpper;
-    // Back in a shop: clear at-home tailor unless explicitly re-set
+  } else if (locUpper === 'NYC') {
+    doc.origin_location = 'NYC';
+    // Back in shop: clear at-home tailor unless explicitly re-set
     if (tailorId !== undefined) doc.assigned_tailor = tailorId || null;
     else doc.assigned_tailor = null;
+  } else if (locUpper === 'HOU') {
+    return c.json(
+      { error: { message: 'Houston is retired — use NYC Store or at-home tailor' } },
+      400,
+    );
   } else if (loc) {
     return c.json(
-      { error: { message: 'Location must be NYC, HOU, or Home (at-home tailor)' } },
+      { error: { message: 'Location must be NYC or Home (at-home tailor)' } },
       400,
     );
   } else if (tailorId !== undefined) {

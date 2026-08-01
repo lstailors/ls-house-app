@@ -18,7 +18,6 @@
     "baseUrl": ".",
     "paths": {
       "@alts/*": ["./src/*"],
-      "@/*": ["../../webapp/src/*"],
       "@ls/types": ["../../packages/types/src/index.ts"],
       "@ls/api-client": ["../../packages/api-client/src/index.ts"],
       "@ls/auth": ["../../packages/auth/src/index.ts"],
@@ -27,6 +26,6 @@
       "@ls/design/*": ["../../packages/design/src/*"]
     }
   },
-  "include": ["src", "../../webapp/src"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "../../webapp/src/**/*.test.ts", "../../webapp/src/**/*.test.tsx"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }
