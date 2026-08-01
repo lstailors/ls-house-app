@@ -16,11 +16,20 @@ import {
 import { findCustomerByPhone } from "../lib/erpnext/customers";
 import { approveEmailDraft, discardEmailDraft } from "../lib/erpnext/email-drafts";
 import { getAuthedUser } from "../lib/scope";
+import { getClientSnapshot } from "../lib/sofia/snapshot";
+import {
+  SHOP_PHONE,
+  OWNER_MOBILE,
+  isOwnerNumber,
+  placeEmergencyCall,
+  scrubOwnerContact,
+  transferTarget,
+} from "../lib/sofia/contact-policy";
 // sendSms and alertCarl defined locally below
 
 // ── Constants ──
-const CARL_PHONE = "+16319260917";
-const C_MOBILE = process.env.OWNER_MOBILE ?? "+16319260917";
+const CARL_PHONE = OWNER_MOBILE;
+const C_MOBILE = OWNER_MOBILE;
 // Keep for legacy /conversations route guard
 const STAFF_PHONES = new Set(["+16319260917", "+16462087809", "+16463637906", "+13475539027"]);
 
@@ -102,7 +111,12 @@ async function twilioSend(
   const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? "";
   const TWILIO_MSG_SVC = process.env.TWILIO_MSG_SERVICE_SID ?? "MG9221599972ec362cb5e2f051430e0421";
   const twilioAuth = btoa(`${TWILIO_SID}:${TWILIO_TOKEN}`);
-  const params = new URLSearchParams({ To: to, Body: body, MessagingServiceSid: TWILIO_MSG_SVC });
+  // Carl's mobile must never reach a client. Staff and Carl himself still see
+  // real numbers; everyone else gets the shop line substituted in. This runs on
+  // the wire because a system prompt is guidance, not a guarantee.
+  const isInternal = isOwnerNumber(to) || STAFF_PHONES.has(normalizePhone(to));
+  const safeBody = isInternal ? body : scrubOwnerContact(body);
+  const params = new URLSearchParams({ To: to, Body: safeBody, MessagingServiceSid: TWILIO_MSG_SVC });
   if (mediaUrl) params.append("MediaUrl", mediaUrl);
   const r = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
@@ -139,10 +153,15 @@ async function sendCustomerSmsViaErp(args: {
   client_name?: string | null;
 }): Promise<{ ok: boolean; sid?: string | null; status?: string | null; error?: string | null; message_name?: string | null }> {
   let result: any = null;
+  // Same wire-level guard as twilioSend — this is the client-facing path used
+  // for escalation replies, so Carl's own words get scrubbed too.
+  const safeBody = isOwnerNumber(args.to) || STAFF_PHONES.has(normalizePhone(args.to))
+    ? args.body
+    : scrubOwnerContact(args.body);
   try {
     result = await erpRunMethod("lsh_house.sms.send_customer_sms", {
       phone: args.to,
-      message: args.body,
+      message: safeBody,
       customer: args.customer ?? null,
       reference_doctype: args.reference_doctype ?? null,
       reference_name: args.reference_name ?? null,
@@ -622,7 +641,9 @@ const TOOLS = [
   { type: "function", function: { name: "check_payment_status", description: "Check Square payment link status.", parameters: { type: "object", properties: { customer_id: { type: "string" } }, required: ["customer_id"] } } },
   { type: "function", function: { name: "book_fitting", description: "Book an appointment via Cal.com. Requires confirmed slot and customer details. Returns booking_uid on success.", parameters: { type: "object", properties: { event_type: { type: "string", enum: ["fitting", "alterations", "initial_consultation", "bespoke_consultation", "virtual_consultation", "new_client_phone", "customer_exchange", "final_pickup"] }, customer_name: { type: "string" }, customer_email: { type: "string" }, customer_phone: { type: "string" }, slot_start: { type: "string", description: "ISO 8601 UTC start time from get_available_slots" }, notes: { type: "string" } }, required: ["event_type", "customer_name", "customer_email", "slot_start"] } } },
   { type: "function", function: { name: "take_message", description: "Record a message from the client for Carl.", parameters: { type: "object", properties: { message: { type: "string" }, urgency: { type: "string", enum: ["low", "normal", "high", "urgent"] } }, required: ["message"] } } },
-  { type: "function", function: { name: "escalate_to_carl", description: "Escalate this conversation to Carl immediately.", parameters: { type: "object", properties: { reason: { type: "string" }, summary: { type: "string" } }, required: ["reason", "summary"] } } },
+  { type: "function", function: { name: "get_client_snapshot", description: "FIRST CALL for any client question about their own orders, garments, appointment, or balance. Returns everything known about the caller in one shot: identity and preferred name, open alteration tickets with due dates, next appointment, outstanding balance, and last contact. Prefer this over chaining lookup_customer + get_customer_tickets + get_fitting_history + check_invoice_status — it is one call instead of four. The `summary` field is a ready-to-read brief. Defaults to the inbound caller's number.", parameters: { type: "object", properties: { phone: { type: "string", description: "Client phone (E.164 or 10-digit US). Defaults to the inbound caller." } } } } },
+  { type: "function", function: { name: "transfer_to_shop", description: "Give the client the shop's phone number so a person can pick up, or hand off a call to it. This is the ONLY number you may ever give a client. Never give out, text, read aloud, or transfer to Carl's personal mobile under any circumstances — if the matter is urgent enough to need Carl, use escalate_to_carl with severity='emergency' and he will be called directly.", parameters: { type: "object", properties: { reason: { type: "string", description: "Why the client needs a person" } } } } },
+  { type: "function", function: { name: "escalate_to_carl", description: "Escalate this conversation to Carl. severity='normal' texts him and waits for his reply, which you then relay. severity='emergency' additionally places a phone call to him — use it only for genuine emergencies (a client in distress, a wedding or event at risk today, a payment or legal problem that cannot wait). This never connects the client to Carl directly; you remain between them.", parameters: { type: "object", properties: { reason: { type: "string" }, summary: { type: "string" }, severity: { type: "string", enum: ["normal", "emergency"], description: "Default normal." } }, required: ["reason", "summary"] } } },
   { type: "function", function: { name: "send_sms_to_client", description: "ASSISTANT ONLY: Actually SEND an SMS to a client immediately. This dispatches via Twilio in real time - the client will receive it. Use this when Carl tells you to text/message a client. NEVER ask for confirmation - if Carl said send, send. Provide either customer_id (preferred) OR a raw to_phone. Returns twilio_sid on success.", parameters: { type: "object", properties: { customer_id: { type: "string", description: "Customer UUID from lookup_customer (preferred when available)" }, to_phone: { type: "string", description: "Raw phone if no customer_id (E.164 or 10-digit US)" }, body: { type: "string", description: "The exact SMS text to send" } }, required: ["body"] } } },
   { type: "function", function: { name: "send_mms_card", description: "ASSISTANT ONLY: Send a branded MMS card from sofia_mms_active to a client. Substitutes merge tags, sends image + sms_body via Twilio. Returns twilio_sid on success.", parameters: { type: "object", properties: { template_key: { type: "string", description: "e.g. appt_confirm, pickup_ready, fabric_arrived, fitting_reminder, casa_welcome, holiday_hours, trunk_show_invite, first_fitting_thanks" }, customer_id: { type: "string" }, to_phone: { type: "string" }, merge_values: { type: "object", description: "Values for {{first_name}}, {{appt_date}}, {{appt_time}}, {{garment}}, {{fabric_name}}, {{trunk_show_city}}, {{trunk_show_date}}" } }, required: ["template_key"] } } },
   { type: "function", function: { name: "add_dossier_observation", description: "Capture a real-time observation silently. Use proactively for fit notes, preferences, life events, action items.", parameters: { type: "object", properties: { customer_id: { type: "string" }, observation_type: { type: "string", enum: ["fit_note", "preference", "dislike", "fabric_interest", "life_event", "action_item", "quote", "tone_note", "context"] }, content: { type: "string" }, importance: { type: "integer", minimum: 1, maximum: 10 } }, required: ["customer_id", "observation_type", "content"] } } },
@@ -851,21 +872,63 @@ async function executeTool(
         await postToRaven(`:envelope: *Message from ${from}:*\n${args.message}`);
         return JSON.stringify({ ok: true });
       }
-      case "escalate_to_carl": {
-        await sbInsert("c_escalations", {
-          source_phone: from,
-          customer_id: (customer as any)?.id ?? null,
-          reason: String(args.reason),
-          client_question: String(args.summary),
-          status: "pending",
-          source_channel: "sms",
+      case "get_client_snapshot": {
+        const phoneArg = args.phone ? String(args.phone) : from;
+        if (!phoneArg) return JSON.stringify({ error: "phone required" });
+        try {
+          return JSON.stringify(await getClientSnapshot(phoneArg));
+        } catch (e) {
+          return JSON.stringify({ error: String((e as Error).message) });
+        }
+      }
+      case "transfer_to_shop": {
+        return JSON.stringify({
+          ok: true,
+          shop_phone: transferTarget(),
+          // Stated explicitly so the model cannot infer an alternative from silence.
+          note: "Give the client this number only. Carl's mobile is never to be shared or transferred to.",
         });
+      }
+      case "escalate_to_carl": {
+        const severity = String(args.severity ?? "normal") === "emergency" ? "emergency" : "normal";
         const custName = customer
           ? `${(customer as any).first_name} ${(customer as any).last_name}`
           : from;
-        const msg = `? ${custName} (SMS)\nQ: ${args.summary}\nMy read: ${args.reason}\nReply with answer.`;
+
+        // Field names must match the LSH Escalation doctype exactly — Frappe
+        // silently drops unknown keys, which is how the previous handler lost
+        // every escalation it wrote.
+        const escalation = await storeInsert(DT.ESCALATION, {
+          client_phone: from,
+          client_name: custName,
+          customer: (customer as any)?.id ?? null,
+          reason: String(args.reason),
+          summary: String(args.summary),
+          status: "pending",
+          severity,
+          source_channel: "sms",
+          opened_at: new Date().toISOString(),
+        });
+
+        const prefix = severity === "emergency" ? "EMERGENCY" : "?";
+        const msg = `${prefix} ${custName} (SMS)\nQ: ${args.summary}\nMy read: ${args.reason}\nReply with answer.`;
         await twilioSend(C_MOBILE, msg);
-        return JSON.stringify({ ok: true, escalated: true });
+
+        let call: { ok: boolean; sid?: string; error?: string } | null = null;
+        if (severity === "emergency") {
+          call = await placeEmergencyCall({ summary: String(args.summary), clientName: custName });
+          if (call.ok && call.sid && (escalation as any)?.name) {
+            await storeUpdate(DT.ESCALATION, String((escalation as any).name), {
+              voice_call_sid: call.sid,
+            }).catch(() => {});
+          }
+          if (!call.ok) {
+            console.error("[sofia] emergency call failed:", call.error);
+            await postToRaven(`:rotating_light: *Emergency call to Carl FAILED* (${call.error}) — ${custName}: ${args.summary}`);
+          }
+        }
+
+        return JSON.stringify({ ok: true, escalated: true, severity, called: call?.ok ?? false });
       }
       case "add_dossier_observation": {
         const custId = String(args.customer_id);
@@ -1841,6 +1904,53 @@ sofiaRouter.get("/voice-approvals", async (c) => {
 
   const data = await storeList(DT.VOICE_APPROVAL_REQUEST, { orderBy: "creation desc", limit: 50 });
   return c.json({ data: data.map((r) => ({ ...r, id: r.name, created_at: r.creation })) });
+});
+
+// ── GET /api/sofia/snapshot?phone=+15551234567 ──
+// One-call client brief. Exposed over HTTP because the live SMS brain is the
+// Hermes `sofia-sms` profile on the Mac Studio, which registers this as a tool;
+// the in-process TOOLS entry serves the app brain on the rollback path. Both
+// call the same code so the two brains cannot drift apart.
+sofiaRouter.get("/snapshot", async (c) => {
+  const user = await getAuthedUser(c);
+  const agentKey = process.env.SOFIA_AGENT_KEY;
+  const presented = c.req.header("x-agent-key");
+  const agentAuthed = Boolean(agentKey && presented && presented === agentKey);
+  if (!user && !agentAuthed) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const phone = c.req.query("phone");
+  if (!phone) return c.json({ error: { message: "phone query param required" } }, 400);
+
+  try {
+    return c.json({ data: await getClientSnapshot(phone) });
+  } catch (e: any) {
+    console.error("[sofia/snapshot] failed:", e?.message);
+    return c.json({ error: { message: "Failed to build snapshot" } }, 502);
+  }
+});
+
+// ── GET /api/sofia/contact-policy ──
+// The numbers Sofia is allowed to use, so the Hermes profile reads them from
+// here instead of hardcoding them in a prompt on the Studio.
+sofiaRouter.get("/contact-policy", async (c) => {
+  const user = await getAuthedUser(c);
+  const agentKey = process.env.SOFIA_AGENT_KEY;
+  const presented = c.req.header("x-agent-key");
+  if (!user && !(agentKey && presented === agentKey)) {
+    return c.json({ error: { message: "Unauthorized" } }, 401);
+  }
+  return c.json({
+    data: {
+      shop_phone: SHOP_PHONE,
+      transfer_to: transferTarget(),
+      owner_mobile_disclosable: false,
+      rules: [
+        "The shop line is the only number a client may be given or transferred to.",
+        "Carl's mobile is never spoken, texted, or transferred to by a client.",
+        "Emergencies: escalate with severity='emergency'. Sofia calls Carl; the client is never bridged in.",
+      ],
+    },
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────────────
