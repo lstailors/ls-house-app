@@ -57,12 +57,15 @@ function sha256Hex(message: string): string {
     h7 = 0x5be0cd19;
 
   const w = new Uint32Array(64);
+  const u32 = (arr: Uint32Array, idx: number): number => arr[idx] as number;
   for (let i = 0; i < total; i += 64) {
     for (let j = 0; j < 16; j++) w[j] = view.getUint32(i + j * 4, false);
     for (let j = 16; j < 64; j++) {
-      const s0 = rotr(w[j - 15], 7) ^ rotr(w[j - 15], 18) ^ (w[j - 15] >>> 3);
-      const s1 = rotr(w[j - 2], 17) ^ rotr(w[j - 2], 19) ^ (w[j - 2] >>> 10);
-      w[j] = (w[j - 16] + s0 + w[j - 7] + s1) >>> 0;
+      const w15 = u32(w, j - 15);
+      const w2 = u32(w, j - 2);
+      const s0 = rotr(w15, 7) ^ rotr(w15, 18) ^ (w15 >>> 3);
+      const s1 = rotr(w2, 17) ^ rotr(w2, 19) ^ (w2 >>> 10);
+      w[j] = (u32(w, j - 16) + s0 + u32(w, j - 7) + s1) >>> 0;
     }
     let a = h0,
       b = h1,
@@ -75,7 +78,7 @@ function sha256Hex(message: string): string {
     for (let j = 0; j < 64; j++) {
       const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
       const ch = (e & f) ^ (~e & g);
-      const t1 = (h + S1 + ch + K[j] + w[j]) >>> 0;
+      const t1 = (h + S1 + ch + u32(K, j) + u32(w, j)) >>> 0;
       const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
       const maj = (a & b) ^ (a & c) ^ (b & c);
       const t2 = (S0 + maj) >>> 0;
@@ -98,9 +101,9 @@ function sha256Hex(message: string): string {
     h7 = (h7 + h) >>> 0;
   }
 
-  const out = new Uint32Array([h0, h1, h2, h3, h4, h5, h6, h7]);
+  const out = [h0, h1, h2, h3, h4, h5, h6, h7];
   let hex = "";
-  for (let i = 0; i < 8; i++) hex += out[i].toString(16).padStart(8, "0");
+  for (const word of out) hex += word.toString(16).padStart(8, "0");
   return hex;
 }
 
