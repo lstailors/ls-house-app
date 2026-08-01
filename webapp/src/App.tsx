@@ -42,6 +42,7 @@ const House = lazy(() => import('./pages/house/House'));
 const AlterationTags = lazy(() => import('./pages/intake/AlterationTags'));
 const AlterationReceipt = lazy(() => import('./pages/intake/AlterationReceipt'));
 import GarmentTagRedirect from './components/garment/GarmentTagRedirect';
+import AltsGarmentRedirect from './pages/AltsGarmentRedirect';
 const PayInvoice = lazy(() => import('./pages/PayInvoice'));
 const ETicket = lazy(() => import('./pages/ETicket'));
 const Tasks = lazy(() => import('./pages/Tasks'));
@@ -55,7 +56,6 @@ const AppointmentsPage = lazy(() => import('./pages/Appointments'));
 const Helpdesk = lazy(() => import('./pages/Helpdesk'));
 const HelpdeskTicketDetail = lazy(() => import('./pages/helpdesk/HelpdeskTicketDetail'));
 const Scanner = lazy(() => import('./pages/Scanner'));
-const GarmentJobCard = lazy(() => import('./pages/GarmentJobCard'));
 const ShopFloor = lazy(() => import('./pages/ShopFloor'));
 
 const queryClient = new QueryClient({
@@ -161,19 +161,11 @@ const App = () => (
                 </RoleGuard>
               }
             />
-            {/* Retired: old garment page now redirects to the /g/ job card */}
+            {/* Old hang tags → alts FOH job card (canonical) */}
+            <Route path="/g/:ticket/:garmentId" element={<AltsGarmentRedirect />} />
             <Route
               path="/garments/:ticketId/:garmentId"
               element={<GarmentTagRedirect />}
-            />
-            {/* Garment job card — opened when shop-floor staff scan a garment tag QR */}
-            <Route
-              path="/g/:ticket/:garmentId"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
-                  <GarmentJobCard />
-                </RoleGuard>
-              }
             />
             <Route
               path="/shop-floor"

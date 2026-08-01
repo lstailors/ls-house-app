@@ -5,6 +5,7 @@ export const payInfoRouter = new Hono();
 const MCP_BASE = process.env.ERPNEXT_MCP_URL ?? 'https://erp-mcp.lstailors.com';
 const MCP_TOKEN = (process.env.ERPNEXT_MCP_TOKEN ?? '').trim();
 const ERP_BASE = (process.env.ERPNEXT_BASE_URL ?? 'https://erp.lstailors.com').replace(/\/$/, '');
+const ALTS_URL = (process.env.ALTS_URL || process.env.VITE_ALTS_PUBLIC_URL || 'https://alts.lstailors.com').replace(/\/$/, '');
 
 function erpAuth(): string {
   const key = (process.env.ERPNEXT_API_KEY ?? '').trim();
@@ -203,7 +204,7 @@ payInfoRouter.get('/:id/og', async (c) => {
   let doc = await getDoc<any>('Sales Invoice', id);
   if (!doc) doc = await getDoc<any>('Alteration Ticket', id);
 
-  const pageUrl = `https://app.lstailors.com/pay/${encodeURIComponent(id)}`;
+  const pageUrl = `${ALTS_URL}/pay/${encodeURIComponent(id)}`;
   const logo = 'https://erp.lstailors.com/files/ls-logo-email-192.png';
 
   let title = `Invoice ${id} — L&S Custom Tailors`;

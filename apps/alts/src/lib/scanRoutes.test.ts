@@ -21,6 +21,11 @@ function assert(cond: unknown, msg: string) {
 const g = parseGarmentTagUrl("https://alts.lstailors.com/g/ALT-NYC-2026-00042/G1");
 assert(g?.ticket === "ALT-NYC-2026-00042" && g?.garment === "G1", "garment url");
 assert(parseGarmentTagUrl("/g/ALT-1/G2")?.garment === "G2", "garment path only");
+assert(
+  parseGarmentTagUrl("https://app.lstailors.com/g/ALT-NYC-2026-00042/G1")?.ticket ===
+    "ALT-NYC-2026-00042",
+  "legacy app host garment url",
+);
 
 // thermal ticket QR (what C photographed)
 assert(
@@ -34,9 +39,17 @@ assert(parseTicketUrl("ALT-NYC-2026-00061") === "ALT-NYC-2026-00061", "bare ALT"
 assert(parseCustomerUrl("https://app.lstailors.com/customers/CUST-0001") === "CUST-0001", "customer url");
 assert(parseCustomerUrl("/customers/new") === null, "customer new ignored");
 
-// pay
-assert(parsePayUrl("https://app.lstailors.com/pay/SINV-1") === "SINV-1", "pay url");
+// pay — app or alts host
+assert(parsePayUrl("https://app.lstailors.com/pay/SINV-1") === "SINV-1", "pay url app");
+assert(parsePayUrl("https://alts.lstailors.com/pay/SINV-2") === "SINV-2", "pay url alts");
 assert(parsePayUrl("SINV-NYC-1") === "SINV-NYC-1", "bare sinv");
+
+// garment fast route from raw scan (any host)
+const gFast = routeFromRawScan("https://app.lstailors.com/g/ALT-NYC-1/G2");
+assert(
+  gFast.kind === "path" && gFast.path === "/g/ALT-NYC-1/G2",
+  "fast garment → /g/ on alts",
+);
 
 // fast route from raw thermal scan → ticket detail (not public e-ticket)
 const fast = routeFromRawScan("https://alts.lstailors.com/t/ALT-NYC-2026-00061");

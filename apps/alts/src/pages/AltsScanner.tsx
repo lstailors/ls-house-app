@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import jsQR from "jsqr";
 import { toast } from "sonner";
 import { X, Keyboard, ArrowRight, CameraOff, Aperture } from "lucide-react";
@@ -98,6 +99,7 @@ function forceSwUpdate() {
  */
 export default function Scanner() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -498,6 +500,10 @@ export default function Scanner() {
         const res = await api.post<ScannerActionResult>(endpoint, body);
         if (res.ok) {
           toast.success(res.message ?? "Done");
+          void queryClient.invalidateQueries({ queryKey: ["pickup-ready"] });
+          void queryClient.invalidateQueries({ queryKey: ["alts-home-stats"] });
+          void queryClient.invalidateQueries({ queryKey: ["shop-floor-tickets"] });
+          void queryClient.invalidateQueries({ queryKey: ["xfer-tickets"] });
           scanAgain();
         } else {
           toast.error(res.message ?? "Action failed");
@@ -508,7 +514,7 @@ export default function Scanner() {
         setPendingAction(null);
       }
     },
-    [scanAgain],
+    [scanAgain, queryClient],
   );
 
   const handleAction = useCallback(
@@ -516,9 +522,12 @@ export default function Scanner() {
       if (!result) return;
       const name = result.name ?? "";
       switch (key) {
-        case "mark_paid":
+        case "mark_paid": {
+          const label = result.title || name || "this invoice";
+          if (!window.confirm(`Mark ${label} as paid? This creates a Payment Entry.`)) return;
           void runBackendAction(key, "/api/scanner/mark-paid", { invoice_name: name });
           return;
+        }
         case "mark_delivered":
           void runBackendAction(key, "/api/scanner/mark-delivered", { delivery_name: name });
           return;

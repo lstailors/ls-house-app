@@ -3,6 +3,28 @@
   "installCommand": "bun install && cd backend && bun install && cd ../webapp && bun install",
   "buildCommand": "cd webapp && bun run build",
   "outputDirectory": "webapp/dist",
+  "redirects": [
+    {
+      "source": "/g/:ticket/:garmentId",
+      "destination": "https://alts.lstailors.com/g/:ticket/:garmentId",
+      "permanent": false
+    },
+    {
+      "source": "/garments/:ticket/:garmentId",
+      "destination": "https://alts.lstailors.com/g/:ticket/:garmentId",
+      "permanent": false
+    },
+    {
+      "source": "/t/:ticket",
+      "destination": "https://alts.lstailors.com/t/:ticket",
+      "permanent": false
+    },
+    {
+      "source": "/e-ticket/:ticket",
+      "destination": "https://alts.lstailors.com/t/:ticket",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     { "source": "/.well-known/apple-developer-merchantid-domain-association", "destination": "/api/[...path]" },
     { "source": "/api/:path*", "destination": "/api/[...path]" },

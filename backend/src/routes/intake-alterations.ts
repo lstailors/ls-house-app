@@ -306,16 +306,22 @@ intakeAlterationsRouter.get('/customers/search', async (c) => {
   return c.json({ data: enriched });
 });
 
-// 4. GET /tickets?status=&origin=NYC|HOU&limit=100
+// 4. GET /tickets?status=&origin=NYC&limit=100 — NYC FOH default
 intakeAlterationsRouter.get('/tickets', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   const status = c.req.query('status') ?? '';
+  const originRaw = (c.req.query('origin') || 'NYC').toUpperCase();
+  // Alts is NYC-only; reject HOU filter (legacy clients) by coercing to NYC
+  const origin = originRaw === 'ALL' ? null : 'NYC';
   const limit = Math.min(Math.max(parseInt(c.req.query('limit') ?? '100', 10) || 100, 1), 500);
 
   try {
-    const filters = status ? [['workflow_state','=',status]] : [['workflow_state','!=','Cancelled']];
+    const filters: any[] = status
+      ? [['workflow_state', '=', status]]
+      : [['workflow_state', '!=', 'Cancelled']];
+    if (origin) filters.push(['origin_location', '=', origin]);
     const rows = await mcpList<any>('Alteration Ticket',
       ['name','customer_name','customer_phone','customer','origin_location','workflow_state','ticket_date','due_date','is_rush','ticket_total','payment_status','billing_status','assigned_tailor','linked_sales_order','included_in_custom','sales_invoice','delivery_method'],
       filters, limit, 'modified desc');

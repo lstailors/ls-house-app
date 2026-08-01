@@ -4,13 +4,20 @@
  */
 import { createHash } from "node:crypto";
 
+let warnedMissingSecret = false;
+
 function secret(): string {
-  return (
-    process.env.E_TICKET_SECRET ||
-    process.env.JWT_SECRET ||
-    process.env.AUTH_SECRET ||
-    "lst-alts-eticket-dev"
-  );
+  const configured =
+    process.env.E_TICKET_SECRET || process.env.JWT_SECRET || process.env.AUTH_SECRET || "";
+  if (configured) return configured;
+  if (!warnedMissingSecret) {
+    warnedMissingSecret = true;
+    console.warn(
+      "[eticket] E_TICKET_SECRET / JWT_SECRET / AUTH_SECRET unset — using unstable dev key. " +
+        "Public ?k= tokens will invalidate when a secret is later set.",
+    );
+  }
+  return "lst-alts-eticket-dev";
 }
 
 /** Deterministic short token for a ticket name (hex). */

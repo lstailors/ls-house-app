@@ -84,7 +84,8 @@ def normalize_token(raw: str) -> dict:
                         "hint_name": inv_name, "original_url": original_url}
 
         # alts.lstailors.com/g/{ticket}/{garmentId} — printed garment tags
-        if any(domain == d or domain.endswith("." + d) for d in ALTS_DOMAINS):
+        # Also accept app.lstailors.com/g/… (legacy hang tags before host cutover)
+        if any(domain == d or domain.endswith("." + d) for d in (ALTS_DOMAINS | APP_DOMAINS)):
             m = re.match(r"^/g/([^/]+)/([^/]+)$", path)
             if m:
                 return {
@@ -109,7 +110,7 @@ def normalize_token(raw: str) -> dict:
                 return {"token": m.group(1), "hint_type": "alteration_ticket",
                         "hint_name": m.group(1), "original_url": original_url}
 
-        # app.lstailors.com/customers/{id} · /pay/{invoice}
+        # app.lstailors.com/customers/{id} · /pay/{invoice} (non-/g paths)
         if any(domain == d or domain.endswith("." + d) for d in APP_DOMAINS):
             m = re.match(r"^/customers/([^/]+)$", path)
             if m and m.group(1).lower() != "new":

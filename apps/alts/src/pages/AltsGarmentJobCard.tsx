@@ -63,6 +63,9 @@ export default function GarmentJobCardPage() {
     onSuccess: (res, status) => {
       toast.success(res.message ?? (status === "In Progress" ? "Marked in progress" : "Garment reopened"));
       invalidate();
+      void queryClient.invalidateQueries({ queryKey: ["shop-floor-tickets"] });
+      void queryClient.invalidateQueries({ queryKey: ["alts-home-stats"] });
+      void queryClient.invalidateQueries({ queryKey: ["pickup-ready"] });
     },
     onError: () => toast.error("Could not update status — please try again"),
   });
@@ -85,6 +88,9 @@ export default function GarmentJobCardPage() {
         toast.success(res.message ?? "Garment marked complete");
       }
       invalidate();
+      void queryClient.invalidateQueries({ queryKey: ["shop-floor-tickets"] });
+      void queryClient.invalidateQueries({ queryKey: ["alts-home-stats"] });
+      void queryClient.invalidateQueries({ queryKey: ["pickup-ready"] });
     },
     onError: () => toast.error("Could not complete garment — please try again"),
   });

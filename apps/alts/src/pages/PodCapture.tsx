@@ -288,7 +288,7 @@ export default function PodCapture() {
             <div className="display text-xl text-[var(--em)]">Already delivered</div>
             <p className="text-[12px] text-[var(--cd)] mt-2">POD is on file. Open the board for proof.</p>
             <a
-              href={`https://app.lstailors.com/deliveries/${encodeURIComponent(d.id)}`}
+              href={`/deliveries/${encodeURIComponent(d.id)}`}
               className="btn-ghost inline-flex mt-3 min-h-11 px-4 items-center text-[12px]"
             >
               View on board →
