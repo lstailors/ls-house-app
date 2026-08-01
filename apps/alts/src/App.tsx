@@ -146,11 +146,32 @@ export default function App() {
                   </RoleGuard>
                 }
               />
-              {/* Scan / QR entry — phone tier by definition (rack + phone) */}
-              <Route path="/g/:ticket/:garmentId" element={<GarmentJobCard />} />
+              {/* Scan / QR entry — phone tier; require FOH session (API is authed) */}
+              <Route
+                path="/g/:ticket/:garmentId"
+                element={
+                  <RoleGuard allow={[...FOH, "driver"]}>
+                    <GarmentJobCard />
+                  </RoleGuard>
+                }
+              />
               {/* Legacy hang-tag shape — redirect to /g/:ticket/:garmentId */}
-              <Route path="/garments/:ticketId/:garmentId" element={<GarmentTagRedirect />} />
-              <Route path="/garments/:token" element={<GarmentTagRedirect />} />
+              <Route
+                path="/garments/:ticketId/:garmentId"
+                element={
+                  <RoleGuard allow={[...FOH, "driver"]}>
+                    <GarmentTagRedirect />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/garments/:token"
+                element={
+                  <RoleGuard allow={[...FOH, "driver"]}>
+                    <GarmentTagRedirect />
+                  </RoleGuard>
+                }
+              />
               {/* SPEC 012 — driver/staff POD capture (phone) */}
               <Route
                 path="/deliveries/:id/pod"
@@ -255,8 +276,9 @@ export default function App() {
                     </RoleGuard>
                   }
                 />
+                {/* /new before :id so it does not get captured as a customer id */}
                 <Route
-                  path="/customers/:id"
+                  path="/customers/new"
                   element={
                     <RoleGuard allow={[...FOH]}>
                       <CustomerDetail />
@@ -264,7 +286,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/customers/new"
+                  path="/customers/:id"
                   element={
                     <RoleGuard allow={[...FOH]}>
                       <CustomerDetail />

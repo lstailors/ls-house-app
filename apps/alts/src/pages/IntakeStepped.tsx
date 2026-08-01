@@ -1054,12 +1054,16 @@ export default function IntakeStepped() {
     if (!customer && !newName.trim()) throw new Error("Pick or create a customer");
     if (garments.length === 0 && sellItems.length === 0) throw new Error("Add at least one garment or item");
     const alterWorkCount = garments.reduce((s, g) => s + g.lines.length, 0);
-    if (billing === "billable" && alterWorkCount === 0 && sellItems.length === 0) {
+    if (alterWorkCount === 0 && sellItems.length === 0) {
       throw new Error("Add work lines or sell items");
     }
-    // Alter garments present without work still OK if sell items carry the ticket — warn if bare alter pieces
-    if (billing === "billable" && garments.some((g) => g.lines.length === 0) && sellItems.length === 0) {
+    // Every alter garment needs work — including warranty / on-order (valued lines).
+    // Sell-only carts may have zero garments.
+    if (garments.some((g) => g.lines.length === 0) && sellItems.length === 0) {
       throw new Error("Add work lines to each garment");
+    }
+    if (garments.some((g) => g.lines.length === 0) && sellItems.length > 0 && garments.length > 0) {
+      throw new Error("Add work lines to each alter garment (or remove empty ones)");
     }
 
     const body: any = {
@@ -1077,6 +1081,7 @@ export default function IntakeStepped() {
         color: g.color,
         notes: g.notes,
         lines: g.lines.map((l) => ({
+          id: l.id,
           description: l.description,
           // Always keep full shop price — internal accounted value.
           // Non-billable (on_order / redo) never creates SI; billing_status gates books.
@@ -1151,7 +1156,7 @@ export default function IntakeStepped() {
                 }),
             );
           }
-          for (const l of g.lines) {
+          g.lines.forEach((l, lineIdx) => {
             for (const file of l.photoFiles || []) {
               const fd = new FormData();
               fd.append("file", file);
@@ -1159,6 +1164,7 @@ export default function IntakeStepped() {
               fd.append("ticketName", ticketName);
               fd.append("garmentRef", g.ref);
               fd.append("lineRef", l.id);
+              fd.append("lineIdx", String(lineIdx));
               uploads.push(
                 api
                   .raw("/api/intake-alterations/photos", { method: "POST", body: fd })
@@ -1170,7 +1176,7 @@ export default function IntakeStepped() {
                   }),
               );
             }
-          }
+          });
         }
         if (uploads.length) {
           const results = await Promise.allSettled(uploads);

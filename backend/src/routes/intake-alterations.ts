@@ -593,6 +593,18 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
   if (!customer && !(newCustomer && newCustomer.name)) {
     return c.json({ error: 'customer or newCustomer.name is required' }, 400);
   }
+  // Every alter garment needs at least one work line (billable and non-billable).
+  // Sell-only tickets use the synthetic "Retail / stock sale" shell with empty lines.
+  const isSellOnlyShell =
+    garmentsIn.length === 1 &&
+    sellItemsIn.length > 0 &&
+    String(garmentsIn[0]?.description || '').toLowerCase().includes('retail');
+  if (!isSellOnlyShell) {
+    const bare = garmentsIn.filter((g: any) => !Array.isArray(g.lines) || g.lines.length === 0);
+    if (bare.length) {
+      return c.json({ error: 'Each garment needs at least one work line' }, 400);
+    }
+  }
   garments = garmentsIn;
 
   // Build payload
@@ -643,9 +655,11 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
       preset: l.preset || null,    // optional — null = custom line (Lucia 030)
       description: l.description,
       price: l.price,              // always full shop price (internal value even if non-billable)
-      // Capacity script needs minutes; custom lines default 15 if client omits
-      est_minutes: l.estMinutes || l.est_minutes || 15,
+      // Capacity / job card minutes; custom lines default 15 if client omits
+      estimated_minutes: Number(l.estMinutes ?? l.est_minutes ?? l.estimated_minutes) || 15,
       line_notes: l.notes || l.line_notes || null,
+      // Intake cart line id — photo upload matches this (P2-7)
+      client_line_key: l.id || l.client_line_key || l.clientKey || null,
     }))
     ),
     };
@@ -1525,17 +1539,21 @@ intakeAlterationsRouter.post('/photos', async (c) => {
   const ticketName = formData.get('ticketName') as string | null;
   const garmentRef = (formData.get('garmentRef') as string | null) || '';
   const lineRef = (formData.get('lineRef') as string | null) || '';
+  const lineIdxRaw = formData.get('lineIdx');
+  const lineIdxParsed =
+    lineIdxRaw != null && String(lineIdxRaw).trim() !== ''
+      ? Number(lineIdxRaw)
+      : NaN;
 
   if (!file || !path) return c.json({ error: 'file and path required' }, 400);
 
   try {
     const buffer = new Uint8Array(await file.arrayBuffer());
     const base = path.split('/').pop() ?? file.name ?? 'photo.jpg';
-    const filename = lineRef
-      ? `${garmentRef || 'G'}-${lineRef.slice(0, 8)}-${base}`
-      : garmentRef
-        ? `${garmentRef}-${base}`
-        : base;
+    // Durable File naming: G1-L0-<clientKey8>-photo.jpg (parsed by GET /photos)
+    const idxPart = Number.isFinite(lineIdxParsed) ? `L${lineIdxParsed}` : null;
+    const keyPart = lineRef ? lineRef.slice(0, 8) : null;
+    const filename = [garmentRef || null, idxPart, keyPart, base].filter(Boolean).join('-');
     const { fileUrl, fileId } = await uploadFile({
       file: buffer,
       filename,
@@ -1545,24 +1563,46 @@ intakeAlterationsRouter.post('/photos', async (c) => {
       isPrivate: false,
     });
 
-    // Append URL onto matching line's line_photos when we can resolve garment_ref + description seed
-    if (ticketName && lineRef) {
+    let resolvedLineName: string | null = null;
+    let resolvedLineIdx: number | null = Number.isFinite(lineIdxParsed) ? lineIdxParsed : null;
+
+    // Append URL onto the matching line's line_photos (P2-7: client_line_key → lineIdx → last on garment)
+    if (ticketName && (lineRef || garmentRef || Number.isFinite(lineIdxParsed))) {
       try {
         const t = await erpGetDoc<any>('Alteration Ticket', ticketName);
-        const lines = t?.lines || [];
-        // Best-effort: match by description embed in filename or append to last line of garment
-        // Clients should also send notes at create; photos are supplemental evidence.
-        // Store on ticket-level for now if no row match — line_photos updated when line_id known.
+        const lines = Array.isArray(t?.lines) ? t.lines : [];
         const abs = erpFileAbsoluteUrl(fileUrl);
-        // Prefer garment-scoped first matching empty-ish line_photos or any line on garment
-        const gLines = lines.filter((ln: any) => ln.garment_ref === garmentRef);
-        const target = gLines[gLines.length - 1];
+        const gLines = lines
+          .filter((ln: any) => !garmentRef || ln.garment_ref === garmentRef)
+          .sort((a: any, b: any) => (Number(a.idx) || 0) - (Number(b.idx) || 0));
+
+        let target: any = null;
+        if (lineRef) {
+          target = gLines.find((ln: any) => String(ln.client_line_key || '') === lineRef) || null;
+        }
+        if (!target && Number.isFinite(lineIdxParsed) && lineIdxParsed >= 0) {
+          target = gLines[lineIdxParsed] || null;
+        }
+        if (!target && garmentRef) {
+          target = gLines[gLines.length - 1] || null;
+        }
+
         if (target?.name) {
+          resolvedLineName = String(target.name);
+          if (resolvedLineIdx == null) {
+            const i = gLines.findIndex((ln: any) => ln.name === target.name);
+            resolvedLineIdx = i >= 0 ? i : null;
+          }
           const prev = String(target.line_photos || '').trim();
           const next = prev ? `${prev},${abs}` : abs;
-          await erpUpdate('Alteration Ticket Line', target.name, { line_photos: next }).catch(() => {});
+          const patch: Record<string, unknown> = { line_photos: next };
+          // Backfill client key when ERP field exists and line was matched by index
+          if (lineRef && !target.client_line_key) {
+            patch.client_line_key = lineRef;
+          }
+          await erpUpdate('Alteration Ticket Line', target.name, patch).catch(() => {});
         }
-      } catch { /* non-fatal */ }
+      } catch { /* non-fatal — File attachment still saved */ }
     }
 
     return c.json({
@@ -1572,6 +1612,8 @@ intakeAlterationsRouter.post('/photos', async (c) => {
         fileId,
         garmentRef,
         lineRef: lineRef || null,
+        lineIdx: resolvedLineIdx,
+        lineName: resolvedLineName,
       },
     });
   } catch (e: unknown) {
@@ -1596,14 +1638,21 @@ intakeAlterationsRouter.get('/tickets/:name/photos', async (c) => {
       100,
       'creation desc',
     );
-    const data = (rows ?? []).map((f: any) => ({
-      id: f.name,
-      name: f.file_name,
-      url: erpFileAbsoluteUrl(f.file_url),
-      creation: f.creation,
-      size: f.file_size,
-      garmentRef: (f.file_name || '').match(/^(G\d+)-/)?.[1] || null,
-    }));
+    const data = (rows ?? []).map((f: any) => {
+      const name = String(f.file_name || '');
+      // G1-L0-abcd1234-photo.jpg  |  G1-abcd1234-photo.jpg  |  G1-photo.jpg
+      const m = name.match(/^(G\d+)(?:-L(\d+))?(?:-([a-zA-Z0-9]{4,8}))?-/i);
+      return {
+        id: f.name,
+        name,
+        url: erpFileAbsoluteUrl(f.file_url),
+        creation: f.creation,
+        size: f.file_size,
+        garmentRef: m?.[1] || name.match(/^(G\d+)/i)?.[1] || null,
+        lineIdx: m?.[2] != null ? Number(m[2]) : null,
+        lineKey: m?.[3] || null,
+      };
+    });
     return c.json({ data });
   } catch (e: any) {
     return c.json({ data: [], error: e.message });

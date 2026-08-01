@@ -466,11 +466,22 @@ alterationsRouter.patch("/:id/full", async (c) => {
       garment_description: string;
       color?: string;
       fabric_notes?: string;
+      garment_status?: string;
     }>;
     lines: Array<{
       garment_ref: string;
       description: string;
       price: number;
+      preset?: string | null;
+      line_notes?: string | null;
+      notes?: string | null;
+      estimated_minutes?: number | null;
+      est_minutes?: number | null;
+      line_status?: string | null;
+      tailor?: string | null;
+      line_photos?: string | null;
+      client_line_key?: string | null;
+      name?: string;
     }>;
   };
 
@@ -479,6 +490,87 @@ alterationsRouter.patch("/:id/full", async (c) => {
     key: process.env.ERPNEXT_API_KEY ?? "",
     secret: process.env.ERPNEXT_API_SECRET ?? "",
   };
+
+  // Load existing ticket so we can preserve line metadata the drawer didn't send
+  // and keep garment_status / line_photos when rows are recreated.
+  let existing: any = null;
+  try {
+    const getRes = await fetch(
+      `${base}/api/resource/Alteration%20Ticket/${encodeURIComponent(id)}`,
+      { headers: { Authorization: `token ${key}:${secret}`, Accept: "application/json" } },
+    );
+    if (getRes.ok) {
+      const got = await getRes.json() as { data: any };
+      existing = got.data;
+    }
+  } catch { /* continue with body-only */ }
+
+  const prevLines: any[] = Array.isArray(existing?.lines) ? existing.lines : [];
+  const prevGarments: any[] = Array.isArray(existing?.garments) ? existing.garments : [];
+
+  function matchPrevLine(l: (typeof body.lines)[number]): any | null {
+    if (l.name) {
+      const byName = prevLines.find((p) => p.name === l.name);
+      if (byName) return byName;
+    }
+    if (l.client_line_key) {
+      const byKey = prevLines.find((p) => p.client_line_key === l.client_line_key);
+      if (byKey) return byKey;
+    }
+    return (
+      prevLines.find(
+        (p) =>
+          p.garment_ref === l.garment_ref &&
+          String(p.description || "") === String(l.description || "") &&
+          Number(p.price) === Number(l.price),
+      ) ||
+      prevLines.find(
+        (p) =>
+          p.garment_ref === l.garment_ref &&
+          String(p.description || "") === String(l.description || ""),
+      ) ||
+      null
+    );
+  }
+
+  const garmentsOut = (body.garments || []).map((g) => {
+    const prev = prevGarments.find((p) => p.garment_id === g.garment_id);
+    return {
+      garment_id: g.garment_id,
+      garment_type: g.garment_type,
+      garment_description: g.garment_description,
+      color: g.color ?? prev?.color ?? "",
+      fabric_notes: g.fabric_notes ?? prev?.fabric_notes ?? "",
+      garment_status: g.garment_status ?? prev?.garment_status ?? "Received",
+    };
+  });
+
+  const linesOut = (body.lines || []).map((l) => {
+    const prev = matchPrevLine(l);
+    const minutes =
+      l.estimated_minutes ??
+      l.est_minutes ??
+      prev?.estimated_minutes ??
+      prev?.est_minutes ??
+      15;
+    return {
+      garment_ref: l.garment_ref,
+      description: l.description,
+      price: l.price,
+      preset: l.preset !== undefined ? l.preset : (prev?.preset ?? null),
+      line_notes:
+        l.line_notes !== undefined
+          ? l.line_notes
+          : l.notes !== undefined
+            ? l.notes
+            : (prev?.line_notes ?? null),
+      estimated_minutes: Number(minutes) || 15,
+      line_status: l.line_status ?? prev?.line_status ?? "Pending",
+      tailor: l.tailor !== undefined ? l.tailor : (prev?.tailor ?? null),
+      line_photos: l.line_photos ?? prev?.line_photos ?? null,
+      client_line_key: l.client_line_key ?? prev?.client_line_key ?? null,
+    };
+  });
 
   const res = await fetch(
     `${base}/api/resource/Alteration%20Ticket/${encodeURIComponent(id)}`,
@@ -490,18 +582,8 @@ alterationsRouter.patch("/:id/full", async (c) => {
         Accept: "application/json",
       },
       body: JSON.stringify({
-        garments: body.garments.map((g) => ({
-          garment_id: g.garment_id,
-          garment_type: g.garment_type,
-          garment_description: g.garment_description,
-          color: g.color ?? "",
-          fabric_notes: g.fabric_notes ?? "",
-        })),
-        lines: body.lines.map((l) => ({
-          garment_ref: l.garment_ref,
-          description: l.description,
-          price: l.price,
-        })),
+        garments: garmentsOut,
+        lines: linesOut,
       }),
     }
   );
@@ -512,6 +594,18 @@ alterationsRouter.patch("/:id/full", async (c) => {
   }
 
   const updated = await res.json() as { data: ErpTicket };
+
+  // Billable tickets: rebuild SI so invoice lines match edited work (P2-9)
+  const billing = (updated.data as any)?.billing_status || existing?.billing_status;
+  if (billing === "Billable") {
+    try {
+      await erpRunMethod(
+        "ls_alterations.ls_alterations.api.invoices.prepare_alteration_invoice",
+        { ticket: id },
+      ).catch(() => null);
+    } catch { /* non-fatal */ }
+  }
+
   return c.json({ data: serialize(updated.data) });
 });
 

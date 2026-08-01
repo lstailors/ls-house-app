@@ -759,6 +759,109 @@ function TabSwitcher({ active, onChange }: { active: TabKey; onChange: (t: TabKe
   );
 }
 
+// ── New client form ( /customers/new ) ────────────────────────────────────────
+function NewCustomerForm() {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [line1, setLine1] = useState("");
+  const [line2, setLine2] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [zip, setZip] = useState("");
+
+  const create = useMutation({
+    mutationFn: async () => {
+      if (!fullName.trim()) throw new Error("Name is required");
+      if (!phone.trim()) throw new Error("Mobile number is required");
+      const body: Record<string, unknown> = {
+        full_name: fullName.trim(),
+        phone: phone.trim(),
+        email: email.trim() || undefined,
+      };
+      if (line1.trim() || city.trim()) {
+        body.address = line1.trim();
+        if (line2.trim()) body.address_line2 = line2.trim();
+        body.city = city.trim() || undefined;
+        body.state = state.trim() || undefined;
+        body.zip_code = zip.trim() || undefined;
+      }
+      return api.post<any>("/api/customers", body);
+    },
+    onSuccess: (created) => {
+      const newId = created?.id || created?.name || created?.erpnextCustomerId;
+      qc.invalidateQueries({ queryKey: ["customers"] });
+      toast.success("Client created");
+      if (newId) navigate(`/customers/${encodeURIComponent(newId)}`, { replace: true });
+      else navigate("/customers", { replace: true });
+    },
+    onError: (e: Error) => toast.error(e.message || "Could not create client"),
+  });
+
+  return (
+    <div className="p-5 max-w-lg mx-auto space-y-5">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => navigate("/customers")}
+          className="text-cream-dim p-1.5 hover:text-cream"
+          aria-label="Back"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <div>
+          <h1 className="text-brass-shimmer font-display text-xl">New client</h1>
+          <p className="text-cream-dim text-xs mt-0.5">Saved to ERPNext — then open their profile</p>
+        </div>
+      </div>
+
+      <div className="space-y-3 rounded-xl border border-brass/15 bg-forest-raised/60 p-4">
+        <div>
+          <label className={LABEL}>Full name *</label>
+          <input className={INPUT} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jane Client" autoFocus />
+        </div>
+        <div>
+          <label className={LABEL}>Mobile *</label>
+          <input className={INPUT} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1…" inputMode="tel" />
+        </div>
+        <div>
+          <label className={LABEL}>Email</label>
+          <input className={INPUT} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="optional" inputMode="email" />
+        </div>
+        <div>
+          <label className={LABEL}>Address</label>
+          <input className={INPUT} value={line1} onChange={(e) => setLine1(e.target.value)} placeholder="Street" />
+        </div>
+        <input className={INPUT} value={line2} onChange={(e) => setLine2(e.target.value)} placeholder="Apt / suite" />
+        <div className="grid grid-cols-3 gap-2">
+          <input className={INPUT} value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" />
+          <input className={INPUT} value={state} onChange={(e) => setState(e.target.value)} placeholder="ST" />
+          <input className={INPUT} value={zip} onChange={(e) => setZip(e.target.value)} placeholder="ZIP" />
+        </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-2">
+        <Button
+          className="btn-brass flex-1"
+          disabled={!fullName.trim() || !phone.trim() || create.isPending}
+          onClick={() => create.mutate()}
+        >
+          {create.isPending ? "Saving…" : "Create client"}
+        </Button>
+        <Button
+          variant="outline"
+          className="border-brass/20 text-cream-muted flex-1"
+          onClick={() => navigate("/intake/kind")}
+        >
+          Or start a ticket
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function CustomerDetail() {
   const { id } = useParams<{ id: string }>();
@@ -797,15 +900,7 @@ export default function CustomerDetail() {
   });
 
   if (!id || id === "new") {
-    return (
-      <div className="p-6 max-w-lg mx-auto text-center space-y-3">
-        <p className="text-cream-muted text-sm">Create clients from intake or lookup search.</p>
-        <Button className="btn-brass" onClick={() => navigate("/intake/kind")}>New ticket</Button>
-        <Button variant="outline" onClick={() => navigate("/customers")} className="border-brass/20 text-cream-muted ml-2">
-          Back to list
-        </Button>
-      </div>
-    );
+    return <NewCustomerForm />;
   }
 
   if (isLoading) return <div className="text-cream-muted text-sm p-8">Loading…</div>;

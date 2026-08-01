@@ -10,9 +10,12 @@
   "preset",
   "description",
   "price",
+  "estimated_minutes",
   "tailor",
   "line_status",
-  "line_notes"
+  "line_notes",
+  "line_photos",
+  "client_line_key"
  ],
  "fields": [
   {
@@ -49,6 +52,14 @@
    "reqd": 1
   },
   {
+   "columns": 1,
+   "fieldname": "estimated_minutes",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Est. Minutes",
+   "non_negative": 1
+  },
+  {
    "columns": 2,
    "fieldname": "tailor",
    "fieldtype": "Link",
@@ -69,12 +80,25 @@
    "fieldname": "line_notes",
    "fieldtype": "Small Text",
    "label": "Notes"
+  },
+  {
+   "fieldname": "line_photos",
+   "fieldtype": "Long Text",
+   "label": "Line Photos",
+   "description": "Comma-separated absolute photo URLs from intake / FOH uploads"
+  },
+  {
+   "fieldname": "client_line_key",
+   "fieldtype": "Data",
+   "label": "Client Line Key",
+   "description": "Transient intake cart line id — used to map photos to the correct line",
+   "hidden": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-05-27 09:00:00.000000",
+ "modified": "2026-08-01 02:45:00.000000",
  "modified_by": "Administrator",
  "module": "LS Alterations",
  "name": "Alteration Ticket Line",

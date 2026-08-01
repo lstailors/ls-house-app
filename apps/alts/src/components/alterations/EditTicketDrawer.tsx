@@ -42,6 +42,12 @@ interface Line {
   garment_ref: string
   description: string
   price: number
+  preset?: string | null
+  notes?: string
+  estimated_minutes?: number
+  /** ERP child row name — helps /full preserve photos/status */
+  erpName?: string
+  client_line_key?: string | null
 }
 
 interface Props {
@@ -61,6 +67,12 @@ interface Props {
     garment_ref: string
     description: string
     price: number
+    preset?: string | null
+    line_notes?: string | null
+    notes?: string | null
+    estimated_minutes?: number | null
+    est_minutes?: number | null
+    client_line_key?: string | null
   }>
 }
 
@@ -72,6 +84,22 @@ const GARMENT_TYPES = [
 let _idCounter = 1
 function uid() {
   return `new-${_idCounter++}`
+}
+
+function mapInitialLines(
+  initialLines: Props['initialLines'],
+): Array<Line & { _key: string }> {
+  return initialLines.map((l) => ({
+    _key: l.name || uid(),
+    erpName: l.name,
+    garment_ref: l.garment_ref,
+    description: l.description,
+    price: l.price,
+    preset: l.preset ?? null,
+    notes: l.line_notes || l.notes || '',
+    estimated_minutes: Number(l.estimated_minutes ?? l.est_minutes) || 15,
+    client_line_key: l.client_line_key ?? null,
+  }))
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -104,12 +132,7 @@ export function EditTicketDrawer({
   )
 
   const [lines, setLines] = useState<Array<Line & { _key: string }>>(() =>
-    initialLines.map((l) => ({
-      _key: l.name || uid(),
-      garment_ref: l.garment_ref,
-      description: l.description,
-      price: l.price,
-    }))
+    mapInitialLines(initialLines)
   )
 
   // Reset state when drawer opens with fresh data
@@ -124,14 +147,7 @@ export function EditTicketDrawer({
           color: g.color ?? '',
         }))
       )
-      setLines(
-        initialLines.map((l) => ({
-          _key: l.name || uid(),
-          garment_ref: l.garment_ref,
-          description: l.description,
-          price: l.price,
-        }))
-      )
+      setLines(mapInitialLines(initialLines))
     }
     onOpenChange(val)
   }
@@ -182,20 +198,32 @@ export function EditTicketDrawer({
 
   function isPresetActive(garmentId: string, preset: Preset) {
     return lines.some(
-      (l) => l.garment_ref === garmentId && l.description === preset.preset_name
+      (l) =>
+        l.garment_ref === garmentId &&
+        (l.preset === preset.id || l.description === preset.preset_name)
     )
   }
 
   function togglePreset(garmentId: string, preset: Preset) {
     const existing = lines.find(
-      (l) => l.garment_ref === garmentId && l.description === preset.preset_name
+      (l) =>
+        l.garment_ref === garmentId &&
+        (l.preset === preset.id || l.description === preset.preset_name)
     )
     if (existing) {
       setLines((prev) => prev.filter((l) => l._key !== existing._key))
     } else {
       setLines((prev) => [
         ...prev,
-        { _key: uid(), garment_ref: garmentId, description: preset.preset_name, price: preset.price },
+        {
+          _key: uid(),
+          garment_ref: garmentId,
+          description: preset.preset_name,
+          price: preset.price,
+          preset: preset.id,
+          notes: '',
+          estimated_minutes: preset.est_minutes || 15,
+        },
       ])
     }
   }
@@ -205,7 +233,15 @@ export function EditTicketDrawer({
   function addLine(garmentId: string) {
     setLines((prev) => [
       ...prev,
-      { _key: uid(), garment_ref: garmentId, description: '', price: 0 },
+      {
+        _key: uid(),
+        garment_ref: garmentId,
+        description: '',
+        price: 0,
+        preset: null,
+        notes: '',
+        estimated_minutes: 15,
+      },
     ])
   }
 
@@ -213,7 +249,7 @@ export function EditTicketDrawer({
     setLines((prev) => prev.filter((l) => l._key !== key))
   }
 
-  function updateLine(key: string, field: keyof Line, value: string | number) {
+  function updateLine(key: string, field: keyof Line, value: string | number | null) {
     setLines((prev) =>
       prev.map((l) => (l._key === key ? { ...l, [field]: value } : l))
     )
@@ -225,7 +261,12 @@ export function EditTicketDrawer({
     mutationFn: () =>
       api.patch(`/api/alterations/${ticketName}/full`, {
         garments: garments.map(({ _key: _k, ...g }) => g),
-        lines: lines.map(({ _key: _k, ...l }) => l),
+        lines: lines.map(({ _key: _k, erpName, notes, ...l }) => ({
+          ...l,
+          name: erpName,
+          line_notes: notes || null,
+          estimated_minutes: l.estimated_minutes || 15,
+        })),
       }),
     onSuccess: () => {
       toast.success('Ticket updated')
@@ -331,36 +372,62 @@ export function EditTicketDrawer({
                   ) : null}
 
                   {gLines.map((l) => (
-                    <div key={l._key} className="flex items-center gap-2">
-                      <Input
-                        value={l.description}
-                        onChange={(e) => updateLine(l._key, 'description', e.target.value)}
-                        placeholder="e.g. Shorten sleeves"
-                        className="flex-1 bg-forest-deep border-brass/20 text-cream placeholder:text-cream-dim/30 h-8 text-sm"
-                      />
-                      <div className="relative w-24 shrink-0">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-cream-dim/50 text-xs pointer-events-none">
-                          $
-                        </span>
+                    <div key={l._key} className="space-y-1.5">
+                      <div className="flex items-center gap-2">
                         <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={l.price === 0 ? '' : l.price}
-                          onChange={(e) =>
-                            updateLine(l._key, 'price', parseFloat(e.target.value) || 0)
-                          }
-                          placeholder="0"
-                          className="pl-5 bg-forest-deep border-brass/20 text-cream placeholder:text-cream-dim/30 h-8 text-sm"
+                          value={l.description}
+                          onChange={(e) => updateLine(l._key, 'description', e.target.value)}
+                          placeholder="e.g. Shorten sleeves"
+                          className="flex-1 bg-forest-deep border-brass/20 text-cream placeholder:text-cream-dim/30 h-8 text-sm"
                         />
+                        <div className="relative w-24 shrink-0">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-cream-dim/50 text-xs pointer-events-none">
+                            $
+                          </span>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={l.price === 0 ? '' : l.price}
+                            onChange={(e) =>
+                              updateLine(l._key, 'price', parseFloat(e.target.value) || 0)
+                            }
+                            placeholder="0"
+                            className="pl-5 bg-forest-deep border-brass/20 text-cream placeholder:text-cream-dim/30 h-8 text-sm"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeLine(l._key)}
+                          className="p-1 rounded text-cream-dim/30 hover:text-red-400 hover:bg-red-900/20 transition-colors shrink-0"
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => removeLine(l._key)}
-                        className="p-1 rounded text-cream-dim/30 hover:text-red-400 hover:bg-red-900/20 transition-colors shrink-0"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                      <div className="flex items-center gap-2 pl-0.5">
+                        <Input
+                          value={l.notes || ''}
+                          onChange={(e) => updateLine(l._key, 'notes', e.target.value)}
+                          placeholder="Line notes"
+                          className="flex-1 bg-forest-deep border-brass/15 text-cream placeholder:text-cream-dim/25 h-7 text-xs"
+                        />
+                        <div className="relative w-16 shrink-0">
+                          <Input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={l.estimated_minutes || ''}
+                            onChange={(e) =>
+                              updateLine(l._key, 'estimated_minutes', parseInt(e.target.value, 10) || 15)
+                            }
+                            placeholder="min"
+                            className="bg-forest-deep border-brass/15 text-cream placeholder:text-cream-dim/25 h-7 text-xs pr-7"
+                          />
+                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-cream-dim/40 text-[10px] pointer-events-none">
+                            m
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   ))}
 
