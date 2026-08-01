@@ -69,19 +69,7 @@ export function SaveCartControls(props: {
     });
   }
 
-  function handleCheckout(id: string) {
-    void withBusy(async () => {
-      try {
-        const result = await api.post<{ ticket: string; customer: string }>(`/api/carts/${id}/commit`, {});
-        props.onCommitted(result.ticket);
-        setOpen(false);
-        flash(`Created ${result.ticket}`);
-      } catch (e: any) {
-        flash(e?.message ?? "Checkout failed");
-      }
-    });
-  }
-
+// HER-62: Checkout/commit removed — no billing_status on commitParkedCart.
   function handleRemove(id: string) {
     void withBusy(async () => {
       try {
@@ -122,8 +110,8 @@ export function SaveCartControls(props: {
                   {c.cart?.garments?.length ?? 0} garments · {c.cart?.lines?.length ?? 0} alterations · saved {timeAgo(c.updated_at)}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => handleResume(c.id)} disabled={busy} style={{ ...btnGhost, flex: 1 }}>Resume</button>
-                  <button onClick={() => handleCheckout(c.id)} disabled={busy} style={{ ...btn, flex: 1 }}>Checkout</button>
+                  <button onClick={() => handleResume(c.id)} disabled={busy} style={{ ...btn, flex: 1 }}>Resume</button>
+                  {/* Checkout/commit hidden HER-62 — no billing_status on commitParkedCart */}
                   <button onClick={() => handleRemove(c.id)} disabled={busy} aria-label="Remove" style={{ ...btnGhost, padding: "8px 12px" }}>✕</button>
                 </div>
               </div>

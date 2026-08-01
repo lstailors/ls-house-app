@@ -672,6 +672,9 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
     if (linkedSo) payload.linked_sales_order = linkedSo;
     if (body.internal_notes) payload.internal_notes = body.internal_notes;
     if (body.customer_notes) payload.customer_notes = body.customer_notes;
+    // Real idempotency key (client UUID). Double-submit on flaky wifi returns same ticket.
+    const idempotencyKey = (body.idempotency_key || body.idempotencyKey || '').toString().trim();
+    if (idempotencyKey) payload.idempotency_key = idempotencyKey;
 
   if (customer) {
     payload.customer = customer.id ?? customer.name;

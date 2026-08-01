@@ -142,8 +142,8 @@ doc_events = {
 	"Alteration Ticket": {
 		"before_insert": "ls_alterations.ls_alterations.doctype.alteration_ticket.alteration_ticket.set_naming_series",
 		"validate": [
-			# HER-63 P2: ensure_rush_surcharge removed — auto-appending an unquoted $25
-			# surcharge is a client-trust hazard. Rush lines must be added explicitly.
+			# HER-61/62/63: ensure_rush_surcharge removed — no auto $25 rush line.
+			# Rush lines must be added explicitly by staff.
 			"ls_alterations.ls_alterations.doctype.alteration_ticket.alteration_ticket.compute_totals",
 			"ls_alterations.ls_alterations.doctype.alteration_ticket.alteration_ticket.rollup_line_to_garment",
 			"ls_alterations.ls_alterations.doctype.alteration_ticket.alteration_ticket.set_payment_status_na",

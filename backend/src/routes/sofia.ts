@@ -16,6 +16,7 @@ import {
 import { findCustomerByPhone } from "../lib/erpnext/customers";
 import { approveEmailDraft, discardEmailDraft } from "../lib/erpnext/email-drafts";
 import { getAuthedUser } from "../lib/scope";
+import { requireCronOrSession } from "../lib/require-secret";
 // sendSms and alertCarl defined locally below
 
 // ── Constants ──
@@ -1953,10 +1954,12 @@ sofiaRouter.post("/sms", async (c) => {
 });
 
 // POST /api/sofia/process — internal fallback endpoint (kept for manual testing)
+// HER-61 S3: no hardcoded fallback secret — fail closed if unset.
 sofiaRouter.post("/process", async (c) => {
-  const secret = process.env.SOFIA_PROCESS_SECRET ?? "sofia-process-internal";
-  const provided = c.req.header("x-sofia-process-secret") ?? "";
-  if (provided !== secret) {
+  const secret = (process.env.SOFIA_PROCESS_SECRET ?? "").trim();
+  if (!secret) return c.json({ error: "SOFIA_PROCESS_SECRET not configured" }, 503);
+  const provided = (c.req.header("x-sofia-process-secret") ?? "").trim();
+  if (!provided || provided !== secret) {
     return c.json({ error: "Forbidden" }, 403);
   }
   try {
@@ -2030,10 +2033,15 @@ sofiaRouter.post("/tasks", async (c) => {
 
 const BRIEFING_SOFIA_DM_CHANNEL = "b56k4sapbj";
 
+// HER-61 S3: no hardcoded ERP key/secret fallbacks — fail closed if env unset.
 async function erpNextFetch(path: string): Promise<any> {
-  const ERP_BASE = "https://erp.lstailors.com";
-  const key = process.env.ERPNEXT_API_KEY ?? "71ea2b1955d7b8e";
-  const secret = process.env.ERPNEXT_API_SECRET ?? "768c364b966b76e";
+  const ERP_BASE = process.env.ERPNEXT_BASE_URL ?? "https://erp.lstailors.com";
+  const key = (process.env.ERPNEXT_API_KEY ?? "").trim();
+  const secret = (process.env.ERPNEXT_API_SECRET ?? "").trim();
+  if (!key || !secret) {
+    console.error("[sofia/erpNextFetch] ERPNEXT_API_KEY/SECRET unset");
+    return null;
+  }
   try {
     const res = await fetch(`${ERP_BASE}${path}`, {
       headers: { Authorization: `token ${key}:${secret}` },
@@ -2046,9 +2054,13 @@ async function erpNextFetch(path: string): Promise<any> {
 }
 
 async function postRavenDm(text: string): Promise<void> {
-  const ERP_BASE = "https://erp.lstailors.com";
-  const key = process.env.ERPNEXT_CARL_API_KEY ?? "0c3a223606ede7c";
-  const secret = process.env.ERPNEXT_CARL_API_SECRET ?? "cd4fd503416f673";
+  const ERP_BASE = process.env.ERPNEXT_BASE_URL ?? "https://erp.lstailors.com";
+  const key = (process.env.ERPNEXT_CARL_API_KEY ?? "").trim();
+  const secret = (process.env.ERPNEXT_CARL_API_SECRET ?? "").trim();
+  if (!key || !secret) {
+    console.error("[sofia/postRavenDm] ERPNEXT_CARL_API_KEY/SECRET unset");
+    return;
+  }
   try {
     await fetch(`${ERP_BASE}/api/resource/Raven%20Message`, {
       method: "POST",
@@ -2254,16 +2266,21 @@ End with: — Sofia`,
   return { ok: true, briefing };
 }
 
-sofiaRouter.post("/briefing", async (_c) => {
+// HER-61 S4: briefing endpoints require CRON_SECRET (same as Vercel cron header)
+sofiaRouter.post("/briefing", async (c) => {
+  const gate = await requireCronOrSession(c);
+  if (gate !== true) return gate;
   const result = await runBriefing();
-  if (!result.ok) return _c.json({ error: { message: result.error ?? "briefing failed" } }, 500);
-  return _c.json({ data: result });
+  if (!result.ok) return c.json({ error: { message: result.error ?? "briefing failed" } }, 500);
+  return c.json({ data: result });
 });
 
-sofiaRouter.get("/briefing/trigger", async (_c) => {
+sofiaRouter.get("/briefing/trigger", async (c) => {
+  const gate = await requireCronOrSession(c);
+  if (gate !== true) return gate;
   const result = await runBriefing();
-  if (!result.ok) return _c.json({ error: { message: result.error ?? "briefing failed" } }, 500);
-  return _c.json({ data: result });
+  if (!result.ok) return c.json({ error: { message: result.error ?? "briefing failed" } }, 500);
+  return c.json({ data: result });
 });
 
 // PATCH /api/sofia/tasks/:id

@@ -1,10 +1,19 @@
 # Copyright (c) 2026, L&S Custom Tailors and contributors
 # See license.txt
 
+import datetime
 import unittest
 from unittest.mock import MagicMock, patch
 
 import frappe
+
+
+def _today():
+	return datetime.date.today().isoformat()
+
+
+def _due(days=14):
+	return (datetime.date.today() + datetime.timedelta(days=days)).isoformat()
 
 
 def _ensure_customer(name="Test Alteration Customer"):
@@ -63,8 +72,8 @@ class TestAlterationTicket(unittest.TestCase):
 				"doctype": "Alteration Ticket",
 				"customer": self.customer,
 				"origin_location": origin,
-				"ticket_date": "2026-05-27",
-				"due_date": "2026-06-03",
+				"ticket_date": _today(),
+				"due_date": _due(),
 				"workflow_state": "Received",
 				"garments": garments,
 				"lines": lines,
@@ -144,11 +153,11 @@ class TestAlterationTicket(unittest.TestCase):
 		payload = {
 			"new_customer": {
 				"customer_name": f"Smoke Test {frappe.generate_hash(length=6)}",
-				"mobile_no": "+15555551111",
+				"mobile_no": "+155****1111",
 			},
 			"origin_location": "NYC",
-			"ticket_date": "2026-05-27",
-			"due_date": "2026-06-03",
+			"ticket_date": _today(),
+			"due_date": _due(),
 			"is_rush": False,
 			"garments": [{"garment_type": "Jacket", "garment_description": "Test"}],
 			"lines": [
@@ -496,3 +505,129 @@ class TestAlterationTicket(unittest.TestCase):
 			self.assertEqual(args[1]["new_state"], "In Progress")
 		finally:
 			frappe.local.conf.pop("n8n_alteration_webhook_url", None)
+
+	# ----- HER-62 billing matrix (Billable / Warranty / Included+prices) -----
+
+	def test_billing_billable_with_prices_mints_si(self):
+		ticket = self._create_ticket(
+			garments=[{"garment_type": "Jacket"}],
+			lines=[
+				{"garment_ref": "G1", "description": "Sleeve", "price": 45.00},
+			],
+		)
+		# Default billing_status is Billable
+		self.assertEqual(ticket.billing_status, "Billable")
+		self.assertEqual(ticket.ticket_total, 45.00)
+		self.assertIsNotNone(ticket.sales_invoice)
+
+	def test_billing_warranty_with_prices_keeps_dollars_no_si(self):
+		"""Re-do / Warranty: full line $ kept; billing_status gates SI only."""
+		ticket = frappe.get_doc(
+			{
+				"doctype": "Alteration Ticket",
+				"customer": self.customer,
+				"origin_location": "NYC",
+				"ticket_date": _today(),
+				"due_date": _due(),
+				"workflow_state": "Received",
+				"billing_status": "Warranty",
+				"included_in_custom": 0,
+				"garments": [{"garment_type": "Jacket", "garment_description": "redo"}],
+				"lines": [
+					{"garment_ref": "G1", "description": "Re-do sleeve", "price": 45.00},
+				],
+			}
+		).insert(ignore_permissions=True)
+		ticket.reload()
+		self.assertEqual(ticket.billing_status, "Warranty")
+		self.assertEqual(ticket.ticket_total, 45.00)
+		self.assertFalse(ticket.sales_invoice)
+		self.assertEqual(ticket.payment_status, "N/A")
+		# Line dollars still on the doc (never zeroed)
+		self.assertEqual(float(ticket.lines[0].price), 45.00)
+
+	def test_billing_included_with_prices_no_auto_flip_no_si(self):
+		"""Included-in-Custom + prices must NOT flip to Billable and must mint no SI."""
+		ticket = frappe.get_doc(
+			{
+				"doctype": "Alteration Ticket",
+				"customer": self.customer,
+				"origin_location": "NYC",
+				"ticket_date": _today(),
+				"due_date": _due(),
+				"workflow_state": "Received",
+				"billing_status": "Included in Custom Order",
+				"included_in_custom": 1,
+				"garments": [{"garment_type": "Trouser", "garment_description": "on order"}],
+				"lines": [
+					{"garment_ref": "G1", "description": "Hem", "price": 25.00},
+					{"garment_ref": "G1", "description": "Waist", "price": 55.00},
+				],
+			}
+		).insert(ignore_permissions=True)
+		ticket.reload()
+		# Staff-set status preserved despite ticket_total > 0 (auto-flip removed)
+		self.assertEqual(ticket.billing_status, "Included in Custom Order")
+		self.assertEqual(ticket.ticket_total, 80.00)
+		self.assertFalse(ticket.sales_invoice)
+		self.assertEqual(ticket.payment_status, "N/A")
+		# Re-save after compute_totals still must not flip
+		ticket.save(ignore_permissions=True)
+		ticket.reload()
+		self.assertEqual(ticket.billing_status, "Included in Custom Order")
+		self.assertFalse(ticket.sales_invoice)
+
+	def test_rush_surcharge_no_longer_auto_added(self):
+		"""C removed rush — is_rush must not mint a $25 Rush Surcharge line."""
+		ticket = frappe.get_doc(
+			{
+				"doctype": "Alteration Ticket",
+				"customer": self.customer,
+				"origin_location": "NYC",
+				"ticket_date": _today(),
+				"due_date": _due(),
+				"workflow_state": "Received",
+				"is_rush": 1,
+				"billing_status": "Billable",
+				"garments": [{"garment_type": "Jacket"}],
+				"lines": [
+					{"garment_ref": "G1", "description": "Sleeve", "price": 45.00},
+				],
+			}
+		).insert(ignore_permissions=True)
+		ticket.reload()
+		descs = [(l.description or "").lower() for l in (ticket.lines or [])]
+		self.assertTrue(all("rush" not in d for d in descs))
+		self.assertEqual(ticket.ticket_total, 45.00)
+
+	def test_create_ticket_idempotency_key_returns_same_ticket(self):
+		from ls_alterations.api import create_ticket
+
+		meta = frappe.get_meta("Alteration Ticket")
+		if not meta.has_field("idempotency_key"):
+			self.skipTest("idempotency_key field not migrated yet")
+
+		key = f"test-idemp-{frappe.generate_hash(length=10)}"
+		payload = {
+			"customer": self.customer,
+			"origin_location": "NYC",
+			"ticket_date": _today(),
+			"due_date": _due(),
+			"is_rush": False,
+			"billing_status": "Billable",
+			"idempotency_key": key,
+			"garments": [{"garment_type": "Jacket", "garment_description": "Test"}],
+			"lines": [
+				{
+					"garment_ref": "G1",
+					"preset": self.preset,
+					"description": "Test Hem Trouser",
+					"price": 25.00,
+				}
+			],
+		}
+		first = create_ticket(payload)
+		second = create_ticket(payload)
+		self.assertEqual(first["name"], second["name"])
+		self.assertTrue(second.get("idempotent"))
+

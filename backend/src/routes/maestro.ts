@@ -15,6 +15,7 @@ import {
 } from "../lib/erpnext/agents";
 import { storeList } from "../lib/erpnext/store";
 import { DT } from "../lib/erpnext/doctypes";
+import { requireCronOrSession } from "../lib/require-secret";
 
 export const maestroRouter = new Hono();
 
@@ -153,7 +154,10 @@ maestroRouter.post("/brief", async (c) => {
 });
 
 // ── GET /api/maestro/brief/trigger ── generate + save a fresh brief via Grok ──
-maestroRouter.get("/brief/trigger", async (_c) => {
+// HER-61 S4: Vercel cron must send Authorization: Bearer $CRON_SECRET
+maestroRouter.get("/brief/trigger", async (c) => {
+  const gate = await requireCronOrSession(c);
+  if (gate !== true) return gate;
   try {
     const now = new Date();
     const todayStr = now.toISOString().split("T")[0]!;
@@ -234,10 +238,10 @@ maestroRouter.get("/brief/trigger", async (_c) => {
       console.error("[maestro/brief/trigger] save error:", e.message);
     }
 
-    return _c.json({ data: { ok: true, period, brief: briefText } });
+    return c.json({ data: { ok: true, period, brief: briefText } });
   } catch (e: any) {
     console.error("[maestro/brief/trigger]", e.message);
-    return _c.json({ error: { message: e.message } }, 500);
+    return c.json({ error: { message: e.message } }, 500);
   }
 });
 

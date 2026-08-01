@@ -19,9 +19,11 @@ frappe.ui.form.on("Alteration Ticket", {
 	},
 
 	included_in_custom(frm) {
-		// Toggling the checkbox manually while a cost exists: let compute_totals
-		// (server-side validate) handle billing_status on next save.
-		if (!frm.doc.included_in_custom) {
+		// Staff intent via checkbox — billing_status is never derived from price.
+		// compute_totals only sums lines; it does not touch billing_status.
+		if (frm.doc.included_in_custom) {
+			frm.set_value("billing_status", "Included in Custom Order");
+		} else if (frm.doc.billing_status === "Included in Custom Order") {
 			frm.set_value("billing_status", "Billable");
 		}
 	},

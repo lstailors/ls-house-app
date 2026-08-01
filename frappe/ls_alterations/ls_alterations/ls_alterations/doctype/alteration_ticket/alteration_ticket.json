@@ -326,6 +326,15 @@
    "fieldtype": "Data",
    "label": "Supabase UUID",
    "read_only": 1
+  },
+  {
+   "fieldname": "idempotency_key",
+   "fieldtype": "Data",
+   "label": "Idempotency Key",
+   "read_only": 1,
+   "unique": 1,
+   "no_copy": 1,
+   "description": "Client submit key \u2014 duplicate POSTs return the same ticket"
   }
  ],
  "index_web_pages_for_search": 1,

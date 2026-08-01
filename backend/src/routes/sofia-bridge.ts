@@ -13,10 +13,15 @@ import { listSmsMessagesFiltered, insertSmsMessage } from "../lib/erpnext/agents
 
 export const sofiaBridgeRouter = new Hono();
 
+// HER-61 S1: fail closed — missing SOFIA_BRIDGE_KEY must NOT open the API.
 function authGuard(key: string | null): boolean {
-  const expected = process.env.SOFIA_BRIDGE_KEY;
-  if (!expected) return true;
-  return key === expected;
+  const expected = (process.env.SOFIA_BRIDGE_KEY ?? "").trim();
+  if (!expected) return false;
+  const provided = (key ?? "").trim();
+  if (!provided || provided.length !== expected.length) return false;
+  let out = 0;
+  for (let i = 0; i < expected.length; i++) out |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
+  return out === 0;
 }
 
 function fmtNYC(iso: string): string {
@@ -71,7 +76,8 @@ async function findClientByPhone(phone: string, bare: string) {
 }
 
 sofiaBridgeRouter.get("/context", async (c) => {
-  const key = c.req.header("x-sofia-bridge-key") ?? c.req.query("key") ?? null;
+  // HER-61: header-only — no ?key= (leaks into logs/Referer/history)
+  const key = c.req.header("x-sofia-bridge-key") ?? null;
   if (!authGuard(key)) return c.json({ error: "Unauthorized" }, 401);
 
   const rawPhone = c.req.query("phone") ?? "";
@@ -160,7 +166,8 @@ sofiaBridgeRouter.get("/context", async (c) => {
 });
 
 sofiaBridgeRouter.get("/summary", async (c) => {
-  const key = c.req.header("x-sofia-bridge-key") ?? c.req.query("key") ?? null;
+  // HER-61: header-only — no ?key= (leaks into logs/Referer/history)
+  const key = c.req.header("x-sofia-bridge-key") ?? null;
   if (!authGuard(key)) return c.json({ error: "Unauthorized" }, 401);
 
   const today = new Date().toISOString().slice(0, 10);
