@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { getAuthedUser } from "../lib/scope";
-import { erpGet } from "../lib/erp";
+import { getAuthedUser, canAccessSuperAdminPortal } from "../lib/scope";
+import { erpGet, erpUpdate } from "../lib/erp";
 
 export const printRouter = new Hono();
 
@@ -83,6 +83,14 @@ function toClientResult(out: ErpPrintResult): { ok: boolean; error?: string } {
   return { ok: false, error };
 }
 
+const ALTS_PUBLIC = (process.env.ALTS_URL || "https://alts.lstailors.com").replace(/\/$/, "");
+
+function effectiveAppBaseUrl(raw: unknown): string {
+  const u = String(raw ?? "").trim();
+  if (!u || u.includes("app.lstailors.com")) return ALTS_PUBLIC;
+  return u.replace(/\/$/, "");
+}
+
 // GET /api/print/config — read-only printer config for the Settings screen.
 printRouter.get("/config", async (c) => {
   // D13 (HER-22): auth required — do not leak LAN printer IP/port publicly.
@@ -91,20 +99,87 @@ printRouter.get("/config", async (c) => {
   try {
     const row = await erpGet<Record<string, unknown>>("LSH Print Settings", "LSH Print Settings");
     if (!row) throw new Error("LSH Print Settings not found in ERPNext");
+    const raw = String(row.app_base_url ?? "").trim();
     return c.json({
       enabled: Boolean(Number(row.enabled ?? 0)),
       printer_ip: String(row.thermal_printer_ip ?? ""),
       printer_port: Number(row.thermal_printer_port ?? 9100),
       timeout: Number(row.thermal_timeout ?? 5),
-      app_base_url: String(
-        row.app_base_url && !String(row.app_base_url).includes("app.lstailors.com")
-          ? row.app_base_url
-          : process.env.ALTS_URL || "https://alts.lstailors.com",
-      ),
+      app_base_url: effectiveAppBaseUrl(raw),
+      // Raw ERP value (admins only) — shows whether Part A (settings flip) landed.
+      ...(canAccessSuperAdminPortal(user.role) ? { erp_app_base_url: raw || null } : {}),
     });
   } catch (e) {
     const error = e instanceof Error ? e.message : "Could not load print config";
     return c.json({ ok: false, error });
+  }
+});
+
+// POST /api/print/config/app-base-url — flip ERP Print Settings to alts (super_admin).
+// Uses Vercel ERPNEXT_* credentials; no Mac Studio SSH required once API is deployed.
+printRouter.post("/config/app-base-url", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!canAccessSuperAdminPortal(user.role)) {
+    return c.json({ error: { message: "Super admin required" } }, 403);
+  }
+
+  const body = (await c.req.json().catch(() => null)) as { url?: string } | null;
+  const target = (body?.url?.trim() || ALTS_PUBLIC).replace(/\/$/, "");
+  if (!/^https:\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(target)) {
+    return c.json({ ok: false, error: "url must be an https origin" }, 400);
+  }
+
+  try {
+    const before = await erpGet<Record<string, unknown>>("LSH Print Settings", "LSH Print Settings");
+    const prev = String(before?.app_base_url ?? "").trim();
+    if (prev.replace(/\/$/, "") === target) {
+      return c.json({ ok: true, app_base_url: target, unchanged: true });
+    }
+
+    const updated = await erpUpdate<Record<string, unknown>>("LSH Print Settings", "LSH Print Settings", {
+      app_base_url: target,
+    });
+    if (!updated) throw new Error("ERP update returned empty (check ERPNEXT_* credentials)");
+
+    const after = String(updated.app_base_url ?? "").trim().replace(/\/$/, "");
+    if (after !== target) {
+      // Some singles ignore unknown keys on PUT — try set_value via method.
+      const key = process.env.ERPNEXT_API_KEY ?? "";
+      const secret = process.env.ERPNEXT_API_SECRET ?? "";
+      const base = (process.env.ERPNEXT_BASE_URL ?? "https://erp.lstailors.com").replace(/\/$/, "");
+      const setRes = await fetch(`${base}/api/method/frappe.client.set_value`, {
+        method: "POST",
+        headers: {
+          Authorization: `token ${key}:${secret}`,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (compatible; L&S-House-App/1.0; +https://app.lstailors.com)",
+        },
+        body: JSON.stringify({
+          doctype: "LSH Print Settings",
+          name: "LSH Print Settings",
+          fieldname: "app_base_url",
+          value: target,
+        }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!setRes.ok) {
+        throw new Error(`set_value failed HTTP ${setRes.status}`);
+      }
+    }
+
+    return c.json({
+      ok: true,
+      app_base_url: target,
+      previous: prev || null,
+      by: user.email,
+    });
+  } catch (e) {
+    return c.json({
+      ok: false,
+      error: e instanceof Error ? e.message : "Could not update app_base_url",
+    }, 500);
   }
 });
 

@@ -10,9 +10,27 @@
 
 ## Part A — ERP deploy (10–15 min)
 
-Do **either** A1 (fastest) **or** A2 (full app). Prefer **both** when you can: settings stay correct even if code rolls back; code stays correct even if settings drift.
+Do **either** A0 (script), A1 (desk UI), **or** A2 (full app). Prefer settings flip + code deploy when you can.
 
-### A1 — Quick win: Print Settings only (no code deploy)
+### A0 — One command (Mac Studio)
+
+```bash
+cd ~/ls-house-app/backend && bun run set:alts-print-url
+```
+
+Uses `~/ls-mcp/.env`. See `docs/ops/RUN_ON_MAC_STUDIO_PRINT_URL.md`.
+
+### A0b — From logged-in super_admin (after API deploy)
+
+```js
+await fetch('/api/print/config/app-base-url', {
+  method: 'POST', credentials: 'include',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ url: 'https://alts.lstailors.com' }),
+}).then(r => r.json())
+```
+
+### A1 — Quick win: Print Settings only (desk UI)
 
 1. Open ERP desk → **LSH Print Settings**
 2. Set **App Base URL** to:
@@ -117,7 +135,7 @@ E_TICKET_SECRET=<long random>
 
 ## What this cloud agent cannot do
 
-- No ERP credentials / bench SSH in this environment — **A1/A2 must be done by whoever runs `erp.lstailors.com`**
+- No ERP credentials / bench SSH in this cloud box — run **A0 on Mac Studio** or **A0b** once API is live
 - No physical Epson / D520BT / shop iPad — **Part B is on-site**
 
 After Part A + B, post the pass/fail table (Slack / HER-55 / PR comment). Any ✗ with host = `app.` means Print Settings or thermal deploy did not land.
