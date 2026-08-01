@@ -405,6 +405,13 @@ export default function IntakeStepped() {
         }
         if (typeof intake.notifyReady === "boolean") setNotifyReady(intake.notifyReady);
         if (intake.expectedGarmentCount) setExpectedGarments(Number(intake.expectedGarmentCount) || 0);
+        if (typeof intake.promiseDate === "string" && intake.promiseDate) setPromiseDate(intake.promiseDate);
+        if (typeof intake.promiseTime === "string" && intake.promiseTime) setPromiseTime(intake.promiseTime);
+        if (typeof intake.isRush === "boolean") setIsRush(intake.isRush);
+        if (typeof intake.ticketNote === "string" && intake.ticketNote) setTicketNote(intake.ticketNote);
+        if (intake.ticketNoteKind === "customer" || intake.ticketNoteKind === "internal") {
+          setTicketNoteKind(intake.ticketNoteKind);
+        }
         if (cart.label) setParkLabel(cart.label);
         setStep(1);
         toast.message("Resumed parked cart");
