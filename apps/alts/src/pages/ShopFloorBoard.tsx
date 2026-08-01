@@ -66,7 +66,7 @@ export default function ShopFloorBoard() {
   const advance = useMutation({
     mutationFn: async ({ name, status }: { name: string; status: string }) => {
       if (status === "Picked Up") {
-        nav("/pickup");
+        nav(`/pickup?ticket=${encodeURIComponent(name)}`);
         return null;
       }
       return api.patch(`/api/intake-alterations/tickets/${encodeURIComponent(name)}/status`, { status });

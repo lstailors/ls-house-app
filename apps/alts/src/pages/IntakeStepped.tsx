@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
+import { useMe } from "@ls/auth/session";
 import { cn } from "@ls/design/utils";
 import ParkDrawer from "@alts/components/ParkDrawer";
 import CustomerEditSheet, { SelectedCustomerCard } from "@alts/components/CustomerEditSheet";
@@ -251,7 +252,10 @@ export default function IntakeStepped() {
         : "billable";
 
   const [step, setStep] = useState(0);
-  const [origin, setOrigin] = useState<"NYC" | "HOU">("NYC");
+  const { data: me } = useMe();
+  const meOrigin: "NYC" | "HOU" =
+    (me?.locationId || "").toUpperCase().includes("HOU") ? "HOU" : "NYC";
+  const [origin, setOrigin] = useState<"NYC" | "HOU">(meOrigin);
   const [q, setQ] = useState("");
   const [customer, setCustomer] = useState<CustomerHit | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -498,6 +502,10 @@ export default function IntakeStepped() {
         if (!kindClash) {
           if (draft!.billing) setBilling(draft!.billing);
           if (draft!.linkedSo) setLinkedSo(draft!.linkedSo);
+          if (draft!.origin === "HOU" || draft!.origin === "NYC") setOrigin(draft!.origin);
+          if (draft!.promiseDate) setPromiseDate(draft!.promiseDate);
+          if (draft!.promiseTime) setPromiseTime(draft!.promiseTime);
+          if (typeof draft!.isRush === "boolean") setIsRush(draft!.isRush);
           if (draft!.customer) setCustomer(draft!.customer);
           if (draft!.q) setQ(draft!.q);
           if (draft!.newName) setNewName(draft!.newName);
@@ -567,6 +575,14 @@ export default function IntakeStepped() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeId, customerParam, customerNameParam, soParam, kindParam]);
 
+  // Prefer staff location once /api/me resolves (don't override restored draft/park).
+  useEffect(() => {
+    if (!draftReady || resumeId) return;
+    const draft = readIntakeDraft();
+    if (intakeDraftHasWork(draft) && (draft?.origin === "NYC" || draft?.origin === "HOU")) return;
+    if (me?.locationId) setOrigin(meOrigin);
+  }, [me?.locationId, meOrigin, draftReady, resumeId]);
+
   // Persist intake to localStorage (debounced) — wifi drop / refresh safe
   useEffect(() => {
     if (!draftReady || resumeId) return;
@@ -576,6 +592,10 @@ export default function IntakeStepped() {
         step,
         billing,
         linkedSo,
+        origin,
+        promiseDate,
+        promiseTime,
+        isRush,
         customer,
         q,
         newName,
@@ -610,6 +630,10 @@ export default function IntakeStepped() {
     step,
     billing,
     linkedSo,
+    origin,
+    promiseDate,
+    promiseTime,
+    isRush,
     customer,
     q,
     newName,
@@ -1214,6 +1238,11 @@ export default function IntakeStepped() {
           remindAt: remindAtIso(remind),
           parkNote: parkNote.trim(),
           parkLabel: label,
+          promiseDate,
+          promiseTime,
+          isRush,
+          ticketNote: ticketNote.trim(),
+          ticketNoteKind,
         },
       };
 

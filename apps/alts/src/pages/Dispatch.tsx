@@ -24,6 +24,7 @@ type Ticket = {
   billing_status?: string;
   sales_invoice?: string;
   delivery_method?: string;
+  origin_location?: string;
   garments?: Array<{ garment_id?: string; garment_type?: string; color?: string; garment_total?: number }>;
 };
 
@@ -85,8 +86,8 @@ export default function Dispatch() {
   const [selected, setSelected] = useState<string | null>(preselect);
   const [method, setMethod] = useState<Method>("Pickup");
   const [addr1, setAddr1] = useState("");
-  const [city, setCity] = useState("New York");
-  const [state, setState] = useState("NY");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
   const [zip, setZip] = useState("");
   const [note, setNote] = useState("");
 
@@ -101,6 +102,19 @@ export default function Dispatch() {
     enabled: !!selected,
     queryFn: () => api.get<Ticket>(`/api/intake-alterations/tickets/${selected}`),
   });
+
+  // Prefill city/state from ticket origin when selecting a ticket
+  useEffect(() => {
+    const loc = (detail.data?.origin_location || "").toUpperCase();
+    if (!loc || !detail.data?.name) return;
+    if (loc.includes("HOU")) {
+      setCity((c) => c || "Houston");
+      setState((s) => s || "TX");
+    } else {
+      setCity((c) => c || "New York");
+      setState((s) => s || "NY");
+    }
+  }, [detail.data?.origin_location, detail.data?.name]);
 
   const board = useQuery({
     queryKey: ["dispatch-board", selected],
@@ -155,6 +169,9 @@ export default function Dispatch() {
   const setDelivery = useMutation({
     mutationFn: async () => {
       if (!selected) throw new Error("Pick a ticket");
+      if (boardDoc && method !== "Pickup") {
+        throw new Error("Delivery already on the board for this ticket");
+      }
 
       // Write method on the ticket (staff-owned axis). Surface failures — do not swallow.
       await api.patch(`/api/alterations/${encodeURIComponent(selected)}`, {
@@ -162,6 +179,7 @@ export default function Dispatch() {
       });
 
       if (method !== "Pickup") {
+        const originLoc = (t?.origin_location || "").toUpperCase().includes("HOU") ? "HOU" : "NYC";
         // from-order is the path that already writes lsh_alteration_ticket (join key).
         // POST / now also accepts the key, but from-order matches alts' payload shape.
         await api.post("/api/deliveries/from-order", {
@@ -177,7 +195,7 @@ export default function Dispatch() {
           // zip is not on from-order schema fields beyond notes — fold into notes if present
           garment_summary: (t?.garments ?? []).map((g) => g.garment_type).filter(Boolean).join(", "),
           garment_count: t?.garments?.length ?? 0,
-          location: "NYC",
+          location: originLoc,
           notes: [note, zip ? `ZIP ${zip}` : ""].filter(Boolean).join(" · ") || undefined,
         });
       }
@@ -204,10 +222,24 @@ export default function Dispatch() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message || "Pay link failed");
-      return json;
+      return json as { url?: string; payment_url?: string; data?: { url?: string } };
     },
-    onSuccess: () => {
-      toast.success("Pay link sent / created");
+    onSuccess: async (json) => {
+      const url =
+        json?.url ||
+        json?.payment_url ||
+        json?.data?.url ||
+        (typeof json === "object" && json && "link" in json ? String((json as any).link) : "");
+      if (url && typeof url === "string" && url.startsWith("http")) {
+        try {
+          await navigator.clipboard?.writeText(url);
+          toast.success("Pay link created — copied to clipboard", { description: url });
+        } catch {
+          toast.success("Pay link created", { description: url });
+        }
+      } else {
+        toast.success("Pay link created");
+      }
       qc.invalidateQueries({ queryKey: ["dispatch-ticket", selected] });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -595,7 +627,7 @@ export default function Dispatch() {
                     onError={(msg) => toast.error(msg)}
                   />
                   <button type="button" onClick={() => payLink.mutate()} className="btn-brass w-full h-12 text-[12px]">
-                    {payLink.isPending ? "…" : "Send pay link"}
+                    {payLink.isPending ? "…" : "Create pay link"}
                   </button>
                   <button
                     type="button"

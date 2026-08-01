@@ -65,6 +65,11 @@ export type IntakeDraftPayload = {
   step: number;
   billing: "billable" | "on_order" | "redo";
   linkedSo: string | null;
+  /** NYC | HOU — restore location after refresh */
+  origin?: "NYC" | "HOU";
+  promiseDate?: string | null;
+  promiseTime?: string | null;
+  isRush?: boolean;
   customer: IntakeDraftCustomer | null;
   q: string;
   newName: string;

@@ -55,7 +55,7 @@ export default function OrdersGlass() {
           t.payment_status &&
           t.payment_status !== "Paid" &&
           t.payment_status !== "N/A" &&
-          (t.workflow_state === "Ready" || t.workflow_state === "Picked Up"),
+          t.workflow_state === "Picked Up",
       );
     if (q.trim()) {
       const s = q.toLowerCase();

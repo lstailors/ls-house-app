@@ -148,6 +148,8 @@ export default function App() {
               />
               {/* Scan / QR entry — phone tier by definition (rack + phone) */}
               <Route path="/g/:ticket/:garmentId" element={<GarmentJobCard />} />
+              {/* Legacy hang-tag shape — redirect to /g/:ticket/:garmentId */}
+              <Route path="/garments/:ticketId/:garmentId" element={<GarmentTagRedirect />} />
               <Route path="/garments/:token" element={<GarmentTagRedirect />} />
               {/* SPEC 012 — driver/staff POD capture (phone) */}
               <Route

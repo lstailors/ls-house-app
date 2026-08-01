@@ -147,7 +147,7 @@ export default function Transfers() {
                   </button>
                 ))}
               </div>
-              {(dest === "Home" || true) && (
+              {dest === "Home" && (
                 <label className="block mb-4">
                   <span className="caps">Assign tailor</span>
                   <select

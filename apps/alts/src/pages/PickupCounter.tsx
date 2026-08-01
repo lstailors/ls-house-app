@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
@@ -42,12 +42,17 @@ function money(n: number) {
 export default function PickupCounter() {
   const nav = useNavigate();
   const qc = useQueryClient();
-  const [selected, setSelected] = useState<string | null>(null);
+  const [params] = useSearchParams();
+  const preselect = params.get("ticket");
+  const [selected, setSelected] = useState<string | null>(preselect);
   const [confirmWho, setConfirmWho] = useState(true);
   const [collector, setCollector] = useState("");
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "paid" | "unpaid">("all");
 
+  useEffect(() => {
+    if (preselect) setSelected(preselect);
+  }, [preselect]);
   const ready = useQuery({
     queryKey: ["pickup-ready"],
     queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?status=Ready&limit=100"),
@@ -135,9 +140,26 @@ export default function PickupCounter() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message || "Link failed");
-      return json;
+      return json as { url?: string; payment_url?: string; data?: { url?: string } };
     },
-    onSuccess: () => toast.success("Payment link created"),
+    onSuccess: async (json) => {
+      const url =
+        json?.url ||
+        json?.payment_url ||
+        json?.data?.url ||
+        (typeof json === "object" && json && "link" in json ? String((json as any).link) : "");
+      if (url && typeof url === "string" && url.startsWith("http")) {
+        try {
+          await navigator.clipboard?.writeText(url);
+          toast.success("Pay link created — copied to clipboard", { description: url });
+        } catch {
+          toast.success("Pay link created", { description: url });
+        }
+      } else {
+        toast.success("Pay link created");
+      }
+      qc.invalidateQueries({ queryKey: ["pickup-ticket", selected] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -417,7 +439,7 @@ export default function PickupCounter() {
                       onError={(msg) => toast.error(msg)}
                     />
                     <button type="button" onClick={() => payLink.mutate()} className="btn-brass w-full h-12 text-[12px]">
-                      Send pay link
+                      {payLink.isPending ? "…" : "Create pay link"}
                     </button>
                     <button
                       type="button"

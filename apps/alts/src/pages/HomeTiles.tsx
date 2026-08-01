@@ -235,7 +235,8 @@ export default function HomeTiles() {
             else if (t.due_date === today) dueToday += 1;
           }
           const ol = (t.origin_location || "").toLowerCase();
-          if (ol.includes("home") || (t.assigned_tailor && ol && ol !== "nyc")) {
+          // At-home / out-to-tailor: origin explicitly marked home (not HOU store work).
+          if (ol.includes("home") || ol === "at-home" || ol === "athome") {
             outToTailors += 1;
           }
         }

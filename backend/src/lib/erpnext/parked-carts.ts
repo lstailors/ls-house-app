@@ -12,6 +12,9 @@ export interface CartPayload {
   dueDate?: string | null;
   isTaxable?: boolean;
   taxTemplate?: string;
+  /** Rich intake snapshot from IntakeStepped park — preferred on commit. */
+  intake?: Record<string, unknown> | null;
+  total?: number;
 }
 
 export interface ParkedCart {
@@ -100,27 +103,105 @@ export async function deleteParkedCart(id: string): Promise<void> {
   await erpUpdate(DT.PARKED_CART, id, { status: "Abandoned" });
 }
 
-export async function commitParkedCart(id: string): Promise<{ ticket: string; customer: string }> {
-  const cart = await getParkedCart(id);
-  let customerName = cart.customer_ref;
-  if (!customerName) {
-    const res = await upsertCustomerWithAddress(cart.customer_snapshot as CustomerInput);
-    customerName = res.name;
+function billingFromIntake(intake: Record<string, unknown>): {
+  billing_status?: string;
+  included_in_custom?: number;
+} {
+  const billing = String(intake.billing || "billable");
+  if (billing === "on_order") {
+    return { billing_status: "Included in Custom Order", included_in_custom: 1 };
   }
+  if (billing === "redo") {
+    return { billing_status: "Warranty", included_in_custom: 0 };
+  }
+  return { billing_status: "Billable", included_in_custom: 0 };
+}
 
-  // Same door as intake: ls_alterations.api.create_ticket (HER-14 / D3).
-  // Do NOT raw-POST Alteration Ticket — that bypasses naming series, garment_id
-  // assignment, and server-side ticket shape.
+/** Prefer rich IntakeStepped `cart.intake`; fall back to flattened cart garments/lines. */
+function buildCreateTicketPayload(
+  cart: ParkedCart,
+  customerName: string,
+): Record<string, unknown> {
   const today = new Date().toISOString().slice(0, 10);
   const defaultDue = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const intake = cart.cart.intake && typeof cart.cart.intake === "object" ? cart.cart.intake : null;
 
-  const payload = {
+  if (intake && (Array.isArray(intake.garments) || Array.isArray(intake.sellItems))) {
+    const origin =
+      intake.origin === "HOU" || intake.origin === "NYC"
+        ? intake.origin
+        : cart.location || "NYC";
+    const promiseDate =
+      (typeof intake.promiseDate === "string" && intake.promiseDate) ||
+      cart.cart.dueDate ||
+      defaultDue;
+    const isRush = Boolean(intake.isRush ?? cart.cart.isRush);
+    const billing = billingFromIntake(intake);
+    const garments = (Array.isArray(intake.garments) ? intake.garments : []).map((g: any) => ({
+      garment_type: g.garmentType || g.garment_type || "Garment",
+      garment_description: g.description || g.garmentType || g.garment_type || "",
+      color: g.color ?? "",
+      fabric_notes: g.notes || "",
+    }));
+    // Rebuild G1/G2 refs in order so lines map correctly when intake used local refs
+    const lines: Array<Record<string, unknown>> = [];
+    (Array.isArray(intake.garments) ? intake.garments : []).forEach((g: any, gi: number) => {
+      const ref = `G${gi + 1}`;
+      for (const l of g.lines || []) {
+        lines.push({
+          garment_ref: ref,
+          preset: l.presetId || l.preset || null,
+          description: l.description,
+          price: Number(l.price) || 0,
+          line_notes: l.notes || undefined,
+        });
+      }
+    });
+    // Sell-only carts: create_ticket still needs at least a placeholder garment unless
+    // HTTP intake path handles items-only — keep a synthetic garment for ERP create.
+    if (garments.length === 0 && Array.isArray(intake.sellItems) && intake.sellItems.length) {
+      garments.push({
+        garment_type: "Item",
+        garment_description: "Retail / sell items",
+        color: "",
+        fabric_notes: "",
+      });
+    }
+
+    const payload: Record<string, unknown> = {
+      customer: customerName,
+      origin_location: origin,
+      ticket_date: today,
+      due_date: promiseDate,
+      promised_date: promiseDate,
+      is_rush: isRush ? 1 : 0,
+      taxes_and_charges: "",
+      garments,
+      lines,
+      ...billing,
+    };
+    if (typeof intake.linkedSo === "string" && intake.linkedSo) {
+      payload.linked_sales_order = intake.linkedSo;
+    }
+    const note = typeof intake.parkNote === "string" ? intake.parkNote.trim() : "";
+    const ticketNote = typeof intake.ticketNote === "string" ? intake.ticketNote.trim() : "";
+    const noteKind = intake.ticketNoteKind === "customer" ? "customer" : "internal";
+    const combined = [ticketNote, note].filter(Boolean).join("\n");
+    if (combined) {
+      if (noteKind === "customer") payload.customer_notes = combined;
+      else payload.internal_notes = combined;
+    }
+    return payload;
+  }
+
+  // Legacy flattened cart (pre-intake park shape)
+  return {
     customer: customerName,
     origin_location: cart.location || "NYC",
     ticket_date: today,
     due_date: cart.cart.dueDate ?? defaultDue,
     is_rush: cart.cart.isRush ? 1 : 0,
-    taxes_and_charges: "", // alterations are tax-exempt (services)
+    taxes_and_charges: "",
     garments: cart.cart.garments.map((g) => ({
       garment_type: g.garmentType,
       garment_description: g.garmentType,
@@ -133,6 +214,20 @@ export async function commitParkedCart(id: string): Promise<{ ticket: string; cu
       price: l.price,
     })),
   };
+}
+
+export async function commitParkedCart(id: string): Promise<{ ticket: string; customer: string }> {
+  const cart = await getParkedCart(id);
+  let customerName = cart.customer_ref;
+  if (!customerName) {
+    const res = await upsertCustomerWithAddress(cart.customer_snapshot as CustomerInput);
+    customerName = res.name;
+  }
+
+  // Same door as intake: ls_alterations.api.create_ticket (HER-14 / D3).
+  // Do NOT raw-POST Alteration Ticket — that bypasses naming series, garment_id
+  // assignment, and server-side ticket shape.
+  const payload = buildCreateTicketPayload(cart, customerName!);
 
   const result = (await erpRunMethod("ls_alterations.api.create_ticket", {
     payload: JSON.stringify(payload),
@@ -155,6 +250,22 @@ export async function commitParkedCart(id: string): Promise<{ ticket: string; cu
   // Fields create_ticket does not set — patch after (mirrors intake belt-and-suspenders).
   const patch: Record<string, unknown> = { taxes_and_charges: "" };
   if (cart.cart.deliveryMethod) patch.delivery_method = cart.cart.deliveryMethod;
+  const intake = cart.cart.intake;
+  if (intake && typeof intake === "object") {
+    if (typeof intake.promiseTime === "string" && intake.promiseTime) {
+      patch.due_time = intake.promiseTime;
+    }
+    if (intake.billing === "on_order") {
+      patch.billing_status = "Included in Custom Order";
+      patch.included_in_custom = 1;
+    } else if (intake.billing === "redo") {
+      patch.billing_status = "Warranty";
+      patch.included_in_custom = 0;
+    }
+    if (typeof intake.linkedSo === "string" && intake.linkedSo) {
+      patch.linked_sales_order = intake.linkedSo;
+    }
+  }
   try {
     await erpUpdate("Alteration Ticket", ticketName, patch);
   } catch {
@@ -166,5 +277,5 @@ export async function commitParkedCart(id: string): Promise<{ ticket: string; cu
     committed_ticket: ticketName,
   });
 
-  return { ticket: ticketName, customer: customerName };
+  return { ticket: ticketName, customer: customerName! };
 }

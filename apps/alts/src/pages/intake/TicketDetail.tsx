@@ -146,16 +146,24 @@ function WorkflowStepper({
           {WORKFLOW_STEPS.map((step, idx) => {
             const isPast = idx < currentIdx
             const isActive = idx === currentIdx
+            // Only allow advancing one step forward (or confirm on release via parent).
+            const isNext = idx === currentIdx + 1
+            const canClick = !isActive && !isPending && isNext
 
             return (
               <button
                 key={step}
-                onClick={() => !isActive && !isPending && onStep(step)}
-                disabled={isPending}
+                onClick={() => canClick && onStep(step)}
+                disabled={isPending || (!isActive && !isNext)}
+                title={!isActive && !isNext ? 'Advance one step at a time' : undefined}
                 className={cn(
                   'flex-1 flex flex-col items-center gap-2 py-4 px-2 relative transition-all duration-200',
                   'border-r border-white/[0.04] last:border-r-0',
-                  isActive ? 'cursor-default' : 'cursor-pointer hover:bg-white/[0.03] active:bg-white/[0.06]'
+                  isActive
+                    ? 'cursor-default'
+                    : isNext
+                      ? 'cursor-pointer hover:bg-white/[0.03] active:bg-white/[0.06]'
+                      : 'cursor-not-allowed opacity-55',
                 )}
               >
                 {/* Active glow behind step */}
@@ -245,9 +253,13 @@ function GarmentCard({
   lines: AlterationTicketDoc['lines']
   ticketName: string
 }) {
-  const garmentLines = lines?.filter((l) => l.garment_ref === garment.name) ?? []
+  const garmentLines =
+    lines?.filter(
+      (l) => l.garment_ref === garment.garment_id || l.garment_ref === garment.name,
+    ) ?? []
   const garmentTotal = garmentLines.reduce((sum, l) => sum + (l.price ?? 0), 0)
-  const qrValue = window.location.origin + '/garments/' + ticketName + '/' + garment.garment_id
+  // Canonical hang-tag target (printUrls.garmentJobUrl) — keep relative for same-origin scans
+  const qrValue = `${window.location.origin}/g/${encodeURIComponent(ticketName)}/${encodeURIComponent(garment.garment_id)}`
 
   return (
     <div className="glass-panel rounded-lg p-4 space-y-3">
@@ -953,7 +965,7 @@ export default function TicketDetail() {
       toast.success('Delivery created — opening label');
       navigate(`/deliveries/${result.id}/label`);
     },
-    onError: () => toast.error('Could not create delivery'),
+    onError: (e: Error) => toast.error(e.message || 'Could not create delivery'),
   });
 
   const handDeliverMutation = useMutation({
@@ -964,8 +976,9 @@ export default function TicketDetail() {
         hand_deliver: true,
         method: 'Hand Delivery',
       });
-      // Also mark ticket as Picked Up
-      await api.patch(`/api/intake-alterations/tickets/${ticketName}/status`, { status: 'Picked Up' });
+      // Also mark ticket as Picked Up when hand-delivering from ticket detail.
+  // Backend from-order already closes the ticket on hand_deliver; this is belt-and-suspenders.
+  await api.patch(`/api/intake-alterations/tickets/${ticketName}/status`, { status: 'Picked Up' }).catch(() => undefined);
       return delivery;
     },
     onSuccess: (result) => {
@@ -1544,6 +1557,7 @@ export default function TicketDetail() {
         ticketName={ticketName!}
         initialGarments={ticket.garments ?? []}
         initialLines={ticket.lines ?? []}
+        origin={ticket.origin_location === "HOU" ? "HOU" : "NYC"}
       />
     </div>
   )

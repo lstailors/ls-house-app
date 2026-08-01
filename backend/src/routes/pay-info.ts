@@ -141,10 +141,13 @@ async function resolvePaymentLink(
   storedLink: string | null | undefined,
   outstanding: number,
   customerName: string,
+  opts?: { mint?: boolean },
 ): Promise<string | null> {
   const prior = (storedLink || '').trim();
   if (prior.startsWith('http')) return prior;
   if (outstanding <= 0) return null;
+  // Public GET must be side-effect free — do not mint Square links on page load.
+  if (!opts?.mint) return null;
   const amountCents = Math.round(Number(outstanding) * 100);
   const url = await createSquareLink(invoiceId, amountCents, customerName);
   if (url) void persistLinkToInvoice(invoiceId, url);

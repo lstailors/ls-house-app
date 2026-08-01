@@ -75,14 +75,9 @@ export default function QuoteComposer() {
       });
     },
     onSuccess: () => toast.success("Quote SMS sent via Sofia path"),
-    onError: async () => {
-      // fallback: notify-style
-      try {
-        await api.post(`/api/intake-alterations/tickets/${ticketId}/notify-ready`, {});
-        toast.message("Used ready notify path — check copy on ticket SMS templates");
-      } catch (e: any) {
-        toast.error(e?.message || "SMS send failed — API may need quote template deploy");
-      }
+    onError: (e: Error) => {
+      // Do NOT fall back to notify-ready — that texts "your order is ready".
+      toast.error(e?.message || "Quote SMS failed — check quote template on API");
     },
   });
 
