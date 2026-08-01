@@ -1,6 +1,8 @@
 # HER-55 — Hardware E2E Audit
 **Rocco / 2026-07-29**
-**Status: code audit complete, physical dry-run pending (Jul 30-31)**
+**Status: code audit complete, physical dry-run pending**
+
+**Next run (condensed):** use `docs/ops/ALTS_ERP_AND_FLOOR_WALKTHROUGH.md` — ERP Print Settings / thermal deploy + a 30-minute floor loop. This file is the longer original audit.
 
 ---
 
