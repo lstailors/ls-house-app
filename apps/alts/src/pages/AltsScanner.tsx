@@ -190,6 +190,7 @@ export default function Scanner() {
       // Only auto-open garment job cards (rack scan). Everything else → action sheet.
       if (fast.kind === "path" && fast.path.startsWith("/g/")) {
         stopCamera();
+        toast.message("Opening job card");
         navigate(fast.path, { replace: !!fast.replace });
         return;
       }

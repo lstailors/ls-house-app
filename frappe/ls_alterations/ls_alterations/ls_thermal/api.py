@@ -29,6 +29,17 @@ except ImportError:  # allows flat placement / direct import during testing
 # Settings
 # ---------------------------------------------------------------------------
 
+ALTS_PUBLIC = "https://alts.lstailors.com"
+
+
+def _public_base(raw):
+    """Hang-tag / receipt / pay QRs must open alts FOH — never app.lstailors.com."""
+    u = (raw or "").strip().rstrip("/")
+    if not u or "app.lstailors.com" in u:
+        return ALTS_PUBLIC
+    return u
+
+
 def _settings():
     """Return printer config with safe fallbacks if the single isn't filled."""
     try:
@@ -40,8 +51,7 @@ def _settings():
         "host": (s.thermal_printer_ip if s and s.thermal_printer_ip else None),
         "port": int(s.thermal_printer_port) if s and s.thermal_printer_port else 9100,
         "timeout": float(s.thermal_timeout) if s and s.thermal_timeout else 5.0,
-        "base_url": (s.app_base_url if s and s.app_base_url
-                     else "https://app.lstailors.com").rstrip("/"),
+        "base_url": _public_base(s.app_base_url if s and s.app_base_url else None),
         # Optional: if the Frappe container can't reach the printer's LAN IP,
         # add a "print_bridge_url" Data field to LSH Print Settings pointing at
         # the Mac host bridge (e.g. http://host.docker.internal:8088/print).

@@ -603,10 +603,6 @@ function TailorSection({
 
 // ── TransferSection ───────────────────────────────────────────────────────
 
-const TRANSFER_OPTIONS = [
-  { id: 'NYC', label: 'NYC Store', sub: '138 East 61st Street' },
-] as const
-
 function TransferSection({
   ticket,
   ticketName,
@@ -614,20 +610,6 @@ function TransferSection({
   ticket: AlterationTicketDoc
   ticketName: string
 }) {
-  const queryClient = useQueryClient()
-  const [open, setOpen] = useState(false)
-
-  const transferMutation = useMutation({
-    mutationFn: (location: string) =>
-      api.patch(`/api/intake-alterations/tickets/${ticketName}/transfer`, { location }),
-    onSuccess: (_, location) => {
-      toast.success(`Ticket transferred to ${location}`)
-      queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
-      setOpen(false)
-    },
-    onError: () => toast.error('Transfer failed'),
-  })
-
   return (
     <section className="glass-panel rounded-lg p-5">
       <div className="flex items-center justify-between gap-4">
@@ -635,10 +617,13 @@ function TransferSection({
           <h2 className="ui-label text-cream-dim flex items-center gap-2 mb-1">
             <MapPin size={14} /> Location
           </h2>
-          <p className="text-cream-muted text-sm">{ticket.origin_location ?? '—'}</p>
+          <p className="text-cream-muted text-sm">{ticket.origin_location ?? 'NYC'}</p>
+          {ticket.assigned_tailor ? (
+            <p className="text-cream-dim text-xs mt-1">At-home tailor: {ticket.assigned_tailor}</p>
+          ) : null}
         </div>
-        <button
-          onClick={() => setOpen(true)}
+        <Link
+          to={`/transfers?ticket=${encodeURIComponent(ticketName)}`}
           className={cn(
             'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all',
             'bg-forest-raised border-brass/20 text-cream-muted',
@@ -646,45 +631,9 @@ function TransferSection({
           )}
         >
           <MapPin size={13} />
-          Transfer
-        </button>
+          Send to tailor / store
+        </Link>
       </div>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="bg-forest-raised border-brass/20 text-cream">
-          <DialogHeader>
-            <DialogTitle className="text-brass-shimmer">Transfer Location</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3 py-2">
-            {TRANSFER_OPTIONS.map((opt) => (
-              <button
-                key={opt.id}
-                onClick={() => transferMutation.mutate(opt.id)}
-                disabled={transferMutation.isPending || ticket.origin_location === opt.id}
-                className={cn(
-                  'flex flex-col items-start p-4 rounded-lg border text-left transition-all',
-                  ticket.origin_location === opt.id
-                    ? 'border-brass-shimmer/60 bg-brass-shimmer/10 cursor-default'
-                    : 'border-brass/20 bg-forest-deep hover:border-brass/40 hover:bg-forest-raised',
-                  'disabled:opacity-60'
-                )}
-              >
-                <span className={cn(
-                  'font-semibold text-sm',
-                  ticket.origin_location === opt.id ? 'text-brass-shimmer' : 'text-cream'
-                )}>
-                  {opt.label}
-                  {ticket.origin_location === opt.id ? ' (current)' : ''}
-                </span>
-                <span className="text-cream-dim text-xs mt-0.5">{opt.sub}</span>
-              </button>
-            ))}
-          </div>
-          {transferMutation.isPending ? (
-            <p className="text-cream-dim text-xs animate-pulse text-center">Transferring…</p>
-          ) : null}
-        </DialogContent>
-      </Dialog>
     </section>
   )
 }

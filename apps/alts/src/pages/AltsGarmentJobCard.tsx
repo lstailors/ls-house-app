@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Phone,
@@ -11,7 +11,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@ls/api-client";
+import { api, ApiError } from "@ls/api-client";
 import { GlassCard } from "@ls/design";
 import { StatusPill } from "@ls/design";
 import { Button } from "@ls/design/ui/button";
@@ -31,12 +31,13 @@ import type { GarmentJobCard, GarmentActionResult } from "@ls/types";
 
 export default function GarmentJobCardPage() {
   const { ticket, garmentId } = useParams<{ ticket: string; garmentId: string }>();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [completeOpen, setCompleteOpen] = useState(false);
 
   const jobCardKey = ["garment-job-card", ticket, garmentId];
 
-  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: jobCardKey,
     queryFn: () =>
       api.post<GarmentJobCard>("/api/garment/job-card", {
@@ -44,6 +45,10 @@ export default function GarmentJobCardPage() {
         garment_id: garmentId,
       }),
     enabled: !!ticket && !!garmentId,
+    retry: (count, err) => {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 404)) return false;
+      return count < 2;
+    },
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: jobCardKey });
@@ -98,6 +103,10 @@ export default function GarmentJobCardPage() {
 
   // ── Error state ──────────────────────────────────────────────────────────
   if (isError || !data) {
+    const status = error instanceof ApiError ? error.status : 0;
+    const msg = error instanceof ApiError ? error.message : "";
+    const isAuth = status === 401;
+    const isMissing = status === 404;
     return (
       <div className="mx-auto max-w-lg">
         <GlassCard className="p-8 flex flex-col items-center text-center gap-4">
@@ -105,14 +114,44 @@ export default function GarmentJobCardPage() {
             <AlertTriangle className="h-6 w-6 text-signal-rose" />
           </div>
           <div>
-            <h2 className="display-heading text-2xl">Couldn't load this garment</h2>
+            <h2 className="display-heading text-2xl">
+              {isAuth
+                ? "Sign in to open this tag"
+                : isMissing
+                  ? "Garment not found"
+                  : "Couldn't load this garment"}
+            </h2>
             <p className="text-sm text-cream-muted mt-1">
-              {garmentId} on {ticket} — check your connection and try again.
+              {isAuth
+                ? "Your session expired on this iPad — sign in once and the job card will reopen."
+                : isMissing
+                  ? `${garmentId} isn’t on ${ticket}. Check the hang tag.`
+                  : msg || `${garmentId} on ${ticket} — check your connection and try again.`}
             </p>
           </div>
-          <Button onClick={() => refetch()} className="btn-brass min-h-[44px]">
-            <RotateCcw className="h-4 w-4 mr-1.5" /> Retry
-          </Button>
+          <div className="flex flex-wrap gap-2 justify-center">
+            {isAuth ? (
+              <Button
+                onClick={() =>
+                  navigate("/login", {
+                    replace: true,
+                    state: {
+                      from: {
+                        pathname: `/g/${encodeURIComponent(ticket || "")}/${encodeURIComponent(garmentId || "")}`,
+                      },
+                    },
+                  })
+                }
+                className="btn-brass min-h-[44px]"
+              >
+                Sign in
+              </Button>
+            ) : (
+              <Button onClick={() => refetch()} className="btn-brass min-h-[44px]" disabled={isFetching}>
+                <RotateCcw className="h-4 w-4 mr-1.5" /> Retry
+              </Button>
+            )}
+          </div>
         </GlassCard>
       </div>
     );

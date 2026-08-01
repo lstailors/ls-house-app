@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
@@ -21,9 +21,10 @@ type Tailor = { name: string; full_name: string };
 
 export default function Transfers() {
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(searchParams.get("ticket"));
   const [dest, setDest] = useState<"NYC" | "Home">("Home");
   const [tailorId, setTailorId] = useState("");
 
@@ -31,6 +32,12 @@ export default function Transfers() {
     queryKey: ["xfer-tickets"],
     queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=500"),
   });
+
+  // Deep-link from ticket detail: /transfers?ticket=ALT-…
+  useEffect(() => {
+    const t = searchParams.get("ticket");
+    if (t) setSelected(t);
+  }, [searchParams]);
 
   const tailors = useQuery({
     queryKey: ["tailors"],

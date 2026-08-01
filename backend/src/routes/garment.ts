@@ -21,6 +21,8 @@ import {
 
 export const garmentRouter = new Hono();
 
+const ERP_TIMEOUT_MS = 15_000;
+
 // Lazy creds — mirrors src/lib/erp.ts (read from process.env at call time).
 function erpCreds() {
   return {
@@ -30,13 +32,20 @@ function erpCreds() {
   };
 }
 
+function shortErpError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err || "Garment service error");
+  return msg.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180);
+}
+
 // Like erpRunMethod, but returns message-or-data (server scripts vary).
 async function erpRunMethodMsgOrData(
   method: string,
   params: Record<string, unknown> = {},
 ): Promise<unknown> {
   const { base, key, secret } = erpCreds();
-  if (!base || !key || !secret) return null;
+  if (!base || !key || !secret) {
+    throw new Error("ERP credentials not configured");
+  }
   const res = await fetch(`${base}/api/method/${method}`, {
     method: "POST",
     headers: {
@@ -45,6 +54,7 @@ async function erpRunMethodMsgOrData(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(params),
+    signal: AbortSignal.timeout(ERP_TIMEOUT_MS),
   });
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as any;
@@ -62,10 +72,13 @@ garmentRouter.post("/job-card", zValidator("json", GarmentJobCardRequest), async
   const { ticket, garment_id } = (c.req as any).valid("json") as z.infer<typeof GarmentJobCardRequest>;
   try {
     const data = await erpRunMethodMsgOrData("get_garment_job_card", { ticket, garment_id });
+    if (data == null) {
+      return c.json({ error: { message: "Garment not found on this ticket" } }, 404);
+    }
     return c.json({ data });
   } catch (err) {
     console.error("garment.job-card error:", err);
-    return c.json({ error: { message: "Garment service error" } }, 502);
+    return c.json({ error: { message: shortErpError(err) || "Garment service error" } }, 502);
   }
 });
 
@@ -81,10 +94,13 @@ garmentRouter.post("/status", zValidator("json", GarmentStatusRequest), async (c
   if (worker !== undefined) params.worker = worker;
   try {
     const data = await erpRunMethodMsgOrData("update_garment_status", params);
+    if (data == null) {
+      return c.json({ error: { message: "Could not update garment status" } }, 502);
+    }
     return c.json({ data });
   } catch (err) {
     console.error("garment.status error:", err);
-    return c.json({ error: { message: "Garment service error" } }, 502);
+    return c.json({ error: { message: shortErpError(err) || "Garment service error" } }, 502);
   }
 });
 
@@ -100,10 +116,13 @@ garmentRouter.post("/complete", zValidator("json", GarmentCompleteRequest), asyn
   if (actual_minutes !== undefined) params.actual_minutes = actual_minutes;
   try {
     const data = await erpRunMethodMsgOrData("complete_garment", params);
+    if (data == null) {
+      return c.json({ error: { message: "Could not complete garment" } }, 502);
+    }
     return c.json({ data });
   } catch (err) {
     console.error("garment.complete error:", err);
-    return c.json({ error: { message: "Garment service error" } }, 502);
+    return c.json({ error: { message: shortErpError(err) || "Garment service error" } }, 502);
   }
 });
 
@@ -114,7 +133,9 @@ garmentRouter.get("/workers", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
   const { base, key, secret } = erpCreds();
-  if (!base || !key || !secret) return c.json({ data: [] });
+  if (!base || !key || !secret) {
+    return c.json({ error: { message: "ERP credentials not configured" } }, 502);
+  }
 
   const url = new URL(`${base}/api/resource/Employee`);
   url.searchParams.set(
@@ -130,6 +151,7 @@ garmentRouter.get("/workers", async (c) => {
   try {
     const res = await fetch(url.toString(), {
       headers: { Authorization: `token ${key}:${secret}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(ERP_TIMEOUT_MS),
     });
     if (!res.ok) {
       console.error("garment.workers error: ERP status", res.status);
@@ -140,6 +162,6 @@ garmentRouter.get("/workers", async (c) => {
     return c.json({ data: workers });
   } catch (err) {
     console.error("garment.workers error:", err);
-    return c.json({ error: { message: "Garment service error" } }, 502);
+    return c.json({ error: { message: shortErpError(err) || "Garment service error" } }, 502);
   }
 });

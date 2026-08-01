@@ -17,7 +17,11 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const from = (location.state as any)?.from?.pathname ?? null;
+  const fromLoc = (location.state as any)?.from as { pathname?: string; search?: string } | undefined;
+  const from =
+    fromLoc?.pathname
+      ? `${fromLoc.pathname}${fromLoc.search || ""}`
+      : null;
 
   useEffect(() => {
     if (me) {

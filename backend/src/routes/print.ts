@@ -96,7 +96,11 @@ printRouter.get("/config", async (c) => {
       printer_ip: String(row.thermal_printer_ip ?? ""),
       printer_port: Number(row.thermal_printer_port ?? 9100),
       timeout: Number(row.thermal_timeout ?? 5),
-      app_base_url: String(row.app_base_url ?? process.env.APP_URL ?? "https://app.lstailors.com"),
+      app_base_url: String(
+        row.app_base_url && !String(row.app_base_url).includes("app.lstailors.com")
+          ? row.app_base_url
+          : process.env.ALTS_URL || "https://alts.lstailors.com",
+      ),
     });
   } catch (e) {
     const error = e instanceof Error ? e.message : "Could not load print config";
@@ -174,8 +178,12 @@ printRouter.post("/receipt", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
-  const body = (await c.req.json().catch(() => null)) as { invoice?: string } | null;
-  const id = body?.invoice?.trim();
+  const body = (await c.req.json().catch(() => null)) as {
+    invoice?: string;
+    ticket_name?: string;
+    ticket?: string;
+  } | null;
+  const id = (body?.invoice ?? body?.ticket_name ?? body?.ticket)?.trim();
   if (!id) return c.json({ ok: false, error: "invoice is required" });
 
   try {

@@ -217,7 +217,14 @@ export default function ThermalTicketPrint() {
       // /api/print/receipt expects { invoice } (ticket name or SI name);
       // /api/print/ticket expects { ticket_name, what }.
       const payload =
-        what === "receipts" ? { invoice: ticket.name } : { ticket_name: ticket.name, what };
+        what === "receipts"
+          ? {
+              invoice:
+                ticket.payment_status === "Paid" && ticket.sales_invoice
+                  ? ticket.sales_invoice
+                  : ticket.name,
+            }
+          : { ticket_name: ticket.name, what };
       const res = await api.raw(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -406,10 +413,10 @@ export default function ThermalTicketPrint() {
           )}
           <div className="qrp">
             <div style={{ border: "3px solid #000", padding: 6 }}>
-              <QRCodeSVG value={eticket} size={120} level="M" />
+              <QRCodeSVG value={scanUrl} size={120} level="M" />
             </div>
           </div>
-          <div className="qcap">SCAN TO OPEN IN ALTS</div>
+          <div className="qcap">{ticket.sales_invoice ? "SCAN TO PAY / OPEN" : "SCAN TO OPEN IN ALTS"}</div>
         </div>
 
         {/* CUSTOMER COPY */}
