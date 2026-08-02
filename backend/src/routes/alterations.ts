@@ -140,6 +140,13 @@ function serialize(t: ErpTicket) {
   };
 }
 
+// NOTE: "lines" is deliberately NOT in this list. ERPNext's generic list
+// endpoint (/api/resource/<doctype>) does not expand Table (child-table)
+// fields — asking for "lines" here silently returns [] for every row, which
+// is why the Alterations list previously showed "0 items" on every ticket
+// despite valid data existing. Child rows are fetched separately in bulk
+// via fetchLinesByTicket() below (same pattern alterations-board.ts already
+// uses for garments) and merged onto each ticket before serialize().
 const LIST_FIELDS = [
   "name", "customer", "customer_name", "origin_location",
   "workflow_state", "ticket_date", "due_date", "promised_date",
@@ -147,8 +154,35 @@ const LIST_FIELDS = [
   "is_rush", "internal_notes", "customer_notes",
   "sales_invoice", "linked_sales_order", "included_in_custom",
   "delivery_method", "notified_ready_at", "picked_up_at",
-  "modified", "creation", "assigned_tailor", "lines",
+  "modified", "creation", "assigned_tailor",
 ];
+
+// Batch-fetch Alteration Ticket Line child rows for a set of ticket names in
+// one call, keyed by parent. Mirrors loadAlterationRows()'s garment fetch in
+// alterations-data.ts — the generic child-table doctype ("Alteration Ticket
+// Line") is queryable directly with a `parent in [...]` filter.
+async function fetchLinesByTicket(
+  ticketNames: string[],
+): Promise<Map<string, Array<{ description: string; price: number; garment_ref: string }>>> {
+  const byTicket = new Map<string, Array<{ description: string; price: number; garment_ref: string }>>();
+  if (!ticketNames.length) return byTicket;
+
+  const lines = await erpList<{ parent: string; description: string; price: number; garment_ref: string }>(
+    "Alteration Ticket Line",
+    {
+      filters: [["parent", "in", ticketNames]],
+      fields: ["parent", "description", "price", "garment_ref"],
+      limit: 2000,
+    },
+  ).catch(() => []);
+
+  for (const l of lines) {
+    const arr = byTicket.get(l.parent) ?? [];
+    arr.push({ description: l.description, price: l.price, garment_ref: l.garment_ref });
+    byTicket.set(l.parent, arr);
+  }
+  return byTicket;
+}
 
 // GET /api/alterations/kpis — must be before /:id
 alterationsRouter.get("/kpis", async (c) => {
@@ -294,7 +328,10 @@ alterationsRouter.get("/", async (c) => {
     order_by: "modified desc",
   });
 
-  return c.json({ data: tickets.map(serialize) });
+  const linesByTicket = await fetchLinesByTicket(tickets.map((t) => t.name));
+  const withLines = tickets.map((t) => ({ ...t, lines: linesByTicket.get(t.name) ?? [] }));
+
+  return c.json({ data: withLines.map(serialize) });
 });
 
 alterationsRouter.get("/:id/transitions", async (c) => {
