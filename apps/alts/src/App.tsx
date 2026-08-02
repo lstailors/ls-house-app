@@ -86,7 +86,7 @@ export default function App() {
           <Suspense fallback={<Spin />}>
             <Routes>
               {/* Phone-tier (portrait first-class) */}
-              <Route path="/login" element={<Login />} />
+              <Route path="/login" element={<div className="alts-root"><Login /></div>} />
               <Route path="/e-ticket/:ticketName" element={<ETicket />} />
               <Route path="/t/:ticketName" element={<ETicket />} />
               {/* Public / staff pay surface after invoice QR scan */}

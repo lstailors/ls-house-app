@@ -98,6 +98,38 @@
   font-weight: 600;
 }
 
+/* FOH interaction floor — applies at tablet/desktop sizes too, not only phones. */
+.alts-root :where(
+  button,
+  [role="button"],
+  input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea
+) {
+  min-height: 44px;
+}
+
+.alts-root a[href] {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Inline links need a real box for min-size to take effect; preserve authored block/flex/grid links. */
+.alts-root a[href]:not([class*="block"]):not([class*="flex"]):not([class*="grid"]):not(.seal) {
+  display: inline-flex;
+  align-items: center;
+}
+
+.alts-root label:has(
+  input:where([type="checkbox"], [type="radio"], [type="file"])
+) {
+  min-height: 44px;
+}
+
+.alts-root :where(button, [role="button"], a[href]) {
+  min-width: 44px;
+}
+
 /* F3: 44px touch floor on controls + interactive chips only — status .chip stays compact */
 .alts-root .btn-brass {
   background: linear-gradient(135deg, #c9a46a, var(--br));
