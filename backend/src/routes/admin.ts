@@ -2,7 +2,7 @@
 
 import { Hono } from "hono";
 import { canAccessSuperAdminPortal, getAuthedUser } from "../lib/scope";
-import { erpList, erpGet, erpUpdate } from "../lib/erp";
+import { erpList, erpGet, erpUpdate, erpCount } from "../lib/erp";
 import { listLocations, createLocation, updateLocation } from "../lib/erpnext/locations";
 
 export const adminRouter = new Hono();
@@ -162,34 +162,41 @@ adminRouter.patch("/locations/:id", async (c) => {
 });
 
 adminRouter.get("/overview", async (c) => {
-  // LSH Custom Order is empty on live — count submitted Sales Orders as the MTM book.
-  const [users, locations, customers, customOrders, salesOrders, alterations, deliveries] = await Promise.all([
-    erpList<any>("User", { filters: [["enabled", "=", 1], ["user_type", "=", "System User"]], fields: ["name"], limit: 500 }).catch(() => []),
+  // Use erpCount (not list+length) so totals aren't capped at page size (5000).
+  // LSH Custom Order is empty on live — SO book is the MTM truth.
+  const [
+    totalUsers,
+    locations,
+    totalCustomers,
+    lshCustomOrders,
+    totalSalesOrders,
+    totalAlterations,
+    totalDeliveries,
+  ] = await Promise.all([
+    erpCount("User", [
+      ["enabled", "=", 1],
+      ["user_type", "=", "System User"],
+    ]).catch(() => 0),
     listLocations({ activeOnly: true }),
-    erpList<any>("Customer", { filters: [["disabled", "=", 0]], fields: ["name"], limit: 5000 }).catch(() => []),
-    erpList<any>("LSH Custom Order", { fields: ["name"], limit: 5000 }).catch(() => []),
-    erpList<any>("Sales Order", {
-      filters: [["docstatus", "=", 1], ["status", "not in", ["Cancelled"]]],
-      fields: ["name"],
-      limit: 5000,
-    }).catch(() => []),
-    erpList<any>("Alteration Ticket", { fields: ["name"], limit: 5000 }).catch(() => []),
-    erpList<any>("LSH Delivery", { fields: ["name"], limit: 5000 }).catch(() => []),
+    erpCount("Customer", [["disabled", "=", 0]]).catch(() => 0),
+    erpCount("LSH Custom Order").catch(() => 0),
+    erpCount("Sales Order", [
+      ["docstatus", "=", 1],
+      ["status", "not in", ["Cancelled"]],
+    ]).catch(() => 0),
+    erpCount("Alteration Ticket").catch(() => 0),
+    erpCount("LSH Delivery").catch(() => 0),
   ]);
-
-  const soCount = salesOrders.length;
-  const lshCount = customOrders.length;
 
   return c.json({
     data: {
-      totalUsers: users.length,
+      totalUsers,
       totalLocations: locations.length,
-      totalCustomers: customers.length,
-      // Prefer live SO book when LSH Custom Order empty
-      totalCustomOrders: lshCount > 0 ? lshCount : soCount,
-      totalSalesOrders: soCount,
-      totalAlterations: alterations.length,
-      totalDeliveries: deliveries.length,
+      totalCustomers,
+      totalCustomOrders: lshCustomOrders > 0 ? lshCustomOrders : totalSalesOrders,
+      totalSalesOrders,
+      totalAlterations,
+      totalDeliveries,
     },
   });
 });
