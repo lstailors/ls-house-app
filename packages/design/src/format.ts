@@ -14,14 +14,35 @@ export function formatUSD(n: number, opts: { compact?: boolean } = {}): string {
   }).format(n);
 }
 
+export function parseErpDate(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  try {
+    // ERPNext often returns "YYYY-MM-DD HH:mm:ss" (no T, no zone).
+    // Safari/strict parsers treat that as Invalid Date — normalize first.
+    let s = String(iso).trim();
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)) {
+      s = s.replace(" ", "T");
+      // House ERP timestamps are America/New_York wall time; append offset-less
+      // local parse is OK for relative ("3h ago"). Avoid forcing Z (UTC skew).
+    }
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return null;
+    return d;
+  } catch {
+    return null;
+  }
+}
+
 export function formatDate(iso: string | null | undefined, fallback = "—"): string {
   if (!iso) return fallback;
   try {
+    const d = parseErpDate(iso);
+    if (!d) return fallback;
     return new Intl.DateTimeFormat("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
-    }).format(new Date(iso));
+    }).format(d);
   } catch {
     return fallback;
   }
@@ -30,12 +51,14 @@ export function formatDate(iso: string | null | undefined, fallback = "—"): st
 export function formatDateTime(iso: string | null | undefined, fallback = "—"): string {
   if (!iso) return fallback;
   try {
+    const d = parseErpDate(iso);
+    if (!d) return fallback;
     return new Intl.DateTimeFormat("en-US", {
       month: "short",
       day: "numeric",
       hour: "numeric",
       minute: "2-digit",
-    }).format(new Date(iso));
+    }).format(d);
   } catch {
     return fallback;
   }
@@ -50,7 +73,8 @@ export function statusToLabel(s: string): string {
 
 export function relativeDay(iso: string | null | undefined): string {
   if (!iso) return "—";
-  const d = new Date(iso);
+  const d = parseErpDate(iso);
+  if (!d) return "—";
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const target = new Date(d);
@@ -82,10 +106,12 @@ export function garmentLabel(type: string): string {
 export function formatRelative(iso: string | null | undefined, fallback = "—"): string {
   if (!iso) return fallback;
   try {
-    const d = new Date(iso);
+    const d = parseErpDate(iso);
+    if (!d) return fallback;
     const now = new Date();
     const diffMs = now.getTime() - d.getTime();
     const diffSec = Math.floor(diffMs / 1000);
+    if (diffSec < 0) return "just now";
     if (diffSec < 60) return "just now";
     const diffMin = Math.floor(diffSec / 60);
     if (diffMin < 60) return `${diffMin}m ago`;

@@ -1825,14 +1825,24 @@ sofiaRouter.get("/escalations", async (c) => {
   }
 });
 
-// ── GET /api/sofia/threads ── deduplicated thread list (uses real column names)
+// ── GET /api/sofia/threads ── same full book as /conversations (list_threads)
 sofiaRouter.get("/threads", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  
+  if (user.role === "driver") return c.json({ data: [] });
 
-  const data = await buildLocalSofiaConversations();
-  return c.json({ data });
+  const search = c.req.query("search")?.trim() || undefined;
+  const limit = Math.min(Number(c.req.query("limit") ?? 500) || 500, 1000);
+  const start = Number(c.req.query("start") ?? 0) || 0;
+
+  try {
+    const { threads, total } = await buildSofiaThreads({ limit, start, search });
+    return c.json({ data: threads, meta: { total, limit, start } });
+  } catch (e: any) {
+    console.error("[sofia/threads] list_threads failed, falling back:", e?.message);
+    const data = await buildLocalSofiaConversations();
+    return c.json({ data, meta: { total: data.length, degraded: true } });
+  }
 });
 
 // ── GET /api/sofia/thread/:phone ── full conversation
