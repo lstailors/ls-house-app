@@ -263,8 +263,7 @@ def build_garment_tag(*, ticket, garment, qr_url, due_date=None,
     if due_date:
         out += feed(1)
         out += rack_due_block(due_date)
-    if is_rush:
-        out += line("*** RUSH ***", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    # No RUSH ink on garment tags (luxury restraint). App UI may still badge rush.
 
     out += rule(heavy=True)
 

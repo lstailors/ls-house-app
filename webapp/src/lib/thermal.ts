@@ -72,7 +72,7 @@ export function buildReceiptXml(data: ReceiptData): string {
   p(`${esc(col("Customer:", data.customerName))}&#10;`)
   if (data.customerPhone) p(`${esc(col("Phone:", data.customerPhone))}&#10;`)
   p(`${esc(col("Date:", data.ticketDate))}&#10;`)
-  p(`${esc(col("Due:", data.dueDate + (data.isRush ? " ** RUSH **" : "")))}&#10;`)
+  p(`${esc(col("Due:", data.dueDate))}&#10;`)
   if (data.deliveryMethod) p(`${esc(col("Delivery:", data.deliveryMethod))}&#10;`)
   p(`</text>`)
   p(`<text>--------------------------------&#10;</text>`)
@@ -127,11 +127,9 @@ export function buildTagsXml(data: TagsData): string {
   p(`<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">`)
 
   for (const g of data.garments) {
-    const tagUrl = `${data.appBaseUrl}/garments/${data.ticketName}/${g.id}`
+    // Ticket-level public lookup (/t/:ticket). Per-garment /garments/... is retired.
+    const tagUrl = `${data.appBaseUrl}/t/${data.ticketName}`
 
-    if (data.isRush) {
-      p(`<text align="center" width="2" height="2" bold="true">** RUSH **&#10;</text>`)
-    }
     p(`<text align="center">${esc(data.ticketName)}&#10;</text>`)
     p(`<text align="center" width="1" height="2" bold="true">${esc(data.customerName)}&#10;</text>`)
     p(`<text align="center" width="1" height="1">${esc(g.type)}${g.color ? " - " + esc(g.color) : ""}&#10;</text>`)
