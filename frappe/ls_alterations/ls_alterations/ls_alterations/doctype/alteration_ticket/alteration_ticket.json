@@ -278,7 +278,7 @@
    "fieldname": "square_payment_method",
    "fieldtype": "Select",
    "label": "Square Payment Method",
-   "options": "\nCard Present\nCard Not Present\nCash\nOther"
+   "options": "\nCard Present\nCard Not Present\nCard on File\nCash\nOther"
   },
   {
    "fieldname": "paid_at",

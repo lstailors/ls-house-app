@@ -511,10 +511,13 @@ def charge_card_on_file(card_id, invoice=None, ticket=None, amount=None,
     status = (payment.get("status") or "").upper()
     payment_id = payment.get("id")
 
-    # Best-effort ticket method label (webhook will set payment_status)
-    try:
-        tname = _ticket_for_invoice(inv_name)
-        if tname and payment_id:
+    # A completed charge without ticket provenance is an integrity failure.
+    # Do not suppress schema/write errors: the caller receives the payment id
+    # and can reconcile without creating another Square charge.
+    provenance_recorded = False
+    if status in ("COMPLETED", "APPROVED") and payment_id:
+        tname = ticket or _ticket_for_invoice(inv_name)
+        if tname:
             frappe.db.set_value(
                 "Alteration Ticket", tname,
                 {
@@ -524,8 +527,7 @@ def charge_card_on_file(card_id, invoice=None, ticket=None, amount=None,
                 update_modified=False,
             )
             frappe.db.commit()
-    except Exception:
-        pass
+            provenance_recorded = True
 
     return {
         "ok": status in ("COMPLETED", "APPROVED"),
@@ -534,6 +536,7 @@ def charge_card_on_file(card_id, invoice=None, ticket=None, amount=None,
         "invoice": inv_name,
         "amount": charge_amt,
         "payment_id": payment_id,
+        "provenance_recorded": provenance_recorded,
         "card": _card_public(match),
         "receipt_url": payment.get("receipt_url"),
     }

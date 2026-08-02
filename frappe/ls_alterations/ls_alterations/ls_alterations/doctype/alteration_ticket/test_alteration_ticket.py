@@ -56,6 +56,24 @@ class TestAlterationTicket(unittest.TestCase):
 	def tearDown(self):
 		frappe.db.rollback()
 
+	def test_live_schema_supports_intake_persistence_and_card_on_file(self):
+		line_meta = frappe.get_meta("Alteration Ticket Line", cached=False)
+		expected_fields = {
+			"estimated_minutes": "Int",
+			"client_line_key": "Data",
+			"line_photos": "Long Text",
+		}
+		for fieldname, expected_type in expected_fields.items():
+			field = line_meta.get_field(fieldname)
+			self.assertIsNotNone(field, f"Missing Alteration Ticket Line.{fieldname}")
+			self.assertEqual(field.fieldtype, expected_type)
+
+		payment_field = frappe.get_meta("Alteration Ticket", cached=False).get_field(
+			"square_payment_method"
+		)
+		self.assertIsNotNone(payment_field)
+		self.assertIn("Card on File", (payment_field.options or "").splitlines())
+
 	def _create_ticket(self, origin="NYC", garments=None, lines=None):
 		"""Helper: insert a ticket with sane defaults. Returns the saved doc."""
 		garments = garments or [{"garment_type": "Jacket", "garment_description": "test"}]
