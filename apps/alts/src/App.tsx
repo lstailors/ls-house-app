@@ -41,6 +41,7 @@ const PayInvoice = lazy(() => import("@alts/pages/PayInvoice"));
 const PodCapture = lazy(() => import("@alts/pages/PodCapture"));
 const Invoices = lazy(() => import("@alts/pages/Invoices"));
 const InvoiceDetail = lazy(() => import("@alts/pages/InvoiceDetail"));
+const AddWork = lazy(() => import("@alts/pages/AddWork"));
 
 const FOH = ["super_admin", "store_manager", "salesperson", "tailor"] as const;
 
@@ -216,6 +217,15 @@ export default function App() {
                 }
               />
 
+              {/* SPEC 014 — add work on live ticket (phone-tier) */}
+              <Route
+                path="/orders/alterations/:ticketName/add-work"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <AddWork />
+                  </RoleGuard>
+                }
+              />
               {/* Intake is phone-first — C creates tickets on iPhone (HER-71) */}
               <Route
                 path="/intake/kind"

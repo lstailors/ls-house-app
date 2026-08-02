@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   ShoppingCart,
   Loader2,
+  Plus,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@ls/api-client'
@@ -67,6 +68,8 @@ interface AlterationTicketDoc {
     garment_type: string
     garment_description: string
     color?: string
+    garment_status?: string
+    fabric_notes?: string
   }>
   lines?: Array<{
     name: string
@@ -74,6 +77,10 @@ interface AlterationTicketDoc {
     description: string
     price: number
     preset?: string
+    line_status?: string
+    line_notes?: string
+    estimated_minutes?: number
+    client_line_key?: string
   }>
 }
 
@@ -1131,7 +1138,19 @@ export default function TicketDetail() {
           </div>
 
           <div className="flex flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto">
-            <div className="flex items-center gap-2 ticket-detail-actions">
+            <div className="flex items-center gap-2 ticket-detail-actions flex-wrap justify-end">
+              {ticket.workflow_state !== 'Cancelled' && ticket.workflow_state !== 'Picked Up' && (
+                <Link
+                  to={`/orders/alterations/${encodeURIComponent(ticketName!)}/add-work`}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all min-h-11',
+                    'bg-brass/20 border-brass/50 text-brass hover:bg-brass/30'
+                  )}
+                >
+                  <Plus size={12} />
+                  Add work
+                </Link>
+              )}
               <button
                 type="button"
                 onClick={() => openInIntakeMutation.mutate()}
