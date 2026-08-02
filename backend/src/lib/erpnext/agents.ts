@@ -1,8 +1,31 @@
 import { erpList, erpGet, erpCreate, erpUpdate } from "../erp";
 import { DT } from "./doctypes";
 
+export async function getAgentBySlug(slug: string) {
+  // Live ERP seeded hermes as "Hermes (Maestro)" — FE routes use /agents/maestro.
+  const aliases = slug === "maestro" ? ["maestro", "hermes"] : slug === "hermes" ? ["hermes", "maestro"] : [slug];
+  for (const s of aliases) {
+    const rows = await erpList<any>(DT.AGENT, {
+      filters: [["slug", "=", s]],
+      limit: 1,
+    });
+    if (rows[0]) {
+      if (slug === "maestro" && rows[0].slug !== "maestro") {
+        return {
+          ...rows[0],
+          slug: "maestro",
+          agent_name: rows[0].agent_name?.includes("Maestro") ? "Maestro" : (rows[0].agent_name || "Maestro"),
+          // keep ERP doc name (hermes) for writes
+        };
+      }
+      return rows[0];
+    }
+  }
+  return null;
+}
+
 export async function listAgents() {
-  return erpList<any>(DT.AGENT, {
+  const rows = await erpList<any>(DT.AGENT, {
     fields: [
       "name", "slug", "agent_name", "role", "description", "status", "model", "platform",
       "color", "icon", "current_task", "current_task_since", "last_action_at",
@@ -12,14 +35,19 @@ export async function listAgents() {
     order_by: "agent_name asc",
     limit: 50,
   });
-}
-
-export async function getAgentBySlug(slug: string) {
-  const rows = await erpList<any>(DT.AGENT, {
-    filters: [["slug", "=", slug]],
-    limit: 1,
+  // Surface Maestro under the slug the FE expects, even when ERP name is hermes.
+  const hasMaestro = rows.some((x: any) => x.slug === "maestro");
+  return rows.map((r: any) => {
+    if (!hasMaestro && r.slug === "hermes") {
+      return {
+        ...r,
+        slug: "maestro",
+        agent_name: r.agent_name?.includes("Maestro") ? "Maestro" : (r.agent_name || "Maestro"),
+        // keep ERP name = hermes for updates
+      };
+    }
+    return r;
   });
-  return rows[0] ?? null;
 }
 
 export async function updateAgent(slug: string, update: Record<string, unknown>) {

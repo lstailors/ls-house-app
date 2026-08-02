@@ -167,9 +167,12 @@ async function fetchLinesByTicket(
   const byTicket = new Map<string, Array<{ description: string; price: number; garment_ref: string }>>();
   if (!ticketNames.length) return byTicket;
 
+  // `parent` query param is required — without it Frappe returns only `name`
+  // on child doctypes and every ticket looks like "0 items".
   const lines = await erpList<{ parent: string; description: string; price: number; garment_ref: string }>(
     "Alteration Ticket Line",
     {
+      parent: "Alteration Ticket",
       filters: [["parent", "in", ticketNames]],
       fields: ["parent", "description", "price", "garment_ref"],
       limit: 2000,

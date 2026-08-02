@@ -122,11 +122,13 @@ tasksRouter.get("/", async (c) => {
   if (context) filters.push(["lsh_context", "=", context]);
 
   try {
+    const limitParam = parseInt(c.req.query("limit") ?? "500", 10);
+    const limit = Math.min(Math.max(isNaN(limitParam) ? 500 : limitParam, 1), 1000);
     const rows = await erpList<ErpTodo>("ToDo", {
       filters,
       fields: TODO_FIELDS,
       order_by: "date asc",
-      limit: 200,
+      limit,
     });
     return c.json({ data: rows.map(serialize) });
   } catch (e: any) {
