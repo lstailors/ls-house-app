@@ -284,7 +284,7 @@ dashboardRouter.get("/financials", async (c) => {
   const soFilters: any[] = [["docstatus", "=", 1]]; // submitted only
   if (locCode) soFilters.push(["company", "like", locCode === "HOU" ? "%TX%" : "%NY%"]);
 
-  const [allSalesOrders, arInvoices, soItems] = await Promise.all([
+  const [allSalesOrders, arInvoices] = await Promise.all([
     erpList<any>("Sales Order", {
       filters: soFilters,
       fields: ["name", "grand_total", "total", "advance_paid", "status", "transaction_date", "customer_name", "owner"],
@@ -296,14 +296,22 @@ dashboardRouter.get("/financials", async (c) => {
       fields: ["name", "outstanding_amount"],
       limit: 500,
     }).catch(() => []),
-    erpList<any>("Sales Order Item", {
-      filters: soFilters.map(f => f[0] === "docstatus" ? ["docstatus", "=", 1] : f),
-      fields: ["item_name", "amount", "qty", "parent"],
-      limit: 5000,
-    }).catch(() => []),
   ]);
 
   if (!allSalesOrders.length) return c.json({ data: empty });
+
+  // Child table: MUST pass parent=Sales Order or Frappe returns name-only
+  // (item_name/amount stripped → one "Other" bucket at $0).
+  // Do NOT apply SO header filters (company) on the child doctype.
+  const soNames = allSalesOrders.map((o: any) => o.name).filter(Boolean);
+  const soItems = soNames.length
+    ? await erpList<any>("Sales Order Item", {
+        parent: "Sales Order",
+        filters: [["parent", "in", soNames.slice(0, 500)]],
+        fields: ["item_name", "item_code", "amount", "qty", "rate", "net_amount", "parent"],
+        limit: 5000,
+      }).catch(() => [])
+    : [];
 
   // ── ERPNext SO status → pipeline stage ──────────────────────────────────
   function soStage(status: string): string {
@@ -378,15 +386,25 @@ dashboardRouter.get("/financials", async (c) => {
   // ── Top garments from SO Items ───────────────────────────────────────────
   const garmentMap = new Map<string, { units: number; revenue: number }>();
   for (const item of soItems) {
-    const type = (item.item_name as string | null) ?? "Other";
+    const type =
+      (item.item_name as string | null) ||
+      (item.item_code as string | null) ||
+      "Other";
+    const qty = Number(item.qty ?? 1) || 1;
+    const rev =
+      Number(item.amount ?? 0) ||
+      Number(item.net_amount ?? 0) ||
+      Number(item.rate ?? 0) * qty ||
+      0;
     const e = garmentMap.get(type) ?? { units: 0, revenue: 0 };
-    e.units += Number(item.qty ?? 1);
-    e.revenue += Number(item.amount ?? 0);
+    e.units += qty;
+    e.revenue += rev;
     garmentMap.set(type, e);
   }
   const topGarments = [...garmentMap.entries()]
     .map(([type, d]) => ({ type, units: d.units, revenue: d.revenue, avgPrice: d.units > 0 ? Math.round(d.revenue / d.units) : 0 }))
-    .sort((a, b) => b.units - a.units)
+    .filter((g) => g.type !== "Other" || g.revenue > 0)
+    .sort((a, b) => b.revenue - a.revenue || b.units - a.units)
     .slice(0, 8);
 
   // ── AR Outstanding ───────────────────────────────────────────────────────

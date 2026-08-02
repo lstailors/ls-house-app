@@ -232,8 +232,8 @@ function AgentStatusCard({ agent, costToday, onClick }: {
             {fmtCost(costToday)} today
           </span>
         )}
-        <span className="text-[9px] text-cream/20 group-hover:text-cream-dim transition-colors">
-          View →
+        <span className="text-[9px] text-cream-dim">
+          Last active: {formatRelative(agent.last_action_at || agent.last_heartbeat_at || agent.modified)}
         </span>
       </div>
 
@@ -567,7 +567,9 @@ function SofiaPanel() {
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-1">
         <MessageSquare className="h-3.5 w-3.5 text-signal-emerald/70" />
-        <span className="ui-label text-[10px] tracking-widest">SOFIA · CLIENT SMS THREADS</span>
+        <span className="ui-label text-[10px] tracking-widest">
+          SOFIA · CLIENT SMS THREADS · {threads.length}
+        </span>
       </div>
 
       {isLoading ? (
@@ -579,26 +581,52 @@ function SofiaPanel() {
         </div>
       ) : (
         <div className="space-y-2 max-h-[560px] overflow-y-auto pr-1">
-          {threads.map((t: any, i: number) => (
-            <div key={t.id ?? i} className="glass-panel rounded-xl p-3.5 border border-brass/10 hover:border-emerald-500/20 transition-colors">
-              <div className="flex items-start gap-3">
-                <span className={cn("h-2 w-2 rounded-full mt-1.5 shrink-0", STATUS_DOT[t.status] ?? STATUS_DOT.open)} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-cream font-medium truncate">{t.customer_name ?? t.phone}</span>
-                    <span className="text-[10px] text-cream-dim ml-auto shrink-0">{formatRelative(t.last_message_at ?? t.updated_at)}</span>
-                  </div>
-                  {t.last_message && (
-                    <p className="text-xs text-cream-muted mt-0.5 line-clamp-1">{String(t.last_message)}</p>
-                  )}
-                  <div className="flex items-center gap-2 mt-1">
-                    {t.status && <span className="text-[9px] text-cream-dim capitalize border border-brass/10 rounded px-1.5 py-0.5">{t.status}</span>}
-                    {t.appointment_booked && <span className="text-[9px] text-signal-emerald border border-signal-emerald/20 rounded px-1.5 py-0.5">Appointment booked</span>}
+          {threads.map((t: any, i: number) => {
+            // API shape from list_threads / conversations: clientName, lastMessage{body,created_at}, messageCount
+            const title = t.clientName || t.customer_name || t.client_name || t.phone || "Unknown";
+            const lastAt =
+              t.last_message_at ||
+              t.updated_at ||
+              t.lastMessage?.created_at ||
+              t.lastMessage?.timestamp ||
+              t.last_message?.created_at ||
+              null;
+            const preview =
+              typeof t.last_message === "string"
+                ? t.last_message
+                : t.lastMessage?.body || t.last_message?.body || t.last_message_preview || "";
+            const msgCount = t.messageCount ?? t.message_count ?? null;
+            return (
+              <div key={t.id ?? t.phone ?? i} className="glass-panel rounded-xl p-3.5 border border-brass/10 hover:border-emerald-500/20 transition-colors">
+                <div className="flex items-start gap-3">
+                  <span className={cn("h-2 w-2 rounded-full mt-1.5 shrink-0", STATUS_DOT[t.status] ?? STATUS_DOT.open)} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-cream font-medium truncate">{title}</span>
+                      <span className="text-[10px] text-cream-dim ml-auto shrink-0">{formatRelative(lastAt)}</span>
+                    </div>
+                    {preview ? (
+                      <p className="text-xs text-cream-muted mt-0.5 line-clamp-1">{String(preview)}</p>
+                    ) : null}
+                    <div className="flex items-center gap-2 mt-1">
+                      {msgCount != null && (
+                        <span className="text-[9px] text-cream-dim border border-brass/10 rounded px-1.5 py-0.5">
+                          {msgCount} msg{msgCount === 1 ? "" : "s"}
+                        </span>
+                      )}
+                      {t.unread ? (
+                        <span className="text-[9px] text-signal-amber border border-signal-amber/20 rounded px-1.5 py-0.5">unread</span>
+                      ) : null}
+                      {t.sofiaActive === false ? (
+                        <span className="text-[9px] text-cream-dim border border-brass/10 rounded px-1.5 py-0.5">Human</span>
+                      ) : null}
+                      {t.appointment_booked && <span className="text-[9px] text-signal-emerald border border-signal-emerald/20 rounded px-1.5 py-0.5">Appointment booked</span>}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
