@@ -414,6 +414,7 @@ dashboardRouter.get("/financials", async (c) => {
     const soNames = allSalesOrders.map((o: any) => o.name).filter(Boolean);
     const teamRows = soNames.length
       ? await erpList<any>("Sales Team", {
+          parent: "Sales Order",
           filters: [
             ["parenttype", "=", "Sales Order"],
             ["parent", "in", soNames.slice(0, 500)],

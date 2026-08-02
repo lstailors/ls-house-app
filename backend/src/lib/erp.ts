@@ -56,6 +56,12 @@ export async function erpList<T = unknown>(
     limit?: number
     start?: number
     order_by?: string
+    /**
+     * Parent DocType name — REQUIRED when listing child-table rows
+     * (e.g. "Alteration Ticket Line"). Without it Frappe returns only
+     * `name` and strips every other field, so callers see empty data.
+     */
+    parent?: string
     /** When true, throw instead of returning [] on non-OK / missing creds */
     throwOnError?: boolean
   } = {}
@@ -73,6 +79,7 @@ export async function erpList<T = unknown>(
   if (opts.limit)    url.searchParams.set('limit_page_length', String(opts.limit))
   if (opts.start)    url.searchParams.set('limit_start',       String(opts.start))
   if (opts.order_by) url.searchParams.set('order_by',          opts.order_by)
+  if (opts.parent)   url.searchParams.set('parent',            opts.parent)
 
   const res = await fetch(url.toString(), { headers: authHeaders(key, secret) })
   if (!res.ok) {
