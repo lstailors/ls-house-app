@@ -115,11 +115,11 @@ export default function AlterationTags() {
           className="print:block print:max-w-none">
           {garments.map(g => {
             const gLines = lines.filter(l => l.garment_ref === g.garment_id)
-            const tagUrl = `${window.location.origin}/garments/${ticket.name}/${g.garment_id}`
+            const tagUrl = `${window.location.origin}/t/${ticket.name}`
 
             return (
               <div key={g.name} className="tag" style={{
-                border: ticket.is_rush === 1 ? '2px solid #cc0000' : '1px solid #ccc',
+                border: '1px solid #ccc',
                 borderRadius: '6px',
                 padding: '8px',
                 fontFamily: 'monospace',
@@ -128,13 +128,6 @@ export default function AlterationTags() {
                 background: '#fff',
                 marginBottom: '4px',
               }}>
-                {/* Rush banner */}
-                {ticket.is_rush === 1 && (
-                  <div style={{ background: '#cc0000', color: '#fff', textAlign: 'center', fontWeight: 'bold', fontSize: '10px', letterSpacing: '2px', padding: '2px', marginBottom: '6px', borderRadius: '3px' }}>
-                    ★ RUSH ★
-                  </div>
-                )}
-
                 {/* Header row */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '6px' }}>
                   <div style={{ flex: 1 }}>

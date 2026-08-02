@@ -201,7 +201,8 @@ def print_ticket(ticket, what="all"):
         for i, g in enumerate(garments, start=1):
             payload = escpos_tm.build_garment_tag(
                 ticket=doc.name, garment=g,
-                qr_url="{}/g/{}/{}".format(base, doc.name, g.get("garment_id")),
+                # Ticket-level public lookup — /g/ and /garments/ are retired for tag QR.
+                qr_url="{}/t/{}".format(base, doc.name),
                 due_date=doc.promised_date or doc.due_date, is_rush=doc.is_rush,
                 location=doc.origin_location, idx=i, total=total,
                 lines=g.get("lines") or [],
@@ -241,7 +242,7 @@ def print_garment(ticket, garment_id):
         frappe.throw(_("Garment {0} not found on {1}").format(garment_id, ticket))
     payload = escpos_tm.build_garment_tag(
         ticket=doc.name, garment=match,
-        qr_url="{}/g/{}/{}".format(base, doc.name, garment_id),
+        qr_url="{}/t/{}".format(base, doc.name),
         due_date=doc.promised_date or doc.due_date, is_rush=doc.is_rush,
         location=doc.origin_location, lines=match.get("lines") or [],
         customer_name=doc.customer_name,
