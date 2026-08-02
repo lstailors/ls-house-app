@@ -13,6 +13,7 @@
  */
 
 export const ALTS_INTAKE_DRAFT_KEY = "alts.intakeDraft.v1";
+export const ALTS_INTAKE_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 
 export type IntakeDraftCustomer = {
   id?: string;
@@ -195,11 +196,25 @@ export function readIntakeDraft(): IntakeDraftPayload | null {
     const raw = localStorage.getItem(ALTS_INTAKE_DRAFT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as IntakeDraftPayload;
-    if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.garments)) return null;
+    if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.garments)) {
+      clearIntakeDraft();
+      return null;
+    }
+    const savedAt = Number(parsed.savedAt);
+    if (
+      !Number.isFinite(savedAt) ||
+      savedAt <= 0 ||
+      Date.now() - savedAt > ALTS_INTAKE_DRAFT_TTL_MS
+    ) {
+      clearIntakeDraft();
+      return null;
+    }
     parsed.step = migrateIntakeStep(parsed.step);
     if (!Array.isArray(parsed.sellItems)) parsed.sellItems = [];
     return parsed;
   } catch {
+    // A corrupt/unreadable draft can still contain private client data.
+    clearIntakeDraft();
     return null;
   }
 }

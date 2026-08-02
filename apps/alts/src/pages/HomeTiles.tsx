@@ -9,6 +9,7 @@ import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
+import { clearAltsPrivateStorage } from "@alts/lib/logoutPrivacy";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
@@ -625,8 +626,9 @@ export default function HomeTiles() {
   }, [s.syncedAt, stats.dataUpdatedAt]);
 
   const logout = async () => {
-    await signOut();
+    clearAltsPrivateStorage();
     qc.clear();
+    await signOut();
     nav("/login", { replace: true });
   };
 
