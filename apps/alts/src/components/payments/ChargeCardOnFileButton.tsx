@@ -19,6 +19,11 @@ import {
 } from "@ls/design/ui/alert-dialog";
 import { cn } from "@ls/design/utils";
 import { api } from "@ls/api-client";
+import {
+  DeclineRecovery,
+  isDeclineMessage,
+  type DeclineAttempt,
+} from "@alts/components/payments/DeclineRecovery";
 
 type Stage = "idle" | "loading_cards" | "pick" | "confirming" | "charging" | "completed" | "error";
 
@@ -91,6 +96,9 @@ export function ChargeCardOnFileButton({
   const [selected, setSelected] = useState<PublicCard | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [emptyMsg, setEmptyMsg] = useState("");
+  const [declineOpen, setDeclineOpen] = useState(false);
+  const [declineAttempt, setDeclineAttempt] = useState<DeclineAttempt | null>(null);
+  const [declineHistory, setDeclineHistory] = useState<DeclineAttempt[]>([]);
 
   const reset = useCallback(() => {
     setStage("idle");
@@ -98,6 +106,8 @@ export function ChargeCardOnFileButton({
     setSelected(null);
     setErrorMsg("");
     setEmptyMsg("");
+    setDeclineOpen(false);
+    setDeclineAttempt(null);
   }, []);
 
   const loadCards = useCallback(async () => {
@@ -188,6 +198,18 @@ export function ChargeCardOnFileButton({
       setStage("error");
       setErrorMsg(msg);
       onError(msg);
+      if (isDeclineMessage(msg)) {
+        const attempt: DeclineAttempt = {
+          at: new Date().toISOString(),
+          last4: selected?.last4,
+          brand: selected ? brandLabel(selected.brand) : undefined,
+          message: msg,
+          retryable: /insufficient|declin|funds/i.test(msg),
+        };
+        setDeclineAttempt(attempt);
+        setDeclineHistory((h) => [...h, attempt]);
+        setDeclineOpen(true);
+      }
     }
   }, [selected, ticketId, invoiceId, amountDollars, onSuccess, onError]);
 
@@ -386,6 +408,29 @@ export function ChargeCardOnFileButton({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {declineAttempt && (
+        <DeclineRecovery
+          open={declineOpen}
+          onClose={() => setDeclineOpen(false)}
+          ticketId={ticketId}
+          invoiceId={invoiceId}
+          amountDisplay={amountDisplay}
+          amountDollars={amountDollars}
+          customerLabel={customerLabel}
+          attempt={declineAttempt}
+          attempts={declineHistory}
+          onRetrySameCard={() => {
+            setDeclineOpen(false);
+            setStage("confirming");
+          }}
+          onRecovered={() => {
+            setDeclineOpen(false);
+            reset();
+            onSuccess();
+          }}
+        />
+      )}
     </div>
   );
 }
