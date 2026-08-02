@@ -4,12 +4,11 @@ import { signOut } from "@ls/auth/authClient";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
-import { storeToday, STORE_ADDRESS_SHORT } from "@alts/lib/storeDate";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
@@ -94,7 +93,7 @@ function timeGreeting() {
 function storeHoursLine() {
   const d = new Date();
   const day = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-  return `${day} · ${STORE_ADDRESS_SHORT} · open until 6:00 PM`;
+  return `${day} · East 61st Street · open until 6:00 PM`;
 }
 
 function briefAge(iso?: string | null) {
@@ -165,11 +164,278 @@ function espressoIsStale(data?: { fromCache?: boolean; createdAt?: string } | nu
   return hours > 6;
 }
 
+type AskMsg = {
+  id: string;
+  role: "user" | "rocco" | "error" | "thinking";
+  text: string;
+  at: number;
+};
+
+const ASK_CHIPS: Array<{ label: string; question: string }> = [
+  { label: "Most overdue?", question: "Who is most overdue?" },
+  { label: "What first?", question: "What should I do first right now?" },
+  { label: "Ready rack?", question: "Who is ready for pickup?" },
+  { label: "AR chase?", question: "Summarize open AR I should chase today." },
+];
+
+const ASK_THREAD_MAX = 6;
+
+function trimAskThread(msgs: AskMsg[]): AskMsg[] {
+  // Keep last N non-thinking messages; drop orphan thinking if over.
+  const withoutThinking = msgs.filter((m) => m.role !== "thinking");
+  if (withoutThinking.length <= ASK_THREAD_MAX) {
+    return msgs.slice(-(ASK_THREAD_MAX + 1)); // allow one thinking
+  }
+  return withoutThinking.slice(-ASK_THREAD_MAX);
+}
+
+function AskRoccoComposer({
+  isPending,
+  onAsk,
+  thread,
+  setThread,
+  input,
+  setInput,
+  activeChip,
+  setActiveChip,
+}: {
+  isPending: boolean;
+  onAsk: (
+    question: string,
+    handlers: {
+      onSuccess: (data: { answer: string }) => void;
+      onError: (err: Error) => void;
+    },
+  ) => void;
+  thread: AskMsg[];
+  setThread: React.Dispatch<React.SetStateAction<AskMsg[]>>;
+  input: string;
+  setInput: React.Dispatch<React.SetStateAction<string>>;
+  activeChip: string | null;
+  setActiveChip: React.Dispatch<React.SetStateAction<string | null>>;
+}) {
+  const threadEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [thread]);
+
+  const send = useCallback(
+    (question: string, chipLabel?: string) => {
+      const q = question.trim().slice(0, 240);
+      if (!q || isPending) return;
+
+      if (chipLabel) setActiveChip(chipLabel);
+      else setActiveChip(null);
+
+      const userMsg: AskMsg = {
+        id: `u-${Date.now()}`,
+        role: "user",
+        text: q,
+        at: Date.now(),
+      };
+      const thinkingMsg: AskMsg = {
+        id: `t-${Date.now()}`,
+        role: "thinking",
+        text: "Checking the floor…",
+        at: Date.now(),
+      };
+
+      setThread((prev) =>
+        trimAskThread([...prev.filter((m) => m.role !== "thinking"), userMsg, thinkingMsg]),
+      );
+      setInput("");
+
+      onAsk(q, {
+        onSuccess: (data) => {
+          setThread((prev) =>
+            trimAskThread([
+              ...prev.filter((m) => m.role !== "thinking"),
+              {
+                id: `r-${Date.now()}`,
+                role: "rocco",
+                text: data.answer,
+                at: Date.now(),
+              },
+            ]),
+          );
+          setActiveChip(null);
+        },
+        onError: (err) => {
+          setThread((prev) =>
+            trimAskThread([
+              ...prev.filter((m) => m.role !== "thinking"),
+              {
+                id: `e-${Date.now()}`,
+                role: "error",
+                text: err.message || "Ask failed",
+                at: Date.now(),
+              },
+            ]),
+          );
+          setActiveChip(null);
+        },
+      });
+    },
+    [isPending, onAsk, setActiveChip, setInput, setThread],
+  );
+
+  const canSend = input.trim().length > 0 && !isPending;
+
+  return (
+    <div
+      className="ask-rocco mt-2.5 pt-3 pb-0.5 border-t border-brass/[0.18] bg-gradient-to-b from-black/12 to-black/22 -mx-1 px-2 sm:px-2.5 rounded-b-[12px]"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center gap-1.5 mb-2">
+        <span className="text-[9px] font-bold tracking-[0.16em] uppercase text-brass-light">
+          Ask Rocco
+        </span>
+        <span className="text-[10.5px] font-medium text-[var(--cd)] normal-case tracking-normal">
+          · floor only
+        </span>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5 mb-2.5">
+        {ASK_CHIPS.map((chip) => {
+          const on = activeChip === chip.label && isPending;
+          return (
+            <button
+              key={chip.label}
+              type="button"
+              disabled={isPending}
+              onClick={(e) => {
+                e.stopPropagation();
+                send(chip.question, chip.label);
+              }}
+              className={cn(
+                "h-8 min-h-[32px] px-2.5 sm:px-3 rounded-full border text-[11px] font-semibold transition-colors",
+                "border-brass/28 bg-black/25 text-cream/80",
+                "hover:border-brass/55 hover:bg-brass/14 hover:text-cream",
+                "disabled:opacity-50 disabled:cursor-not-allowed",
+                on && "border-brass/55 bg-brass/14 text-cream",
+              )}
+            >
+              {chip.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {thread.length > 0 && (
+        <div
+          className="flex flex-col gap-2 mb-2.5 max-h-[220px] overflow-y-auto"
+          aria-live="polite"
+        >
+          {thread.map((m) => {
+            if (m.role === "user") {
+              return (
+                <div
+                  key={m.id}
+                  className="self-end max-w-[92%] rounded-[14px] px-3 py-2.5 text-[12.5px] leading-snug bg-brass/16 border border-brass/35 text-cream"
+                >
+                  <div className="text-[9px] font-bold tracking-[0.12em] uppercase text-brass-light mb-1">
+                    You
+                  </div>
+                  <div className="whitespace-pre-wrap">{m.text}</div>
+                </div>
+              );
+            }
+            if (m.role === "thinking") {
+              return (
+                <div
+                  key={m.id}
+                  className="self-stretch rounded-[14px] px-3 py-2.5 text-[12.5px] leading-snug italic text-[var(--cd)] bg-black/28 border border-brass/20"
+                >
+                  {m.text}
+                </div>
+              );
+            }
+            if (m.role === "error") {
+              return (
+                <div
+                  key={m.id}
+                  className="self-stretch rounded-[14px] px-3 py-2.5 text-[12.5px] leading-snug text-[var(--am)] bg-black/28 border border-[rgba(232,168,92,0.4)]"
+                >
+                  {m.text}
+                </div>
+              );
+            }
+            return (
+              <div
+                key={m.id}
+                className="self-stretch rounded-[14px] px-3 py-2.5 text-[12.5px] leading-snug bg-black/28 border border-brass/20"
+              >
+                <div className="text-[9px] font-bold tracking-[0.12em] uppercase text-brass-light mb-1.5">
+                  Rocco
+                </div>
+                <div className="whitespace-pre-wrap text-cream">{m.text}</div>
+              </div>
+            );
+          })}
+          <div ref={threadEndRef} />
+        </div>
+      )}
+
+      <div className="flex gap-2 items-end">
+        <input
+          type="text"
+          value={input}
+          maxLength={240}
+          disabled={isPending}
+          placeholder="Ask about the floor…"
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Enter" && canSend) {
+              e.preventDefault();
+              send(input);
+            }
+          }}
+          className={cn(
+            "flex-1 h-[46px] min-h-[46px] rounded-[14px] px-3.5 text-[14px] outline-none",
+            "bg-black/40 border border-brass/32 text-cream placeholder:text-[var(--cd)]",
+            "focus:border-brass focus:shadow-[0_0_0_3px_rgba(176,141,87,0.14)]",
+            "disabled:opacity-60 appearance-none",
+            "[&:-webkit-autofill]:shadow-[inset_0_0_0_1000px_rgba(0,0,0,0.85)] [&:-webkit-autofill]:[-webkit-text-fill-color:#F1E9D6]",
+          )}
+        />
+        <button
+          type="button"
+          disabled={!canSend}
+          onClick={(e) => {
+            e.stopPropagation();
+            send(input);
+          }}
+          className={cn(
+            "h-[46px] min-h-[46px] min-w-[46px] px-3.5 rounded-[14px] shrink-0",
+            "bg-brass text-[#0D1A10] text-[11px] font-bold tracking-[0.12em] uppercase",
+            "shadow-[0_8px_20px_rgba(176,141,87,0.25)]",
+            "disabled:opacity-45 disabled:cursor-not-allowed disabled:shadow-none",
+            "enabled:hover:brightness-105",
+          )}
+        >
+          Ask
+        </button>
+      </div>
+
+      <p className="text-[10px] text-[var(--cd)] mt-2 leading-snug">
+        Answers from live floor snapshot + this espresso. Not a general chat.
+      </p>
+    </div>
+  );
+}
+
 export default function HomeTiles() {
   const { data: me } = useMe();
   const nav = useNavigate();
   const qc = useQueryClient();
   const [espressoOpen, setEspressoOpen] = useState(readEspressoOpenDefault);
+  const [askThread, setAskThread] = useState<AskMsg[]>([]);
+  const [askInput, setAskInput] = useState("");
+  const [askActiveChip, setAskActiveChip] = useState<string | null>(null);
 
   const toggleEspresso = useCallback(() => {
     setEspressoOpen((prev) => {
@@ -195,7 +461,7 @@ export default function HomeTiles() {
             origin_location?: string;
             assigned_tailor?: string;
           }>
-        >("/api/intake-alterations/tickets?limit=500"),
+        >("/api/intake-alterations/tickets?limit=200"),
         api.get<Array<unknown>>("/api/carts").catch(() => [] as unknown[]),
         // HER-75: board counts for Deliveries tile + status strip
         api
@@ -220,7 +486,7 @@ export default function HomeTiles() {
           .catch(() => ({ openCount: 0 })),
       ]);
       const list = Array.isArray(rows) ? rows : (rows as any)?.tickets ?? [];
-      const today = storeToday();
+      const today = new Date().toISOString().slice(0, 10);
       let open = 0;
       let ready = 0;
       let dueToday = 0;
@@ -236,8 +502,7 @@ export default function HomeTiles() {
             else if (t.due_date === today) dueToday += 1;
           }
           const ol = (t.origin_location || "").toLowerCase();
-          // At-home / out-to-tailor: origin explicitly marked home (not HOU store work).
-          if (ol.includes("home") || ol === "at-home" || ol === "athome") {
+          if (ol.includes("home") || (t.assigned_tailor && ol && ol !== "nyc")) {
             outToTailors += 1;
           }
         }
@@ -306,6 +571,35 @@ export default function HomeTiles() {
       qc.setQueryData(["alts-floor-brief"], data);
     },
   });
+
+  const askRocco = useMutation({
+    mutationFn: async (question: string) => {
+      const res = await api.raw("/api/dashboard/floor-brief/ask", {
+        method: "POST",
+        body: JSON.stringify({ question }),
+        headers: { "Content-Type": "application/json" },
+      });
+      const j = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(j?.error?.message || "Ask failed");
+      return (j?.data ?? j) as { answer: string; askedAt?: string; model?: string };
+    },
+  });
+
+  const runAskRocco = useCallback(
+    (
+      question: string,
+      handlers: {
+        onSuccess: (data: { answer: string }) => void;
+        onError: (err: Error) => void;
+      },
+    ) => {
+      askRocco.mutate(question, {
+        onSuccess: handlers.onSuccess,
+        onError: (err) => handlers.onError(err instanceof Error ? err : new Error(String(err))),
+      });
+    },
+    [askRocco],
+  );
 
   const empty: Stats = {
     open: 0,
@@ -690,7 +984,7 @@ export default function HomeTiles() {
         {espressoOpen && (
           <div
             id="espresso-body"
-            className="espresso-body border-t border-brass/16 px-3 sm:px-3.5 pt-2.5 pb-3 max-h-[42vh] overflow-y-auto"
+            className="espresso-body border-t border-brass/16 px-3 sm:px-3.5 pt-2.5 pb-3 max-h-[min(62vh,560px)] overflow-y-auto"
           >
             {floorBrief.isLoading && !floorBrief.data ? (
               <p className="text-sm text-[var(--cd)] leading-relaxed">Brewing the floor read…</p>
@@ -703,6 +997,18 @@ export default function HomeTiles() {
             ) : (
               <p className="text-sm text-[var(--cd)]">No espresso yet — tap Brew now.</p>
             )}
+
+            {/* SPEC 055 — Ask Rocco (open espresso only; Brew does not clear thread) */}
+            <AskRoccoComposer
+              isPending={askRocco.isPending}
+              onAsk={runAskRocco}
+              thread={askThread}
+              setThread={setAskThread}
+              input={askInput}
+              setInput={setAskInput}
+              activeChip={askActiveChip}
+              setActiveChip={setAskActiveChip}
+            />
           </div>
         )}
       </div>

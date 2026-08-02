@@ -10,10 +10,6 @@ import {
   DEFAULT_MODEL,
 } from "../lib/ai";
 import type { MessageType } from "../lib/ai";
-import { getAuthedUser, resolveLocationCode, canCreateDelivery } from "../lib/scope";
-import { uploadFile, erpFileAbsoluteUrl } from "../lib/erpnext/files";
-import { sendSms } from "../lib/twilio";
-import { closeAlterationTicketOnDelivery } from "../lib/erpnext/alteration-workflow";
 
 // Web Crypto API — works in both Edge and Node runtimes
 function generateToken(): string {
@@ -36,6 +32,9 @@ function erpToIso(s: string | null | undefined): string | null {
   // Space-separated ERPNext format → ISO UTC
   return s.replace(" ", "T") + "Z";
 }
+import { getAuthedUser, resolveLocationCode, canCreateDelivery } from "../lib/scope";
+import { uploadFile, erpFileAbsoluteUrl } from "../lib/erpnext/files";
+import { sendSms } from "../lib/twilio";
 
 type CustomerAddressParts = {
   line1: string | null;
@@ -667,7 +666,7 @@ deliveriesRouter.post("/", async (c) => {
     }
 
     const doc = await erpCreate<any>("LSH Delivery", {
-      naming_series: "DN-NYC-.YYYY.-",
+      naming_series: locationId === "HOU" ? "DN-HOU-.YYYY.-" : "DN-NYC-.YYYY.-",
       customer: resolvedCustomer,
       lsh_status: "Queued",
       lsh_delivery_method: method,
@@ -711,28 +710,6 @@ deliveriesRouter.post("/from-order", async (c) => {
   const body = await c.req.json().catch(() => ({})) as any;
   // body: { sales_order?, alteration_ticket?, customer_name, customer_phone?, address?, city?, apt?, notify_phone?, garment_summary?, garment_count?, location? }
 
-  const altTicket = (body.alteration_ticket ?? body.alterationTicket ?? "").trim() || null;
-  if (altTicket && body.hand_deliver !== true) {
-    const existing = await erpList<any>("LSH Delivery", {
-      filters: [
-        ["lsh_alteration_ticket", "=", altTicket],
-        ["lsh_status", "not in", ["Delivered", "Cancelled", "Failed"]],
-      ],
-      fields: ["name", "lsh_status"],
-      limit: 1,
-    });
-    if (existing.length) {
-      return c.json(
-        {
-          error: {
-            message: `Active delivery already exists for ${altTicket} (${existing[0].name})`,
-          },
-        },
-        409,
-      );
-    }
-  }
-
   const token = generateToken();
   const location = body.location ?? user.locationCode ?? "NYC";
   const isHandDeliver = body.hand_deliver === true;
@@ -745,23 +722,20 @@ deliveriesRouter.post("/from-order", async (c) => {
     notifyPhone = cust?.mobile_no ?? cust?.phone ?? null;
   }
 
-  const defaultCity = "New York";
-  const defaultState = "NY";
-
   const erpDoc: Record<string, unknown> = {
-    naming_series: "DN-NYC-.YYYY.-",
+    naming_series: location === "HOU" ? "DN-HOU-.YYYY.-" : "DN-NYC-.YYYY.-",
     customer: body.customer_erp_name ?? body.customer_name ?? "Walk-in",
     customer_name: body.customer_name ?? "Walk-in",
     customer_phone: body.customer_phone ?? notifyPhone ?? null,
     lsh_status: isHandDeliver ? "Delivered" : "Queued",
     lsh_delivery_method: body.method ?? "Hand Delivery",
-    lsh_origin_location: "NYC",
+    lsh_origin_location: location,
     lsh_sales_order: body.sales_order ?? null,
-    lsh_alteration_ticket: altTicket,
+    lsh_alteration_ticket: body.alteration_ticket ?? null,
     lsh_delivery_address: body.address ?? null,
     lsh_delivery_apt: body.apt ?? null,
-    lsh_delivery_city: body.city ?? defaultCity,
-    lsh_delivery_state: body.state ?? defaultState,
+    lsh_delivery_city: body.city ?? "New York",
+    lsh_delivery_state: body.state ?? "NY",
     lsh_garment_summary: body.garment_summary ?? null,
     lsh_garment_count: body.garment_count ?? null,
     lsh_notify_phone: notifyPhone,
@@ -776,11 +750,8 @@ deliveriesRouter.post("/from-order", async (c) => {
 
   const doc = await erpCreate<any>("LSH Delivery", erpDoc);
 
-  // If hand delivery, send confirmation SMS and close linked alteration ticket
-  if (isHandDeliver && doc) {
-    void notifyCustomer(doc, "delivered");
-    void closeAlterationTicketOnDelivery(altTicket);
-  }
+  // If hand delivery, send confirmation SMS
+  if (isHandDeliver && doc) void notifyCustomer(doc, "delivered");
 
   return c.json({ data: serializeDelivery(doc) });
 });
@@ -959,10 +930,6 @@ deliveriesRouter.patch("/:id", async (c) => {
     if (["ready_for_pickup", "ready", "Ready for Pickup"].includes(body.status ?? "")) {
       void notifyCustomer(updated, "ready_for_pickup");
     }
-    if (["delivered", "Delivered"].includes(body.status ?? "") || updates.lsh_status === "Delivered") {
-      void notifyCustomer(updated, "delivered");
-      void closeAlterationTicketOnDelivery(updated.lsh_alteration_ticket ?? existing.lsh_alteration_ticket);
-    }
     return c.json({ data: serializeDelivery(updated) });
   } catch (err: any) {
     return c.json({ error: { message: err.message ?? "Update failed" } }, 500);
@@ -1004,7 +971,7 @@ deliveriesRouter.patch("/:id/pod", async (c) => {
     if (existing.lsh_courier_name !== user.name && existing.lsh_courier_name !== user.email) {
       return c.json({ error: { message: "Forbidden" } }, 403);
     }
-  } else if (!["super_admin", "store_manager"].includes(user.role)) {
+  } else if (!["super_admin", "store_manager", "salesperson"].includes(user.role)) {
     return c.json({ error: { message: "Forbidden" } }, 403);
   }
 
@@ -1086,7 +1053,6 @@ deliveriesRouter.patch("/:id/pod", async (c) => {
     const updated = await erpUpdate<any>("LSH Delivery", id, updates);
     if (!updated) return c.json({ error: { message: "Update failed" } }, 500);
     void notifyCustomer(updated, "delivered");
-    void closeAlterationTicketOnDelivery(updated.lsh_alteration_ticket ?? existing.lsh_alteration_ticket);
     return c.json({ data: serializeDelivery(updated) });
   } catch (err: any) {
     return c.json({ error: { message: err.message ?? "Update failed" } }, 500);
@@ -1137,10 +1103,7 @@ deliveriesRouter.patch("/:id/status", async (c) => {
     if (!updated) return c.json({ error: { message: "Update failed" } }, 500);
     if (erpStatus === "Ready for Pickup") void notifyCustomer(updated, "ready_for_pickup");
     if (erpStatus === "Out for Delivery") void notifyCustomer(updated, "out_for_delivery");
-    if (erpStatus === "Delivered") {
-      void notifyCustomer(updated, "delivered");
-      void closeAlterationTicketOnDelivery(updated.lsh_alteration_ticket ?? existing?.lsh_alteration_ticket);
-    }
+    if (erpStatus === "Delivered") void notifyCustomer(updated, "delivered");
     return c.json({ data: serializeDelivery(updated) });
   } catch (err: any) {
     return c.json({ error: { message: err.message ?? "Update failed" } }, 500);

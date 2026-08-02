@@ -448,11 +448,46 @@ dashboardRouter.get("/financials", async (c) => {
 // ── Rocco floor brief (alts home) ────────────────────────────────────────────
 // GET  /api/dashboard/floor-brief          → latest cached brief + stats (authed)
 // POST /api/dashboard/floor-brief/refresh  → force regenerate (authed FOH)
+// POST /api/dashboard/floor-brief/ask      → query Rocco (authed FOH, no brief row)
 // GET  /api/dashboard/floor-brief/trigger  → Vercel cron (no auth, work-week)
 
 const ROCCO_FLOOR_SOURCE = "rocco";
 const ROCCO_FLOOR_TYPE = "floor_brief";
 const FLOOR_BRIEF_MAX_AGE_MS = 2.5 * 60 * 60 * 1000; // 2.5h
+const ASK_MAX_CHARS = 240;
+const ASK_RATE_LIMIT = 8;
+const ASK_RATE_WINDOW_MS = 60_000;
+
+/** In-memory rolling window per user. Single-instance OK; multi-instance needs Redis later. */
+const askRateBuckets = new Map<string, number[]>();
+
+function takeAskRateSlot(userKey: string): boolean {
+  const now = Date.now();
+  const prev = askRateBuckets.get(userKey) ?? [];
+  const recent = prev.filter((t) => now - t < ASK_RATE_WINDOW_MS);
+  if (recent.length >= ASK_RATE_LIMIT) {
+    askRateBuckets.set(userKey, recent);
+    return false;
+  }
+  recent.push(now);
+  askRateBuckets.set(userKey, recent);
+  return true;
+}
+
+/** Latest espresso body only — never forces a re-brew. */
+async function getCachedEspressoBody(): Promise<string | null> {
+  try {
+    const rows = await listAgentBriefsFiltered({
+      source: ROCCO_FLOOR_SOURCE,
+      type: ROCCO_FLOOR_TYPE,
+      limit: 1,
+    });
+    const body = rows[0]?.body;
+    return typeof body === "string" && body.trim() ? body.trim() : null;
+  } catch {
+    return null;
+  }
+}
 
 function nycToday(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -765,6 +800,106 @@ dashboardRouter.post("/floor-brief/refresh", async (c) => {
     return c.json({ data: brief });
   } catch (e: any) {
     return c.json({ error: { message: e?.message ?? "Refresh failed" } }, 502);
+  }
+});
+
+/**
+ * Ask Rocco — answer a floor question from live snapshot + cached espresso.
+ * Does NOT insert a floor_brief row (keeps Brew history clean).
+ */
+dashboardRouter.post("/floor-brief/ask", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (user.role === "driver") return c.json({ error: { message: "Forbidden" } }, 403);
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: { message: "Invalid JSON body" } }, 400);
+  }
+
+  const rawQ =
+    body && typeof body === "object" && body !== null && "question" in body
+      ? (body as { question?: unknown }).question
+      : undefined;
+  const question = typeof rawQ === "string" ? rawQ.trim() : "";
+  if (!question) {
+    return c.json({ error: { message: "Question is required" } }, 400);
+  }
+  if (question.length > ASK_MAX_CHARS) {
+    return c.json(
+      { error: { message: `Question must be ${ASK_MAX_CHARS} characters or fewer` } },
+      400,
+    );
+  }
+
+  const rateKey = user.id || user.email || "anon";
+  if (!takeAskRateSlot(rateKey)) {
+    return c.json(
+      { error: { message: "Too many asks — wait a minute and try again" } },
+      429,
+    );
+  }
+
+  try {
+    const [snap, briefBody] = await Promise.all([
+      collectFloorSnapshot(),
+      getCachedEspressoBody(),
+    ]);
+
+    const askedAt = new Date().toISOString();
+    const answer = (
+      await grokChat(
+        [
+          {
+            role: "system",
+            content:
+              "You are Rocco — production and delivery manager at L&S Custom Tailors. " +
+              "Answer the owner's or FOH question using ONLY the floor data provided.\n" +
+              "Rules:\n" +
+              "- Be direct, short (2-6 sentences or short bullets with newlines).\n" +
+              "- Name tickets/clients when the data lists them.\n" +
+              "- No markdown bold/asterisks. Emoji sparingly ok.\n" +
+              "- If data is insufficient, say what you don't know and where to look " +
+              "(Shop Floor, Pickup, Deliveries, Invoices).\n" +
+              "- Do NOT invent prices, promise dates, or client commitments.\n" +
+              "- Do NOT draft client SMS or emails.\n" +
+              "- Floor / production / delivery / AR only — refuse unrelated topics in one line.\n" +
+              "- Sign nothing, or a single trailing — Rocco if natural.",
+          },
+          {
+            role: "user",
+            content:
+              `FLOOR SNAPSHOT:\n${snap.dataBlock}\n\n` +
+              `LATEST ESPRESSO BRIEF:\n${briefBody || "(none)"}\n\n` +
+              `QUESTION:\n${question}`,
+          },
+        ],
+        { maxTokens: 400, temperature: 0.2 },
+      )
+    ).trim();
+
+    if (!answer) {
+      return c.json(
+        { error: { message: "Rocco couldn't reach the floor AI — try again in a moment" } },
+        502,
+      );
+    }
+
+    return c.json({
+      data: {
+        answer,
+        askedAt,
+        model: "grok",
+      },
+    });
+  } catch (e: any) {
+    console.error("[floor-brief/ask]", e?.message);
+    return c.json(
+      { error: { message: e?.message ?? "Ask failed — floor data unavailable" } },
+      502,
+    );
   }
 });
 
