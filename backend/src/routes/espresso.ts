@@ -6,8 +6,6 @@ import {
   listApprovalQueue,
   listAgentTasks,
 } from "../lib/erpnext/agents";
-import { storeList } from "../lib/erpnext/store";
-import { DT } from "../lib/erpnext/doctypes";
 
 export const espressoRouter = new Hono();
 
@@ -64,11 +62,53 @@ espressoRouter.get("/", async (c) => {
     newsData,
   ] = await Promise.all([
     listAgentBriefsFiltered({ source: "maestro", type: "daily_brief", limit: 1 }),
-    storeList<any>(DT.APPOINTMENT, {
-      filters: [["start_time", ">=", `${todayStr}T00:00:00Z`], ["start_time", "<=", `${tomorrowStr}T23:59:59Z`]],
-      fields: ["name", "event_type", "start_time", "end_time", "status"],
-      orderBy: "start_time asc",
-      limit: 50,
+    // Live ERP: Event (GCal L&S Appointments) + CRM Appointment.
+    // LSH Appointment doctype does not exist on the live site.
+    Promise.all([
+      erpList<any>("Event", {
+        filters: [
+          ["starts_on", ">=", `${todayStr} 00:00:00`],
+          ["starts_on", "<=", `${tomorrowStr} 23:59:59`],
+          ["status", "!=", "Cancelled"],
+          ["google_calendar", "like", "%Appointment%"],
+        ],
+        fields: ["name", "subject", "starts_on", "ends_on", "status", "google_calendar"],
+        limit: 50,
+        order_by: "starts_on asc",
+      }).catch(() => []),
+      erpList<any>("Appointment", {
+        filters: [
+          ["scheduled_time", ">=", `${todayStr} 00:00:00`],
+          ["scheduled_time", "<=", `${tomorrowStr} 23:59:59`],
+          ["status", "not in", ["Closed", "Cancelled"]],
+        ],
+        fields: ["name", "scheduled_time", "status", "customer_name", "custom_appointment_type"],
+        limit: 50,
+        order_by: "scheduled_time asc",
+      }).catch(() => []),
+    ]).then(([evts, apmts]) => {
+      const mapped: any[] = [];
+      for (const e of evts) {
+        mapped.push({
+          name: e.name,
+          event_type: e.subject,
+          start_time: String(e.starts_on ?? "").replace(" ", "T"),
+          end_time: e.ends_on ? String(e.ends_on).replace(" ", "T") : null,
+          status: e.status,
+        });
+      }
+      for (const a of apmts) {
+        mapped.push({
+          name: a.name,
+          event_type: a.custom_appointment_type || a.customer_name || "Appointment",
+          start_time: String(a.scheduled_time ?? "").replace(" ", "T"),
+          end_time: null,
+          status: a.status,
+          customer_name: a.customer_name,
+        });
+      }
+      mapped.sort((x, y) => String(x.start_time).localeCompare(String(y.start_time)));
+      return mapped;
     }),
     listApprovalQueue({ status: ["pending"], limit: 200 }),
     listApprovalQueue({ status: ["pending"], limit: 5 }),
