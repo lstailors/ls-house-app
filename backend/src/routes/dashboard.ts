@@ -287,7 +287,7 @@ dashboardRouter.get("/financials", async (c) => {
   const [allSalesOrders, arInvoices, soItems] = await Promise.all([
     erpList<any>("Sales Order", {
       filters: soFilters,
-      fields: ["name", "grand_total", "total", "advance_paid", "status", "transaction_date", "customer_name"],
+      fields: ["name", "grand_total", "total", "advance_paid", "status", "transaction_date", "customer_name", "owner"],
       limit: 2000,
       order_by: "transaction_date desc",
     }).catch(() => []),
@@ -407,28 +407,88 @@ dashboardRouter.get("/financials", async (c) => {
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 10);
 
+  // Sales by rep: prefer Sales Team child rows; else SO owner (humanized).
+  // Note: live SO sales_team is often empty and owner is Administrator (imports).
   let salesByRep: Array<{ name: string; orders: number; revenue: number }> = [];
   try {
-    const repOrders = await erpList<any>("Sales Order", {
-      filters: soFilters,
-      fields: ["name", "grand_total", "sales_team"],
-      limit: 2000,
-    }).catch(() => []);
-    if (repOrders.length) {
-      const repMap = new Map<string, { orders: number; revenue: number }>();
-      for (const o of repOrders) {
-        const rep = (o.sales_team?.[0]?.sales_person as string | undefined) ?? "Unassigned";
-        const e = repMap.get(rep) ?? { orders: 0, revenue: 0 };
+    const soNames = allSalesOrders.map((o: any) => o.name).filter(Boolean);
+    const teamRows = soNames.length
+      ? await erpList<any>("Sales Team", {
+          filters: [
+            ["parenttype", "=", "Sales Order"],
+            ["parent", "in", soNames.slice(0, 500)],
+          ],
+          fields: ["parent", "sales_person", "allocated_amount", "allocated_percentage"],
+          limit: 2000,
+        }).catch(() => [])
+      : [];
+
+    const repMap = new Map<string, { orders: number; revenue: number }>();
+    const soByName = new Map(allSalesOrders.map((o: any) => [o.name, o]));
+
+    const realTeam = teamRows.filter((t: any) => t.sales_person && t.parent);
+
+    if (realTeam.length) {
+      const parentsWithTeam = new Set<string>();
+      for (const t of realTeam) {
+        if (!t.sales_person || !t.parent) continue;
+        parentsWithTeam.add(t.parent);
+        const so = soByName.get(t.parent);
+        const amt =
+          Number(t.allocated_amount) ||
+          (so
+            ? (Number(so.grand_total ?? 0) * Number(t.allocated_percentage ?? 100)) / 100
+            : 0);
+        const e = repMap.get(t.sales_person) ?? { orders: 0, revenue: 0 };
+        e.orders += 1;
+        e.revenue += amt;
+        repMap.set(t.sales_person, e);
+      }
+      // Remainder without team row → owner bucket
+      for (const o of allSalesOrders) {
+        if (parentsWithTeam.has(o.name)) continue;
+        const raw = String(o.owner ?? "Unassigned");
+        const label =
+          !raw || raw === "Administrator" || raw === "Guest"
+            ? "House / Imported"
+            : raw.includes("@")
+              ? raw.split("@")[0]!.replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+              : raw;
+        const e = repMap.get(label) ?? { orders: 0, revenue: 0 };
         e.orders += 1;
         e.revenue += Number(o.grand_total ?? 0);
-        repMap.set(rep, e);
+        repMap.set(label, e);
       }
-      salesByRep = [...repMap.entries()]
-        .map(([name, d]) => ({ name, orders: d.orders, revenue: d.revenue }))
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 8);
+    } else {
+      // No sales_team child data — attribute by owner (listable on SO).
+      const ownerOrders = await erpList<any>("Sales Order", {
+        filters: soFilters,
+        fields: ["name", "grand_total", "owner"],
+        limit: 2000,
+      }).catch(() => allSalesOrders);
+
+      for (const o of ownerOrders) {
+        const raw = String(o.owner ?? "Unassigned");
+        const label =
+          !raw || raw === "Administrator" || raw === "Guest"
+            ? "House / Imported"
+            : raw.includes("@")
+              ? raw.split("@")[0]!.replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+              : raw;
+        const e = repMap.get(label) ?? { orders: 0, revenue: 0 };
+        e.orders += 1;
+        e.revenue += Number(o.grand_total ?? 0);
+        repMap.set(label, e);
+      }
     }
-  } catch {}
+
+    salesByRep = [...repMap.entries()]
+      .map(([name, d]) => ({ name, orders: d.orders, revenue: d.revenue }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 8);
+  } catch {
+    /* keep empty */
+  }
 
   const cogs = revenue * 0.42;
   const grossProfit = revenue * 0.58;

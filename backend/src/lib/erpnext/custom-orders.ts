@@ -84,6 +84,118 @@ export async function listGarmentsForOrders(orderNames: string[]) {
   return byOrder;
 }
 
+/** Map ERP Sales Order status → CustomOrder app status. */
+function soToAppStatus(status: string): string {
+  if (["Draft", "On Hold", "To Pay"].includes(status)) return "quote";
+  if (status === "To Deliver and Bill" || status === "To Deliver") return "in_production";
+  if (status === "To Bill") return "ready";
+  if (status === "Completed" || status === "Closed") return "delivered";
+  if (status === "Cancelled") return "cancelled";
+  return "in_production";
+}
+
+/** Live MTM book = Sales Order when LSH Custom Order is empty (prod has 0 rows). */
+async function listCustomOrdersFromSalesOrders(opts: {
+  locationCode?: string | null;
+  customerId?: string;
+  limit?: number;
+}) {
+  const filters: unknown[] = [
+    ["docstatus", "=", 1],
+    ["status", "not in", ["Cancelled"]],
+  ];
+  if (opts.locationCode === "HOU") {
+    filters.push(["company", "like", "%TX%"]);
+  } else if (opts.locationCode === "NYC") {
+    filters.push(["company", "like", "%NY%"]);
+  }
+  if (opts.customerId) filters.push(["customer", "=", opts.customerId]);
+
+  const rows = await erpList<any>("Sales Order", {
+    filters,
+    fields: [
+      "name",
+      "customer",
+      "customer_name",
+      "status",
+      "grand_total",
+      "advance_paid",
+      "transaction_date",
+      "delivery_date",
+      "company",
+      "owner",
+      "creation",
+      "modified",
+    ],
+    order_by: "transaction_date desc",
+    limit: opts.limit ?? 200,
+  }).catch(() => []);
+
+  if (!rows.length) return [];
+
+  // Pull first line item names for garment label
+  const names = rows.map((r: any) => r.name);
+  const items = await erpList<any>("Sales Order Item", {
+    filters: [["parent", "in", names]],
+    fields: ["name", "parent", "item_name", "amount", "qty"],
+    limit: Math.min(names.length * 8, 2000),
+  }).catch(() => []);
+
+  const itemsByParent = new Map<string, any[]>();
+  for (const it of items) {
+    const arr = itemsByParent.get(it.parent) ?? [];
+    arr.push(it);
+    itemsByParent.set(it.parent, arr);
+  }
+
+  const customerIds = [...new Set(rows.map((r: any) => r.customer).filter(Boolean))] as string[];
+  const customerMap = await getCustomersByIds(customerIds);
+
+  return rows.map((o: any) => {
+    const lineItems = itemsByParent.get(o.name) ?? [];
+    const first = lineItems[0];
+    const company = String(o.company ?? "");
+    const locationId = company.includes("TX") || company.includes("HOU") ? "HOU" : "NYC";
+    const customerRow = customerMap.get(o.customer);
+    return {
+      id: o.name,
+      customerId: o.customer,
+      customer: customerRow ? serializeCustomer(customerRow) : {
+        id: o.customer,
+        name: o.customer_name,
+        phone: null,
+        email: null,
+        locationId,
+        createdById: null,
+        dossier: { vip: false, preferences: null },
+        createdAt: o.creation,
+        updatedAt: o.modified,
+      },
+      locationId,
+      garmentType: first?.item_name ?? "custom",
+      quotedPrice: Number(o.grand_total ?? 0),
+      priceTbd: false,
+      depositAmount: Number(o.advance_paid ?? 0),
+      status: soToAppStatus(o.status ?? ""),
+      notes: null,
+      spec: {
+        yzOrderNumber: null,
+        garments: lineItems.map((g: any) => ({
+          id: g.name,
+          type: g.item_name,
+          status: o.status,
+          price: Number(g.amount ?? 0),
+        })),
+        source: "Sales Order",
+      },
+      createdById: o.owner ?? null,
+      createdAt: o.creation ?? o.transaction_date,
+      updatedAt: o.modified,
+      erpName: o.name,
+    };
+  });
+}
+
 export async function listCustomOrders(opts: {
   locationCode?: string | null;
   customerId?: string;
@@ -104,7 +216,12 @@ export async function listCustomOrders(opts: {
     ],
     order_by: "creation desc",
     limit: opts.limit ?? 200,
-  });
+  }).catch(() => []);
+
+  // Prod: LSH Custom Order is empty — fall through to live Sales Orders.
+  if (!rows.length) {
+    return listCustomOrdersFromSalesOrders(opts);
+  }
 
   const orderNames = rows.map((r) => r.name);
   const customerIds = [...new Set(rows.map((r) => r.customer).filter(Boolean))] as string[];
@@ -119,26 +236,81 @@ export async function listCustomOrders(opts: {
 }
 
 export async function getCustomOrder(id: string) {
-  const row = await erpGet<any>(DT.CUSTOM_ORDER, id);
-  if (!row) return null;
-  const garments = await erpList<any>(DT.CUSTOM_ORDER_GARMENT, {
-    filters: [["parent", "=", id]],
-    fields: ["name", "garment_type", "garment_status", "price", "construction"],
-    limit: 50,
-  });
-  const customerMap = row.customer ? await getCustomersByIds([row.customer]) : new Map();
-  let erpData: any = null;
-  if (row.erp_sales_order) {
-    erpData = await erpGet("Sales Order", row.erp_sales_order).catch(() => null);
+  const row = await erpGet<any>(DT.CUSTOM_ORDER, id).catch(() => null);
+  if (row) {
+    const garments = await erpList<any>(DT.CUSTOM_ORDER_GARMENT, {
+      filters: [["parent", "=", id]],
+      fields: ["name", "garment_type", "garment_status", "price", "construction"],
+      limit: 50,
+    });
+    const customerMap = row.customer ? await getCustomersByIds([row.customer]) : new Map();
+    let erpData: any = null;
+    if (row.erp_sales_order) {
+      erpData = await erpGet("Sales Order", row.erp_sales_order).catch(() => null);
+    }
+    const serialized = serializeOrder(row, garments, customerMap.get(row.customer));
+    return erpData ? {
+      ...serialized,
+      erp: erpData,
+      grandTotal: Number((erpData as any).grand_total ?? serialized.quotedPrice ?? 0),
+      advancePaid: Number((erpData as any).advance_paid ?? serialized.depositAmount ?? 0),
+      balanceDue: Math.max(0, Number((erpData as any).grand_total ?? 0) - Number((erpData as any).advance_paid ?? 0)),
+    } : serialized;
   }
-  const serialized = serializeOrder(row, garments, customerMap.get(row.customer));
-  return erpData ? {
-    ...serialized,
-    erp: erpData,
-    grandTotal: Number((erpData as any).grand_total ?? serialized.quotedPrice ?? 0),
-    advancePaid: Number((erpData as any).advance_paid ?? serialized.depositAmount ?? 0),
-    balanceDue: Math.max(0, Number((erpData as any).grand_total ?? 0) - Number((erpData as any).advance_paid ?? 0)),
-  } : serialized;
+
+  // Fallback: treat id as Sales Order name (live MTM book).
+  const so = await erpGet<any>("Sales Order", id).catch(() => null);
+  if (!so) return null;
+  const items = await erpList<any>("Sales Order Item", {
+    filters: [["parent", "=", id]],
+    fields: ["name", "item_name", "amount", "qty"],
+    limit: 50,
+  }).catch(() => []);
+  const customerMap = so.customer ? await getCustomersByIds([so.customer]) : new Map();
+  const customerRow = customerMap.get(so.customer);
+  const company = String(so.company ?? "");
+  const locationId = company.includes("TX") || company.includes("HOU") ? "HOU" : "NYC";
+  const first = items[0];
+  return {
+    id: so.name,
+    customerId: so.customer,
+    customer: customerRow ? serializeCustomer(customerRow) : {
+      id: so.customer,
+      name: so.customer_name,
+      phone: null,
+      email: null,
+      locationId,
+      createdById: null,
+      dossier: { vip: false, preferences: null },
+      createdAt: so.creation,
+      updatedAt: so.modified,
+    },
+    locationId,
+    garmentType: first?.item_name ?? "custom",
+    quotedPrice: Number(so.grand_total ?? 0),
+    priceTbd: false,
+    depositAmount: Number(so.advance_paid ?? 0),
+    status: soToAppStatus(so.status ?? ""),
+    notes: so.notes ?? null,
+    spec: {
+      yzOrderNumber: null,
+      garments: items.map((g: any) => ({
+        id: g.name,
+        type: g.item_name,
+        status: so.status,
+        price: Number(g.amount ?? 0),
+      })),
+      source: "Sales Order",
+    },
+    createdById: so.owner ?? null,
+    createdAt: so.creation,
+    updatedAt: so.modified,
+    erpName: so.name,
+    erp: so,
+    grandTotal: Number(so.grand_total ?? 0),
+    advancePaid: Number(so.advance_paid ?? 0),
+    balanceDue: Math.max(0, Number(so.grand_total ?? 0) - Number(so.advance_paid ?? 0)),
+  };
 }
 
 export async function createCustomOrder(body: any, user: { email: string; locationCode?: string | null }) {
