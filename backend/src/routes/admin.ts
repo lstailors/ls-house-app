@@ -162,21 +162,32 @@ adminRouter.patch("/locations/:id", async (c) => {
 });
 
 adminRouter.get("/overview", async (c) => {
-  const [users, locations, customers, customOrders, alterations, deliveries] = await Promise.all([
+  // LSH Custom Order is empty on live — count submitted Sales Orders as the MTM book.
+  const [users, locations, customers, customOrders, salesOrders, alterations, deliveries] = await Promise.all([
     erpList<any>("User", { filters: [["enabled", "=", 1], ["user_type", "=", "System User"]], fields: ["name"], limit: 500 }).catch(() => []),
     listLocations({ activeOnly: true }),
     erpList<any>("Customer", { filters: [["disabled", "=", 0]], fields: ["name"], limit: 5000 }).catch(() => []),
     erpList<any>("LSH Custom Order", { fields: ["name"], limit: 5000 }).catch(() => []),
+    erpList<any>("Sales Order", {
+      filters: [["docstatus", "=", 1], ["status", "not in", ["Cancelled"]]],
+      fields: ["name"],
+      limit: 5000,
+    }).catch(() => []),
     erpList<any>("Alteration Ticket", { fields: ["name"], limit: 5000 }).catch(() => []),
     erpList<any>("LSH Delivery", { fields: ["name"], limit: 5000 }).catch(() => []),
   ]);
+
+  const soCount = salesOrders.length;
+  const lshCount = customOrders.length;
 
   return c.json({
     data: {
       totalUsers: users.length,
       totalLocations: locations.length,
       totalCustomers: customers.length,
-      totalCustomOrders: customOrders.length,
+      // Prefer live SO book when LSH Custom Order empty
+      totalCustomOrders: lshCount > 0 ? lshCount : soCount,
+      totalSalesOrders: soCount,
       totalAlterations: alterations.length,
       totalDeliveries: deliveries.length,
     },
