@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@ls/design/utils";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import { clearAltsPrivateStorage } from "@alts/lib/logoutPrivacy";
 
 /** Minimal chrome for FOH — tile home owns its own header; nested pages get a slim top bar + universal search. */
 export default function AltsShell() {
@@ -15,9 +16,10 @@ export default function AltsShell() {
   const isHome = loc.pathname === "/";
 
   const logout = async () => {
-    // Clears HttpOnly lst_session cookie (SSO) + localStorage dual-write token
-    await signOut();
+    // Clear customer data synchronously before the shared device changes hands.
+    clearAltsPrivateStorage();
     qc.clear();
+    await signOut();
     nav("/login", { replace: true });
   };
 
