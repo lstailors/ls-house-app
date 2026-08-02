@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
 import { erpGet, erpUpdate, erpRunMethod, erpSubmit } from "../lib/erp";
+import { recordCardOnFileProvenance } from "../lib/paymentProvenance";
 
 export const paymentsRouter = new Hono();
 
@@ -719,25 +720,48 @@ paymentsRouter.post("/card-on-file", async (c) => {
     const status = String(payment.status || "UNKNOWN").toUpperCase();
     const paymentId = payment.id ? String(payment.id) : null;
 
-    // Best-effort ticket annotation (webhook sets payment_status when PE posts)
-    if (body.ticket && paymentId) {
+    const chargeSucceeded = status === "COMPLETED" || status === "APPROVED";
+
+    // A completed charge without ticket provenance is an integrity failure.
+    // Return the payment id so staff can reconcile it without charging again.
+    if (chargeSucceeded && body.ticket && paymentId) {
       try {
-        await erpUpdate("Alteration Ticket", body.ticket, {
-          square_transaction_id: paymentId,
-          square_payment_method: "Card on File",
+        await recordCardOnFileProvenance(
+          { ticket: body.ticket, paymentId },
+          erpUpdate,
+        );
+      } catch (error) {
+        const provenanceError =
+          error instanceof Error ? error.message : "Unknown ERP provenance error";
+        console.error("Card-on-file provenance update failed", {
+          ticket: body.ticket,
+          paymentId,
+          error: provenanceError,
         });
-      } catch {
-        /* non-blocking */
+        return c.json(
+          {
+            error: {
+              message:
+                "Card was charged, but ERP did not record the payment provenance. Do not charge again; reconcile this payment id.",
+            },
+            charged: true,
+            payment_id: paymentId,
+            payment_status: status,
+            provenance_recorded: false,
+          },
+          502,
+        );
       }
     }
 
     return c.json({
-      ok: status === "COMPLETED" || status === "APPROVED",
+      ok: chargeSucceeded,
       status,
       method: "card_on_file",
       invoice: ctx.invoice,
       amount: chargeAmt,
       payment_id: paymentId,
+      provenance_recorded: Boolean(chargeSucceeded && body.ticket && paymentId),
       card: match,
       receipt_url: payment.receipt_url ?? null,
     });

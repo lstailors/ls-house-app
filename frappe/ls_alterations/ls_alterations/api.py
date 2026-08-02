@@ -268,7 +268,8 @@ def record_payment(ticket_name, amount, payment_method, square_transaction_id=No
 	Creates and submits a Payment Entry against the ticket's linked Sales Invoice,
 	then stamps the ticket with square_transaction_id, paid_at, paid_by_employee.
 
-	payment_method: one of 'Card Present', 'Card Not Present', 'Cash', 'Other'
+	payment_method: one of 'Card Present', 'Card Not Present', 'Card on File',
+	'Cash', 'Other'
 	"""
 	ticket = frappe.get_doc("Alteration Ticket", ticket_name)
 	if not ticket.sales_invoice:
