@@ -67,8 +67,14 @@ interface ChargeCardOnFileButtonProps {
   /** stretch trigger button (pickup / dispatch sidebars) */
   fullWidth?: boolean;
   className?: string;
+  /** Actual card charge succeeded */
   onSuccess: () => void;
   onError: (msg: string) => void;
+  /**
+   * Optional refresh after decline recovery (pay link / counter) — NOT a paid event.
+   * If omitted, recovery only closes the sheet (no false "charged" toast).
+   */
+  onRefresh?: () => void;
 }
 
 function brandLabel(brand: string): string {
@@ -90,6 +96,7 @@ export function ChargeCardOnFileButton({
   className,
   onSuccess,
   onError,
+  onRefresh,
 }: ChargeCardOnFileButtonProps) {
   const [stage, setStage] = useState<Stage>("idle");
   const [cards, setCards] = useState<PublicCard[]>([]);
@@ -427,7 +434,8 @@ export function ChargeCardOnFileButton({
           onRecovered={() => {
             setDeclineOpen(false);
             reset();
-            onSuccess();
+            // Recovery ≠ charged — never fire onSuccess (false "Card charged" toast)
+            onRefresh?.();
           }}
         />
       )}

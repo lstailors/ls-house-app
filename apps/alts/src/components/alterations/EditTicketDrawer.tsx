@@ -48,6 +48,8 @@ interface Line {
   /** ERP child row name — helps /full preserve photos/status */
   erpName?: string
   client_line_key?: string | null
+  /** Done/Ready lines are locked in the editor (SPEC 014) */
+  line_status?: string | null
 }
 
 interface Props {
@@ -73,6 +75,7 @@ interface Props {
     estimated_minutes?: number | null
     est_minutes?: number | null
     client_line_key?: string | null
+    line_status?: string | null
   }>
 }
 
@@ -99,7 +102,13 @@ function mapInitialLines(
     notes: l.line_notes || l.notes || '',
     estimated_minutes: Number(l.estimated_minutes ?? l.est_minutes) || 15,
     client_line_key: l.client_line_key ?? null,
+    line_status: l.line_status ?? 'Pending',
   }))
+}
+
+function isLineLocked(status?: string | null) {
+  const s = (status || '').toLowerCase()
+  return s === 'done' || s === 'ready' || s === 'complete' || s === 'completed'
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -211,6 +220,10 @@ export function EditTicketDrawer({
         (l.preset === preset.id || l.description === preset.preset_name)
     )
     if (existing) {
+      if (isLineLocked(existing.line_status)) {
+        toast.error('Finished lines are locked — use Add work for new lines only')
+        return
+      }
       setLines((prev) => prev.filter((l) => l._key !== existing._key))
     } else {
       setLines((prev) => [
@@ -223,6 +236,7 @@ export function EditTicketDrawer({
           preset: preset.id,
           notes: '',
           estimated_minutes: preset.est_minutes || 15,
+          line_status: 'Pending',
         },
       ])
     }
@@ -241,17 +255,27 @@ export function EditTicketDrawer({
         preset: null,
         notes: '',
         estimated_minutes: 15,
+        line_status: 'Pending',
       },
     ])
   }
 
   function removeLine(key: string) {
+    const line = lines.find((l) => l._key === key)
+    if (line && isLineLocked(line.line_status)) {
+      toast.error('Finished lines are locked')
+      return
+    }
     setLines((prev) => prev.filter((l) => l._key !== key))
   }
 
   function updateLine(key: string, field: keyof Line, value: string | number | null) {
     setLines((prev) =>
-      prev.map((l) => (l._key === key ? { ...l, [field]: value } : l))
+      prev.map((l) => {
+        if (l._key !== key) return l
+        if (isLineLocked(l.line_status)) return l
+        return { ...l, [field]: value }
+      })
     )
   }
 
@@ -266,6 +290,7 @@ export function EditTicketDrawer({
           name: erpName,
           line_notes: notes || null,
           estimated_minutes: l.estimated_minutes || 15,
+          line_status: l.line_status || 'Pending',
         })),
       }),
     onSuccess: () => {
@@ -275,6 +300,11 @@ export function EditTicketDrawer({
     },
     onError: () => toast.error('Failed to save changes'),
   })
+
+  // Block save if any unlocked custom line has price <= 0 with empty desc handled below
+  const invalidOpenLine = lines.some(
+    (l) => !isLineLocked(l.line_status) && (!(l.price > 0) || !String(l.description || '').trim()),
+  )
 
   const total = lines.reduce((s, l) => s + (l.price || 0), 0)
 
@@ -371,14 +401,22 @@ export function EditTicketDrawer({
                     <p className="text-cream-dim/40 text-xs italic">No alteration lines</p>
                   ) : null}
 
-                  {gLines.map((l) => (
-                    <div key={l._key} className="space-y-1.5">
+                  {gLines.map((l) => {
+                    const locked = isLineLocked(l.line_status)
+                    return (
+                    <div key={l._key} className={cn('space-y-1.5', locked && 'opacity-60')}>
+                      {locked && (
+                        <div className="text-[10px] uppercase tracking-wider text-cream-dim">
+                          Finished · locked
+                        </div>
+                      )}
                       <div className="flex items-center gap-2">
                         <Input
                           value={l.description}
+                          disabled={locked}
                           onChange={(e) => updateLine(l._key, 'description', e.target.value)}
                           placeholder="e.g. Shorten sleeves"
-                          className="flex-1 bg-forest-deep border-brass/20 text-cream placeholder:text-cream-dim/30 h-8 text-sm"
+                          className="flex-1 bg-forest-deep border-brass/20 text-cream placeholder:text-cream-dim/30 h-8 text-sm disabled:opacity-70"
                         />
                         <div className="relative w-24 shrink-0">
                           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-cream-dim/50 text-xs pointer-events-none">
@@ -388,18 +426,20 @@ export function EditTicketDrawer({
                             type="number"
                             min="0"
                             step="0.01"
+                            disabled={locked}
                             value={l.price === 0 ? '' : l.price}
                             onChange={(e) =>
                               updateLine(l._key, 'price', parseFloat(e.target.value) || 0)
                             }
                             placeholder="0"
-                            className="pl-5 bg-forest-deep border-brass/20 text-cream placeholder:text-cream-dim/30 h-8 text-sm"
+                            className="pl-5 bg-forest-deep border-brass/20 text-cream placeholder:text-cream-dim/30 h-8 text-sm disabled:opacity-70"
                           />
                         </div>
                         <button
                           type="button"
+                          disabled={locked}
                           onClick={() => removeLine(l._key)}
-                          className="p-1 rounded text-cream-dim/30 hover:text-red-400 hover:bg-red-900/20 transition-colors shrink-0"
+                          className="p-1 rounded text-cream-dim/30 hover:text-red-400 hover:bg-red-900/20 transition-colors shrink-0 disabled:opacity-30 disabled:pointer-events-none"
                         >
                           <Trash2 size={13} />
                         </button>
@@ -407,21 +447,23 @@ export function EditTicketDrawer({
                       <div className="flex items-center gap-2 pl-0.5">
                         <Input
                           value={l.notes || ''}
+                          disabled={locked}
                           onChange={(e) => updateLine(l._key, 'notes', e.target.value)}
                           placeholder="Line notes"
-                          className="flex-1 bg-forest-deep border-brass/15 text-cream placeholder:text-cream-dim/25 h-7 text-xs"
+                          className="flex-1 bg-forest-deep border-brass/15 text-cream placeholder:text-cream-dim/25 h-7 text-xs disabled:opacity-70"
                         />
                         <div className="relative w-16 shrink-0">
                           <Input
                             type="number"
                             min="0"
                             step="1"
+                            disabled={locked}
                             value={l.estimated_minutes || ''}
                             onChange={(e) =>
                               updateLine(l._key, 'estimated_minutes', parseInt(e.target.value, 10) || 15)
                             }
                             placeholder="min"
-                            className="bg-forest-deep border-brass/15 text-cream placeholder:text-cream-dim/25 h-7 text-xs pr-7"
+                            className="bg-forest-deep border-brass/15 text-cream placeholder:text-cream-dim/25 h-7 text-xs pr-7 disabled:opacity-70"
                           />
                           <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-cream-dim/40 text-[10px] pointer-events-none">
                             m
@@ -429,7 +471,8 @@ export function EditTicketDrawer({
                         </div>
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
 
                   {/* Preset chips */}
                   {presetsForGarment(g.garment_type).length > 0 ? (
@@ -506,7 +549,7 @@ export function EditTicketDrawer({
               </Button>
               <Button
                 onClick={() => saveMutation.mutate()}
-                disabled={saveMutation.isPending}
+                disabled={saveMutation.isPending || invalidOpenLine || lines.length === 0}
                 className="flex-1 bg-brass-shimmer/20 border border-brass/40 text-brass-light hover:bg-brass-shimmer/30 hover:border-brass/60 transition-all"
               >
                 {saveMutation.isPending ? 'Saving…' : 'Save changes'}

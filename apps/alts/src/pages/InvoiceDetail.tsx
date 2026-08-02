@@ -200,6 +200,7 @@ export default function InvoiceDetail() {
                         toast.success("Card charged — refreshing");
                         refresh();
                       }}
+                      onRefresh={() => refresh()}
                       onError={(msg) => toast.error(msg)}
                     />
                   )}

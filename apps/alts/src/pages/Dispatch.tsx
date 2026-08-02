@@ -606,6 +606,10 @@ export default function Dispatch() {
                       qc.invalidateQueries({ queryKey: ["dispatch-ticket", selected] });
                       qc.invalidateQueries({ queryKey: ["dispatch-ready"] });
                     }}
+                    onRefresh={() => {
+                      qc.invalidateQueries({ queryKey: ["dispatch-ticket", selected] });
+                      qc.invalidateQueries({ queryKey: ["dispatch-ready"] });
+                    }}
                     onError={(msg) => toast.error(msg)}
                   />
                   <ChargeTerminalButton

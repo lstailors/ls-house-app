@@ -39,7 +39,9 @@ function parseScan(raw: string): { ticket: string; garmentId?: string } | null {
   const slash = s.match(/^(ALT-[A-Z0-9-]+)[/:]?(G\d+)$/i);
   if (slash) return { ticket: slash[1], garmentId: slash[2].toUpperCase() };
   // bare ticket
-  if (/^ALT-[A-Z0-9-]+$/i.test(s)) return { ticket: s.toUpperCase().replace(/ALT-/, "ALT-") };
+  if (/^ALT-[A-Z0-9-]+$/i.test(s)) {
+    return { ticket: s.replace(/^alt-/i, "ALT-") };
+  }
   // G-TICKET-INDEX style tokens sometimes used
   const gtok = s.match(/^G-(ALT-[A-Z0-9-]+)-(\d+)$/i);
   if (gtok) return { ticket: gtok[1], garmentId: `G${gtok[2]}` };

@@ -76,11 +76,11 @@ interface AlterationTicketDoc {
     garment_ref: string
     description: string
     price: number
-    preset?: string
     line_status?: string
     line_notes?: string
     estimated_minutes?: number
-    client_line_key?: string
+    preset?: string | null
+    client_line_key?: string | null
   }>
 }
 
@@ -1296,6 +1296,9 @@ export default function TicketDetail() {
                 customerLabel={ticket.customer_name}
                 onSuccess={() => {
                   toast.success('Card on file charged — refreshing…')
+                  queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
+                }}
+                onRefresh={() => {
                   queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
                 }}
                 onError={(msg: string) => toast.error(msg)}
