@@ -13,8 +13,10 @@ import { clearAltsPrivateStorage } from "@alts/lib/logoutPrivacy";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
-/** Live date/time pill (SPEC_060) — neutral outline, updates every minute */
-function TimeClockPill() {
+/** Live date/time pill (SPEC_060) — neutral outline, updates every minute.
+ *  SPEC_061: leads the pill row (right after the greeting) + live pulse dot
+ *  + live open-tickets badge count so the clock also reads as "floor is live". */
+function TimeClockPill({ openCount }: { openCount: number }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
@@ -23,10 +25,23 @@ function TimeClockPill() {
   const time = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   const date = now.toLocaleDateString([], { month: "short", day: "numeric" });
   return (
-    <div className="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full border border-cream/30 bg-white/[0.02] text-[11px] sm:text-xs min-h-[40px] text-[var(--cd)]">
+    <div className="relative flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full border border-cream/30 bg-white/[0.02] text-[11px] sm:text-xs min-h-[40px] text-[var(--cd)]">
+      <span
+        className="w-[6px] h-[6px] rounded-full bg-[var(--em)] shadow-[0_0_6px_rgba(79,191,142,0.8)] animate-pulse shrink-0"
+        aria-hidden
+        title="Live"
+      />
       <span className="font-mono tabular-nums">{time}</span>
       <span className="opacity-60">·</span>
       <span>{date}</span>
+      {openCount > 0 && (
+        <span
+          className="ml-1 min-w-[20px] h-[20px] px-1.5 rounded-full grid place-items-center text-[10px] font-bold bg-white/[0.08] border border-brass/30 text-cream shrink-0"
+          title="Open tickets right now"
+        >
+          {openCount}
+        </span>
+      )}
     </div>
   );
 }
@@ -858,14 +873,8 @@ export default function HomeTiles() {
           <p className="text-[11px] sm:text-xs text-[var(--cd)] mt-1 sm:mt-1.5">{storeHoursLine()}</p>
         </div>
         <div className="flex flex-wrap gap-1.5 sm:gap-2 items-end">
-          {s.parked > 0 && (
-            <Link
-              to="/parked"
-              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full border border-brass/35 bg-brass/10 text-[11px] sm:text-xs text-cream hover:border-brass/55 min-h-[40px]"
-            >
-              <b className="text-brass-light font-bold">{s.parked}</b> parked
-            </Link>
-          )}
+          {/* Time Clock pill (SPEC_060/061) — leads the row, live pulse + date/time + open-ticket count */}
+          <TimeClockPill openCount={s.open} />
           {s.overdue > 0 && (
             <Link
               to="/shop-floor"
@@ -882,23 +891,58 @@ export default function HomeTiles() {
               <b className="text-[var(--am)] font-bold">{s.dueToday}</b> due today
             </Link>
           )}
-          {/* Time Clock pill (SPEC_060) — live date/time display only, neutral outline */}
-          <TimeClockPill />
+          {s.parked > 0 && (
+            <Link
+              to="/parked"
+              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full border border-brass/35 bg-brass/10 text-[11px] sm:text-xs text-cream hover:border-brass/55 min-h-[40px]"
+            >
+              <b className="text-brass-light font-bold">{s.parked}</b> parked
+            </Link>
+          )}
         </div>
       </div>
 
-      {/* Daily Espresso ☕ — one line (SPEC_060) */}
+      {/* Daily Espresso ☕ — one line (SPEC_060), toggle restored (SPEC_061) */}
       <div className="espresso-line shrink-0 mb-2.5 sm:mb-3 rounded-[12px] border border-brass/20 bg-black/20 px-3 py-2 flex items-center gap-2 text-[12px]">
-        <span className="text-brass-light">☕</span>
-        <span className="font-semibold text-brass-light tracking-[0.08em] uppercase">Daily Espresso</span>
-        <span className="text-[var(--cd)] flex-1 truncate">{espressoSubline(floorBrief.data)}</span>
+        <button
+          type="button"
+          onClick={toggleEspresso}
+          aria-expanded={espressoOpen}
+          aria-controls="espresso-body"
+          className="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
+        >
+          <span className="text-brass-light">☕</span>
+          <span className="font-semibold text-brass-light tracking-[0.08em] uppercase shrink-0">Daily Espresso</span>
+          <span className="text-[var(--cd)] flex-1 truncate">{espressoSubline(floorBrief.data)}</span>
+        </button>
         <button
           type="button"
           disabled={refreshBrief.isPending || floorBrief.isFetching}
           onClick={() => refreshBrief.mutate()}
-          className="text-[10px] px-2 py-0.5 rounded border border-brass/30 text-brass-light hover:border-brass disabled:opacity-50"
+          className="text-[10px] px-2 py-0.5 rounded border border-brass/30 text-brass-light hover:border-brass disabled:opacity-50 shrink-0"
         >
           {refreshBrief.isPending ? "..." : "Brew"}
+        </button>
+        <button
+          type="button"
+          onClick={toggleEspresso}
+          aria-expanded={espressoOpen}
+          aria-controls="espresso-body"
+          aria-label={espressoOpen ? "Collapse Daily Espresso" : "Expand Daily Espresso"}
+          className="w-6 h-6 rounded-[8px] border border-brass/25 bg-black/20 grid place-items-center text-brass-light shrink-0 hover:border-brass/50 transition-transform"
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 14 14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            className={cn("transition-transform duration-200", espressoOpen && "rotate-180")}
+          >
+            <path d="M3 5l4 4 4-4" />
+          </svg>
         </button>
       </div>
 
