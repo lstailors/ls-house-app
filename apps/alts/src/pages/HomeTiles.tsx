@@ -607,6 +607,33 @@ export default function HomeTiles() {
     },
   });
 
+  // SPEC_061: live weather chip — same Open-Meteo source the espresso brief already uses.
+  type WeatherReading = { temp: number; weathercode: number; description: string };
+  const weather = useQuery({
+    queryKey: ["alts-home-weather"],
+    queryFn: async (): Promise<WeatherReading | null> => {
+      const res = await api.raw("/api/espresso");
+      const j = await res.json().catch(() => ({} as any));
+      if (!res.ok) return null;
+      return ((j?.data ?? j)?.weather as WeatherReading) ?? null;
+    },
+    staleTime: 30 * 60_000,
+    refetchInterval: 30 * 60_000,
+    retry: 1,
+  });
+  const weatherEmoji = (code: number | undefined) => {
+    if (code == null) return "☀️";
+    if (code <= 1) return "☀️";
+    if (code === 2) return "🌤";
+    if (code === 3) return "☁️";
+    if (code >= 45 && code <= 48) return "🌫";
+    if (code >= 51 && code <= 67) return "🌧";
+    if (code >= 71 && code <= 77) return "❄️";
+    if (code >= 80 && code <= 82) return "🌦";
+    if (code >= 95 && code <= 99) return "⛈";
+    return "☀️";
+  };
+
   const askRocco = useMutation({
     mutationFn: async (question: string) => {
       const res = await api.raw("/api/dashboard/floor-brief/ask", {
@@ -844,9 +871,16 @@ export default function HomeTiles() {
         <div className="hidden lg:flex items-center rounded-full border border-brass/20 bg-black/30 px-3.5 py-2.5 text-xs font-bold tracking-[0.14em] uppercase text-brass-light shrink-0">
           NYC
         </div>
-        {/* Weather chip (SPEC_060) — static per brief; 72° Clear next to NYC */}
+        {/* Weather chip (SPEC_060/061) — live via Open-Meteo (same source as the Espresso brief) */}
         <div className="hidden lg:flex items-center rounded-full border border-brass/20 bg-black/30 px-3 py-1.5 text-xs font-bold tracking-[0.14em] uppercase text-brass-light shrink-0">
-          72° Clear
+          {weather.data ? (
+            <>
+              <span className="mr-1 not-italic normal-case" aria-hidden>{weatherEmoji(weather.data.weathercode)}</span>
+              {weather.data.temp}°F {weather.data.description}
+            </>
+          ) : (
+            "—"
+          )}
         </div>
         <button
           type="button"
@@ -1013,16 +1047,12 @@ export default function HomeTiles() {
           </div>
         )}
 
-      {/* Clickable stats */}
-      <div className="home-stats rounded-[14px] sm:rounded-[15px] border border-brass/15 bg-black/25 grid grid-cols-2 md:grid-cols-3 overflow-hidden shrink-0 mb-2.5 sm:mb-3">
+      {/* Live stats — trimmed to counts that aren't already on a pill or tile badge (SPEC_061) */}
+      <div className="home-stats rounded-[14px] sm:rounded-[15px] border border-brass/15 bg-black/25 grid grid-cols-2 overflow-hidden shrink-0 mb-2.5 sm:mb-3">
         {(
           [
-            { to: "/shop-floor", lab: "Open tickets", val: s.open, tone: "" },
-            { to: "/pickup", lab: "Ready for pickup", val: s.ready, tone: "text-[var(--em)]" },
-            { to: "/transfers", lab: "Out to tailors", val: s.outToTailors, tone: "text-[var(--am)]" },
             { to: "/deliveries", lab: "Out for delivery", val: s.outForDelivery, tone: "text-[var(--am)]" },
             { to: "/deliveries", lab: "Delivered today", val: s.deliveredToday, tone: "text-[var(--em)]" },
-            { to: "/shop-floor", lab: "Overdue", val: s.overdue, tone: "text-[var(--ro)]" },
           ] as const
         ).map((cell, i) => (
           <Link
@@ -1031,14 +1061,7 @@ export default function HomeTiles() {
             className={cn(
               "px-3 sm:px-[18px] py-2.5 sm:py-[12px] flex items-baseline gap-2 hover:bg-white/[0.04] active:bg-white/[0.06] transition-colors min-h-[48px]",
               "border-brass/10",
-              i % 2 === 0 && "border-r",
-              i < 4 && "border-b",
-              // md 3-col: items 0,1 border-r; 2 no r; row border-b on 0-2
-              "md:border-r md:[&:nth-child(3n)]:border-r-0",
-              i < 3 && "md:border-b",
-              i >= 3 && "md:border-b-0",
-              i === 4 && "border-b border-r sm:border-b",
-              i === 5 && "border-b-0",
+              i === 0 && "border-r",
             )}
           >
             <span className="text-[10px] sm:text-xs font-bold tracking-[0.12em] sm:tracking-[0.16em] uppercase text-[var(--cd)] leading-tight">
@@ -1047,7 +1070,7 @@ export default function HomeTiles() {
             <span className={cn("display text-xl sm:text-2xl ml-auto tabular-nums", cell.tone)}>{cell.val}</span>
           </Link>
         ))}
-        <div className="col-span-2 md:col-span-3 flex items-center gap-2 px-3 sm:px-[18px] py-2 text-[11px] sm:text-xs text-[var(--cd)] border-t border-brass/10">
+        <div className="col-span-2 flex items-center gap-2 px-3 sm:px-[18px] py-2 text-[11px] sm:text-xs text-[var(--cd)] border-t border-brass/10">
           <span
             className={cn(
               "w-[7px] h-[7px] rounded-full shrink-0",
@@ -1069,16 +1092,12 @@ export default function HomeTiles() {
         </div>
       </div>
 
-      {/* Quick actions — horizontal scroll on phone */}
+      {/* Quick actions — only the ones with no dedicated tile below (SPEC_061 dedup) */}
       <div className="home-quick flex gap-2 shrink-0 pb-2.5 sm:pb-3 overflow-x-auto -mx-1 px-1 scrollbar-none">
         {[
           { to: "/dispatch", lab: "Charge & dispatch" },
-          { to: "/invoices", lab: `Invoices${s.openInvoices ? ` · ${s.openInvoices}` : ""}` },
           { to: "/quote", lab: "Send quote" },
           { to: "/orders/alterations", lab: "Orders" },
-          { to: "/parked", lab: `Parked${s.parked ? ` · ${s.parked}` : ""}` },
-          { to: "/deliveries", lab: "Deliveries" },
-          { to: "/pickup", lab: "Pickup" },
         ].map((l) => (
           <Link
             key={l.to}
