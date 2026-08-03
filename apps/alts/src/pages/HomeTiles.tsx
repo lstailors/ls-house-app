@@ -968,7 +968,6 @@ export default function HomeTiles() {
             />
           </div>
         )}
-      </div>
 
       {/* Clickable stats */}
       <div className="home-stats rounded-[14px] sm:rounded-[15px] border border-brass/15 bg-black/25 grid grid-cols-2 md:grid-cols-3 overflow-hidden shrink-0 mb-2.5 sm:mb-3">
