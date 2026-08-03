@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import jsQR from "jsqr";
 import { toast } from "sonner";
@@ -12,9 +12,16 @@ import type { ScannerResult, ScannerActionResult } from "@ls/types";
 import { ScannerResultSheet } from "@alts/components/scanner/ScannerResultSheet";
 import {
   openPathForResult,
+  parsePickupScanTarget,
   routeForScannerResult,
   routeFromRawScan,
 } from "@alts/lib/scanRoutes";
+import {
+  addPickupBagKey,
+  invoiceBagKey,
+  readPickupBagKeys,
+  ticketBagKey,
+} from "@alts/lib/pickupBag";
 
 const RESCAN_DEBOUNCE_MS = 900;
 /** How often to poll for a QR (BarcodeDetector path) */
@@ -99,6 +106,8 @@ function forceSwUpdate() {
  */
 export default function Scanner() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const pickupMode = searchParams.get("mode") === "pickup";
   const queryClient = useQueryClient();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -120,9 +129,12 @@ export default function Scanner() {
   const [cameraError, setCameraError] = useState<{ message: string; permission: boolean } | null>(null);
   const [showManual, setShowManual] = useState(false);
   const [manualValue, setManualValue] = useState("");
-  const [statusLine, setStatusLine] = useState("Starting camera…");
-  const [debugLine, setDebugLine] = useState("v4");
+  const [statusLine, setStatusLine] = useState(
+    pickupMode ? "Pickup mode — scan tags into bag…" : "Starting camera…",
+  );
+  const [debugLine, setDebugLine] = useState(pickupMode ? "v4 pickup" : "v4");
   const [snapping, setSnapping] = useState(false);
+  const [bagCount, setBagCount] = useState(() => readPickupBagKeys().length);
 
   const stopCamera = useCallback(() => {
     scanningRef.current = false;
@@ -183,6 +195,32 @@ export default function Scanner() {
       if (last && last.value === value && now - last.at < RESCAN_DEBOUNCE_MS) return;
       lastScanRef.current = { value, at: now };
 
+      // ── Pickup mode: add to bag, keep scanning ──────────────────────────
+      if (pickupMode) {
+        const target = parsePickupScanTarget(value);
+        if (!target) {
+          toast.error("Not a ticket / garment / invoice tag");
+          setStatusLine("Try again — hang tag or thermal");
+          return;
+        }
+        const key =
+          target.kind === "ticket" ? ticketBagKey(target.id) : invoiceBagKey(target.id);
+        const { added, keys } = addPickupBagKey(key);
+        setBagCount(keys.length);
+        buzz();
+        toast.success(
+          added
+            ? `Bag +1 · ${target.id}`
+            : `Already in bag · ${target.id}`,
+          { description: `${keys.length} in pickup bag` },
+        );
+        setStatusLine(`Bag ${keys.length} · keep scanning`);
+        setDebugLine(`pickup ${via}: ${target.kind} ${target.id}`);
+        // stay scanning for next tag
+        scanningRef.current = true;
+        return;
+      }
+
       scanningRef.current = false;
       buzz();
       setStatusLine(`Got it (${via}) — opening…`);
@@ -198,7 +236,7 @@ export default function Scanner() {
       }
       void resolveToken(value);
     },
-    [resolveToken, navigate, stopCamera],
+    [resolveToken, navigate, stopCamera, pickupMode],
   );
 
   handleDecodeRef.current = handleDecode;
@@ -584,7 +622,16 @@ export default function Scanner() {
 
   const handleClose = useCallback(() => {
     stopCamera();
+    if (pickupMode) {
+      navigate("/pickup", { replace: true });
+      return;
+    }
     navigate(-1);
+  }, [navigate, stopCamera, pickupMode]);
+
+  const openPickupBag = useCallback(() => {
+    stopCamera();
+    navigate("/pickup", { replace: true });
   }, [navigate, stopCamera]);
 
   return (
@@ -630,6 +677,9 @@ export default function Scanner() {
           <X className="h-5 w-5" />
         </button>
         <div className="text-center min-w-0 flex-1">
+          {pickupMode && (
+            <div className="text-[10px] uppercase tracking-widest text-brass mb-0.5">Pickup bag scan</div>
+          )}
           <div className="text-cream text-sm font-medium truncate">{statusLine}</div>
           <div className="text-[10px] tracking-wide text-cream/55 mt-0.5 truncate font-mono">
             {debugLine}
@@ -667,8 +717,20 @@ export default function Scanner() {
       {!showManual && !sheetOpen ? (
         <div className="absolute inset-x-0 bottom-0 z-10 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-3">
           <p className="text-center text-cream/75 text-xs">
-            Auto-scan on · gun/wedge OK · or tap Snap
+            {pickupMode
+              ? "Pickup · scan hang tags into bag · keep going"
+              : "Auto-scan on · gun/wedge OK · or tap Snap"}
           </p>
+          {pickupMode && bagCount > 0 ? (
+            <button
+              type="button"
+              onClick={openPickupBag}
+              className="flex items-center gap-2 min-h-[52px] px-8 rounded-full border border-signal-emerald/50 bg-signal-emerald text-forest-deep font-semibold text-sm shadow-lg active:scale-95"
+            >
+              <ArrowRight className="h-5 w-5" />
+              Open bag · {bagCount}
+            </button>
+          ) : null}
           <button
             type="button"
             disabled={snapping}

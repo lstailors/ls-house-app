@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,6 +8,15 @@ import { cn } from "@ls/design/utils";
 import { billingStatusLabel } from "@alts/lib/billingLabels";
 import { ChargeCardOnFileButton } from "@alts/components/payments/ChargeCardOnFileButton";
 import { ChargeTerminalButton } from "@alts/components/payments/ChargeTerminalButton";
+import { parsePickupScanTarget } from "@alts/lib/scanRoutes";
+import {
+  addPickupBagKey,
+  clearPickupBag,
+  invoiceBagKey,
+  readPickupBagKeys,
+  ticketBagKey,
+  writePickupBagKeys,
+} from "@alts/lib/pickupBag";
 import "@alts/styles/alts-pos.css";
 
 type Ticket = {
@@ -83,25 +92,72 @@ function money(n: number) {
 }
 
 function ticketKey(name: string) {
-  return `t:${name}`;
+  return ticketBagKey(name);
 }
 function invoiceKey(id: string) {
-  return `i:${id}`;
+  return invoiceBagKey(id);
 }
 
 function customerMatchKey(item: QueueItem) {
   return (item.customerId || item.customerName || "").trim().toLowerCase();
 }
 
+function ticketToQueueItem(t: Ticket): QueueItem {
+  const total = Number(t.ticket_total) || 0;
+  const unpaid =
+    t.payment_status !== "Paid" &&
+    t.payment_status !== "N/A" &&
+    total > 0 &&
+    t.billing_status !== "Warranty" &&
+    t.billing_status !== "Included in Custom Order";
+  return {
+    key: ticketKey(t.name),
+    kind: "ticket",
+    id: t.name,
+    customerId: t.customer,
+    customerName: t.customer_name || "—",
+    phone: t.customer_mobile || t.customer_phone || "",
+    total,
+    outstanding: unpaid ? total : 0,
+    paymentLabel: t.payment_status || t.workflow_state || "—",
+    unpaid,
+    billingStatus: t.billing_status,
+    salesInvoice: t.sales_invoice,
+    garmentCount: t.garments?.length,
+  };
+}
+
+function invoiceToQueueItem(inv: InvoiceRow): QueueItem {
+  const outstanding = Number(inv.outstandingAmount) || 0;
+  return {
+    key: invoiceKey(inv.id),
+    kind: "invoice",
+    id: inv.id,
+    customerId: inv.customer?.id,
+    customerName: inv.customerName || inv.customer?.name || "—",
+    phone: "",
+    total: Number(inv.grandTotal) || outstanding,
+    outstanding: Math.max(0, outstanding),
+    paymentLabel: inv.status || "open",
+    unpaid: outstanding > 0.005,
+    invoiceKind: inv.kind,
+    ticketRef: inv.alterationTicketRef,
+    salesOrder: inv.salesOrder,
+  };
+}
+
 export default function PickupCounter() {
   const nav = useNavigate();
   const qc = useQueryClient();
-  const [params] = useSearchParams();
-  const preTicket = params.get("ticket");
-  const preInvoice = params.get("invoice");
+  const [params, setParams] = useSearchParams();
+  const preTicket = params.get("ticket") || params.get("addTicket");
+  const preInvoice = params.get("invoice") || params.get("addInvoice");
+  const scanRef = useRef<HTMLInputElement>(null);
+  const [scanBuf, setScanBuf] = useState("");
+  const [scanBusy, setScanBusy] = useState(false);
 
   const [selected, setSelected] = useState<Set<string>>(() => {
-    const s = new Set<string>();
+    const s = new Set(readPickupBagKeys());
     if (preTicket) s.add(ticketKey(preTicket));
     if (preInvoice) s.add(invoiceKey(preInvoice));
     return s;
@@ -110,23 +166,48 @@ export default function PickupCounter() {
   const [focusKey, setFocusKey] = useState<string | null>(
     preTicket ? ticketKey(preTicket) : preInvoice ? invoiceKey(preInvoice) : null,
   );
+  /** Tickets/invoices added by scan that aren't on the Ready/open list yet */
+  const [extras, setExtras] = useState<QueueItem[]>([]);
   const [confirmWho, setConfirmWho] = useState(true);
   const [collector, setCollector] = useState("");
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "tickets" | "invoices" | "paid" | "unpaid">("all");
 
+  // Persist bag for camera scanner round-trip
+  useEffect(() => {
+    writePickupBagKeys(Array.from(selected));
+  }, [selected]);
+
+  // Keep scan field focused for gun / HID wedge (when not typing in other inputs)
+  useEffect(() => {
+    const id = window.setTimeout(() => scanRef.current?.focus(), 80);
+    return () => window.clearTimeout(id);
+  }, [selected.size, focusKey]);
+
   useEffect(() => {
     if (preTicket) {
       setSelected((prev) => new Set(prev).add(ticketKey(preTicket)));
       setFocusKey(ticketKey(preTicket));
+      addPickupBagKey(ticketKey(preTicket));
     }
   }, [preTicket]);
   useEffect(() => {
     if (preInvoice) {
       setSelected((prev) => new Set(prev).add(invoiceKey(preInvoice)));
       setFocusKey(invoiceKey(preInvoice));
+      addPickupBagKey(invoiceKey(preInvoice));
     }
   }, [preInvoice]);
+
+  // Strip one-shot add* query params after consume so refresh doesn't re-toast
+  useEffect(() => {
+    if (!params.get("addTicket") && !params.get("addInvoice") && !params.get("scanned")) return;
+    const next = new URLSearchParams(params);
+    next.delete("addTicket");
+    next.delete("addInvoice");
+    next.delete("scanned");
+    setParams(next, { replace: true });
+  }, [params, setParams]);
 
   const ready = useQuery({
     queryKey: ["pickup-ready"],
@@ -158,28 +239,7 @@ export default function PickupCounter() {
     const items: QueueItem[] = [];
 
     for (const t of tickets) {
-      const total = Number(t.ticket_total) || 0;
-      const unpaid =
-        t.payment_status !== "Paid" &&
-        t.payment_status !== "N/A" &&
-        total > 0 &&
-        t.billing_status !== "Warranty" &&
-        t.billing_status !== "Included in Custom Order";
-      items.push({
-        key: ticketKey(t.name),
-        kind: "ticket",
-        id: t.name,
-        customerId: t.customer,
-        customerName: t.customer_name || "—",
-        phone: t.customer_mobile || t.customer_phone || "",
-        total,
-        outstanding: unpaid ? total : 0,
-        paymentLabel: t.payment_status || "—",
-        unpaid,
-        billingStatus: t.billing_status,
-        salesInvoice: t.sales_invoice,
-        garmentCount: t.garments?.length,
-      });
+      items.push(ticketToQueueItem(t));
     }
 
     for (const inv of invoices) {
@@ -193,21 +253,7 @@ export default function PickupCounter() {
       const outstanding = Number(inv.outstandingAmount) || 0;
       if (outstanding <= 0.005) continue;
 
-      items.push({
-        key: invoiceKey(id),
-        kind: "invoice",
-        id,
-        customerId: inv.customer?.id,
-        customerName: inv.customerName || inv.customer?.name || "—",
-        phone: "",
-        total: Number(inv.grandTotal) || outstanding,
-        outstanding,
-        paymentLabel: inv.status || "open",
-        unpaid: true,
-        invoiceKind: inv.kind,
-        ticketRef: inv.alterationTicketRef,
-        salesOrder: inv.salesOrder,
-      });
+      items.push(invoiceToQueueItem(inv));
     }
 
     // Stable sort: customer name, then tickets before invoices, then id
@@ -221,8 +267,75 @@ export default function PickupCounter() {
     return items;
   }, [ready.data, openInvoices.data]);
 
+  // When bag has keys not in Ready/open lists (camera scan), hydrate via API
+  useEffect(() => {
+    const keys = Array.from(selected);
+    if (!keys.length) return;
+    let cancelled = false;
+    void (async () => {
+      for (const key of keys) {
+        if (cancelled) return;
+        if (queue.some((q) => q.key === key)) continue;
+        // skip if already hydrating into extras — check inside setState race via key
+        if (key.startsWith("t:")) {
+          const id = key.slice(2);
+          try {
+            const t = await api.get<Ticket>(
+              `/api/intake-alterations/tickets/${encodeURIComponent(id)}`,
+            );
+            if (cancelled) return;
+            const item = ticketToQueueItem(t);
+            setExtras((prev) => (prev.some((p) => p.key === item.key) ? prev : [...prev, item]));
+          } catch {
+            /* leave orphan key; staff can clear bag */
+          }
+        } else if (key.startsWith("i:")) {
+          const id = key.slice(2);
+          try {
+            const res = await api.raw(`/api/invoices/${encodeURIComponent(id)}`);
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok || cancelled) continue;
+            const inv = (json?.data ?? json) as any;
+            const row: InvoiceRow = {
+              id: inv.id || inv.name || id,
+              customer: inv.customer ?? null,
+              customerName: inv.customerName || inv.customer_name || inv.customer?.name || "—",
+              status: inv.status || "open",
+              kind: inv.kind,
+              grandTotal: Number(inv.grandTotal ?? inv.grand_total ?? 0),
+              outstandingAmount: Number(inv.outstandingAmount ?? inv.outstanding_amount ?? 0),
+              alterationTicketRef: inv.alterationTicketRef ?? inv.alteration_ticket_ref,
+              salesOrder: inv.salesOrder,
+            };
+            const item = invoiceToQueueItem(row);
+            setExtras((prev) => (prev.some((p) => p.key === item.key) ? prev : [...prev, item]));
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, queue]);
+
+  const catalog = useMemo(() => {
+    const map = new Map<string, QueueItem>();
+    for (const r of queue) map.set(r.key, r);
+    for (const e of extras) {
+      if (!map.has(e.key)) map.set(e.key, e);
+    }
+    return map;
+  }, [queue, extras]);
+
   const list = useMemo(() => {
     let rows = queue;
+    // Always surface bag extras even if not Ready/open — staff scanned them
+    const extraOnly = extras.filter((e) => !queue.some((q) => q.key === e.key));
+    if (extraOnly.length) {
+      rows = [...extraOnly, ...rows];
+    }
     if (q.trim()) {
       const s = q.trim().toLowerCase();
       rows = rows.filter(
@@ -240,11 +353,130 @@ export default function PickupCounter() {
     if (filter === "paid") rows = rows.filter((r) => !r.unpaid);
     if (filter === "unpaid") rows = rows.filter((r) => r.unpaid);
     return rows;
-  }, [queue, q, filter]);
+  }, [queue, extras, q, filter]);
 
-  const selectedItems = useMemo(
-    () => queue.filter((r) => selected.has(r.key)),
-    [queue, selected],
+  const selectedItems = useMemo(() => {
+    const out: QueueItem[] = [];
+    for (const key of selected) {
+      const item = catalog.get(key);
+      if (item) out.push(item);
+    }
+    return out;
+  }, [catalog, selected]);
+
+  const addFromScan = useCallback(
+    async (raw: string) => {
+      const target = parsePickupScanTarget(raw);
+      if (!target) {
+        toast.error("Could not read tag — scan garment QR, ticket, or invoice");
+        return;
+      }
+
+      setScanBusy(true);
+      try {
+        if (target.kind === "ticket") {
+          const key = ticketKey(target.id);
+          let item = catalog.get(key);
+          if (!item) {
+            try {
+              const t = await api.get<Ticket>(
+                `/api/intake-alterations/tickets/${encodeURIComponent(target.id)}`,
+              );
+              item = ticketToQueueItem(t);
+              setExtras((prev) => (prev.some((p) => p.key === key) ? prev : [...prev, item!]));
+              if (t.workflow_state && t.workflow_state !== "Ready") {
+                toast.message(`${t.name} is ${t.workflow_state} — still added to bag`);
+              }
+            } catch {
+              toast.error(`Ticket ${target.id} not found`);
+              return;
+            }
+          }
+          const { added } = addPickupBagKey(key);
+          setSelected((prev) => new Set(prev).add(key));
+          setFocusKey(key);
+          setConfirmWho(true);
+          if (!collector.trim()) setCollector(item.customerName || "");
+          toast.success(added ? `Added ${item.id}` : `Already in bag · ${item.id}`, {
+            description: item.customerName,
+          });
+          return;
+        }
+
+        // invoice
+        const key = invoiceKey(target.id);
+        let item = catalog.get(key);
+        if (!item) {
+          try {
+            const res = await api.raw(`/api/invoices/${encodeURIComponent(target.id)}`);
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(json?.error?.message || "Invoice not found");
+            const inv = (json?.data ?? json) as InvoiceRow & {
+              id?: string;
+              name?: string;
+              customer_name?: string;
+              grand_total?: number;
+              outstanding_amount?: number;
+              alteration_ticket_ref?: string;
+            };
+            const row: InvoiceRow = {
+              id: inv.id || inv.name || target.id,
+              customer: inv.customer ?? null,
+              customerName: inv.customerName || inv.customer_name || inv.customer?.name || "—",
+              status: inv.status || "open",
+              kind: inv.kind,
+              grandTotal: Number(inv.grandTotal ?? inv.grand_total ?? 0),
+              outstandingAmount: Number(inv.outstandingAmount ?? inv.outstanding_amount ?? 0),
+              alterationTicketRef: inv.alterationTicketRef ?? inv.alteration_ticket_ref,
+              salesOrder: inv.salesOrder,
+            };
+            // Prefer linked Ready ticket if present
+            const altRef = (row.alterationTicketRef || "").trim();
+            if (altRef) {
+              const tKey = ticketKey(altRef);
+              let tItem = catalog.get(tKey);
+              if (!tItem) {
+                const t = await api.get<Ticket>(
+                  `/api/intake-alterations/tickets/${encodeURIComponent(altRef)}`,
+                );
+                tItem = ticketToQueueItem(t);
+                setExtras((prev) =>
+                  prev.some((p) => p.key === tKey) ? prev : [...prev, tItem!],
+                );
+              }
+              const { added } = addPickupBagKey(tKey);
+              setSelected((prev) => new Set(prev).add(tKey));
+              setFocusKey(tKey);
+              setConfirmWho(true);
+              if (!collector.trim()) setCollector(tItem.customerName || "");
+              toast.success(
+                added ? `Added ticket ${tItem.id} (from invoice)` : `Already in bag · ${tItem.id}`,
+                { description: tItem.customerName },
+              );
+              return;
+            }
+            item = invoiceToQueueItem(row);
+            setExtras((prev) => (prev.some((p) => p.key === item!.key) ? prev : [...prev, item!]));
+          } catch (e: any) {
+            toast.error(e?.message || `Invoice ${target.id} not found`);
+            return;
+          }
+        }
+        const { added } = addPickupBagKey(key);
+        setSelected((prev) => new Set(prev).add(key));
+        setFocusKey(key);
+        setConfirmWho(true);
+        if (!collector.trim()) setCollector(item.customerName || "");
+        toast.success(added ? `Added invoice ${item.id}` : `Already in bag · ${item.id}`, {
+          description: item.customerName,
+        });
+      } finally {
+        setScanBusy(false);
+        setScanBuf("");
+        window.setTimeout(() => scanRef.current?.focus(), 30);
+      }
+    },
+    [catalog, collector],
   );
 
   const focusItem =
@@ -322,6 +554,8 @@ export default function PickupCounter() {
   function clearSelection() {
     setSelected(new Set());
     setFocusKey(null);
+    setExtras([]);
+    clearPickupBag();
   }
 
   const methodLabel = (m?: string | null) => {
@@ -470,16 +704,41 @@ export default function PickupCounter() {
         <div>
           <h1 className="display text-2xl leading-none">Pickup</h1>
           <div className="caps mt-0.5">
-            Ready alts · open invoices · multi-select
+            Scan to bag · Ready alts · invoices · multi
           </div>
         </div>
         <div className="flex-1" />
-        <div className="flex items-center gap-2 rounded-full border border-brass/20 bg-black/30 px-3 h-11 min-w-[160px] flex-1 sm:flex-none sm:min-w-[220px]">
+        <form
+          className="flex items-center gap-2 rounded-full border border-brass/40 bg-brass/10 px-3 h-11 min-w-[180px] flex-1 sm:flex-none sm:min-w-[260px]"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const v = scanBuf.trim();
+            if (!v || scanBusy) return;
+            void addFromScan(v);
+          }}
+        >
+          <span className="text-brass shrink-0" aria-hidden>
+            ⌗
+          </span>
+          <input
+            ref={scanRef}
+            value={scanBuf}
+            onChange={(e) => setScanBuf(e.target.value)}
+            placeholder={scanBusy ? "Adding…" : "Scan tag / gun / paste ALT…"}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            disabled={scanBusy}
+            className="bg-transparent outline-none text-sm flex-1 text-cream placeholder:text-cream-dim min-w-0"
+            aria-label="Scan to add to pickup bag"
+          />
+        </form>
+        <div className="hidden md:flex items-center gap-2 rounded-full border border-brass/20 bg-black/30 px-3 h-11 min-w-[160px]">
           <span className="text-cream-dim">⌕</span>
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Name, ticket, SI, phone…"
+            placeholder="Filter name / phone…"
             className="bg-transparent outline-none text-sm flex-1 text-cream placeholder:text-cream-dim"
           />
         </div>
@@ -490,10 +749,10 @@ export default function PickupCounter() {
           All invoices
         </Link>
         <Link
-          to="/scanner"
-          className="flex items-center gap-2 h-11 px-4 rounded-full border border-brass/30 text-sm font-semibold text-brass-light hover:border-brass/50"
+          to="/scanner?mode=pickup"
+          className="flex items-center gap-2 h-11 px-4 rounded-full border border-brass/50 bg-brass/20 text-sm font-semibold text-brass hover:bg-brass/30"
         >
-          ⌗ Scan
+          ⌗ Camera
         </Link>
       </header>
 
@@ -543,7 +802,7 @@ export default function PickupCounter() {
             )}
           </div>
           <p className="text-[11px] text-cream-dim px-2 pb-1 leading-snug">
-            Tap checkbox to multi-select. Same client can hold several tickets + invoices.
+            Scan garment/ticket QR into the bag, or tap checkboxes. Same client can hold several.
           </p>
           {list.map((row) => {
             const on = selected.has(row.key);
@@ -627,10 +886,10 @@ export default function PickupCounter() {
           {!selected.size && (
             <div className="h-full grid place-items-center text-cream-dim min-h-[40vh]">
               <div className="text-center max-w-md px-4">
-                <div className="display text-3xl mb-2">Select tickets & invoices</div>
+                <div className="display text-3xl mb-2">Scan or select</div>
                 <p className="text-sm">
-                  Ready alteration tickets and open sales invoices. Multi-select for the same client —
-                  release or charge the bag together.
+                  Point the gun at a hang tag / thermal ticket, use Camera, or multi-select from the
+                  queue. Bag holds Ready alts + open invoices together.
                 </p>
               </div>
             </div>
