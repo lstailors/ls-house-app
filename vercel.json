@@ -25,11 +25,6 @@
       "permanent": false
     },
     {
-      "source": "https://www.my.lstailors.com/:path*",
-      "destination": "https://my.lstailors.com/:path*",
-      "permanent": true
-    },
-    {
       "source": "/account",
       "destination": "/login?portal=customer",
       "permanent": false
