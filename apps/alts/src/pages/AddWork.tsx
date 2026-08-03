@@ -80,6 +80,28 @@ function fmtShort(iso?: string) {
   });
 }
 
+const GARMENT_TYPES = [
+  "Jacket",
+  "Pants",
+  "Vest",
+  "Shirt",
+  "Suit",
+  "Coat",
+  "Dress",
+  "Skirt",
+  "Blouse",
+  "Other",
+];
+
+function nextGarmentId(list: Array<{ garment_id: string }>) {
+  let max = 0;
+  for (const g of list) {
+    const m = /^G(\d+)$/i.exec(String(g.garment_id || "").trim());
+    if (m) max = Math.max(max, Number(m[1]) || 0);
+  }
+  return `G${max + 1}`;
+}
+
 export default function AddWork() {
   const { ticketName = "" } = useParams<{ ticketName: string }>();
   const nav = useNavigate();
@@ -94,6 +116,12 @@ export default function AddWork() {
   const [pushDue, setPushDue] = useState(false);
   const [notify, setNotify] = useState<"sms" | "told">("told");
   const [busy, setBusy] = useState(false);
+  const [showNewPiece, setShowNewPiece] = useState(false);
+  const [newPieceType, setNewPieceType] = useState("Jacket");
+  const [newPieceColor, setNewPieceColor] = useState("");
+  const [newPieceDesc, setNewPieceDesc] = useState("");
+  /** Local-only garment staged before save (forgot a piece). */
+  const [stagedNewPiece, setStagedNewPiece] = useState<TicketGarment | null>(null);
 
   const ticketQ = useQuery({
     queryKey: ["ticket", ticketName],
@@ -107,7 +135,12 @@ export default function AddWork() {
   });
 
   const ticket = ticketQ.data;
-  const garments = ticket?.garments ?? [];
+  const garments = useMemo(() => {
+    const base = ticket?.garments ?? [];
+    if (!stagedNewPiece) return base;
+    if (base.some((g) => g.garment_id === stagedNewPiece.garment_id)) return base;
+    return [...base, stagedNewPiece];
+  }, [ticket?.garments, stagedNewPiece]);
   const lines = ticket?.lines ?? [];
   const blocked =
     ticket?.workflow_state === "Cancelled" || ticket?.workflow_state === "Picked Up";
@@ -135,6 +168,30 @@ export default function AddWork() {
       return types.some((t) => t === gt || gt.includes(t) || t.includes(gt));
     });
   }, [presetsQ.data, selected]);
+
+  function stageNewPiece() {
+    if (blocked) {
+      toast.error("Reopen ticket before adding a piece");
+      return;
+    }
+    const type = newPieceType || "Other";
+    const id = nextGarmentId(garments);
+    const piece: TicketGarment = {
+      garment_id: id,
+      garment_type: type,
+      garment_description: (newPieceDesc.trim() || type),
+      color: newPieceColor.trim(),
+      fabric_notes: "",
+      garment_status: "Received",
+    };
+    setStagedNewPiece(piece);
+    setGarmentId(id);
+    setPendingAdds([]);
+    setShowNewPiece(false);
+    setNewPieceColor("");
+    setNewPieceDesc("");
+    toast.success(`Piece ${id} ready — add work lines, then save`);
+  }
 
   function addPreset(p: Preset) {
     const price = Number(p.price) || 0;
@@ -192,6 +249,7 @@ export default function AddWork() {
         garment_status: g.garment_status,
       }));
 
+      // Keep ERP lines + any new piece's pending lines; never drop Done lines.
       const linesOut = [
         ...lines.map((l) => ({
           name: l.name,
@@ -321,11 +379,15 @@ export default function AddWork() {
             {garments.map((g) => {
               const count = lines.filter((l) => l.garment_ref === g.garment_id).length;
               const active = garmentId === g.garment_id;
+              const isNew = stagedNewPiece?.garment_id === g.garment_id;
               return (
                 <button
                   key={g.garment_id}
                   type="button"
-                  onClick={() => setGarmentId(g.garment_id)}
+                  onClick={() => {
+                    setGarmentId(g.garment_id);
+                    if (!isNew) setPendingAdds([]);
+                  }}
                   className={cn(
                     "text-left card-glass p-3.5 min-h-11 border transition-colors",
                     active ? "border-brass ring-1 ring-brass/40" : "border-brass/20",
@@ -338,15 +400,83 @@ export default function AddWork() {
                   <div className="text-[12px] text-cream-dim mt-1 flex gap-2 flex-wrap">
                     <span className="font-mono text-brass-light">{g.garment_id}</span>
                     <span>· {count} line{count === 1 ? "" : "s"}</span>
-                    {g.garment_status && <span className="chip">{g.garment_status}</span>}
+                    {isNew && <span className="chip bg-brass/20 text-brass">New piece</span>}
+                    {g.garment_status && !isNew && <span className="chip">{g.garment_status}</span>}
                   </div>
                 </button>
               );
             })}
             {!garments.length && !ticketQ.isLoading && (
-              <p className="text-cream-dim text-sm italic">No garments on this ticket.</p>
+              <p className="text-cream-dim text-sm italic">No garments on this ticket yet.</p>
             )}
           </div>
+
+          {!blocked && (
+            <div className="mt-3 space-y-2">
+              {!showNewPiece ? (
+                <button
+                  type="button"
+                  onClick={() => setShowNewPiece(true)}
+                  className="w-full min-h-11 rounded-xl border border-dashed border-brass/50 bg-brass/10 text-brass text-sm font-semibold inline-flex items-center justify-center gap-2"
+                >
+                  <Plus size={16} />
+                  Forgot a piece? Add garment
+                </button>
+              ) : (
+                <div className="card-glass p-4 space-y-3 border border-brass/40">
+                  <div className="caps">New piece on this ticket</div>
+                  <label className="block text-[12px] text-cream-dim">
+                    Type
+                    <select
+                      value={newPieceType}
+                      onChange={(e) => setNewPieceType(e.target.value)}
+                      className="mt-1 w-full h-11 rounded-xl bg-black/30 border border-brass/25 px-3 text-sm text-cream outline-none"
+                    >
+                      {GARMENT_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-[12px] text-cream-dim">
+                    Color (optional)
+                    <input
+                      value={newPieceColor}
+                      onChange={(e) => setNewPieceColor(e.target.value)}
+                      placeholder="Navy / charcoal…"
+                      className="mt-1 w-full h-11 rounded-xl bg-black/30 border border-brass/25 px-3 text-sm text-cream outline-none"
+                    />
+                  </label>
+                  <label className="block text-[12px] text-cream-dim">
+                    Description (optional)
+                    <input
+                      value={newPieceDesc}
+                      onChange={(e) => setNewPieceDesc(e.target.value)}
+                      placeholder="Client's blue blazer"
+                      className="mt-1 w-full h-11 rounded-xl bg-black/30 border border-brass/25 px-3 text-sm text-cream outline-none"
+                    />
+                  </label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPiece(false)}
+                      className="btn-ghost h-11 px-4 text-[12px]"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={stageNewPiece}
+                      className="btn-brass flex-1 h-11 text-[12px]"
+                    >
+                      Add piece · then pick work
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         {selected && (

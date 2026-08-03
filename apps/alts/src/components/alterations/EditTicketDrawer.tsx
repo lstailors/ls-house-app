@@ -163,11 +163,26 @@ export function EditTicketDrawer({
 
   // ── Garment helpers ────────────────────────────────────────────────────
 
+  function nextGarmentId(list: Array<{ garment_id: string }>) {
+    let max = 0
+    for (const g of list) {
+      const m = /^G(\d+)$/i.exec(String(g.garment_id || '').trim())
+      if (m) max = Math.max(max, Number(m[1]) || 0)
+    }
+    return `G${max + 1}`
+  }
+
   function addGarment() {
-    const id = `G${Date.now()}`
+    const id = nextGarmentId(garments)
     setGarments((prev) => [
       ...prev,
-      { _key: uid(), garment_id: id, garment_type: 'Jacket', garment_description: '', color: '' },
+      {
+        _key: uid(),
+        garment_id: id,
+        garment_type: 'Jacket',
+        garment_description: 'Jacket',
+        color: '',
+      },
     ])
   }
 
@@ -282,23 +297,41 @@ export function EditTicketDrawer({
   // ── Save ────────────────────────────────────────────────────────────────
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      api.patch(`/api/alterations/${ticketName}/full`, {
-        garments: garments.map(({ _key: _k, ...g }) => g),
-        lines: lines.map(({ _key: _k, erpName, notes, ...l }) => ({
-          ...l,
-          name: erpName,
-          line_notes: notes || null,
-          estimated_minutes: l.estimated_minutes || 15,
-          line_status: l.line_status || 'Pending',
-        })),
-      }),
+    mutationFn: async () => {
+      const res = await api.raw(`/api/alterations/${encodeURIComponent(ticketName)}/full`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          garments: garments.map(({ _key: _k, ...g }) => ({
+            ...g,
+            garment_description: g.garment_description || g.garment_type,
+          })),
+          lines: lines.map(({ _key: _k, erpName, notes, ...l }) => ({
+            ...l,
+            name: erpName,
+            line_notes: notes || null,
+            estimated_minutes: l.estimated_minutes || 15,
+            line_status: l.line_status || 'Pending',
+          })),
+        }),
+      })
+      const body = await res.json().catch(() => ({} as any))
+      if (!res.ok) {
+        const msg =
+          body?.error?.message ||
+          (typeof body?.error === 'string' ? body.error : null) ||
+          'Could not save ticket'
+        throw new Error(typeof msg === 'string' ? msg : 'Could not save ticket')
+      }
+      return body
+    },
     onSuccess: () => {
-      toast.success('Ticket updated')
+      toast.success('Ticket updated — pieces & prices saved')
       queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
+      queryClient.invalidateQueries({ queryKey: ['shop-floor-tickets'] })
       onOpenChange(false)
     },
-    onError: () => toast.error('Failed to save changes'),
+    onError: (e: Error) => toast.error(e.message || 'Failed to save changes'),
   })
 
   // Block save if any unlocked custom line has price <= 0 with empty desc handled below
