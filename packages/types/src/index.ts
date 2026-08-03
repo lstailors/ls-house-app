@@ -1015,7 +1015,8 @@ export const GarmentCompleteRequest = z.object({
   ticket: z.string().min(1),
   garment_id: z.string().min(1),
   worker: z.string().min(1),
-  actual_minutes: z.number().optional(),
+  /** Required for floor time tracking (chips). */
+  actual_minutes: z.number().positive().max(480),
 });
 export type GarmentCompleteRequest = z.infer<typeof GarmentCompleteRequest>;
 
@@ -1036,7 +1037,7 @@ export const CompleteGarmentRequest = z.object({
   ticket: z.string().min(1),
   garment_id: z.string().min(1),
   worker: z.string().min(1),
-  actual_minutes: z.number().nonnegative().optional(),
+  actual_minutes: z.number().positive().max(480),
 });
 export type CompleteGarmentRequest = z.infer<typeof CompleteGarmentRequest>;
 

@@ -297,7 +297,7 @@ alterationsRouter.post("/complete-garment", async (c) => {
       ticket,
       garment_id,
       worker,
-      ...(actual_minutes != null ? { actual_minutes } : {}),
+      actual_minutes,
     });
     return c.json({ data: result });
   } catch (e: any) {

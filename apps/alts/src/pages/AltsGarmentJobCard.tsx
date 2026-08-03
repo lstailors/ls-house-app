@@ -71,26 +71,27 @@ export default function GarmentJobCardPage() {
   });
 
   const completeMutation = useMutation({
-    mutationFn: (vars: { worker: string; actual_minutes?: number }) =>
+    mutationFn: (vars: { worker: string; actual_minutes: number }) =>
       api.post<GarmentActionResult>("/api/garment/complete", {
         ticket,
         garment_id: garmentId,
         worker: vars.worker,
-        ...(vars.actual_minutes !== undefined ? { actual_minutes: vars.actual_minutes } : {}),
+        actual_minutes: vars.actual_minutes,
       }),
-    onSuccess: (res) => {
+    onSuccess: (res, vars) => {
       setCompleteOpen(false);
       if (res.all_garments_ready === true) {
         toast.success("Order complete — customer notified", {
-          description: "Every garment on this ticket is ready.",
+          description: `${vars.actual_minutes} min logged · every garment ready.`,
         });
       } else {
-        toast.success(res.message ?? "Garment marked complete");
+        toast.success(res.message ?? `Complete · ${vars.actual_minutes} min logged`);
       }
       invalidate();
       void queryClient.invalidateQueries({ queryKey: ["shop-floor-tickets"] });
       void queryClient.invalidateQueries({ queryKey: ["alts-home-stats"] });
       void queryClient.invalidateQueries({ queryKey: ["pickup-ready"] });
+      void queryClient.invalidateQueries({ queryKey: ["tailor-tally"] });
     },
     onError: () => toast.error("Could not complete garment — please try again"),
   });
@@ -167,6 +168,10 @@ export default function GarmentJobCardPage() {
   const garmentStatus = data.garment?.status ?? null;
   const inProgress = isInProgress(garmentStatus);
   const completed = isCompleted(garmentStatus);
+  const estMinutes = (data.lines ?? []).reduce((sum, l) => {
+    const n = Number(l.est_minutes ?? (l as { estimated_minutes?: number }).estimated_minutes ?? 0);
+    return sum + (Number.isFinite(n) ? n : 0);
+  }, 0);
 
   return (
     <div className="mx-auto max-w-lg space-y-5 pb-28 animate-fade-up">
@@ -259,6 +264,7 @@ export default function GarmentJobCardPage() {
         open={completeOpen}
         onOpenChange={setCompleteOpen}
         isSubmitting={completeMutation.isPending}
+        defaultMinutes={estMinutes > 0 ? estMinutes : null}
         onConfirm={(worker, actualMinutes) =>
           completeMutation.mutate({ worker, actual_minutes: actualMinutes })
         }
