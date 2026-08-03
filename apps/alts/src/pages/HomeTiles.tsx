@@ -10,6 +10,7 @@ import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
 import { clearAltsPrivateStorage } from "@alts/lib/logoutPrivacy";
+import { TailorTallyStrip } from "@alts/components/TailorTallyStrip";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
@@ -1118,6 +1119,8 @@ export default function HomeTiles() {
           />
         </div>
       )}
+
+      <TailorTallyStrip className="mb-3 shrink-0" />
 
       {/* Unified 8-tile grid (SPEC_060) — one viewport, no scroll */}
       <div className="home-tiles grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-2.5 content-start pb-2">

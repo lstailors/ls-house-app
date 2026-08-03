@@ -9,6 +9,7 @@ import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { storeToday } from "@alts/lib/storeDate";
+import { TailorTallyStrip } from "@alts/components/TailorTallyStrip";
 
 type Ticket = {
   name: string;
@@ -294,6 +295,10 @@ export default function ShopFloorBoard() {
             <div className="caps mt-1">{k.l}</div>
           </div>
         ))}
+      </div>
+
+      <div className="px-5 pb-3">
+        <TailorTallyStrip />
       </div>
 
       <div className="flex gap-2 px-5 pb-2 flex-wrap">
