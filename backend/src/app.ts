@@ -110,6 +110,7 @@ app.route("/api/financials/unlock", financialsUnlockRouter);
 app.route("/api/me", meRouter);
 app.route("/api/locations", locationsRouter);
 app.route("/api/customers", customersRouter);
+app.route("/api/portal", portalRouter);
 app.route("/api/alterations", alterationsRouter);
 app.route("/api/custom-orders", customOrdersRouter);
 app.route("/api/sales-orders", salesOrdersRouter);
