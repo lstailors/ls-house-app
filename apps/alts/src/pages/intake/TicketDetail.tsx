@@ -255,10 +255,16 @@ function GarmentCard({
   garment,
   lines,
   ticketName,
+  canEdit,
+  onEdit,
+  onAddWork,
 }: {
   garment: NonNullable<AlterationTicketDoc['garments']>[0]
   lines: AlterationTicketDoc['lines']
   ticketName: string
+  canEdit?: boolean
+  onEdit?: () => void
+  onAddWork?: () => void
 }) {
   const garmentLines =
     lines?.filter(
@@ -317,6 +323,27 @@ function GarmentCard({
       ) : (
         <p className="text-cream-dim/50 text-xs italic">No alteration lines</p>
       )}
+
+      {canEdit ? (
+        <div className="flex flex-wrap gap-2 pt-1 border-t border-brass/10">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="min-h-11 px-3 rounded-md text-xs font-medium border border-brass/40 bg-brass/15 text-brass hover:bg-brass/25 inline-flex items-center gap-1.5"
+          >
+            <Pencil size={12} />
+            Edit piece / prices
+          </button>
+          <button
+            type="button"
+            onClick={onAddWork}
+            className="min-h-11 px-3 rounded-md text-xs font-medium border border-brass/25 bg-forest-raised text-cream-muted hover:text-cream hover:border-brass/50 inline-flex items-center gap-1.5"
+          >
+            <Plus size={12} />
+            Add work
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -1140,16 +1167,29 @@ export default function TicketDetail() {
           <div className="flex flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto">
             <div className="flex items-center gap-2 ticket-detail-actions flex-wrap justify-end">
               {ticket.workflow_state !== 'Cancelled' && ticket.workflow_state !== 'Picked Up' && (
-                <Link
-                  to={`/orders/alterations/${encodeURIComponent(ticketName!)}/add-work`}
-                  className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all min-h-11',
-                    'bg-brass/20 border-brass/50 text-brass hover:bg-brass/30'
-                  )}
-                >
-                  <Plus size={12} />
-                  Add work
-                </Link>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setEditOpen(true)}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-all min-h-11',
+                      'bg-brass/25 border-brass/60 text-brass hover:bg-brass/35',
+                    )}
+                  >
+                    <Pencil size={12} />
+                    Edit pieces & prices
+                  </button>
+                  <Link
+                    to={`/orders/alterations/${encodeURIComponent(ticketName!)}/add-work`}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all min-h-11',
+                      'bg-brass/15 border-brass/40 text-brass hover:bg-brass/25',
+                    )}
+                  >
+                    <Plus size={12} />
+                    Add work / piece
+                  </Link>
+                </>
               )}
               <button
                 type="button"
@@ -1159,23 +1199,11 @@ export default function TicketDetail() {
                   'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all min-h-11',
                   'bg-forest-raised border-brass/25 text-cream-muted',
                   'hover:border-brass/50 hover:text-cream',
-                  'disabled:opacity-50 disabled:cursor-not-allowed'
+                  'disabled:opacity-50 disabled:cursor-not-allowed',
                 )}
               >
                 <ShoppingCart size={12} />
                 {openInIntakeMutation.isPending ? 'Creating…' : 'Open in Intake'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditOpen(true)}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all min-h-11',
-                  'bg-forest-raised border-brass/25 text-cream-muted',
-                  'hover:border-brass/50 hover:text-cream'
-                )}
-              >
-                <Pencil size={12} />
-                Edit
               </button>
             </div>
             <InlineDueDate ticket={ticket} ticketName={ticketName!} />
@@ -1219,9 +1247,30 @@ export default function TicketDetail() {
 
         {/* ── Garments ── */}
         <section>
-          <h2 className="ui-label text-cream-dim mb-3">
-            Garments ({ticket.garments?.length ?? 0})
-          </h2>
+          <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+            <h2 className="ui-label text-cream-dim">
+              Garments ({ticket.garments?.length ?? 0})
+            </h2>
+            {ticket.workflow_state !== 'Cancelled' && ticket.workflow_state !== 'Picked Up' ? (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditOpen(true)}
+                  className="min-h-11 px-3 rounded-md text-xs font-semibold border border-brass/50 bg-brass/20 text-brass hover:bg-brass/30 inline-flex items-center gap-1.5"
+                >
+                  <Pencil size={12} />
+                  Edit pieces & prices
+                </button>
+                <Link
+                  to={`/orders/alterations/${encodeURIComponent(ticketName!)}/add-work`}
+                  className="min-h-11 px-3 rounded-md text-xs font-medium border border-brass/30 bg-forest-raised text-cream-muted hover:text-cream hover:border-brass/50 inline-flex items-center gap-1.5"
+                >
+                  <Plus size={12} />
+                  Add work / piece
+                </Link>
+              </div>
+            ) : null}
+          </div>
           {ticket.garments && ticket.garments.length > 0 ? (
             <div className="space-y-3">
               {ticket.garments.map((g) => (
@@ -1230,11 +1279,33 @@ export default function TicketDetail() {
                   garment={g}
                   lines={ticket.lines}
                   ticketName={ticketName!}
+                  canEdit={
+                    ticket.workflow_state !== 'Cancelled' &&
+                    ticket.workflow_state !== 'Picked Up'
+                  }
+                  onEdit={() => setEditOpen(true)}
+                  onAddWork={() =>
+                    navigate(
+                      `/orders/alterations/${encodeURIComponent(ticketName!)}/add-work`,
+                    )
+                  }
                 />
               ))}
             </div>
           ) : (
-            <p className="text-cream-dim/50 italic text-sm">No garments on this ticket</p>
+            <div className="glass-panel rounded-lg p-4 space-y-3">
+              <p className="text-cream-dim/70 italic text-sm">No garments on this ticket</p>
+              {ticket.workflow_state !== 'Cancelled' && ticket.workflow_state !== 'Picked Up' ? (
+                <button
+                  type="button"
+                  onClick={() => setEditOpen(true)}
+                  className="min-h-11 px-3 rounded-md text-xs font-semibold border border-brass/50 bg-brass/20 text-brass hover:bg-brass/30 inline-flex items-center gap-1.5"
+                >
+                  <Plus size={12} />
+                  Add first piece
+                </button>
+              ) : null}
+            </div>
           )}
 
           {/* Ticket total */}
