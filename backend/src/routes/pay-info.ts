@@ -1,4 +1,8 @@
 import { Hono } from 'hono';
+import {
+  buildSimpleInvoicePdf,
+  formatMoneyUsd,
+} from '../lib/simpleInvoicePdf';
 
 export const payInfoRouter = new Hono();
 
@@ -307,6 +311,7 @@ payInfoRouter.get('/:id/pdf', async (c) => {
   }
 
   const invoiceName = String(doc.name);
+  const safeName = invoiceName.replace(/[^A-Za-z0-9._-]+/g, '_');
   const formats = ['L&S Sales Invoice', 'L&S Alteration Invoice', 'Standard'];
   const headers = {
     Authorization: erpAuth(),
@@ -334,7 +339,6 @@ payInfoRouter.get('/:id/pdf', async (c) => {
         head[2] === 0x44 &&
         head[3] === 0x46;
       if (!isPdf) continue;
-      const safeName = invoiceName.replace(/[^A-Za-z0-9._-]+/g, '_');
       return new Response(buf, {
         status: 200,
         headers: {
@@ -349,14 +353,51 @@ payInfoRouter.get('/:id/pdf', async (c) => {
     }
   }
 
-  return c.json(
-    {
-      error:
-        'Could not generate invoice PDF right now. Please call Concierge at (212) 308-4431 or reply to your invoice email.',
-      code: 'PDF_GENERATION_FAILED',
+  // Fallback: Edge-safe simple PDF when ERP print engine is down
+  // (wkhtmltopdf / broken image links). Still a real .pdf for the client.
+  const outstanding = Number(doc.outstanding_amount ?? 0);
+  const paid = outstanding <= 0 || String(doc.status || '') === 'Paid';
+  const amount = paid ? Number(doc.grand_total ?? 0) : outstanding;
+  const items = Array.isArray(doc.items) ? doc.items : [];
+  const pdfBytes = buildSimpleInvoicePdf({
+    title: 'Invoice',
+    invoiceId: invoiceName,
+    customerName: String(doc.customer_name || doc.customer || 'Valued Customer'),
+    postingDate: doc.posting_date ? String(doc.posting_date) : null,
+    statusLabel: paid ? 'Paid in Full' : 'Balance Due',
+    amountLabel: formatMoneyUsd(amount),
+    lines: items.map((it: any) => ({
+      name: String(it.item_name || it.item_code || 'Item'),
+      description: stripFactoryCost(it.description).slice(0, 120) || undefined,
+      amountLabel:
+        it.amount != null && Number.isFinite(Number(it.amount))
+          ? formatMoneyUsd(Number(it.amount))
+          : undefined,
+    })),
+    subtotalLabel:
+      doc.net_total != null &&
+      Math.abs(Number(doc.net_total) - Number(doc.grand_total ?? 0)) > 0.001
+        ? formatMoneyUsd(Number(doc.net_total))
+        : null,
+    taxLabel:
+      Number(doc.total_taxes_and_charges ?? 0) > 0
+        ? formatMoneyUsd(Number(doc.total_taxes_and_charges))
+        : null,
+    discountLabel:
+      Number(doc.discount_amount ?? 0) > 0
+        ? formatMoneyUsd(Number(doc.discount_amount))
+        : null,
+  });
+
+  return new Response(pdfBytes, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${safeName}.pdf"`,
+      'Cache-Control': 'private, max-age=120',
+      'X-LSH-Print-Format': 'LSH-Simple-Fallback',
     },
-    502,
-  );
+  });
 });
 
 // Public endpoint — no auth required.
