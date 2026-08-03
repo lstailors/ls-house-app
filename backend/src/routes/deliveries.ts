@@ -35,6 +35,7 @@ function erpToIso(s: string | null | undefined): string | null {
 import { getAuthedUser, resolveLocationCode, canCreateDelivery } from "../lib/scope";
 import { uploadFile, erpFileAbsoluteUrl } from "../lib/erpnext/files";
 import { sendSms } from "../lib/twilio";
+import { createCustomer } from "../lib/erpnext/customers";
 
 type CustomerAddressParts = {
   line1: string | null;
@@ -583,17 +584,21 @@ deliveriesRouter.post("/", async (c) => {
   const token = generateToken();
   const locationId = body.locationId ?? body.origin_location ?? user.locationCode ?? "NYC";
 
-  // Create a new ERPNext customer on-the-fly if requested
+  // Create-or-reuse ERPNext customer (dedupe: email → phone → exact name)
   let resolvedCustomer: string = body.customerId ?? body.customer;
   if (body.newCustomerName) {
     try {
-      const newCust = await erpCreate<any>("Customer", {
-        customer_name: body.newCustomerName,
-        customer_type: "Individual",
-        customer_group: "Bespoke",
-        mobile_no: body.newCustomerPhone ?? null,
-      });
-      resolvedCustomer = newCust?.name ?? body.newCustomerName;
+      const newCust = await createCustomer(
+        {
+          customer_name: body.newCustomerName,
+          full_name: body.newCustomerName,
+          phone: body.newCustomerPhone ?? undefined,
+          email: body.newCustomerEmail ?? body.email ?? undefined,
+          customer_group: "Bespoke",
+        },
+        { division: String(locationId) },
+      );
+      resolvedCustomer = newCust?.erpnextCustomerId ?? newCust?.id ?? body.newCustomerName;
     } catch (err: any) {
       return c.json({ error: { message: `Could not create customer: ${err.message ?? err}` } }, 500);
     }
