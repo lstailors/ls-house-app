@@ -312,13 +312,59 @@ payInfoRouter.get('/:id/pdf', async (c) => {
 
   const invoiceName = String(doc.name);
   const safeName = invoiceName.replace(/[^A-Za-z0-9._-]+/g, '_');
-  const formats = ['L&S Sales Invoice', 'L&S Alteration Invoice', 'Standard'];
   const headers = {
     Authorization: erpAuth(),
     Accept: 'application/pdf,*/*',
     'User-Agent': 'Mozilla/5.0 L&S-House-Pay',
   };
 
+  const isPdfBuf = (buf: ArrayBuffer | null | undefined): buf is ArrayBuffer => {
+    if (!buf || buf.byteLength < 200) return false;
+    const head = new Uint8Array(buf.slice(0, 5));
+    return head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46;
+  };
+
+  const pdfResponse = (buf: ArrayBuffer, formatLabel: string) =>
+    new Response(buf, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="${safeName}.pdf"`,
+        'Cache-Control': 'private, max-age=120',
+        'X-LSH-Print-Format': formatLabel,
+      },
+    });
+
+  // 1) Preferred: live L&S Sales Invoice Jinja → Chromium (Gotenberg) on Studio.
+  //    ERP wkhtmltopdf dies on this template's CSS; do not invent a new layout.
+  try {
+    const res = await fetch(
+      `${ERP_BASE}/api/method/ls_alterations.client_invoice_pdf.download_client_pdf`,
+      {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+          Accept: 'application/pdf,*/*',
+        },
+        body: JSON.stringify({
+          name: invoiceName,
+          print_format: 'L&S Sales Invoice',
+        }),
+      },
+    );
+    if (res.ok) {
+      const buf = await res.arrayBuffer();
+      if (isPdfBuf(buf)) {
+        return pdfResponse(buf, 'L&S Sales Invoice (Chromium)');
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+
+  // 2) Legacy wkhtmltopdf path (works for simpler formats if Chromium path is down)
+  const formats = ['L&S Sales Invoice', 'L&S Alteration Invoice', 'Standard'];
   for (const format of formats) {
     try {
       const url =
@@ -330,24 +376,8 @@ payInfoRouter.get('/:id/pdf', async (c) => {
       const res = await fetch(url, { method: 'GET', headers });
       if (!res.ok) continue;
       const buf = await res.arrayBuffer();
-      if (!buf || buf.byteLength < 200) continue;
-      // PDF magic %PDF-
-      const head = new Uint8Array(buf.slice(0, 5));
-      const isPdf =
-        head[0] === 0x25 &&
-        head[1] === 0x50 &&
-        head[2] === 0x44 &&
-        head[3] === 0x46;
-      if (!isPdf) continue;
-      return new Response(buf, {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/pdf',
-          'Content-Disposition': `inline; filename="${safeName}.pdf"`,
-          'Cache-Control': 'private, max-age=120',
-          'X-LSH-Print-Format': format,
-        },
-      });
+      if (!isPdfBuf(buf)) continue;
+      return pdfResponse(buf, format);
     } catch {
       /* try next format */
     }
