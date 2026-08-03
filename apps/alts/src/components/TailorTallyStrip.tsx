@@ -1,37 +1,10 @@
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
+import { type TailorTally, fmtMins, money } from "@alts/lib/tally";
 
-export type TailorTally = {
-  date: string;
-  totals: {
-    pieces: number;
-    minutes: number;
-    hours: number;
-    revenue: number;
-    workers: number;
-  };
-  tailors: Array<{
-    workerId: string;
-    workerName: string;
-    pieces: number;
-    minutes: number;
-    hours: number;
-    revenue: number;
-    tickets: number;
-  }>;
-};
-
-function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-}
-
-function fmtMins(m: number) {
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  const r = m % 60;
-  return r ? `${h}h ${r}m` : `${h}h`;
-}
+export type { TailorTally };
 
 /** Compact "who finished what today" strip for home / shop floor. */
 export function TailorTallyStrip({ className }: { className?: string }) {
@@ -66,19 +39,27 @@ export function TailorTallyStrip({ className }: { className?: string }) {
             Time from complete chips · {data?.date ?? "…"}
           </div>
         </div>
-        {data && !empty ? (
-          <div className="flex gap-3 text-xs text-cream-muted flex-wrap">
-            <span>
-              <strong className="text-cream tabular-nums">{data.totals.pieces}</strong> pcs
-            </span>
-            <span>
-              <strong className="text-cream tabular-nums">{fmtMins(data.totals.minutes)}</strong>
-            </span>
-            <span>
-              <strong className="text-cream tabular-nums">{money(data.totals.revenue)}</strong> work $
-            </span>
-          </div>
-        ) : null}
+        <div className="flex items-center gap-3 flex-wrap">
+          {data && !empty ? (
+            <div className="flex gap-3 text-xs text-cream-muted flex-wrap">
+              <span>
+                <strong className="text-cream tabular-nums">{data.totals.pieces}</strong> pcs
+              </span>
+              <span>
+                <strong className="text-cream tabular-nums">{fmtMins(data.totals.minutes)}</strong>
+              </span>
+              <span>
+                <strong className="text-cream tabular-nums">{money(data.totals.revenue)}</strong> work $
+              </span>
+            </div>
+          ) : null}
+          <Link
+            to="/floor-performance"
+            className="text-[11px] uppercase tracking-widest text-brass hover:text-brass-light shrink-0 min-h-9 inline-flex items-center"
+          >
+            See all →
+          </Link>
+        </div>
       </div>
 
       {q.isLoading ? (

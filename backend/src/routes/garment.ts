@@ -66,32 +66,113 @@ async function erpRunMethodMsgOrData(
   return json.message ?? json.data ?? null;
 }
 
+const TALLY_TZ = "America/New_York";
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+function nyCalendarDay(d: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: TALLY_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${get("year")}-${pad(get("month"))}-${pad(get("day"))}`;
+}
+
+/** Parse ERP/ISO datetime into America/New_York YYYY-MM-DD. */
+function nyDayFromStamp(stamp?: string | null): string | null {
+  if (!stamp) return null;
+  const s = String(stamp).trim();
+  if (ISO_DAY.test(s.slice(0, 10)) && (s.length === 10 || s[10] === " " || s[10] === "T")) {
+    // Naive ERP wall clock is already store-local (NY); take the date prefix.
+    if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) return s.slice(0, 10);
+  }
+  const d = new Date(s.includes("T") || s.endsWith("Z") ? s : s.replace(" ", "T") + "Z");
+  if (Number.isNaN(d.getTime())) {
+    return ISO_DAY.test(s.slice(0, 10)) ? s.slice(0, 10) : null;
+  }
+  return nyCalendarDay(d);
+}
+
 function dayBounds(dateStr?: string | null): { start: string; end: string; date: string } {
   // America/New_York calendar day for floor reporting
-  const tz = "America/New_York";
-  const now = new Date();
-  let y: number, m: number, d: number;
-  if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    [y, m, d] = dateStr.split("-").map(Number) as [number, number, number];
-  } else {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(now);
-    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
-    y = get("year");
-    m = get("month");
-    d = get("day");
-  }
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const date = `${y}-${pad(m)}-${pad(d)}`;
+  const date = dateStr && ISO_DAY.test(dateStr) ? dateStr : nyCalendarDay();
   return {
     date,
     start: `${date} 00:00:00`,
     end: `${date} 23:59:59`,
   };
+}
+
+/**
+ * Single day: ?date=YYYY-MM-DD (default today NY).
+ * Range (week rollup): ?start=YYYY-MM-DD&end=YYYY-MM-DD — one query, not 7 round-trips.
+ */
+function tallyBounds(opts: {
+  date?: string | null;
+  start?: string | null;
+  end?: string | null;
+}): {
+  date: string | null;
+  rangeStart: string;
+  rangeEnd: string;
+  start: string;
+  end: string;
+  multiDay: boolean;
+} {
+  const startQ = opts.start && ISO_DAY.test(opts.start) ? opts.start : null;
+  const endQ = opts.end && ISO_DAY.test(opts.end) ? opts.end : null;
+  if (startQ && endQ) {
+    const rangeStart = startQ <= endQ ? startQ : endQ;
+    const rangeEnd = startQ <= endQ ? endQ : startQ;
+    // Cap range at 31 days to protect ERP list
+    const startMs = Date.parse(`${rangeStart}T12:00:00Z`);
+    const endMs = Date.parse(`${rangeEnd}T12:00:00Z`);
+    const days = Math.floor((endMs - startMs) / 86_400_000) + 1;
+    if (days > 31) {
+      const cappedEnd = new Date(startMs + 30 * 86_400_000);
+      const cap = nyCalendarDay(cappedEnd);
+      return {
+        date: null,
+        rangeStart,
+        rangeEnd: cap,
+        start: `${rangeStart} 00:00:00`,
+        end: `${cap} 23:59:59`,
+        multiDay: true,
+      };
+    }
+    const multiDay = rangeStart !== rangeEnd;
+    return {
+      date: multiDay ? null : rangeStart,
+      rangeStart,
+      rangeEnd,
+      start: `${rangeStart} 00:00:00`,
+      end: `${rangeEnd} 23:59:59`,
+      multiDay,
+    };
+  }
+  const single = dayBounds(opts.date);
+  return {
+    date: single.date,
+    rangeStart: single.date,
+    rangeEnd: single.date,
+    start: single.start,
+    end: single.end,
+    multiDay: false,
+  };
+}
+
+function eachIsoDay(start: string, end: string): string[] {
+  const out: string[] = [];
+  let ms = Date.parse(`${start}T12:00:00Z`);
+  const endMs = Date.parse(`${end}T12:00:00Z`);
+  while (ms <= endMs) {
+    out.push(nyCalendarDay(new Date(ms)));
+    ms += 86_400_000;
+  }
+  return out;
 }
 
 // POST /api/garment/job-card
@@ -216,13 +297,21 @@ type GarmentRow = {
 
 /**
  * GET /api/garment/tally?date=YYYY-MM-DD
- * Pieces completed today (NYC) by tailor — minutes + garment $ from complete chips.
+ * GET /api/garment/tally?start=YYYY-MM-DD&end=YYYY-MM-DD  (week rollup — one round-trip)
+ * Pieces completed (America/New_York) by tailor — minutes + garment $ from complete chips.
+ * workLocation is always null until a real complete-time field exists (SPEC 061 §0.3) — never invent Shop/Home.
  */
 garmentRouter.get("/tally", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
-  const { date, start, end } = dayBounds(c.req.query("date"));
+  const bounds = tallyBounds({
+    date: c.req.query("date"),
+    start: c.req.query("start"),
+    end: c.req.query("end"),
+  });
+  const { date, start, end, rangeStart, rangeEnd, multiDay } = bounds;
+  const listLimit = multiDay ? 2000 : 500;
 
   try {
     const [rows, employees] = await Promise.all([
@@ -243,7 +332,7 @@ garmentRouter.get("/tally", async (c) => {
           "garment_total",
           "garment_status",
         ],
-        limit: 500,
+        limit: listLimit,
         order_by: "completed_at desc",
       }),
       erpList<{ name: string; employee_name: string }>("Employee", {
@@ -264,10 +353,11 @@ garmentRouter.get("/tally", async (c) => {
       tickets: Set<string>;
     };
     const byWorker = new Map<string, Bucket>();
+    /** day -> workerId -> bucket */
+    const dayWorker = new Map<string, Map<string, Bucket>>();
 
-    for (const r of rows) {
-      const wid = (r.completed_by || "").trim() || "unassigned";
-      let b = byWorker.get(wid);
+    const touch = (map: Map<string, Bucket>, wid: string): Bucket => {
+      let b = map.get(wid);
       if (!b) {
         b = {
           workerId: wid,
@@ -277,25 +367,53 @@ garmentRouter.get("/tally", async (c) => {
           revenue: 0,
           tickets: new Set(),
         };
-        byWorker.set(wid, b);
+        map.set(wid, b);
       }
+      return b;
+    };
+
+    for (const r of rows) {
+      const wid = (r.completed_by || "").trim() || "unassigned";
+      const mins = Number(r.actual_minutes) || 0;
+      const rev = Number(r.garment_total) || 0;
+
+      const b = touch(byWorker, wid);
       b.pieces += 1;
-      b.minutes += Number(r.actual_minutes) || 0;
-      b.revenue += Number(r.garment_total) || 0;
+      b.minutes += mins;
+      b.revenue += rev;
       if (r.parent) b.tickets.add(r.parent);
+
+      if (multiDay) {
+        const day = nyDayFromStamp(r.completed_at) || rangeStart;
+        let dm = dayWorker.get(day);
+        if (!dm) {
+          dm = new Map();
+          dayWorker.set(day, dm);
+        }
+        const db = touch(dm, wid);
+        db.pieces += 1;
+        db.minutes += mins;
+        db.revenue += rev;
+        if (r.parent) db.tickets.add(r.parent);
+      }
     }
 
-    const tailors = Array.from(byWorker.values())
-      .map((b) => ({
-        workerId: b.workerId,
-        workerName: b.workerName,
-        pieces: b.pieces,
-        minutes: b.minutes,
-        hours: Math.round((b.minutes / 60) * 10) / 10,
-        revenue: Math.round(b.revenue * 100) / 100,
-        tickets: b.tickets.size,
-      }))
-      .sort((a, b) => b.minutes - a.minutes || b.pieces - a.pieces);
+    const serializeTailors = (map: Map<string, Bucket>) =>
+      Array.from(map.values())
+        .map((b) => ({
+          workerId: b.workerId,
+          workerName: b.workerName,
+          pieces: b.pieces,
+          minutes: b.minutes,
+          hours: Math.round((b.minutes / 60) * 10) / 10,
+          revenue: Math.round(b.revenue * 100) / 100,
+          tickets: b.tickets.size,
+          /** null until real work_location field — do not proxy from origin_location */
+          workLocation: null as null,
+        }))
+        .sort((a, b) => b.minutes - a.minutes || b.pieces - a.pieces);
+
+    const tailors = serializeTailors(byWorker);
 
     const totals = tailors.reduce(
       (acc, t) => {
@@ -307,10 +425,38 @@ garmentRouter.get("/tally", async (c) => {
       { pieces: 0, minutes: 0, revenue: 0 },
     );
 
+    const byDay = multiDay
+      ? eachIsoDay(rangeStart, rangeEnd).map((d) => {
+          const dayTailors = serializeTailors(dayWorker.get(d) ?? new Map());
+          const dayTotals = dayTailors.reduce(
+            (acc, t) => {
+              acc.pieces += t.pieces;
+              acc.minutes += t.minutes;
+              acc.revenue += t.revenue;
+              return acc;
+            },
+            { pieces: 0, minutes: 0, revenue: 0 },
+          );
+          return {
+            date: d,
+            totals: {
+              pieces: dayTotals.pieces,
+              minutes: dayTotals.minutes,
+              hours: Math.round((dayTotals.minutes / 60) * 10) / 10,
+              revenue: Math.round(dayTotals.revenue * 100) / 100,
+              workers: dayTailors.length,
+            },
+            tailors: dayTailors,
+          };
+        })
+      : undefined;
+
     return c.json({
       data: {
         date,
-        timezone: "America/New_York",
+        start: rangeStart,
+        end: rangeEnd,
+        timezone: TALLY_TZ,
         totals: {
           pieces: totals.pieces,
           minutes: totals.minutes,
@@ -331,7 +477,10 @@ garmentRouter.get("/tally", async (c) => {
           minutes: Number(r.actual_minutes) || 0,
           revenue: Number(r.garment_total) || 0,
           status: r.garment_status,
+          /** Always null until schema captures work location at complete */
+          workLocation: null as null,
         })),
+        ...(byDay ? { byDay } : {}),
       },
     });
   } catch (err) {
