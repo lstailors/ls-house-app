@@ -13,6 +13,25 @@ import { clearAltsPrivateStorage } from "@alts/lib/logoutPrivacy";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
+/** Live date/time pill (SPEC_060) — neutral outline, updates every minute */
+function TimeClockPill() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const time = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const date = now.toLocaleDateString([], { month: "short", day: "numeric" });
+  return (
+    <div className="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full border border-cream/30 bg-white/[0.02] text-[11px] sm:text-xs min-h-[40px] text-[var(--cd)]">
+      <span className="font-mono tabular-nums">{time}</span>
+      <span className="opacity-60">·</span>
+      <span>{date}</span>
+    </div>
+  );
+}
+
+
 /** Phone default collapsed; tablet (≥720) default open. Honor localStorage if set. */
 function readEspressoOpenDefault(): boolean {
   try {
@@ -810,6 +829,10 @@ export default function HomeTiles() {
         <div className="hidden lg:flex items-center rounded-full border border-brass/20 bg-black/30 px-3.5 py-2.5 text-xs font-bold tracking-[0.14em] uppercase text-brass-light shrink-0">
           NYC
         </div>
+        {/* Weather chip (SPEC_060) — static per brief; 72° Clear next to NYC */}
+        <div className="hidden lg:flex items-center rounded-full border border-brass/20 bg-black/30 px-3 py-1.5 text-xs font-bold tracking-[0.14em] uppercase text-brass-light shrink-0">
+          72° Clear
+        </div>
         <button
           type="button"
           onClick={logout}
@@ -828,14 +851,13 @@ export default function HomeTiles() {
       </header>
 
       <div className="flex flex-wrap items-end gap-2 sm:gap-3 pt-3 sm:pt-4 pb-2.5 sm:pb-3 shrink-0">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h1 className="display text-[26px] sm:text-[32px] leading-none">
             {timeGreeting()}, {greetingName(me?.name)}
           </h1>
           <p className="text-[11px] sm:text-xs text-[var(--cd)] mt-1 sm:mt-1.5">{storeHoursLine()}</p>
         </div>
-        <div className="flex-1" />
-        <div className="flex flex-wrap gap-1.5 sm:gap-2">
+        <div className="flex flex-wrap gap-1.5 sm:gap-2 items-end">
           {s.parked > 0 && (
             <Link
               to="/parked"
@@ -860,92 +882,25 @@ export default function HomeTiles() {
               <b className="text-[var(--am)] font-bold">{s.dueToday}</b> due today
             </Link>
           )}
+          {/* Time Clock pill (SPEC_060) — live date/time display only, neutral outline */}
+          <TimeClockPill />
         </div>
       </div>
 
-      {/* Daily Espresso ☕ — collapsible (SPEC 054) */}
-      <div
-        className={cn(
-          "espresso-card shrink-0 mb-2.5 sm:mb-3 rounded-[16px] sm:rounded-[18px] border border-brass/30",
-          "bg-gradient-to-br from-brass/15 via-black/30 to-black/20 overflow-hidden",
-          espressoOpen && "is-open",
-        )}
-      >
-        <div
-          role="button"
-          tabIndex={0}
-          aria-expanded={espressoOpen}
-          aria-controls="espresso-body"
-          onClick={toggleEspresso}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              if ((e.target as HTMLElement).closest("[data-brew]")) return;
-              toggleEspresso();
-            }
-          }}
-          className="espresso-hd flex items-center gap-2.5 px-3 sm:px-3.5 py-3 min-h-[64px] w-full text-left cursor-pointer hover:bg-white/[0.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-brass/55 focus-visible:outline-offset-[-2px]"
+      {/* Daily Espresso ☕ — one line (SPEC_060) */}
+      <div className="espresso-line shrink-0 mb-2.5 sm:mb-3 rounded-[12px] border border-brass/20 bg-black/20 px-3 py-2 flex items-center gap-2 text-[12px]">
+        <span className="text-brass-light">☕</span>
+        <span className="font-semibold text-brass-light tracking-[0.08em] uppercase">Daily Espresso</span>
+        <span className="text-[var(--cd)] flex-1 truncate">{espressoSubline(floorBrief.data)}</span>
+        <button
+          type="button"
+          disabled={refreshBrief.isPending || floorBrief.isFetching}
+          onClick={() => refreshBrief.mutate()}
+          className="text-[10px] px-2 py-0.5 rounded border border-brass/30 text-brass-light hover:border-brass disabled:opacity-50"
         >
-          <span
-            className="w-9 h-9 rounded-full border border-brass/40 bg-brass/15 grid place-items-center text-base shrink-0"
-            aria-hidden
-          >
-            ☕
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="text-[11px] font-bold tracking-[0.16em] uppercase text-brass-light flex items-center gap-1.5">
-              <span
-                className={cn(
-                  "inline-block w-1.5 h-1.5 rounded-full shrink-0",
-                  espressoIsStale(floorBrief.data)
-                    ? "bg-[var(--am)] shadow-[0_0_0_3px_rgba(232,168,92,0.15)]"
-                    : "bg-[var(--em)] shadow-[0_0_0_3px_rgba(79,191,142,0.15)]",
-                )}
-                aria-hidden
-              />
-              Daily Espresso
-            </div>
-            <div className="text-[11px] text-[var(--cd)] truncate mt-0.5">
-              {espressoSubline(floorBrief.data)}
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              data-brew
-              disabled={refreshBrief.isPending || floorBrief.isFetching}
-              onClick={(e) => {
-                e.stopPropagation();
-                refreshBrief.mutate();
-              }}
-              className={cn(
-                "h-9 px-3 rounded-full border border-brass/40 bg-black/30 text-[9.5px] font-bold tracking-[0.14em] uppercase text-brass-light hover:border-brass min-w-[44px] disabled:opacity-50",
-                refreshBrief.isPending && "border-[rgba(232,168,92,0.5)] text-[var(--am)]",
-              )}
-              title="Refresh brief"
-            >
-              {refreshBrief.isPending ? (
-                "Brewing…"
-              ) : (
-                <>
-                  <span className="sm:hidden">Brew</span>
-                  <span className="hidden sm:inline">Brew now</span>
-                </>
-              )}
-            </button>
-            <span
-              className={cn(
-                "espresso-chev w-8 h-8 rounded-[10px] border border-brass/22 bg-black/20 grid place-items-center text-brass-light shrink-0 transition-transform duration-200",
-                espressoOpen && "rotate-180 border-brass/45",
-              )}
-              aria-hidden
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                <path d="M3 5l4 4 4-4" />
-              </svg>
-            </span>
-          </div>
-        </div>
+          {refreshBrief.isPending ? "..." : "Brew"}
+        </button>
+      </div>
 
         {/* Collapsed peek */}
         {!espressoOpen && (
@@ -1102,8 +1057,8 @@ export default function HomeTiles() {
         </div>
       )}
 
-      {/* Main tiles — natural height; page scrolls (no fr-row crush on iPad) */}
-      <div className="home-tiles grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3 lg:gap-3 content-start pb-3">
+      {/* Unified 8-tile grid (SPEC_060) — one viewport, no scroll */}
+      <div className="home-tiles grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-2.5 content-start pb-2">
         {tiles.map((t) => {
           const className = cn(
             "home-tile relative rounded-[18px] sm:rounded-[20px] border p-3.5 sm:p-4 flex flex-col",
