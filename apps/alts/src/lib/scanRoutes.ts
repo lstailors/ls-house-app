@@ -105,18 +105,46 @@ export function parseCustomerUrl(decoded: string): string | null {
 export function parsePayUrl(decoded: string): string | null {
   const value = decoded.trim();
   if (!value) return null;
-  if (/^(SINV-|ACC-SINV-|ACC-SI-)/i.test(value) && !/\s/.test(value)) return value;
+  // L&S SI names: LSTNY-SINV-… / LSTX-SINV-… / SINV-… / ACC-SINV-…
+  if (/^(?:LSTNY-|LSTX-|ACC-)?SINV-/i.test(value) && !/\s/.test(value) && value.length < 80) {
+    return value;
+  }
   let path: string;
   try {
     path = new URL(value).pathname;
   } catch {
-    const m = value.match(/\/pay\/([^/?#]+)/i);
+    const m = value.match(/\/(?:pay|invoices|i)\/([^/?#]+)/i);
     return m ? decodeURIComponent(m[1]) : null;
   }
   const m = path.match(/^\/pay\/([^/]+)\/?$/i);
   if (m) return decodeURIComponent(m[1]);
+  const inv = path.match(/^\/invoices\/([^/]+)\/?$/i);
+  if (inv) return decodeURIComponent(inv[1]);
   const my = path.match(/^\/i\/([^/]+)\/?$/i);
   if (my) return decodeURIComponent(my[1]);
+  return null;
+}
+
+/**
+ * What a pickup counter scan should add to the bag.
+ * Prefer ticket (garment tag / thermal / bare ALT) over invoice when both parse.
+ */
+export function parsePickupScanTarget(
+  decoded: string,
+): { kind: "ticket"; id: string } | { kind: "invoice"; id: string } | null {
+  const garment = parseGarmentTagUrl(decoded);
+  if (garment?.ticket) return { kind: "ticket", id: garment.ticket };
+
+  const ticket = parseTicketUrl(decoded);
+  if (ticket) return { kind: "ticket", id: ticket };
+
+  const pay = parsePayUrl(decoded);
+  if (pay) return { kind: "invoice", id: pay };
+
+  // ALT-…/G1 paste
+  const slash = decoded.trim().match(/^(ALT-[A-Z0-9-]+)[/:](G\d+)$/i);
+  if (slash) return { kind: "ticket", id: slash[1] };
+
   return null;
 }
 

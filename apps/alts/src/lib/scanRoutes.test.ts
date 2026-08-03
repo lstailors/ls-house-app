@@ -7,6 +7,7 @@ import {
   parseCustomerUrl,
   parseTicketUrl,
   parsePayUrl,
+  parsePickupScanTarget,
   routeForScannerResult,
   openPathForResult,
   routeFromRawScan,
@@ -43,6 +44,18 @@ assert(parseCustomerUrl("/customers/new") === null, "customer new ignored");
 assert(parsePayUrl("https://app.lstailors.com/pay/SINV-1") === "SINV-1", "pay url app");
 assert(parsePayUrl("https://alts.lstailors.com/pay/SINV-2") === "SINV-2", "pay url alts");
 assert(parsePayUrl("SINV-NYC-1") === "SINV-NYC-1", "bare sinv");
+assert(parsePayUrl("LSTNY-SINV-2026-00165") === "LSTNY-SINV-2026-00165", "lstny sinv");
+
+// pickup scan target
+assert(
+  parsePickupScanTarget("https://alts.lstailors.com/g/ALT-NYC-1/G2")?.id === "ALT-NYC-1",
+  "pickup garment → ticket",
+);
+assert(parsePickupScanTarget("ALT-NYC-2026-00061")?.kind === "ticket", "pickup bare ticket");
+assert(
+  parsePickupScanTarget("LSTNY-SINV-2026-00165")?.kind === "invoice",
+  "pickup bare invoice",
+);
 
 // garment fast route from raw scan (any host)
 const gFast = routeFromRawScan("https://app.lstailors.com/g/ALT-NYC-1/G2");
