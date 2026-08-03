@@ -26,22 +26,51 @@
     }
   ],
   "rewrites": [
-    { "source": "/.well-known/apple-developer-merchantid-domain-association", "destination": "/api/[...path]" },
-    { "source": "/api/:path*", "destination": "/api/[...path]" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/.well-known/apple-developer-merchantid-domain-association",
+      "destination": "/api/[...path]"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/api/[...path]"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ],
   "crons": [
-    { "path": "/api/unifi/sync", "schedule": "0 5 * * *" },
-    { "path": "/api/comms/daily-brief/trigger", "schedule": "0 23 * * 1-6" },
-    { "path": "/api/maestro/brief/trigger", "schedule": "0 12 * * 1-5" },
-    { "path": "/api/maestro/brief/trigger", "schedule": "0 16 * * 1-5" },
-    { "path": "/api/maestro/brief/trigger", "schedule": "0 19 * * 1-5" },
-    { "path": "/api/sofia/briefing/trigger", "schedule": "0 12 * * 1-5" },
-    { "path": "/api/sofia/briefing/trigger", "schedule": "0 16 * * 1-5" },
-    { "path": "/api/sofia/briefing/trigger", "schedule": "0 19 * * 1-5" },
-    { "path": "/api/dashboard/floor-brief/trigger", "schedule": "0 13 * * 1-6" },
-    { "path": "/api/dashboard/floor-brief/trigger", "schedule": "0 16 * * 1-6" },
-    { "path": "/api/dashboard/floor-brief/trigger", "schedule": "0 19 * * 1-6" },
-    { "path": "/api/dashboard/floor-brief/trigger", "schedule": "0 22 * * 1-6" }
+    {
+      "path": "/api/unifi/sync",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/comms/daily-brief/trigger",
+      "schedule": "0 23 * * 1-6"
+    },
+    {
+      "path": "/api/dashboard/floor-brief/trigger",
+      "schedule": "0 13 * * 1-6"
+    },
+    {
+      "path": "/api/dashboard/floor-brief/trigger",
+      "schedule": "0 16 * * 1-6"
+    },
+    {
+      "path": "/api/dashboard/floor-brief/trigger",
+      "schedule": "0 19 * * 1-6"
+    },
+    {
+      "path": "/api/dashboard/floor-brief/trigger",
+      "schedule": "0 22 * * 1-6"
+    },
+    {
+      "path": "/api/sofia/briefing/trigger",
+      "schedule": "0 12 * * 1-5"
+    },
+    {
+      "path": "/api/sofia/briefing/trigger",
+      "schedule": "0 19 * * 1-5"
+    }
   ]
 }

@@ -61,7 +61,7 @@ espressoRouter.get("/", async (c) => {
     weatherData,
     newsData,
   ] = await Promise.all([
-    listAgentBriefsFiltered({ source: "maestro", type: "daily_brief", limit: 1 }),
+    listAgentBriefsFiltered({ type: "daily_brief", limit: 1 }),
     // Live ERP: Event (GCal L&S Appointments) + CRM Appointment.
     // LSH Appointment doctype does not exist on the live site.
     Promise.all([

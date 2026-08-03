@@ -2037,38 +2037,38 @@ sofiaRouter.post("/tasks", async (c) => {
 
 // ────────────────────────────────────────────────────────────────────────────
 // POST /api/sofia/briefing  +  GET /api/sofia/briefing/trigger
-// Daily briefing: queries ERPNext + Supabase, feeds Grok, sends SMS + Raven DM
-// No auth required (called by Vercel cron at 8AM and 3PM ET)
+// Ops briefing for Carl: ERPNext live data → emoji SMS + Raven DM + agent_briefs.
+// Vercel cron: 2× weekdays (8am + 3pm ET). Maestro brief/trigger cron removed (dup).
+// Auth: CRON_SECRET or session (requireCronOrSession).
 // ────────────────────────────────────────────────────────────────────────────
 
 const BRIEFING_SOFIA_DM_CHANNEL = "b56k4sapbj";
 
-// HER-61 S3: no hardcoded ERP key/secret fallbacks — fail closed if env unset.
-async function erpNextFetch(path: string): Promise<any> {
-  const ERP_BASE = process.env.ERPNEXT_BASE_URL ?? "https://erp.lstailors.com";
-  const key = (process.env.ERPNEXT_API_KEY ?? "").trim();
-  const secret = (process.env.ERPNEXT_API_SECRET ?? "").trim();
-  if (!key || !secret) {
-    console.error("[sofia/erpNextFetch] ERPNEXT_API_KEY/SECRET unset");
-    return null;
-  }
-  try {
-    const res = await fetch(`${ERP_BASE}${path}`, {
-      headers: { Authorization: `token ${key}:${secret}` },
-    });
-    if (!res.ok) return null;
-    return res.json();
-  } catch {
-    return null;
-  }
+function money(n: number): string {
+  if (!Number.isFinite(n)) return "$0";
+  return "$" + Math.round(n).toLocaleString("en-US");
+}
+
+function nycDateStr(d = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+function phoneKey(raw: string | null | undefined): string {
+  const digits = String(raw ?? "").replace(/\D/g, "");
+  return digits.length >= 10 ? digits.slice(-10) : digits;
 }
 
 async function postRavenDm(text: string): Promise<void> {
   const ERP_BASE = process.env.ERPNEXT_BASE_URL ?? "https://erp.lstailors.com";
-  const key = (process.env.ERPNEXT_CARL_API_KEY ?? "").trim();
-  const secret = (process.env.ERPNEXT_CARL_API_SECRET ?? "").trim();
+  const key = (process.env.ERPNEXT_CARL_API_KEY ?? process.env.ERPNEXT_API_KEY ?? "").trim();
+  const secret = (process.env.ERPNEXT_CARL_API_SECRET ?? process.env.ERPNEXT_API_SECRET ?? "").trim();
   if (!key || !secret) {
-    console.error("[sofia/postRavenDm] ERPNEXT_CARL_API_KEY/SECRET unset");
+    console.error("[sofia/postRavenDm] ERP keys unset");
     return;
   }
   try {
@@ -2077,6 +2077,7 @@ async function postRavenDm(text: string): Promise<void> {
       headers: {
         Authorization: `token ${key}:${secret}`,
         "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; L&S-House-App/1.0)",
       },
       body: JSON.stringify({
         channel_id: BRIEFING_SOFIA_DM_CHANNEL,
@@ -2085,191 +2086,328 @@ async function postRavenDm(text: string): Promise<void> {
         owner: "concierge@lstailors.com",
       }),
     });
-  } catch {}
+  } catch (e: any) {
+    console.error("[sofia/postRavenDm]", e?.message);
+  }
 }
 
 async function runBriefing(): Promise<{ ok: boolean; briefing?: string; error?: string }> {
-  const XAI_KEY = process.env.XAI_API_KEY ?? "";
-  const ownerPhone = process.env.OWNER_MOBILE ?? "+16319260917";
-
-  const todayStr = new Intl.DateTimeFormat("en-CA", {
+  const ownerPhone = process.env.OWNER_MOBILE ?? CARL_PHONE;
+  const todayStr = nycDateStr();
+  const nycHour = parseInt(
+    new Date().toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }),
+    10
+  );
+  const period = nycHour < 12 ? "Morning" : nycHour < 16 ? "Midday" : "Afternoon";
+  const clock = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-
-  const sections: string[] = [];
-
-  // ── ERPNext: Open Sales Orders ──
-  try {
-    const soData = await erpNextFetch(
-      `/api/resource/Sales%20Order?fields=${encodeURIComponent(JSON.stringify(["name","customer","status","grand_total","delivery_date"]))}&filters=${encodeURIComponent(JSON.stringify([["status","=","To Deliver and Bill"]]))}&limit=20`
-    );
-    const orders = soData?.data ?? [];
-    if (orders.length) {
-      sections.push(`OPEN SALES ORDERS (${orders.length}): ${orders.slice(0, 5).map((o: any) => `${o.name} – ${o.customer}${o.delivery_date ? ` due ${o.delivery_date}` : ""}`).join("; ")}${orders.length > 5 ? `… +${orders.length - 5} more` : ""}`);
-    }
-  } catch {}
-
-  // ── ERPNext: Delivery Notes pending ──
-  try {
-    const dnData = await erpNextFetch(
-      `/api/resource/Delivery%20Note?fields=${encodeURIComponent(JSON.stringify(["name","customer","status","posting_date"]))}&filters=${encodeURIComponent(JSON.stringify([["status","=","To Bill"]]))}&limit=10`
-    );
-    const dns = dnData?.data ?? [];
-    if (dns.length) sections.push(`PENDING DELIVERY NOTES (${dns.length}): ${dns.slice(0, 3).map((d: any) => `${d.name} – ${d.customer}`).join("; ")}${dns.length > 3 ? `… +${dns.length - 3} more` : ""}`);
-  } catch {}
-
-  // ── ERPNext: Overdue Invoices ──
-  try {
-    const invData = await erpNextFetch(
-      `/api/resource/Sales%20Invoice?fields=${encodeURIComponent(JSON.stringify(["name","customer","outstanding_amount","due_date"]))}&filters=${encodeURIComponent(JSON.stringify([["status","=","Overdue"],["outstanding_amount",">",0]]))}&limit=10`
-    );
-    const invs = invData?.data ?? [];
-    if (invs.length) {
-      const total = invs.reduce((s: number, i: any) => s + Number(i.outstanding_amount ?? 0), 0);
-      sections.push(`OVERDUE INVOICES (${invs.length}, $${total.toFixed(0)} total): ${invs.slice(0, 3).map((i: any) => `${i.name} – ${i.customer} $${Number(i.outstanding_amount).toFixed(0)}`).join("; ")}${invs.length > 3 ? `… +${invs.length - 3} more` : ""}`);
-    }
-  } catch {}
-
-  try {
-    const tickets = await erpList("Alteration Ticket", {
-      filters: [["workflow_state", "not in", ["Delivered", "Cancelled"]]],
-      fields: ["name", "workflow_state", "due_date", "customer_name"],
-      order_by: "due_date asc",
-      limit: 30,
-    });
-    if (tickets.length) {
-      const overdue = tickets.filter((t: any) => t.due_date && t.due_date < todayStr);
-      const dueToday = tickets.filter((t: any) => t.due_date === todayStr);
-      sections.push(`ALTERATION TICKETS open: ${tickets.length} total${dueToday.length ? `, ${dueToday.length} due TODAY` : ""}${overdue.length ? `, ${overdue.length} OVERDUE` : ""}`);
-    }
-  } catch {}
-
-  try {
-    const openTasks = await storeList(DT.TASK, { filters: [["status", "=", "open"]], orderBy: "priority desc", limit: 10 });
-    if (openTasks.length) {
-      sections.push(`OPEN TASKS (${openTasks.length}): ${openTasks.slice(0, 4).map((t: any) => `"${t.title}"${t.assigned_to ? ` → ${t.assigned_to}` : ""}`).join("; ")}${openTasks.length > 4 ? `… +${openTasks.length - 4} more` : ""}`);
-    }
-  } catch {}
-
-  try {
-    const unread = await listSmsMessagesFiltered({ limit: 50 });
-    const inbound = unread.filter((m) => m.direction === "inbound");
-    if (inbound.length) {
-      const uniquePhones = new Set(inbound.map((m) => m.client_phone));
-      sections.push(`UNRESPONDED SMS: ${inbound.length} messages from ${uniquePhones.size} clients`);
-    }
-  } catch {}
-
-  try {
-    const startUtc = new Date(`${todayStr}T00:00:00-04:00`).toISOString();
-    const endUtc = new Date(`${todayStr}T23:59:59-04:00`).toISOString();
-    const appts = await storeList(DT.APPOINTMENT, {
-      filters: [["start_time", ">=", startUtc], ["start_time", "<=", endUtc], ["status", "in", ["confirmed", "pending"]]],
-      orderBy: "start_time asc",
-      limit: 20,
-    });
-    if (appts?.length) {
-      const fmtTime = (t: string) =>
-        new Intl.DateTimeFormat("en-US", {
-          timeZone: "America/New_York",
-          hour: "numeric",
-          minute: "2-digit",
-          hour12: true,
-        }).format(new Date(t));
-      sections.push(`TODAY'S APPOINTMENTS (${appts.length}): ${appts.map((a: any) => `${fmtTime(a.start_time)} ${a.event_type} – ${a.client_name ?? "?"}`).join("; ")}`);
-    }
-  } catch {}
-
-  if (!sections.length) {
-    sections.push("No urgent items found across ERPNext.");
-  }
-
-  const dataBlock = sections.join("\n");
-
-  // ── Call Grok to format the briefing ──
-  const nycTime = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    weekday: "long",
-    month: "long",
+    weekday: "short",
+    month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
   }).format(new Date());
 
-  let briefing = "";
-  try {
-    const r = await fetch("https://api.x.ai/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${XAI_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "grok-4.20-0309-non-reasoning",
-        messages: [
-          {
-            role: "system",
-            content: `You are Sofia preparing the daily briefing for Carl at L&S Custom Tailors.
-Be concise, prioritized, and actionable. Format for SMS (under 1000 chars total).
-Lead with most urgent items (overdue invoices, overdue tickets, today's appointments first).
-Include counts. Use plain English — no markdown, no asterisks, no bullet symbols.
-End with: — Sofia`,
-          },
-          {
-            role: "user",
-            content: `Current time: ${nycTime}\n\nData:\n${dataBlock}\n\nWrite the daily briefing now.`,
-          },
-        ],
-        max_tokens: 400,
-        temperature: 0.2,
-      }),
-    });
-    const grokData: any = await r.json();
-    briefing = (grokData?.choices?.[0]?.message?.content ?? "").trim();
-  } catch (e: any) {
-    briefing = `Daily Briefing (${todayStr}):\n${dataBlock}\n— Sofia`;
+  const staffKeys = new Set(
+    [...STAFF_PHONES].map((p) => phoneKey(p)).filter(Boolean)
+  );
+
+  // ── Parallel ERP pulls ──────────────────────────────────────────────────
+  const [
+    paymentEntries,
+    overdueInvoices,
+    openTickets,
+    openOrders,
+    recentSms,
+    eventsToday,
+    appointmentsToday,
+    readyTickets,
+  ] = await Promise.all([
+    erpList<any>("Payment Entry", {
+      filters: [
+        ["docstatus", "=", 1],
+        ["posting_date", "=", todayStr],
+        ["payment_type", "=", "Receive"],
+      ],
+      fields: ["name", "party", "party_name", "paid_amount", "received_amount", "mode_of_payment"],
+      order_by: "creation desc",
+      limit: 50,
+    }).catch(() => []),
+    erpList<any>("Sales Invoice", {
+      filters: [
+        ["docstatus", "=", 1],
+        ["outstanding_amount", ">", 0],
+        ["due_date", "<", todayStr],
+      ],
+      fields: ["name", "customer", "customer_name", "outstanding_amount", "due_date", "status"],
+      order_by: "outstanding_amount desc",
+      limit: 100,
+    }).catch(() => []),
+    erpList<any>("Alteration Ticket", {
+      filters: [["workflow_state", "not in", ["Delivered", "Cancelled", "Picked Up"]]],
+      fields: ["name", "workflow_state", "due_date", "customer_name", "is_rush", "ticket_total"],
+      order_by: "due_date asc",
+      limit: 100,
+    }).catch(() => []),
+    erpList<any>("Sales Order", {
+      filters: [
+        ["docstatus", "=", 1],
+        ["status", "in", ["To Deliver and Bill", "To Deliver", "To Bill", "To Pay"]],
+      ],
+      fields: ["name", "customer", "customer_name", "status", "grand_total", "delivery_date"],
+      order_by: "delivery_date asc",
+      limit: 80,
+    }).catch(() => []),
+    listSmsMessagesFiltered({ limit: 200 }).catch(() => []),
+    erpList<any>("Event", {
+      filters: [
+        ["starts_on", ">=", `${todayStr} 00:00:00`],
+        ["starts_on", "<=", `${todayStr} 23:59:59`],
+        ["status", "!=", "Cancelled"],
+      ],
+      fields: ["name", "subject", "starts_on", "status", "google_calendar"],
+      order_by: "starts_on asc",
+      limit: 30,
+    }).catch(() => []),
+    erpList<any>("Appointment", {
+      filters: [
+        ["scheduled_time", ">=", `${todayStr} 00:00:00`],
+        ["scheduled_time", "<=", `${todayStr} 23:59:59`],
+        ["status", "not in", ["Closed", "Cancelled"]],
+      ],
+      fields: ["name", "scheduled_time", "status", "customer_name", "custom_appointment_type"],
+      order_by: "scheduled_time asc",
+      limit: 30,
+    }).catch(() => []),
+    erpList<any>("Alteration Ticket", {
+      filters: [["workflow_state", "=", "Ready"]],
+      fields: ["name", "customer_name", "due_date", "ticket_total"],
+      order_by: "due_date asc",
+      limit: 30,
+    }).catch(() => []),
+  ]);
+
+  // ── Collected today ─────────────────────────────────────────────────────
+  const collectedTotal = paymentEntries.reduce(
+    (s, p) => s + Number(p.received_amount ?? p.paid_amount ?? 0),
+    0
+  );
+  const collectedLines = paymentEntries.slice(0, 4).map((p) => {
+    const who = p.party_name || p.party || "Client";
+    const amt = money(Number(p.received_amount ?? p.paid_amount ?? 0));
+    const mop = p.mode_of_payment ? ` via ${p.mode_of_payment}` : "";
+    return `${who} ${amt}${mop}`;
+  });
+
+  // ── Overdue AR ──────────────────────────────────────────────────────────
+  const overdueTotal = overdueInvoices.reduce(
+    (s, i) => s + Number(i.outstanding_amount ?? 0),
+    0
+  );
+  const topOverdue = overdueInvoices.slice(0, 3).map((i) => {
+    const who = i.customer_name || i.customer || i.name;
+    return `${who} ${money(Number(i.outstanding_amount ?? 0))}`;
+  });
+
+  // ── Alterations ─────────────────────────────────────────────────────────
+  const altOverdue = openTickets.filter((t) => t.due_date && String(t.due_date) < todayStr);
+  const altDueToday = openTickets.filter((t) => t.due_date && String(t.due_date) === todayStr);
+  const altRush = openTickets.filter((t) => Number(t.is_rush) === 1 || t.is_rush === true);
+  const altTopOverdue = altOverdue.slice(0, 3).map((t) => {
+    const who = t.customer_name || t.name;
+    return `${who} (due ${t.due_date})`;
+  });
+
+  // ── Sales orders ────────────────────────────────────────────────────────
+  const soPast = openOrders.filter((o) => o.delivery_date && String(o.delivery_date) < todayStr);
+  const soDueSoon = openOrders.filter((o) => {
+    if (!o.delivery_date) return false;
+    const d = String(o.delivery_date);
+    return d >= todayStr && d <= nycDateStr(new Date(Date.now() + 7 * 86400000));
+  });
+  const soTopPast = soPast.slice(0, 3).map((o) => {
+    const who = o.customer_name || o.customer || o.name;
+    return `${who} (due ${o.delivery_date})`;
+  });
+
+  // ── Unanswered SMS (last msg per phone is inbound, not staff) ───────────
+  const latestByPhone = new Map<string, any>();
+  for (const m of recentSms as any[]) {
+    const k = phoneKey(m.client_phone);
+    if (!k || staffKeys.has(k)) continue;
+    if (!latestByPhone.has(k)) latestByPhone.set(k, m);
+  }
+  const unanswered: any[] = [];
+  for (const m of latestByPhone.values()) {
+    if (String(m.direction ?? "").toLowerCase() === "inbound") unanswered.push(m);
+  }
+  const unansweredPhones = unanswered.length;
+  const unansweredPreview = unanswered.slice(0, 3).map((m) => {
+    const who = m.client_name || m.customer || m.client_phone || "client";
+    const snip = String(m.content || m.body || "").replace(/\s+/g, " ").trim().slice(0, 40);
+    return snip ? `${who}: "${snip}${snip.length >= 40 ? "…" : ""}"` : String(who);
+  });
+
+  // ── Appointments today ──────────────────────────────────────────────────
+  const fmtTime = (t: string) =>
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(new Date(String(t).includes("T") ? t : String(t).replace(" ", "T")));
+
+  const apptBits: string[] = [];
+  for (const e of eventsToday) {
+    if (e.starts_on) {
+      apptBits.push(`${fmtTime(e.starts_on)} ${e.subject || "Event"}`);
+    }
+  }
+  for (const a of appointmentsToday) {
+    if (a.scheduled_time) {
+      const label = a.custom_appointment_type || a.customer_name || "Appt";
+      const who = a.customer_name && a.custom_appointment_type ? ` – ${a.customer_name}` : "";
+      apptBits.push(`${fmtTime(a.scheduled_time)} ${label}${who}`);
+    }
+  }
+  // de-dupe similar strings
+  const apptsUnique = [...new Set(apptBits)].slice(0, 6);
+
+  // ── Ready for pickup ────────────────────────────────────────────────────
+  const readyCount = readyTickets.length;
+  const readyPreview = readyTickets.slice(0, 3).map((t) => t.customer_name || t.name);
+
+  // ── Compose emoji brief (SMS-safe, no markdown) ─────────────────────────
+  const lines: string[] = [];
+  lines.push(`☕ ${period} Brief · ${clock}`);
+  lines.push("");
+
+  // Collected
+  if (paymentEntries.length) {
+    lines.push(`💵 Collected today: ${money(collectedTotal)} (${paymentEntries.length} payment${paymentEntries.length === 1 ? "" : "s"})`);
+    for (const c of collectedLines) lines.push(`  · ${c}`);
+  } else {
+    lines.push(`💵 Collected today: $0`);
+  }
+  lines.push("");
+
+  // Overdue AR
+  if (overdueInvoices.length) {
+    lines.push(`🔴 Overdue invoices: ${overdueInvoices.length} · ${money(overdueTotal)}`);
+    for (const t of topOverdue) lines.push(`  · ${t}`);
+    if (overdueInvoices.length > 3) lines.push(`  · +${overdueInvoices.length - 3} more`);
+    lines.push(`  → Prioritize collections`);
+  } else {
+    lines.push(`✅ Overdue invoices: none`);
+  }
+  lines.push("");
+
+  // Alterations
+  if (openTickets.length) {
+    const bits = [
+      `${openTickets.length} open`,
+      altOverdue.length ? `${altOverdue.length} overdue` : null,
+      altDueToday.length ? `${altDueToday.length} due today` : null,
+      altRush.length ? `${altRush.length} rush` : null,
+    ].filter(Boolean);
+    lines.push(`✂️ Alterations: ${bits.join(" · ")}`);
+    for (const t of altTopOverdue) lines.push(`  · ${t}`);
+  } else {
+    lines.push(`✂️ Alterations: clear`);
+  }
+  if (readyCount) {
+    lines.push(`📦 Ready pickup: ${readyCount}${readyPreview.length ? ` — ${readyPreview.join(", ")}` : ""}`);
+  }
+  lines.push("");
+
+  // Sales orders
+  if (openOrders.length) {
+    lines.push(
+      `🧵 Open SOs: ${openOrders.length}${soPast.length ? ` · ${soPast.length} past due` : ""}${soDueSoon.length ? ` · ${soDueSoon.length} due ≤7d` : ""}`
+    );
+    for (const t of soTopPast) lines.push(`  · ${t}`);
+  } else {
+    lines.push(`🧵 Open SOs: none`);
+  }
+  lines.push("");
+
+  // SMS
+  if (unansweredPhones) {
+    lines.push(`💬 Unanswered SMS: ${unansweredPhones} client${unansweredPhones === 1 ? "" : "s"}`);
+    for (const t of unansweredPreview) lines.push(`  · ${t}`);
+  } else {
+    lines.push(`💬 Unanswered SMS: clear`);
+  }
+  lines.push("");
+
+  // Calendar
+  if (apptsUnique.length) {
+    lines.push(`📅 Today: ${apptsUnique.length} on the book`);
+    for (const a of apptsUnique.slice(0, 4)) lines.push(`  · ${a}`);
+  } else {
+    lines.push(`📅 Today: no appointments`);
   }
 
-  if (!briefing) briefing = `Daily Briefing:\n${dataBlock}\n— Sofia`;
+  lines.push("");
+  lines.push("— Sofia");
 
-  // ── Send SMS to Carl ──
+  let briefing = lines.join("\n").trim();
+
+  // Soft trim for SMS (Twilio multi-segment OK, but keep scannable)
+  if (briefing.length > 1400) {
+    briefing = briefing.slice(0, 1380).trimEnd() + "\n…\n— Sofia";
+  }
+
+  // ── Deliver ─────────────────────────────────────────────────────────────
   try {
     await twilioSend(ownerPhone, briefing);
   } catch (e: any) {
-    console.error("[sofia/briefing] SMS error:", e.message);
+    console.error("[sofia/briefing] SMS error:", e?.message);
   }
 
-  // ── Post to Raven DM ──
   try {
     await postRavenDm(briefing);
   } catch {}
 
-  // ── Save to lsh.agent_briefs → powers Daily Espresso card on dashboard ──
   try {
-      const nycHour = parseInt(new Date().toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }));
-      const period = nycHour < 12 ? "Morning" : nycHour < 15 ? "Midday" : "Afternoon";
-      const nycTime = new Date().toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
-      await insertAgentBrief({
-        type: "brief",
-        title: `${period} Brief — ${nycTime}`,
-        body: briefing,
-        severity: "info",
-        source: "maestro",
-        metadata: JSON.stringify({ channel: "daily_briefing", generated_at: new Date().toISOString() }),
-      });
-    } catch (e: any) {
-      console.error("[sofia/briefing] agent_briefs save:", e.message);
-    }
+    await insertAgentBrief({
+      type: "daily_brief",
+      title: `${period} Brief — ${clock}`,
+      body: briefing,
+      severity: overdueInvoices.length || altOverdue.length ? "warning" : "info",
+      source: "sofia",
+      metadata: JSON.stringify({
+        channel: "daily_briefing",
+        period,
+        generated_at: new Date().toISOString(),
+        stats: {
+          collected_today: collectedTotal,
+          collected_count: paymentEntries.length,
+          overdue_invoices: overdueInvoices.length,
+          overdue_ar: overdueTotal,
+          alts_open: openTickets.length,
+          alts_overdue: altOverdue.length,
+          alts_due_today: altDueToday.length,
+          ready_pickup: readyCount,
+          open_sos: openOrders.length,
+          so_past_due: soPast.length,
+          unanswered_sms: unansweredPhones,
+          appts_today: apptsUnique.length,
+        },
+      }),
+    });
+  } catch (e: any) {
+    console.error("[sofia/briefing] agent_briefs save:", e?.message);
+  }
 
-  // ── Log to sms_messages ──
   try {
     await insertSmsMessage({
       client_phone: ownerPhone,
       direction: "outbound",
       content: briefing,
       timestamp: new Date().toISOString(),
-      metadata: { channel: "daily_briefing", generated_at: new Date().toISOString() },
+      metadata: { channel: "daily_briefing", generated_at: new Date().toISOString(), period },
     });
   } catch {}
 
