@@ -151,8 +151,119 @@ export async function getCustomer(id: string) {
   return { ...serializeCustomer(row), dossier: dossier ?? null };
 }
 
+function normalizeEmail(raw?: string | null): string | null {
+  const e = String(raw ?? "").trim().toLowerCase();
+  if (!e || !e.includes("@") || e.length < 5) return null;
+  return e;
+}
+
+function normalizePhoneDigits(raw?: string | null): string | null {
+  let d = String(raw ?? "").replace(/\D+/g, "");
+  if (d.length === 11 && d.startsWith("1")) d = d.slice(1);
+  if (d.length > 10) d = d.slice(-10);
+  if (d.length < 10) return null;
+  if (/^(\d)\1+$/.test(d)) return null;
+  if (["2127521638", "2127511638", "3472911638"].includes(d)) return null;
+  return d;
+}
+
+function normalizePersonName(raw?: string | null): string {
+  return String(raw ?? "")
+    .toLowerCase()
+    .replace(/\s+-\s+\d+$/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function namesCompatible(a?: string | null, b?: string | null): boolean {
+  const na = normalizePersonName(a);
+  const nb = normalizePersonName(b);
+  if (!na || !nb) return true;
+  if (na === nb) return true;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  const pa = na.split(" ").filter(Boolean);
+  const pb = nb.split(" ").filter(Boolean);
+  if (pa.length && pb.length && pa[pa.length - 1] === pb[pb.length - 1] && pa[0] === pb[0]) return true;
+  return false;
+}
+
+/** Create-time identity resolve — email → phone → exact name. Active only. */
+export async function resolveExistingCustomer(opts: {
+  email?: string | null;
+  phone?: string | null;
+  name?: string | null;
+}): Promise<{ name: string; match: "email" | "phone" | "name"; row: any } | null> {
+  const email = normalizeEmail(opts.email);
+  const phone = normalizePhoneDigits(opts.phone);
+  const name = String(opts.name ?? "").trim();
+  const nameKey = normalizePersonName(name);
+
+  if (email) {
+    const rows =
+      (await erpList<any>("Customer", {
+        filters: [
+          ["disabled", "=", 0],
+          ["email_id", "=", email],
+        ],
+        fields: CUSTOMER_FIELDS,
+        limit: 5,
+      }).catch(() => [])) || [];
+    if (rows[0]?.name) return { name: rows[0].name, match: "email", row: rows[0] };
+  }
+
+  if (phone) {
+    const rows =
+      (await erpList<any>("Customer", {
+        filters: [
+          ["disabled", "=", 0],
+          ["mobile_no", "like", `%${phone}%`],
+        ],
+        fields: CUSTOMER_FIELDS,
+        limit: 25,
+      }).catch(() => [])) || [];
+    const matched = rows.filter((r) => normalizePhoneDigits(r.mobile_no) === phone);
+    if (matched.length === 1 && namesCompatible(name, matched[0].customer_name || matched[0].name)) {
+      return { name: matched[0].name, match: "phone", row: matched[0] };
+    }
+    if (matched.length > 1) {
+      const byName = matched.find((r) => namesCompatible(name, r.customer_name || r.name));
+      if (byName) return { name: byName.name, match: "phone", row: byName };
+    }
+  }
+
+  if (nameKey && nameKey.length >= 3) {
+    const rows =
+      (await erpList<any>("Customer", {
+        filters: [
+          ["disabled", "=", 0],
+          ["customer_name", "=", name],
+        ],
+        fields: CUSTOMER_FIELDS,
+        limit: 5,
+      }).catch(() => [])) || [];
+    if (rows.length === 1) return { name: rows[0].name, match: "name", row: rows[0] };
+  }
+
+  return null;
+}
+
 export async function createCustomer(body: any, defaults: { division?: string } = {}) {
   const doc = bodyToCustomerDoc(body, defaults);
+  if (!doc.customer_name) throw new Error("Customer name is required");
+
+  const existing = await resolveExistingCustomer({
+    email: body.email ?? body.email_id ?? (doc as any).email_id,
+    phone: body.phone ?? body.mobile_no ?? (doc as any).mobile_no,
+    name: String((doc as any).customer_name ?? ""),
+  });
+  if (existing) {
+    const serialized = serializeCustomer(existing.row);
+    (serialized as any).reusedFromDedupe = true;
+    (serialized as any).dedupeMatch = existing.match;
+    return serialized;
+  }
+
   const created = await erpCreate<any>("Customer", doc);
   if (!created) throw new Error("Failed to create customer");
 
@@ -171,7 +282,9 @@ export async function createCustomer(body: any, defaults: { division?: string } 
     }).catch(() => {});
   }
 
-  return serializeCustomer(created);
+  const serialized = serializeCustomer(created);
+  (serialized as any).reusedFromDedupe = false;
+  return serialized;
 }
 
 export async function updateCustomer(id: string, body: any) {

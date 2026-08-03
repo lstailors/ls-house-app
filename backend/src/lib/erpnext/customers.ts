@@ -719,11 +719,218 @@ function emptySpend() {
   };
 }
 
+/** Normalize email for identity match (lowercase trim). */
+export function normalizeEmail(raw?: string | null): string | null {
+  const e = String(raw ?? "").trim().toLowerCase();
+  if (!e || !e.includes("@") || e.length < 5) return null;
+  return e;
+}
+
+/** Last 10 digits; drop trivial / known shop lines. */
+export function normalizePhoneDigits(raw?: string | null): string | null {
+  let d = String(raw ?? "").replace(/\D+/g, "");
+  if (d.length === 11 && d.startsWith("1")) d = d.slice(1);
+  if (d.length > 10) d = d.slice(-10);
+  if (d.length < 10) return null;
+  if (/^(\d)\1+$/.test(d)) return null;
+  // House / known non-person lines — never treat as client identity
+  if (["2127521638", "2127511638", "3472911638"].includes(d)) return null;
+  return d;
+}
+
+function normalizePersonName(raw?: string | null): string {
+  return String(raw ?? "")
+    .toLowerCase()
+    .replace(/\s+-\s+\d+$/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function namesCompatible(a?: string | null, b?: string | null): boolean {
+  const na = normalizePersonName(a);
+  const nb = normalizePersonName(b);
+  if (!na || !nb) return true; // missing name is not a conflict
+  if (na === nb) return true;
+  // one contains the other (Alger vs Eleanor Alger)
+  if (na.includes(nb) || nb.includes(na)) return true;
+  const pa = na.split(" ").filter(Boolean);
+  const pb = nb.split(" ").filter(Boolean);
+  if (pa.length && pb.length && pa[pa.length - 1] === pb[pb.length - 1] && pa[0] === pb[0]) return true;
+  return false;
+}
+
+/**
+ * Create-time identity resolve — email → phone → exact name.
+ * Active customers only. No fuzzy email/name search.
+ */
+export async function resolveExistingCustomer(opts: {
+  email?: string | null;
+  phone?: string | null;
+  name?: string | null;
+}): Promise<{ name: string; match: "email" | "phone" | "name"; row: any } | null> {
+  const email = normalizeEmail(opts.email);
+  const phone = normalizePhoneDigits(opts.phone);
+  const name = String(opts.name ?? "").trim();
+  const nameKey = normalizePersonName(name);
+
+  if (email) {
+    // Exact case variants; ERP stores as entered
+    const rows =
+      (await erpList<any>("Customer", {
+        filters: [
+          ["disabled", "=", 0],
+          ["email_id", "=", email],
+        ],
+        fields: CUSTOMER_LIST_FIELDS,
+        limit: 5,
+      }).catch(() => [])) || [];
+    let hit = rows[0];
+    if (!hit) {
+      // try original casing from caller
+      const raw = String(opts.email ?? "").trim();
+      if (raw && raw !== email) {
+        const rows2 =
+          (await erpList<any>("Customer", {
+            filters: [
+              ["disabled", "=", 0],
+              ["email_id", "=", raw],
+            ],
+            fields: CUSTOMER_LIST_FIELDS,
+            limit: 5,
+          }).catch(() => [])) || [];
+        hit = rows2[0];
+      }
+    }
+    if (hit?.name) return { name: hit.name, match: "email", row: hit };
+  }
+
+  if (phone) {
+    // LIKE last-10 — mobile_no may be +1… formatted
+    const rows =
+      (await erpList<any>("Customer", {
+        filters: [
+          ["disabled", "=", 0],
+          ["mobile_no", "like", `%${phone}%`],
+        ],
+        fields: CUSTOMER_LIST_FIELDS,
+        limit: 25,
+      }).catch(() => [])) || [];
+    const matched = rows.filter((r) => normalizePhoneDigits(r.mobile_no) === phone);
+    if (matched.length === 1) {
+      const only = matched[0];
+      if (namesCompatible(name, only.customer_name || only.name)) {
+        return { name: only.name, match: "phone", row: only };
+      }
+    } else if (matched.length > 1) {
+      const byName = matched.filter((r) => namesCompatible(name, r.customer_name || r.name));
+      const pick = byName[0] || null;
+      if (pick) return { name: pick.name, match: "phone", row: pick };
+    }
+  }
+
+  // Exact name only when unique among active (post-cleanup book has unique names)
+  if (nameKey && nameKey.length >= 3) {
+    const rows =
+      (await erpList<any>("Customer", {
+        filters: [
+          ["disabled", "=", 0],
+          ["customer_name", "=", name],
+        ],
+        fields: CUSTOMER_LIST_FIELDS,
+        limit: 5,
+      }).catch(() => [])) || [];
+    if (rows.length === 1) {
+      return { name: rows[0].name, match: "name", row: rows[0] };
+    }
+    // case-insensitive fallback via like then filter
+    if (!rows.length) {
+      const loose =
+        (await erpList<any>("Customer", {
+          filters: [
+            ["disabled", "=", 0],
+            ["customer_name", "like", name],
+          ],
+          fields: CUSTOMER_LIST_FIELDS,
+          limit: 10,
+        }).catch(() => [])) || [];
+      const exact = loose.filter((r) => normalizePersonName(r.customer_name) === nameKey);
+      if (exact.length === 1) {
+        return { name: exact[0].name, match: "name", row: exact[0] };
+      }
+    }
+  }
+
+  return null;
+}
+
+async function enrichExistingCustomerContact(
+  id: string,
+  body: any,
+): Promise<void> {
+  const email = normalizeEmail(body.email ?? body.email_id);
+  const phoneRaw = body.phone ?? body.mobile_no;
+  const phoneDigits = normalizePhoneDigits(phoneRaw);
+  if (!email && !phoneDigits) return;
+
+  try {
+    const cur = await erpGet<any>("Customer", id);
+    if (!cur) return;
+    const needEmail = email && !normalizeEmail(cur.email_id);
+    const needPhone = phoneDigits && normalizePhoneDigits(cur.mobile_no) !== phoneDigits;
+    // only fill empties — never overwrite a different live phone/email
+    if (!needEmail && !(needPhone && !normalizePhoneDigits(cur.mobile_no))) return;
+
+    await updateCustomerContactBook(id, {
+      email: needEmail ? email! : undefined,
+      phone:
+        needPhone && !normalizePhoneDigits(cur.mobile_no)
+          ? String(phoneRaw)
+          : undefined,
+    }).catch(() => {});
+  } catch {
+    /* non-fatal */
+  }
+}
+
 export async function createCustomer(body: any, defaults: { division?: string } = {}) {
   const doc = bodyToCustomerDoc(body, defaults);
   if (!doc.customer_name) throw new Error("Customer name is required");
   if (!doc.customer_group) doc.customer_group = "MTM";
   if (!doc.territory) doc.territory = "United States";
+
+  const email = (body.email ?? body.email_id ?? doc.email_id) as string | undefined;
+  const phone = (body.phone ?? body.mobile_no ?? doc.mobile_no) as string | undefined;
+  const personName = String(doc.customer_name);
+
+  const existing = await resolveExistingCustomer({
+    email,
+    phone,
+    name: personName,
+  });
+  if (existing) {
+    await enrichExistingCustomerContact(existing.name, body);
+    if (body.address || body.city) {
+      await upsertCustomerWithAddress({
+        name: existing.name,
+        fullName: personName,
+        phone,
+        email,
+        address: {
+          line1: body.address,
+          city: body.city,
+          state: body.state,
+          zip: body.zip_code,
+        },
+      }).catch(() => {});
+    }
+    const row = await getCustomer(existing.name);
+    if (row && typeof row === "object") {
+      (row as any).reusedFromDedupe = true;
+      (row as any).dedupeMatch = existing.match;
+    }
+    return row;
+  }
 
   const created = await erpCreate<any>("Customer", doc);
   if (!created) throw new Error("Failed to create customer");
@@ -743,7 +950,11 @@ export async function createCustomer(body: any, defaults: { division?: string } 
     }).catch(() => {});
   }
 
-  return getCustomer(created.name);
+  const row = await getCustomer(created.name);
+  if (row && typeof row === "object") {
+    (row as any).reusedFromDedupe = false;
+  }
+  return row;
 }
 
 /**
@@ -1100,10 +1311,18 @@ export async function getCustomersByIds(ids: string[]): Promise<Map<string, any>
 }
 
 export async function findCustomerByPhone(phone: string) {
-  const rows = await erpList<any>("Customer", {
-    filters: [["mobile_no", "=", phone]],
-    fields: CUSTOMER_LIST_FIELDS,
-    limit: 1,
-  });
-  return rows[0] ?? null;
+  const digits = normalizePhoneDigits(phone);
+  if (!digits) {
+    const rows = await erpList<any>("Customer", {
+      filters: [
+        ["disabled", "=", 0],
+        ["mobile_no", "=", phone],
+      ],
+      fields: CUSTOMER_LIST_FIELDS,
+      limit: 1,
+    });
+    return rows[0] ?? null;
+  }
+  const hit = await resolveExistingCustomer({ phone: digits });
+  return hit?.row ?? null;
 }
