@@ -7,7 +7,7 @@
 // Do not collapse to a bare checkmark screen.
 
 import { useEffect, useState, type CSSProperties } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import {
   Loader2,
   CheckCircle2,
@@ -86,6 +86,8 @@ const glassPanel: CSSProperties = {
 
 export default function PayInvoice() {
   const { invoiceId } = useParams<{ invoiceId: string }>();
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get("t");
   const [invoice, setInvoice] = useState<InvoiceData | null>(null);
   const [pageState, setPageState] = useState<PageState>("loading");
   const [errorMsg, setErrorMsg] = useState("");
@@ -100,7 +102,8 @@ export default function PayInvoice() {
     }
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/pay-info/${encodeURIComponent(invoiceId)}`);
+        const query = token ? `?t=${encodeURIComponent(token)}` : "";
+        const res = await fetch(`${API_BASE}/api/pay-info/${encodeURIComponent(invoiceId)}${query}`);
         if (!res.ok) {
           setPageState("not_found");
           return;

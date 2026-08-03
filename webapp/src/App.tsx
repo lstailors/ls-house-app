@@ -45,6 +45,8 @@ import GarmentTagRedirect from './components/garment/GarmentTagRedirect';
 import AltsGarmentRedirect from './pages/AltsGarmentRedirect';
 const PayInvoice = lazy(() => import('./pages/PayInvoice'));
 const ETicket = lazy(() => import('./pages/ETicket'));
+const CustomerHome = lazy(() => import("./pages/CustomerHome"));
+const CustomerProfile = lazy(() => import("./pages/CustomerProfile"));
 const Tasks = lazy(() => import('./pages/Tasks'));
 const Comms = lazy(() => import('./pages/Comms'));
 const SofiaChat = lazy(() => import('./pages/SofiaChat'));
@@ -83,8 +85,15 @@ const App = () => (
           <Route path="/d/:token" element={<DeliveryTracking />} />
           {/* Customer-facing payment page — no AppShell, works for unauthenticated users */}
           <Route path="/pay/:invoiceId" element={<PayInvoice />} />
+          {/* Aligned public invoice route: /i/{erp_name}?t={token} (token-based, no login) */}
+          <Route path="/pay/:invoiceId" element={<PayInvoice />} />
+          {/* Customer portal invoice path (my.lstailors.com) — token-based, public */}
+          <Route path="/i/:invoiceId" element={<PayInvoice />} />
           {/* Customer-facing e-ticket — public, no auth */}
           <Route path="/e-ticket/:ticketName" element={<ETicket />} />
+          {/* Client portal (my.lstailors.com) — outside AppShell */}
+          <Route path="/home" element={<CustomerHome />} />
+          <Route path="/profile" element={<CustomerProfile />} />
           {/* Full-screen in-app QR scanner — protected, but outside AppShell (no sidebar chrome) */}
           <Route
             path="/scanner"

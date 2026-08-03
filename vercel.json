@@ -23,6 +23,21 @@
       "source": "/e-ticket/:ticket",
       "destination": "https://alts.lstailors.com/t/:ticket",
       "permanent": false
+    },
+    {
+      "source": "https://www.my.lstailors.com/:path*",
+      "destination": "https://my.lstailors.com/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/account",
+      "destination": "/login?portal=customer",
+      "permanent": false
+    },
+    {
+      "source": "/account/:path*",
+      "destination": "/login?portal=customer",
+      "permanent": false
     }
   ],
   "rewrites": [

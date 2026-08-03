@@ -746,24 +746,242 @@ export async function createCustomer(body: any, defaults: { division?: string } 
   return getCustomer(created.name);
 }
 
+/**
+ * Two-way contact book write — Contact (+ phone_nos / email_ids) + Address rows.
+ * Customer.mobile_no / email_id are Read Only mirrors; always write Contact.
+ */
+export async function updateCustomerContactBook(
+  id: string,
+  body: {
+    phone?: string;
+    email?: string;
+    preferred_name?: string;
+    preferred_contact?: string;
+    sms_opt_in?: boolean | number;
+    phones?: Array<{ number: string; label?: string; isPrimary?: boolean }>;
+    emails?: Array<{ email: string; isPrimary?: boolean }>;
+    addresses?: Array<{
+      id?: string;
+      title?: string;
+      type?: string;
+      line1?: string;
+      line2?: string;
+      city?: string;
+      state?: string;
+      zip?: string;
+      country?: string;
+      isBilling?: boolean;
+      isShipping?: boolean;
+      _delete?: boolean;
+    }>;
+    address?: { line1?: string; line2?: string; city?: string; state?: string; zip?: string; country?: string; title?: string; type?: string };
+  },
+) {
+  const cust = await erpGet<any>("Customer", id);
+  if (!cust) throw new Error("Customer not found");
+
+  const custName = cust.customer_name || id;
+  const nameParts = String(custName).split(/\s+/);
+  const firstName = nameParts[0] || custName;
+  const lastName = nameParts.slice(1).join(" ") || "";
+  const linkFilter = [
+    ["Dynamic Link", "link_doctype", "=", "Customer"],
+    ["Dynamic Link", "link_name", "=", id],
+  ];
+
+  // Customer-level profile prefs (writable on Customer)
+  const custPatch: Record<string, unknown> = {};
+  if (body.preferred_name !== undefined) custPatch.preferred_name = body.preferred_name;
+  if (body.preferred_contact !== undefined) custPatch.preferred_contact = body.preferred_contact;
+  if (body.sms_opt_in !== undefined) custPatch.sms_opt_in = body.sms_opt_in ? 1 : 0;
+  if (Object.keys(custPatch).length) {
+    await erpUpdate("Customer", id, custPatch);
+  }
+
+  async function ensurePrimaryContact(): Promise<string | null> {
+    if (cust.customer_primary_contact) return String(cust.customer_primary_contact);
+    const contacts = await erpList<any>("Contact", {
+      filters: linkFilter,
+      fields: ["name", "is_primary_contact"],
+      limit: 5,
+    }).catch(() => [] as any[]);
+    const hit = (contacts ?? []).find((x: any) => x.is_primary_contact) || contacts?.[0];
+    if (hit?.name) {
+      await erpUpdate("Customer", id, { customer_primary_contact: hit.name });
+      return hit.name;
+    }
+    const created = await erpCreate<any>("Contact", {
+      first_name: firstName,
+      last_name: lastName,
+      is_primary_contact: 1,
+      links: [{ link_doctype: "Customer", link_name: id }],
+    });
+    const cname = created?.name;
+    if (cname) {
+      await erpUpdate("Customer", id, { customer_primary_contact: cname });
+    }
+    return cname || null;
+  }
+
+  let phoneList = body.phones;
+  if (!phoneList && body.phone !== undefined) {
+    phoneList = String(body.phone || "").trim()
+      ? [{ number: String(body.phone).trim(), label: "Mobile", isPrimary: true }]
+      : [];
+  }
+  let emailList = body.emails;
+  if (!emailList && body.email !== undefined) {
+    emailList = String(body.email || "").trim()
+      ? [{ email: String(body.email).trim(), isPrimary: true }]
+      : [];
+  }
+
+  if (phoneList || emailList) {
+    const contactId = await ensurePrimaryContact();
+    if (contactId) {
+      const patch: Record<string, unknown> = {};
+      if (phoneList) {
+        const cleaned = phoneList
+          .map((p) => ({
+            number: String(p.number || "").trim(),
+            label: p.label || "Mobile",
+            isPrimary: !!p.isPrimary,
+          }))
+          .filter((p) => p.number);
+        // Deduplicate numbers; exactly one primary mobile
+        const seen = new Set<string>();
+        const uniq = cleaned.filter((p) => {
+          const k = p.number.replace(/\D/g, "") || p.number;
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+        let primaryIdx = uniq.findIndex((p) => p.isPrimary);
+        if (primaryIdx < 0) primaryIdx = 0;
+        uniq.forEach((p, i) => {
+          p.isPrimary = i === primaryIdx;
+        });
+        const primary = uniq[primaryIdx];
+        patch.mobile_no = primary?.number || "";
+        patch.phone = uniq.find((p) => !p.isPrimary)?.number || "";
+        patch.phone_nos = uniq.map((p) => ({
+          phone: p.number,
+          is_primary_mobile_no: p.isPrimary ? 1 : 0,
+          is_primary_phone: 0,
+        }));
+      }
+      if (emailList) {
+        const cleaned = emailList
+          .map((e) => ({
+            email: String(e.email || "").trim().toLowerCase(),
+            isPrimary: !!e.isPrimary,
+          }))
+          .filter((e) => e.email);
+        const seen = new Set<string>();
+        const uniq = cleaned.filter((e) => {
+          if (seen.has(e.email)) return false;
+          seen.add(e.email);
+          return true;
+        });
+        let primaryIdx = uniq.findIndex((e) => e.isPrimary);
+        if (primaryIdx < 0) primaryIdx = 0;
+        uniq.forEach((e, i) => {
+          e.isPrimary = i === primaryIdx;
+        });
+        patch.email_id = uniq[primaryIdx]?.email || uniq[0]?.email || "";
+        patch.email_ids = uniq.map((e) => ({
+          email_id: e.email,
+          is_primary: e.isPrimary ? 1 : 0,
+        }));
+      }
+      await erpUpdate("Contact", contactId, patch);
+    }
+  }
+
+  let addressList = body.addresses;
+  if (!addressList && body.address) {
+    addressList = [{ ...body.address, type: body.address.type || "Personal", isBilling: true, isShipping: true }];
+  }
+  if (addressList) {
+    let primaryAddrName: string | null = null;
+    for (const a of addressList) {
+      if (a._delete && a.id) {
+        await erpUpdate("Address", a.id, { disabled: 1 }).catch(() => {});
+        continue;
+      }
+      if (!(a.line1 || "").trim() && !(a.city || "").trim()) continue;
+
+      const addrPayload: Record<string, unknown> = {
+        address_title: (a.title || a.type || custName).trim() || custName,
+        address_type: a.type || "Personal",
+        address_line1: a.line1 || "",
+        address_line2: a.line2 || "",
+        city: a.city || "New York",
+        state: a.state || "",
+        pincode: a.zip || "",
+        country: a.country || "United States",
+        is_primary_address: a.isBilling ? 1 : 0,
+        is_shipping_address: a.isShipping ? 1 : 0,
+        links: [{ link_doctype: "Customer", link_name: id }],
+      };
+
+      if (a.id) {
+        await erpUpdate("Address", a.id, addrPayload);
+        if (a.isBilling) primaryAddrName = a.id;
+      } else {
+        const created = await erpCreate<any>("Address", addrPayload);
+        const aname = created?.name;
+        if (a.isBilling && aname) primaryAddrName = aname;
+      }
+    }
+    if (primaryAddrName) {
+      await erpUpdate("Customer", id, { customer_primary_address: primaryAddrName });
+    }
+  }
+
+  return getCustomer(id);
+}
+
 export async function updateCustomer(id: string, body: any) {
   const doc = bodyToCustomerDoc(body);
   // erpUpdate merges; drop empty customer_type-only shells
   delete doc.customer_type;
-  if (Object.keys(doc).length === 0) {
+
+  const hasContactBook =
+    body.phones !== undefined ||
+    body.emails !== undefined ||
+    body.addresses !== undefined ||
+    body.phone !== undefined ||
+    body.email !== undefined ||
+    body.address ||
+    body.city ||
+    body.state ||
+    body.zip_code;
+
+  if (Object.keys(doc).length > 0) {
+    const updated = await erpUpdate<any>("Customer", id, doc);
+    if (!updated) throw new Error("Failed to update customer");
+  } else if (!hasContactBook) {
     const existing = await getCustomer(id);
     if (!existing) throw new Error("Customer not found");
     return existing;
   }
 
-  const updated = await erpUpdate<any>("Customer", id, doc);
-  if (!updated) throw new Error("Failed to update customer");
+  // Multi phone/email/address — canonical Contact + Address path
+  if (
+    body.phones !== undefined ||
+    body.emails !== undefined ||
+    body.addresses !== undefined ||
+    body.phone !== undefined ||
+    body.email !== undefined
+  ) {
+    return updateCustomerContactBook(id, body);
+  }
 
   // Single-address convenience write from profile basic edit
   if (body.address || body.city || body.state || body.zip_code) {
-    await upsertCustomerWithAddress({
-      name: id,
-      fullName: updated.customer_name ?? id,
+    const existing = await erpGet<any>("Customer", id);
+    await updateCustomerContactBook(id, {
       phone: body.phone,
       email: body.email,
       address: {
@@ -772,10 +990,66 @@ export async function updateCustomer(id: string, body: any) {
         state: body.state,
         zip: body.zip_code,
       },
-    }).catch(() => {});
+    }).catch(async () => {
+      await upsertCustomerWithAddress({
+        name: id,
+        fullName: existing?.customer_name ?? id,
+        phone: body.phone,
+        email: body.email,
+        address: {
+          line1: body.address,
+          city: body.city,
+          state: body.state,
+          zip: body.zip_code,
+        },
+      }).catch(() => {});
+    });
   }
 
   return getCustomer(id);
+}
+
+/** Resolve ERP Customer id for a portal login email (or phone). */
+export async function findCustomerIdForPortalUser(opts: {
+  email?: string | null;
+  phone?: string | null;
+}): Promise<string | null> {
+  const email = (opts.email || "").trim().toLowerCase();
+  const phoneDigits = String(opts.phone || "").replace(/\D/g, "");
+
+  if (email) {
+    const byEmail = await erpList<any>("Customer", {
+      filters: [["email_id", "=", email]],
+      fields: ["name", "email_id"],
+      limit: 5,
+    }).catch(() => [] as any[]);
+    if (byEmail?.[0]?.name) return byEmail[0].name;
+
+    // Contact.email_id → Dynamic Link Customer
+    const contacts = await erpList<any>("Contact", {
+      filters: [["email_id", "=", email]],
+      fields: ["name", "email_id"],
+      limit: 10,
+    }).catch(() => [] as any[]);
+    for (const c of contacts || []) {
+      const full = await erpGet<any>("Contact", c.name).catch(() => null);
+      const links = Array.isArray(full?.links) ? full.links : [];
+      const custLink = links.find((l: any) => l.link_doctype === "Customer" && l.link_name);
+      if (custLink?.link_name) return String(custLink.link_name);
+    }
+  }
+
+  if (phoneDigits.length >= 10) {
+    const last10 = phoneDigits.slice(-10);
+    const byPhone = await erpList<any>("Customer", {
+      filters: [["mobile_no", "like", `%${last10}%`]],
+      fields: ["name", "mobile_no"],
+      limit: 5,
+    }).catch(() => [] as any[]);
+    if (byPhone?.[0]?.name) return byPhone[0].name;
+  }
+
+  return null;
 }
 
 export async function setCustomerImage(id: string, imageUrl: string) {

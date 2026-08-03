@@ -189,12 +189,20 @@ customersRouter.patch("/:id", async (c) => {
     "lsh_back_length",
     "lsh_outseam",
     "image",
+    "phones",
+    "emails",
+    "addresses",
   ];
 
   const update: Record<string, any> = {};
   for (const key of allowed) {
     if (body[key] !== undefined) update[key] = body[key];
   }
+
+  // Always pass contact-book arrays even if other fields empty
+  if (body.phones !== undefined) update.phones = body.phones;
+  if (body.emails !== undefined) update.emails = body.emails;
+  if (body.addresses !== undefined) update.addresses = body.addresses;
 
   if (Object.keys(update).length === 0) {
     return c.json({ error: { message: "No fields to update" } }, 400);

@@ -8,6 +8,7 @@ import "./env";
 import { meRouter } from "./routes/me";
 import { locationsRouter } from "./routes/locations";
 import { customersRouter } from "./routes/customers";
+import { portalRouter } from "./routes/portal";
 import { alterationsRouter } from "./routes/alterations";
 import { customOrdersRouter } from "./routes/custom-orders";
 import { salesOrdersRouter } from "./routes/sales-orders";

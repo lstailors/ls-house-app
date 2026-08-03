@@ -5,7 +5,7 @@ import { z } from "zod";
 
 // ─── Enums ──────────────────────────────────────────────────────────────
 
-export const UserRole = z.enum(["super_admin", "store_manager", "salesperson", "driver", "tailor"]);
+export const UserRole = z.enum(["super_admin", "store_manager", "salesperson", "driver", "tailor", "customer"]);
 export type UserRole = z.infer<typeof UserRole>;
 
 export const OrderStatus = z.enum([
@@ -1143,3 +1143,77 @@ export const DispatchPhoneRequest = z.object({
   phone: z.string().min(7),
 });
 export type DispatchPhoneRequest = z.infer<typeof DispatchPhoneRequest>;
+
+// ─── ERP Customer Portal Self-Service (2-way sync with ERPNext) ───────────
+// Uses ERP Customer + linked Address/Contact + Portal User for auth.
+// Customers can update their own contact info (multi-address, multi-phone/email).
+
+export const ErpAddress = z.object({
+  name: z.string().optional(), // ERP name (e.g. "CUST-001-ADDR-001")
+  address_title: z.string().optional(),
+  address_type: z.enum(["Billing", "Shipping", "Office", "Personal", "Other"]).default("Personal"),
+  address_line1: z.string().min(1),
+  address_line2: z.string().optional(),
+  city: z.string().min(1),
+  state: z.string().optional(),
+  country: z.string().default("United States"),
+  pincode: z.string().optional(),
+  phone: z.string().optional(),
+  email_id: z.string().email().optional(),
+  is_primary_address: z.boolean().default(false),
+  is_shipping_address: z.boolean().default(false),
+  links: z.array(z.object({ link_doctype: z.string(), link_name: z.string() })).optional(),
+});
+export type ErpAddress = z.infer<typeof ErpAddress>;
+
+export const ErpContactPhone = z.object({
+  phone: z.string().min(7),
+  is_primary_mobile_no: z.boolean().default(false),
+});
+export type ErpContactPhone = z.infer<typeof ErpContactPhone>;
+
+export const ErpContactEmail = z.object({
+  email_id: z.string().email(),
+  is_primary: z.boolean().default(false),
+});
+export type ErpContactEmail = z.infer<typeof ErpContactEmail>;
+
+export const ErpContact = z.object({
+  name: z.string().optional(),
+  first_name: z.string().min(1),
+  last_name: z.string().optional(),
+  email_id: z.string().email().optional(),
+  mobile_no: z.string().optional(),
+  phone: z.string().optional(),
+  email_ids: z.array(ErpContactEmail).optional(),
+  phone_nos: z.array(ErpContactPhone).optional(),
+  links: z.array(z.object({ link_doctype: z.string(), link_name: z.string() })).optional(),
+  is_primary_contact: z.boolean().default(false),
+});
+export type ErpContact = z.infer<typeof ErpContact>;
+
+export const ErpCustomerProfile = z.object({
+  name: z.string(), // ERP Customer name e.g. "CUST-00123"
+  customer_name: z.string(),
+  customer_type: z.enum(["Individual", "Company", "Partnership"]).optional(),
+  customer_group: z.string().optional(),
+  territory: z.string().optional(),
+  customer_primary_address: z.string().optional(), // Link to Address.name
+  primary_address: z.string().optional(), // rendered text
+  customer_primary_contact: z.string().optional(), // Link to Contact.name
+  mobile_no: z.string().optional(),
+  email_id: z.string().email().optional(),
+  addresses: z.array(ErpAddress).optional(),
+  contacts: z.array(ErpContact).optional(),
+  portal_users: z.array(z.object({ user: z.string(), is_portal_user: z.boolean() })).optional(),
+  website: z.string().optional(),
+  customer_details: z.string().optional(),
+});
+export type ErpCustomerProfile = z.infer<typeof ErpCustomerProfile>;
+
+export const ErpCustomerUpdate = z.object({
+  customer_name: z.string().optional(),
+  website: z.string().optional(),
+  customer_details: z.string().optional(),
+});
+export type ErpCustomerUpdate = z.infer<typeof ErpCustomerUpdate>;

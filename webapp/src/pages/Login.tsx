@@ -21,10 +21,20 @@ export default function Login() {
 
   useEffect(() => {
     if (me) {
-      const dest = from ?? (me.role === "driver" ? "/deliveries" : "/");
-      navigate(dest, { replace: true });
+      const isMyDomain = typeof window !== "undefined" && (window.location.hostname === "my.lstailors.com" || window.location.hostname.endsWith(".my.lstailors.com"));
+      const fromPath = (location.state as any)?.from?.pathname ?? null;
+
+      if (fromPath) {
+        navigate(fromPath, { replace: true });
+      } else if (isMyDomain || me.role === "customer") {
+        navigate("/home", { replace: true });
+      } else if (me.role === "driver") {
+        navigate("/deliveries", { replace: true });
+      } else {
+        navigate("/", { replace: true });
+      }
     }
-  }, [me, navigate, from]);
+  }, [me, navigate, from, location.state]);
 
   const signInMutation = useMutation({
     mutationFn: async (): Promise<null> => {
