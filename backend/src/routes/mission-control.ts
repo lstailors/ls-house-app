@@ -1,11 +1,11 @@
-// Mission Control — Board / Crons / History (read-only v1)
+// Mission Control — Board / Crons / History
 // Auth: super_admin + store_manager
-// Data: lsh.kanban_snapshot + lsh.cron_health (Studio writers) + ERP agent events/briefs
+// Data: lsh.* snapshots (Studio writers) — Edge-safe
 
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
-import { lshSelect, supabaseConfig } from "../lib/supabase-lsh";
-import { listAgentEvents, listAgentBriefs, listAuditLogs } from "../lib/erpnext/agents";
+import { lshSelect, lshInsert, lshUpdate, supabaseConfig } from "../lib/supabase-lsh";
+import { mcListActivity, mcListBriefs } from "../lib/mc-data";
 
 export const missionControlRouter = new Hono();
 
@@ -46,7 +46,6 @@ function mapKanbanRow(r: any) {
   };
 }
 
-// ─── GET /api/mission-control/board ────────────────────────────────────────────
 missionControlRouter.get("/board", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
@@ -59,12 +58,7 @@ missionControlRouter.get("/board", async (c) => {
 
   if (!supabaseConfig()) {
     return c.json({
-      data: {
-        tasks: [],
-        total: 0,
-        filters: { assignee, status, blockedOnly },
-        warning: "supabase_not_configured",
-      },
+      data: { tasks: [], total: 0, filters: { assignee, status, blockedOnly }, warning: "supabase_not_configured" },
     });
   }
 
@@ -90,27 +84,18 @@ missionControlRouter.get("/board", async (c) => {
       );
     }
 
-    return c.json({
-      data: {
-        tasks,
-        total: tasks.length,
-        filters: { assignee, status, blockedOnly },
-      },
-    });
+    return c.json({ data: { tasks, total: tasks.length, filters: { assignee, status, blockedOnly } } });
   } catch (e: any) {
-    // Table missing until migration applied — soft empty
     const msg = String(e?.message || e);
     if (msg.includes("42P01") || msg.includes("does not exist") || msg.includes("404")) {
       return c.json({
         data: { tasks: [], total: 0, filters: { assignee, status, blockedOnly }, warning: "table_missing" },
       });
     }
-    console.error("[mission-control/board]", msg);
     return c.json({ error: { message: msg } }, 500);
   }
 });
 
-// ─── GET /api/mission-control/board/:id ────────────────────────────────────────
 missionControlRouter.get("/board/:id", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
@@ -122,25 +107,13 @@ missionControlRouter.get("/board/:id", async (c) => {
   }
 
   try {
-    const rows = await lshSelect<any>("kanban_snapshot", {
-      filters: [`task_id=eq.${id}`],
-      limit: 1,
-    });
+    const rows = await lshSelect<any>("kanban_snapshot", { filters: [`task_id=eq.${id}`], limit: 1 });
     const row = rows[0];
     if (!row) return c.json({ data: { task: null, comments: [], events: [], parents: [], children: [] } });
-
     const task = mapKanbanRow(row);
-    const comments =
-      row.latest_comment_body
-        ? [
-            {
-              author: row.latest_comment_author,
-              body: row.latest_comment_body,
-              created_at: row.latest_comment_at,
-            },
-          ]
-        : [];
-
+    const comments = row.latest_comment_body
+      ? [{ author: row.latest_comment_author, body: row.latest_comment_body, created_at: row.latest_comment_at }]
+      : [];
     return c.json({
       data: {
         task,
@@ -151,12 +124,75 @@ missionControlRouter.get("/board/:id", async (c) => {
       },
     });
   } catch (e: any) {
-    console.error("[mission-control/board/:id]", e?.message);
     return c.json({ error: { message: e?.message || "failed" } }, 500);
   }
 });
 
-// ─── GET /api/mission-control/crons ────────────────────────────────────────────
+// Queue Hermes kanban action + optimistic snapshot update
+missionControlRouter.post("/board/:id/action", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  if (!supabaseConfig()) return c.json({ error: { message: "Supabase not configured" } }, 503);
+
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({} as any));
+  const action = String(body.action || "").toLowerCase();
+  const allowed = ["promote", "block", "unblock", "complete", "archive", "schedule", "assign", "comment"];
+  if (!allowed.includes(action)) {
+    return c.json({ error: { message: `action must be one of ${allowed.join(", ")}` } }, 400);
+  }
+
+  const payload: Record<string, unknown> = { ...(body.payload || {}) };
+  if (typeof body.reason === "string") payload.reason = body.reason;
+  if (typeof body.assignee === "string") payload.assignee = body.assignee;
+  if (typeof body.comment === "string") payload.comment = body.comment;
+
+  try {
+    const queued = await lshInsert<any>("kanban_commands", {
+      task_id: id,
+      action,
+      payload,
+      requested_by: user.email,
+      status: "pending",
+    });
+
+    const optStatus =
+      action === "promote"
+        ? "ready"
+        : action === "block"
+          ? "blocked"
+          : action === "unblock"
+            ? "todo"
+            : action === "complete"
+              ? "done"
+              : action === "archive"
+                ? "archived"
+                : action === "schedule"
+                  ? "scheduled"
+                  : null;
+
+    if (optStatus || action === "assign") {
+      await lshUpdate(
+        "kanban_snapshot",
+        [`task_id=eq.${id}`],
+        {
+          ...(optStatus ? { status: optStatus } : {}),
+          ...(action === "block" ? { block_kind: payload.reason || "human" } : {}),
+          ...(action === "complete" ? { completed_at: new Date().toISOString() } : {}),
+          ...(action === "assign" && payload.assignee ? { assignee: payload.assignee } : {}),
+        }
+      );
+    }
+
+    return c.json({
+      data: { queued: true, command: Array.isArray(queued) ? queued[0] : queued, optimistic_status: optStatus },
+    });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message || "failed" } }, 500);
+  }
+});
+
 missionControlRouter.get("/crons", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
@@ -200,8 +236,6 @@ missionControlRouter.get("/crons", async (c) => {
       model_snapshot: r.model_snapshot,
       model_drift: !!r.model_drift,
       stale: !!r.stale,
-      paused_at: r.paused_at,
-      paused_reason: r.paused_reason,
       schedule_display: r.schedule_display,
       snapshot_at: r.snapshot_at,
     }));
@@ -221,12 +255,10 @@ missionControlRouter.get("/crons", async (c) => {
         data: { crons: [], summary: { green: 0, amber: 0, red: 0, total: 0 }, warning: "table_missing" },
       });
     }
-    console.error("[mission-control/crons]", msg);
     return c.json({ error: { message: msg } }, 500);
   }
 });
 
-// ─── GET /api/mission-control/history ──────────────────────────────────────────
 missionControlRouter.get("/history", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
@@ -245,79 +277,52 @@ missionControlRouter.get("/history", async (c) => {
     kind: string;
     title: string;
     snippet: string | null;
+    body?: string | null;
     doc_ref?: string | null;
     metadata?: Record<string, unknown>;
+    source?: string;
   };
 
   const entries: Entry[] = [];
 
   try {
-    const [events, briefs, audit] = await Promise.all([
-      listAgentEvents({ agentSlug: agent ?? undefined, limit: limit }),
-      listAgentBriefs({ limit: Math.min(limit, 50) }),
-      listAuditLogs({ agentSlug: agent ?? undefined, limit: Math.min(limit, 50) }),
-    ]);
-
-    for (const e of events as any[]) {
+    const act = await mcListActivity({ agentSlug: agent ?? undefined, limit: Math.min(limit * 2, 300) });
+    for (const e of act as any[]) {
       entries.push({
-        id: `evt:${e.name}`,
-        ts: e.creation,
+        id: String(e.id),
+        ts: e.created_at,
         agent_slug: e.agent_slug ?? null,
-        kind: "event",
-        title: e.title || e.event_type || "event",
-        snippet: e.body ? String(e.body).slice(0, 240) : null,
-        metadata: { event_type: e.event_type, severity: e.severity },
-      });
-    }
-
-    for (const b of briefs as any[]) {
-      if (agent && b.agent_slug && b.agent_slug !== agent && b.source !== agent) continue;
-      entries.push({
-        id: `brief:${b.name}`,
-        ts: b.creation,
-        agent_slug: b.agent_slug || b.source || null,
-        kind: "brief",
-        title: b.title || "brief",
-        snippet: b.body ? String(b.body).slice(0, 240) : null,
-        metadata: { type: b.type, source: b.source },
-      });
-    }
-
-    for (const a of audit as any[]) {
-      entries.push({
-        id: `audit:${a.name}`,
-        ts: a.creation,
-        agent_slug: a.agent_slug ?? null,
-        kind: "telemetry",
-        title: a.action || a.title || "audit",
-        snippet: a.detail ? String(a.detail).slice(0, 240) : a.body ? String(a.body).slice(0, 240) : null,
+        kind: e.kind || e.event_type || "event",
+        title: e.title || e.kind || "activity",
+        snippet: e.body ? String(e.body).slice(0, 280) : null,
+        body: e.body ?? null,
+        metadata: e.metadata || {},
+        source: e.source,
+        doc_ref: e.ref || null,
       });
     }
   } catch (e: any) {
-    console.error("[mission-control/history] erp merge:", e?.message);
+    console.error("[mission-control/history] activity", e?.message);
   }
 
-  // Kanban done/completions from snapshot (recent done)
-  if (supabaseConfig()) {
-    try {
-      const done = await lshSelect<any>("kanban_snapshot", {
-        filters: ["status=eq.done"],
-        order: "completed_at.desc",
-        limit: 40,
+  try {
+    const briefs = await mcListBriefs(40);
+    for (const b of briefs as any[]) {
+      if (agent && b.source && b.source !== agent && b.agent_slug && b.agent_slug !== agent) continue;
+      entries.push({
+        id: `brief:${b.id}`,
+        ts: b.created_at,
+        agent_slug: b.agent_slug || b.source || null,
+        kind: "brief",
+        title: b.title || "brief",
+        snippet: b.body ? String(b.body).slice(0, 280) : null,
+        body: b.body ?? null,
+        metadata: { type: b.type, source: b.source },
+        source: "brief",
       });
-      for (const r of done) {
-        entries.push({
-          id: `kb:${r.task_id}`,
-          ts: r.completed_at || r.snapshot_at || r.updated_at,
-          agent_slug: r.assignee ?? null,
-          kind: "kanban_done",
-          title: r.title || r.task_id,
-          snippet: r.result_summary ? String(r.result_summary).slice(0, 240) : null,
-        });
-      }
-    } catch {
-      /* table may be missing */
     }
+  } catch (e: any) {
+    console.error("[mission-control/history] briefs", e?.message);
   }
 
   let filtered = entries.filter((e) => e.ts);
@@ -328,6 +333,7 @@ missionControlRouter.get("/history", async (c) => {
       (e) =>
         e.title.toLowerCase().includes(q) ||
         (e.snippet || "").toLowerCase().includes(q) ||
+        (e.body || "").toLowerCase().includes(q) ||
         (e.agent_slug || "").toLowerCase().includes(q)
     );
   }
