@@ -93,6 +93,10 @@ export async function hermesFetch(
     ...(init.headers as Record<string, string> | undefined),
   };
 
+  if (init.body != null && !headers["Content-Type"] && !headers["content-type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+
   if (opts.auth !== false) {
     try {
       const cookie = await login();
@@ -139,9 +143,9 @@ export const HERMES_FEATURE_MAP = [
   {
     id: "sessions",
     desktop: "Sessions list + search + resume",
-    mc: "Hermes tab · sessions",
+    mc: "Hermes Sessions · search + profile filter + transcript",
     mode: "mirror",
-    phase: 1,
+    phase: 4,
   },
   {
     id: "chat",
@@ -153,9 +157,9 @@ export const HERMES_FEATURE_MAP = [
   {
     id: "cron",
     desktop: "Cron create/edit/trigger",
-    mc: "Hermes cron + Crons health tab",
+    mc: "Hermes Cron drawer (create/pause/resume/trigger)",
     mode: "mirror",
-    phase: 1,
+    phase: 4,
   },
   {
     id: "skills",
@@ -202,9 +206,9 @@ export const HERMES_FEATURE_MAP = [
   {
     id: "memory",
     desktop: "Memory graph / MEMORY.md",
-    mc: "Hermes Memory hub + Console system",
+    mc: "Hermes Memory hub + Graph tab",
     mode: "mirror",
-    phase: 3,
+    phase: 4,
   },
   {
     id: "session-stream",
@@ -219,6 +223,20 @@ export const HERMES_FEATURE_MAP = [
     mc: "Costs tab · Hermes usage feed",
     mode: "mirror",
     phase: 3,
+  },
+  {
+    id: "profiles",
+    desktop: "Multi-profile sessions",
+    mc: "Hermes Sessions · profile filter",
+    mode: "mirror",
+    phase: 4,
+  },
+  {
+    id: "learning-graph",
+    desktop: "Learning / knowledge graph",
+    mc: "Hermes Graph tab (read-only viz)",
+    mode: "mirror",
+    phase: 4,
   },
   {
     id: "files-git-term",

@@ -14,6 +14,7 @@ import {
   hermesFetch,
   HERMES_FEATURE_MAP,
 } from "../lib/hermes-dashboard";
+import { mountHermesPhase4 } from "./hermes-phase4";
 
 export const missionControlRouter = new Hono();
 
@@ -986,5 +987,8 @@ missionControlRouter.get("/hermes/analytics/models", async (c) => {
     },
   });
 });
+
+// SPEC 072 Phase 4 routes (search · profiles · graph · cron mutations)
+mountHermesPhase4(missionControlRouter);
 
 export default missionControlRouter;

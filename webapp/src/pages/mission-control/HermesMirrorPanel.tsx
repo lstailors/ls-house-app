@@ -47,7 +47,12 @@ import {
   useAgentCommand,
   type AgentCommandRun,
 } from "@/lib/queries";
-import { SessionsPane, MemoryPane, UsagePane } from "@/pages/mission-control/HermesPhase3Panes";
+import { MemoryPane, UsagePane } from "@/pages/mission-control/HermesPhase3Panes";
+import {
+  SessionsPaneV4,
+  CronDrawerPane,
+  GraphPane,
+} from "@/pages/mission-control/HermesPhase4Panes";
 
 type Sub =
   | "overview"
@@ -59,6 +64,7 @@ type Sub =
   | "artifacts"
   | "memory"
   | "usage"
+  | "graph"
   | "map";
 
 const MODE_STYLE: Record<string, string> = {
@@ -71,8 +77,10 @@ const MODE_STYLE: Record<string, string> = {
 
 export function HermesMirrorPanel() {
   const [sub, setSub] = useState<Sub>("overview");
+  const [openSessionId, setOpenSessionId] = useState<string | null>(null);
+  const [sessionProfile, setSessionProfile] = useState<string | null>(null);
   const statusQ = useHermesMirrorStatus();
-  const sessionsQ = useHermesMirrorSessions(sub === "sessions");
+  const sessionsQ = useHermesMirrorSessions(sub === "sessions", sessionProfile);
   const skillsQ = useHermesMirrorSkills(sub === "skills");
   const cronQ = useHermesMirrorCron(sub === "cron");
   const mcpQ = useHermesMirrorMcp(sub === "admin");
@@ -81,7 +89,6 @@ export function HermesMirrorPanel() {
   const statsQ = useHermesMirrorSessionStats(sub === "sessions" || sub === "usage");
   const usageQ = useHermesMirrorAnalytics(14, sub === "usage");
   const modelsQ = useHermesMirrorModels(14, sub === "usage");
-  const [openSessionId, setOpenSessionId] = useState<string | null>(null);
   const agentsQ = useAgents();
 
   const payload = (statusQ.data as any)?.data ?? statusQ.data ?? {};
@@ -112,7 +119,7 @@ export function HermesMirrorPanel() {
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <Monitor className="h-4 w-4 text-brass-light" />
-            <p className="ui-label text-[10px] text-brass-light">HERMES MIRROR · SPEC 072 · PHASE 3</p>
+            <p className="ui-label text-[10px] text-brass-light">HERMES MIRROR · SPEC 072 · PHASE 4</p>
             <span
               className={cn(
                 "text-[9px] px-1.5 py-0.5 rounded-full border",
@@ -138,8 +145,8 @@ export function HermesMirrorPanel() {
             Desktop mapped into Mission Control
           </h2>
           <p className="text-xs text-cream-muted mt-1 max-w-2xl">
-            Phase 3: memory hub, session transcripts, Hermes usage/models. Live TUI tool-cards still
-            open in Console Chat (WS/PTY stays on Studio).
+            Phase 4: session search + profiles, cron drawer (create/pause/resume/trigger),
+            learning graph. Live TUI still opens in Console Chat.
           </p>
           {payload.base_url && (
             <p className="text-[10px] font-mono text-cream-dim mt-2">{payload.base_url}</p>
@@ -210,6 +217,7 @@ export function HermesMirrorPanel() {
             ["chat", "Chat", MessageSquare],
             ["sessions", "Sessions", Radio],
             ["memory", "Memory", Brain],
+            ["graph", "Graph", BarChart3],
             ["usage", "Usage", DollarSign],
             ["skills", "Skills", Sparkles],
             ["cron", "Cron", Calendar],
@@ -307,17 +315,21 @@ export function HermesMirrorPanel() {
       )}
 
       {sub === "sessions" && (
-        <SessionsPane
+        <SessionsPaneV4
           sessionsQ={sessionsQ}
           statsQ={statsQ}
           openSessionId={openSessionId}
           setOpenSessionId={setOpenSessionId}
           links={links}
           onOpen={open}
+          profile={sessionProfile}
+          setProfile={setSessionProfile}
         />
       )}
 
       {sub === "memory" && <MemoryPane memQ={memQ} onOpen={open} />}
+
+      {sub === "graph" && <GraphPane onOpen={() => open(links.memory || links.system)} />}
 
       {sub === "usage" && (
         <UsagePane
@@ -345,21 +357,7 @@ export function HermesMirrorPanel() {
       )}
 
       {sub === "cron" && (
-        <MirrorList
-          loading={cronQ.isLoading}
-          error={(cronQ.data as any)?.data?.error || (cronQ.error as Error)?.message}
-          empty="No jobs (or auth not configured). Fleet health is on the Crons tab."
-          items={((cronQ.data as any)?.data?.jobs ?? []).map((j: any, i: number) => ({
-            key: j.id || j.job_id || String(i),
-            title: j.name || j.id || "job",
-            meta: [j.schedule, j.enabled === false ? "paused" : "enabled", j.last_status]
-              .filter(Boolean)
-              .join(" · "),
-            body: j.prompt || j.script || "",
-          }))}
-          onOpen={() => open(links.cron)}
-          openLabel="Open Cron in Console"
-        />
+        <CronDrawerPane cronQ={cronQ} onOpen={() => open(links.cron)} />
       )}
 
       {sub === "admin" && (
