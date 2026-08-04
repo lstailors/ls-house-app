@@ -201,16 +201,26 @@ agentsRouter.patch("/cron/:id", async (c) => {
   if (typeof body.enabled === "boolean") update.enabled = body.enabled ? 1 : 0;
   if (Object.keys(update).length === 0) return c.json({ error: { message: "Nothing to update" } }, 400);
 
-  // Hermes jobs: queue enable toggle note (Studio applies). ERP ids still update ERP.
+  // Hermes jobs: queue enable toggle (Studio drains lsh.mc_commands). ERP ids still update ERP.
+  // SPEC 066: insert gate = super_admin only
   if (id.includes(":") && supabaseConfig()) {
+    if (user.role !== "super_admin") {
+      return c.json({ error: { message: "Forbidden: command enqueue requires super_admin" } }, 403);
+    }
     try {
-      await lshInsert("kanban_commands", {
-        task_id: id,
+      const insertRow: Record<string, unknown> = {
+        kind: "cron_job",
         action: body.enabled ? "cron_enable" : "cron_disable",
+        target_id: id,
         payload: { job: id, enabled: !!body.enabled },
         requested_by: user.email,
+        origin_surface: "mission_control",
         status: "pending",
-      });
+      };
+      if (typeof body.idempotency_key === "string" && body.idempotency_key.trim()) {
+        insertRow.idempotency_key = body.idempotency_key.trim();
+      }
+      await lshInsert("mc_commands", insertRow);
       // optimistic health flip
       const [profile, jobId] = id.split(":");
       if (profile && jobId) {

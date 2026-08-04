@@ -39,6 +39,7 @@ def main() -> int:
     files = [
         root / "migration_007_cron_health.sql",
         root / "migration_008_kanban_snapshot.sql",
+        root / "migration_009_mc_commands.sql",
     ]
     conn = (
         f"PGPASSWORD={quote(pw)} /opt/homebrew/bin/psql "
