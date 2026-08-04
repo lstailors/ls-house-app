@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, LayoutGrid, RefreshCw, Search, X,
   Activity, CalendarClock,
@@ -394,14 +394,41 @@ const COLOR_PILL: Record<string, string> = {
   red: "bg-signal-rose/15 text-signal-rose border-signal-rose/30",
 };
 
-export function FleetCronsPanel() {
+export function FleetCronsPanel({
+  initialStatus,
+  highlightJobId,
+}: {
+  initialStatus?: string | null;
+  highlightJobId?: string | null;
+} = {}) {
   const [profile, setProfile] = useState<string | null>(null);
-  const [color, setColor] = useState<string | null>(null);
+  const [color, setColor] = useState<string | null>(
+    initialStatus === "green" || initialStatus === "amber" || initialStatus === "red"
+      ? initialStatus
+      : null
+  );
   const [openErr, setOpenErr] = useState<string | null>(null);
   const { data, isLoading, refetch, isFetching, isError, error } = useMissionControlCrons({
     profile,
     status: color,
   });
+
+  useEffect(() => {
+    if (initialStatus === "green" || initialStatus === "amber" || initialStatus === "red") {
+      setColor(initialStatus);
+    }
+  }, [initialStatus]);
+
+  useEffect(() => {
+    if (!highlightJobId) return;
+    const t = window.setTimeout(() => {
+      document.getElementById(`cron-${highlightJobId}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 200);
+    return () => window.clearTimeout(t);
+  }, [highlightJobId, data]);
 
   const payload = (data as any)?.data ?? data;
   const crons = payload?.crons ?? [];
@@ -413,6 +440,15 @@ export function FleetCronsPanel() {
     for (const c of crons) s.add(c.profile || c.agent_slug);
     return Array.from(s).sort();
   }, [crons]);
+
+  // Deep-link: put highlighted job first
+  const orderedCrons = useMemo(() => {
+    if (!highlightJobId) return crons;
+    return [
+      ...crons.filter((j: any) => j.id === highlightJobId),
+      ...crons.filter((j: any) => j.id !== highlightJobId),
+    ];
+  }, [crons, highlightJobId]);
 
   return (
     <div className="space-y-4">
@@ -480,17 +516,25 @@ export function FleetCronsPanel() {
             <div key={i} className="h-12 glass-panel rounded-xl animate-pulse" />
           ))}
         </div>
-      ) : crons.length === 0 ? (
+      ) : orderedCrons.length === 0 ? (
         <div className="border border-dashed border-brass/20 rounded-2xl px-6 py-10 text-center text-sm text-cream-dim">
           No cron health rows yet. Apply migration + unpause Studio snapshot writer.
         </div>
       ) : (
         <div className="space-y-1.5">
-          {crons.map((job: any) => {
+          {orderedCrons.map((job: any) => {
             const err = job.last_error || job.last_delivery_error;
             const open = openErr === job.id;
+            const highlighted = highlightJobId && job.id === highlightJobId;
             return (
-              <div key={job.id} className="glass-panel rounded-xl px-3 py-2.5">
+              <div
+                key={job.id}
+                id={`cron-${job.id}`}
+                className={cn(
+                  "glass-panel rounded-xl px-3 py-2.5",
+                  highlighted && "ring-1 ring-signal-rose/50"
+                )}
+              >
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className={cn("text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border", COLOR_PILL[job.status])}>
                     {job.status}
