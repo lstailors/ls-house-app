@@ -25,7 +25,7 @@ notificationsRouter.get("/", async (c) => {
         body: a.summary ?? null,
         category: a.category ?? null,
         ts: a.creation,
-        href: `/mission-control?tab=approvals&id=${a.name}`,
+        href: `/approvals?id=${a.name}`,
         read: false,
       });
     }

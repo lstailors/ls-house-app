@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
 import { lshSelect, lshInsert, lshUpdate, supabaseConfig } from "../lib/supabase-lsh";
 import { mcListActivity, mcListApprovals, mcListBriefs } from "../lib/mc-data";
+import { mcListUnifiedApprovals, mcDecideApproval } from "../lib/mc-approvals";
 import {
   hermesCredsConfigured,
   hermesDashboardBase,
@@ -990,5 +991,99 @@ missionControlRouter.get("/hermes/analytics/models", async (c) => {
 
 // SPEC 072 Phase 4 routes (search · profiles · graph · cron mutations)
 mountHermesPhase4(missionControlRouter);
+
+// ── SPEC 067 Approvals ───────────────────────────────────────────────────────
+
+missionControlRouter.get("/approvals", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+
+  const view = (c.req.query("view") || "queue") === "history" ? "history" : "queue";
+  const risk = c.req.query("risk") || null;
+  const agent = c.req.query("agent") || null;
+  const financialOnly = c.req.query("financialOnly") === "true";
+  const q = c.req.query("q") || null;
+  const outcome = c.req.query("outcome") || null;
+  const days = Math.min(Math.max(Number(c.req.query("days") || (view === "history" ? 30 : 3650)), 1), 3650);
+
+  try {
+    const result = await mcListUnifiedApprovals({
+      view,
+      risk,
+      agent,
+      financialOnly,
+      q,
+      days,
+      outcome,
+      limit: 150,
+    });
+    // Hide zero-dollar "amount: 0" noise as non-financial unless filter off
+    const items =
+      user.role === "super_admin"
+        ? result.items
+        : result.items.filter((i) => !(i.category === "financial" && user.role !== "super_admin"));
+
+    return c.json({
+      data: {
+        view,
+        items,
+        total: items.length,
+        sources: result.sources,
+        filters: { risk, agent, financialOnly, q, days, outcome },
+        empty_hint:
+          view === "queue" && items.length === 0
+            ? "Queue clear — no dual-control items waiting. Empty here means nothing is blocked on C — not a missing wire."
+            : null,
+      },
+    });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message || "failed" } }, 500);
+  }
+});
+
+missionControlRouter.post("/approvals/:id/decide", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  // Decide is super_admin preferred; store_manager may approve non-financial
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({} as any));
+  const actionRaw = String(body.action || "").toLowerCase();
+  const action =
+    actionRaw === "reject" || actionRaw === "deny"
+      ? "reject"
+      : actionRaw === "edit_approve" || actionRaw === "edit"
+        ? "edit_approve"
+        : actionRaw === "approve"
+          ? "approve"
+          : null;
+  if (!action) {
+    return c.json({ error: { message: "action must be approve | reject | edit_approve" } }, 400);
+  }
+
+  let payload = body.payload;
+  if (typeof payload === "string" && payload.trim()) {
+    try {
+      payload = JSON.parse(payload);
+    } catch {
+      return c.json({ error: { message: "Invalid JSON payload" } }, 400);
+    }
+  }
+
+  const result = await mcDecideApproval({
+    id,
+    action,
+    user: { name: user.name, email: user.email, role: user.role },
+    notes: typeof body.notes === "string" ? body.notes : undefined,
+    payload: action === "reject" ? undefined : payload,
+  });
+
+  if (!result.ok) {
+    return c.json({ error: { message: result.error } }, result.status as any);
+  }
+  return c.json({ data: { ok: true, item: result.item, command_id: result.command_id } });
+});
 
 export default missionControlRouter;

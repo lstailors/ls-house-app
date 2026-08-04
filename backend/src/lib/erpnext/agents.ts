@@ -102,6 +102,51 @@ export async function listApprovalQueue(opts: { status?: string[]; limit?: numbe
   });
 }
 
+/** SPEC 067 — LSH Agent Approval (Hermes dual-control). */
+export async function listAgentApprovals(opts: {
+  status?: string[];
+  limit?: number;
+  since?: string;
+} = {}) {
+  const filters: unknown[] = [];
+  if (opts.status?.length) filters.push(["status", "in", opts.status]);
+  if (opts.since) filters.push(["modified", ">=", opts.since]);
+  return erpList<any>(DT.AGENT_APPROVAL, {
+    filters,
+    fields: [
+      "name",
+      "agent",
+      "action_type",
+      "summary",
+      "status",
+      "risk_level",
+      "amount",
+      "short_code",
+      "requested_at",
+      "expires_at",
+      "decided_at",
+      "decided_by",
+      "decision_channel",
+      "decision_note",
+      "payload",
+      "reference_doctype",
+      "reference_name",
+      "creation",
+      "modified",
+    ],
+    order_by: "creation desc",
+    limit: opts.limit ?? 100,
+  });
+}
+
+export async function getAgentApproval(name: string) {
+  return erpGet<any>(DT.AGENT_APPROVAL, name);
+}
+
+export async function updateAgentApproval(name: string, doc: Record<string, unknown>) {
+  return erpUpdate(DT.AGENT_APPROVAL, name, doc);
+}
+
 export async function getApprovalItem(id: string) {
   return erpGet<any>(DT.APPROVAL_QUEUE, id);
 }
