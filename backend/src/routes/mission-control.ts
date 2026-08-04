@@ -7,6 +7,13 @@ import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
 import { lshSelect, lshInsert, lshUpdate, supabaseConfig } from "../lib/supabase-lsh";
 import { mcListActivity, mcListApprovals, mcListBriefs } from "../lib/mc-data";
+import {
+  hermesCredsConfigured,
+  hermesDashboardBase,
+  hermesDeepLinks,
+  hermesFetch,
+  HERMES_FEATURE_MAP,
+} from "../lib/hermes-dashboard";
 
 export const missionControlRouter = new Hono();
 
@@ -590,6 +597,118 @@ missionControlRouter.get("/alerts", async (c) => {
       cache_age_minutes: null,
     },
   });
+});
+
+// ─── Hermes Desktop / Dashboard mirror (SPEC 072) ────────────────────────────
+
+missionControlRouter.get("/hermes/status", async (c) => {
+  const user = getAuthedUser(c);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+
+  const pub = await hermesFetch("/api/status", {}, { auth: false });
+  const links = hermesDeepLinks();
+  return c.json({
+    data: {
+      ok: pub.status === 200,
+      base_url: hermesDashboardBase(),
+      auth_configured: hermesCredsConfigured(),
+      status: pub.status === 200 ? pub.json : null,
+      error: pub.error || (pub.status !== 200 ? `status ${pub.status}` : null),
+      links,
+      feature_map: HERMES_FEATURE_MAP,
+      desktop_app: "Hermes Desktop on Studio (hermes desktop)",
+      note:
+        "MC mirrors Hermes reads server-side. Full chat stream / file browser / git stay on Desktop or Open Console.",
+    },
+  });
+});
+
+missionControlRouter.get("/hermes/sessions", async (c) => {
+  const user = getAuthedUser(c);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  const profile = c.req.query("profile");
+  const qs = profile ? `?profile=${encodeURIComponent(profile)}` : "";
+  const r = await hermesFetch(`/api/sessions${qs}`, {}, { auth: true });
+  if (r.error || r.status >= 400) {
+    return c.json(
+      {
+        data: {
+          sessions: [],
+          auth_configured: hermesCredsConfigured(),
+          error: r.error || r.json?.detail || r.json?.error || `status ${r.status}`,
+          links: hermesDeepLinks(),
+        },
+      },
+      r.status === 401 ? 200 : 200,
+    );
+  }
+  const sessions = Array.isArray(r.json) ? r.json : r.json?.sessions ?? r.json?.data ?? [];
+  return c.json({
+    data: {
+      sessions,
+      auth_configured: true,
+      links: hermesDeepLinks(),
+    },
+  });
+});
+
+missionControlRouter.get("/hermes/skills", async (c) => {
+  const user = getAuthedUser(c);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  const profile = c.req.query("profile");
+  const qs = profile ? `?profile=${encodeURIComponent(profile)}` : "";
+  const r = await hermesFetch(`/api/skills${qs}`, {}, { auth: true });
+  if (r.error || r.status >= 400) {
+    return c.json({
+      data: {
+        skills: [],
+        auth_configured: hermesCredsConfigured(),
+        error: r.error || r.json?.detail || r.json?.error || `status ${r.status}`,
+        links: hermesDeepLinks(),
+      },
+    });
+  }
+  const skills = Array.isArray(r.json) ? r.json : r.json?.skills ?? r.json?.data ?? [];
+  return c.json({ data: { skills, auth_configured: true, links: hermesDeepLinks() } });
+});
+
+missionControlRouter.get("/hermes/cron", async (c) => {
+  const user = getAuthedUser(c);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  const profile = c.req.query("profile");
+  const qs = profile ? `?profile=${encodeURIComponent(profile)}` : "";
+  const r = await hermesFetch(`/api/cron/jobs${qs}`, {}, { auth: true });
+  if (r.error || r.status >= 400) {
+    return c.json({
+      data: {
+        jobs: [],
+        auth_configured: hermesCredsConfigured(),
+        error: r.error || r.json?.detail || r.json?.error || `status ${r.status}`,
+        links: hermesDeepLinks(),
+        fallback: "Use Mission Control → Crons for fleet health snapshots.",
+      },
+    });
+  }
+  const jobs = Array.isArray(r.json) ? r.json : r.json?.jobs ?? r.json?.data ?? [];
+  return c.json({ data: { jobs, auth_configured: true, links: hermesDeepLinks() } });
+});
+
+missionControlRouter.get("/hermes/analytics", async (c) => {
+  const user = getAuthedUser(c);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  const days = c.req.query("days") || "14";
+  const r = await hermesFetch(`/api/analytics/usage?days=${encodeURIComponent(days)}`, {}, { auth: true });
+  if (r.error || r.status >= 400) {
+    return c.json({
+      data: {
+        usage: null,
+        auth_configured: hermesCredsConfigured(),
+        error: r.error || r.json?.detail || r.json?.error || `status ${r.status}`,
+        links: hermesDeepLinks(),
+      },
+    });
+  }
+  return c.json({ data: { usage: r.json, auth_configured: true, links: hermesDeepLinks() } });
 });
 
 export default missionControlRouter;
