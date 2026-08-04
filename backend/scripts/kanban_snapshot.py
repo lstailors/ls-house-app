@@ -20,7 +20,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -33,6 +33,11 @@ SUPABASE_KEY_FALLBACKS = ("openclaw-supabase-key",)
 
 # Keep recently-done cards for History/Board "Done" column (7 days)
 DONE_RETENTION_SECONDS = 7 * 24 * 3600
+# Light drawer payloads (SPEC 062) — not full SoT history
+MAX_RECENT_COMMENTS = 20
+MAX_RECENT_EVENTS = 30
+COMMENT_BODY_MAX = 1500
+EVENT_DETAIL_MAX = 280
 
 
 def hermes_root() -> Path:
@@ -100,12 +105,52 @@ def supabase_client() -> tuple[str, str]:
     return url.rstrip("/"), key
 
 
+def _event_detail(kind: str, payload_raw: Any) -> str | None:
+    """One-line detail from event payload for drawer timeline."""
+    if not payload_raw:
+        return None
+    try:
+        p = json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
+    except (TypeError, ValueError, json.JSONDecodeError):
+        s = str(payload_raw).replace("\n", " ").strip()
+        return s[:EVENT_DETAIL_MAX] if s else None
+    if not isinstance(p, dict):
+        s = str(p).replace("\n", " ").strip()
+        return s[:EVENT_DETAIL_MAX] if s else None
+
+    # Prefer human-facing keys
+    for key in (
+        "summary",
+        "reason",
+        "error",
+        "note",
+        "result",
+        "message",
+        "assignee",
+        "status",
+    ):
+        if p.get(key) not in (None, ""):
+            return str(p[key]).replace("\n", " ").strip()[:EVENT_DETAIL_MAX]
+
+    # Compact leftover
+    try:
+        s = json.dumps(p, separators=(",", ":"), ensure_ascii=False)
+    except (TypeError, ValueError):
+        s = str(p)
+    s = s.replace("\n", " ").strip()
+    if kind == "heartbeat" and (not s or s == "{}"):
+        return None
+    return s[:EVENT_DETAIL_MAX] if s and s != "{}" else None
+
+
 def collect(db_path: Path | None = None) -> list[dict[str, Any]]:
-    path = db_path or kanban_db_path()
+    path = (db_path or kanban_db_path()).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(f"kanban.db not found: {path}")
 
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    # Plain path open (uri mode=ro breaks on some macOS/python builds with absolute paths)
+    conn = sqlite3.connect(str(path))
+    conn.execute("PRAGMA query_only = ON")
     conn.row_factory = sqlite3.Row
     try:
         now = _now()
@@ -123,6 +168,8 @@ def collect(db_path: Path | None = None) -> list[dict[str, Any]]:
             """,
             (cutoff,),
         ).fetchall()
+        task_ids = [t["id"] for t in tasks]
+        id_set = set(task_ids)
 
         parents: dict[str, list[str]] = {}
         children: dict[str, list[str]] = {}
@@ -130,43 +177,71 @@ def collect(db_path: Path | None = None) -> list[dict[str, Any]]:
             parents.setdefault(row["child_id"], []).append(row["parent_id"])
             children.setdefault(row["parent_id"], []).append(row["child_id"])
 
-        comment_meta: dict[str, tuple[int, Any, str, str]] = {}
-        for row in conn.execute(
-            """
-            SELECT c.task_id,
-                   COUNT(*) AS cnt,
-                   MAX(c.created_at) AS latest_at
-            FROM task_comments c
-            GROUP BY c.task_id
-            """
-        ):
-            comment_meta[row["task_id"]] = (int(row["cnt"] or 0), row["latest_at"], "", "")
-
-        # latest comment body/author
-        for task_id, (cnt, latest_at, _, _) in list(comment_meta.items()):
-            if not latest_at:
-                continue
-            latest = conn.execute(
-                """
-                SELECT author, body FROM task_comments
-                WHERE task_id = ? AND created_at = ?
-                ORDER BY id DESC LIMIT 1
+        # All comments for open tasks (then trim per-task)
+        comments_by_task: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        if task_ids:
+            qmarks = ",".join("?" * len(task_ids))
+            for row in conn.execute(
+                f"""
+                SELECT task_id, author, body, created_at
+                FROM task_comments
+                WHERE task_id IN ({qmarks})
+                ORDER BY created_at ASC, id ASC
                 """,
-                (task_id, latest_at),
-            ).fetchone()
-            if latest:
-                comment_meta[task_id] = (
-                    cnt,
-                    latest_at,
-                    latest["author"] or "",
-                    (latest["body"] or "")[:500],
+                task_ids,
+            ):
+                comments_by_task[row["task_id"]].append(
+                    {
+                        "author": row["author"] or "",
+                        "body": (row["body"] or "")[:COMMENT_BODY_MAX],
+                        "created_at": _ts_to_iso(row["created_at"]),
+                    }
+                )
+
+        # Events oldest→newest; keep last N per task
+        events_by_task: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        if task_ids:
+            qmarks = ",".join("?" * len(task_ids))
+            for row in conn.execute(
+                f"""
+                SELECT task_id, kind, payload, created_at, run_id
+                FROM task_events
+                WHERE task_id IN ({qmarks})
+                ORDER BY created_at ASC, id ASC
+                """,
+                task_ids,
+            ):
+                tid = row["task_id"]
+                if tid not in id_set:
+                    continue
+                events_by_task[tid].append(
+                    {
+                        "kind": row["kind"] or "",
+                        "created_at": _ts_to_iso(row["created_at"]),
+                        "run_id": row["run_id"],
+                        "detail": _event_detail(row["kind"] or "", row["payload"]),
+                    }
                 )
 
         snap_at = now.isoformat()
         out: list[dict[str, Any]] = []
         for t in tasks:
             tid = t["id"]
-            cnt, latest_at, author, body = comment_meta.get(tid, (0, None, "", ""))
+            all_comments = comments_by_task.get(tid, [])
+            # keep most recent N for payload size, oldest-first for drawer read order
+            if len(all_comments) > MAX_RECENT_COMMENTS:
+                recent_comments = all_comments[-MAX_RECENT_COMMENTS:]
+            else:
+                recent_comments = all_comments
+            latest_c = all_comments[-1] if all_comments else None
+
+            all_events = events_by_task.get(tid, [])
+            if len(all_events) > MAX_RECENT_EVENTS:
+                recent_events = all_events[-MAX_RECENT_EVENTS:]
+            else:
+                recent_events = all_events
+            latest_e = all_events[-1] if all_events else None
+
             out.append(
                 {
                     "task_id": tid,
@@ -185,10 +260,16 @@ def collect(db_path: Path | None = None) -> list[dict[str, Any]]:
                     "result_summary": (t["result"] or "")[:2000] if t["result"] else None,
                     "parent_ids": parents.get(tid, []),
                     "child_ids": children.get(tid, []),
-                    "comment_count": cnt,
-                    "latest_comment_at": _ts_to_iso(latest_at),
-                    "latest_comment_author": author or None,
-                    "latest_comment_body": body or None,
+                    "comment_count": len(all_comments),
+                    "latest_comment_at": latest_c["created_at"] if latest_c else None,
+                    "latest_comment_author": (latest_c["author"] or None) if latest_c else None,
+                    "latest_comment_body": (latest_c["body"] or None) if latest_c else None,
+                    "recent_comments": recent_comments,
+                    "event_count": len(all_events),
+                    "latest_event_kind": (latest_e["kind"] or None) if latest_e else None,
+                    "latest_event_at": latest_e["created_at"] if latest_e else None,
+                    "latest_event_detail": (latest_e.get("detail") if latest_e else None),
+                    "recent_events": recent_events,
                     "board_slug": "default",
                     "snapshot_at": snap_at,
                 }
@@ -255,7 +336,11 @@ def apply_rows(rows: list[dict[str, Any]]) -> tuple[int, str | None]:
 
 def print_dry_run(rows: list[dict[str, Any]]) -> None:
     counts = Counter(r["status"] for r in rows)
-    fails = sum(1 for r in rows if int(r.get("consecutive_failures") or 0) > 0 or r.get("last_failure_error"))
+    fails = sum(
+        1
+        for r in rows
+        if int(r.get("consecutive_failures") or 0) > 0 or r.get("last_failure_error")
+    )
     print(
         f"kanban_snapshot dry-run: total={len(rows)} "
         f"by_status={dict(counts)} failing={fails} db={kanban_db_path()}"
@@ -264,7 +349,8 @@ def print_dry_run(rows: list[dict[str, Any]]) -> None:
         fail = " FAIL" if (r.get("consecutive_failures") or r.get("last_failure_error")) else ""
         print(
             f"  {r['status']:10} {r.get('assignee') or '-':12} {r['task_id']}  "
-            f"{(r['title'] or '')[:60]}{fail}"
+            f"{(r['title'] or '')[:50]}  "
+            f"c={r['comment_count']} e={r['event_count']}{fail}"
         )
     if len(rows) > 12:
         print(f"  … +{len(rows) - 12} more")

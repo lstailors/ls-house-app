@@ -13,7 +13,8 @@
 CREATE SCHEMA IF NOT EXISTS lsh;
 
 -- ── lsh.kanban_snapshot ─────────────────────────────────────────────────────
--- One row per kanban task id (non-archived). Upserted by kanban_snapshot.py.
+-- One row per kanban task id (non-archived + recent done). Upserted by kanban_snapshot.py.
+-- Light comment/event payloads for Board cards + drawer (SPEC 062); not full SoT.
 
 CREATE TABLE IF NOT EXISTS lsh.kanban_snapshot (
   task_id                 text        PRIMARY KEY,  -- t_xxxxxxxx
@@ -36,11 +37,34 @@ CREATE TABLE IF NOT EXISTS lsh.kanban_snapshot (
   latest_comment_at       timestamptz,
   latest_comment_author   text,
   latest_comment_body     text,
+  -- Light drawer payloads (SPEC 062). Arrays oldest→newest.
+  -- recent_comments: [{author, body, created_at}]  (last ≤20)
+  recent_comments         jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  event_count             integer     NOT NULL DEFAULT 0,
+  latest_event_kind       text,
+  latest_event_at         timestamptz,
+  latest_event_detail     text,
+  -- recent_events: [{kind, created_at, run_id, detail}]  (last ≤30)
+  recent_events           jsonb       NOT NULL DEFAULT '[]'::jsonb,
   board_slug              text        NOT NULL DEFAULT 'default',
   snapshot_at             timestamptz NOT NULL DEFAULT now(),
   created_row_at          timestamptz NOT NULL DEFAULT now(),
   updated_at              timestamptz NOT NULL DEFAULT now()
 );
+
+-- Forward-compatible: add columns if table already existed from earlier draft
+ALTER TABLE lsh.kanban_snapshot
+  ADD COLUMN IF NOT EXISTS recent_comments jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE lsh.kanban_snapshot
+  ADD COLUMN IF NOT EXISTS event_count integer NOT NULL DEFAULT 0;
+ALTER TABLE lsh.kanban_snapshot
+  ADD COLUMN IF NOT EXISTS latest_event_kind text;
+ALTER TABLE lsh.kanban_snapshot
+  ADD COLUMN IF NOT EXISTS latest_event_at timestamptz;
+ALTER TABLE lsh.kanban_snapshot
+  ADD COLUMN IF NOT EXISTS latest_event_detail text;
+ALTER TABLE lsh.kanban_snapshot
+  ADD COLUMN IF NOT EXISTS recent_events jsonb NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE INDEX IF NOT EXISTS lsh_kanban_snapshot_status_idx
   ON lsh.kanban_snapshot (status);
@@ -53,6 +77,9 @@ CREATE INDEX IF NOT EXISTS lsh_kanban_snapshot_snapshot_idx
 
 CREATE INDEX IF NOT EXISTS lsh_kanban_snapshot_priority_idx
   ON lsh.kanban_snapshot (priority DESC);
+
+CREATE INDEX IF NOT EXISTS lsh_kanban_snapshot_board_status_idx
+  ON lsh.kanban_snapshot (board_slug, status);
 
 -- RLS: Mission Control readers only
 ALTER TABLE lsh.kanban_snapshot ENABLE ROW LEVEL SECURITY;
@@ -84,4 +111,4 @@ CREATE TRIGGER kanban_snapshot_touch_updated_at
   EXECUTE FUNCTION lsh.kanban_snapshot_touch_updated_at();
 
 COMMENT ON TABLE lsh.kanban_snapshot IS
-  'Derived snapshot of Hermes Kanban tasks for Mission Control Board. SoT = ~/.hermes/kanban.db. Written by Studio kanban_snapshot.py every 5m.';
+  'Derived snapshot of Hermes Kanban tasks for Mission Control Board. SoT = ~/.hermes/kanban.db. Written by Studio kanban_snapshot.py every 5m. Includes light recent_comments/recent_events for drawer.';
