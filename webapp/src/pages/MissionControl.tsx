@@ -472,7 +472,10 @@ function ApprovalsPanel() {
       {active.length === 0 ? (
         <div className="glass-panel rounded-2xl p-10 text-center border border-dashed border-brass/15">
           <CheckCircle2 className="h-8 w-8 text-signal-emerald/50 mx-auto mb-3" />
-          <p className="text-cream-muted text-sm">Queue clear. All agents running freely.</p>
+          <p className="text-cream-muted text-sm">Queue clear — no dual-control items waiting.</p>
+          <p className="text-cream-dim text-[11px] mt-2 max-w-md mx-auto">
+            Approvals light up when an agent escalates a gated action (money, client send, production release). Empty here means nothing is blocked on C — not a missing wire.
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -758,7 +761,11 @@ function CronPanel() {
 
   const STATUS_DOT: Record<string, string> = {
     success: "bg-signal-emerald",
-    error:   "bg-signal-rose",
+    ok: "bg-signal-emerald",
+    green: "bg-signal-emerald",
+    error: "bg-signal-rose",
+    red: "bg-signal-rose",
+    amber: "bg-signal-amber",
     running: "bg-signal-amber animate-pulse",
   };
 
@@ -766,7 +773,7 @@ function CronPanel() {
     <div className="space-y-3">
       <div className="flex items-center gap-2 mb-1">
         <Calendar className="h-3.5 w-3.5 text-brass-light" />
-        <span className="ui-label text-[10px] tracking-widest">SCHEDULED JOBS</span>
+        <span className="ui-label text-[10px] tracking-widest">SCHEDULED JOBS · HERMES FLEET</span>
       </div>
 
       {isLoading ? (
@@ -774,10 +781,13 @@ function CronPanel() {
       ) : crons.length === 0 ? (
         <div className="glass-panel rounded-2xl p-10 text-center border border-dashed border-brass/15">
           <Calendar className="h-6 w-6 text-cream-dim/40 mx-auto mb-2" />
-          <p className="text-cream-dim text-xs">No scheduled jobs configured.</p>
+          <p className="text-cream-dim text-xs">No scheduled jobs in snapshot yet.</p>
         </div>
       ) : (
-        crons.map((job: any) => (
+        crons.map((job: any) => {
+          const label = job.job_name || job.name || job.id;
+          const health = job.health_color || job.last_run_status || (job.enabled ? "ok" : "error");
+          return (
           <div key={job.id} className={cn(
             "glass-panel rounded-xl p-4 border border-brass/10 transition-all",
             !job.enabled && "opacity-50"
@@ -785,22 +795,29 @@ function CronPanel() {
             <div className="flex items-start gap-3">
               <span className={cn(
                 "h-2 w-2 rounded-full mt-1.5 shrink-0",
-                job.last_run_status ? STATUS_DOT[job.last_run_status] ?? "bg-cream/20" : "bg-cream/20"
+                STATUS_DOT[health] ?? "bg-cream/20"
               )} />
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-cream font-medium">{job.name}</span>
-                  {job.agent_slug && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm text-cream font-medium">{label}</span>
+                  {(job.agent_slug || job.profile) && (
                     <span className="text-[9px] text-cream-dim border border-brass/10 rounded px-1.5 py-0.5">
-                      {job.agent_slug}
+                      {job.agent_slug || job.profile}
                     </span>
                   )}
+                  {job.model_drift && (
+                    <span className="text-[9px] text-signal-amber border border-signal-amber/30 rounded px-1.5">model drift</span>
+                  )}
                 </div>
-                {job.description && <p className="text-xs text-cream-muted mt-0.5">{job.description}</p>}
+                {(job.description || job.last_error) && (
+                  <p className="text-xs text-cream-muted mt-0.5 line-clamp-2">{job.description || job.last_error}</p>
+                )}
                 <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                  <span className="text-[10px] text-cream-dim font-mono bg-forest-deep/50 border border-brass/10 rounded px-1.5 py-0.5">
-                    {job.schedule}
-                  </span>
+                  {(job.schedule || job.schedule_display) && (
+                    <span className="text-[10px] text-cream-dim font-mono bg-forest-deep/50 border border-brass/10 rounded px-1.5 py-0.5">
+                      {job.schedule_display || job.schedule}
+                    </span>
+                  )}
                   {job.last_run_at && (
                     <span className="text-[10px] text-cream-dim">
                       Last: {formatRelative(job.last_run_at)}
@@ -812,9 +829,9 @@ function CronPanel() {
                       Next: {formatRelative(job.next_run_at)}
                     </span>
                   )}
-                  <span className="text-[10px] text-cream-dim/50">
-                    Runs: {job.run_count ?? 0} · Errors: {job.error_count ?? 0}
-                  </span>
+                  {job.model && (
+                    <span className="text-[10px] text-cream-dim/60 truncate max-w-[140px]">{job.model}</span>
+                  )}
                 </div>
               </div>
               <button
@@ -831,7 +848,8 @@ function CronPanel() {
               </button>
             </div>
           </div>
-        ))
+          );
+        })
       )}
     </div>
   );

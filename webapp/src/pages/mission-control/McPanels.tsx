@@ -11,8 +11,11 @@ import {
   useMissionControlBoardTask,
   useMissionControlCrons,
   useMissionControlHistory,
+  useMissionControlBoardAction,
+  useToggleCronJob,
 } from "@/lib/queries";
 import type { KanbanTask } from "@ls/types";
+import { toast } from "sonner";
 
 const BOARD_COLS: { key: string; label: string; dot: string }[] = [
   { key: "todo", label: "Todo", dot: "bg-cream/40" },
@@ -257,12 +260,24 @@ export function BoardPanel() {
 }
 
 function BoardDrawer({ taskId, onClose }: { taskId: string; onClose: () => void }) {
-  const { data, isLoading } = useMissionControlBoardTask(taskId);
+  const { data, isLoading, refetch } = useMissionControlBoardTask(taskId);
+  const action = useMissionControlBoardAction();
   const payload = (data as any)?.data ?? data;
   const task: KanbanTask | null = payload?.task ?? null;
   const comments = payload?.comments ?? [];
   const parents = payload?.parents ?? [];
   const children = payload?.children ?? [];
+
+  const run = async (act: string, extra?: { reason?: string }) => {
+    try {
+      await action.mutateAsync({ id: taskId, action: act, ...extra });
+      toast.success(`Queued ${act} — applying on Studio`);
+      refetch();
+      onClose();
+    } catch (e: any) {
+      toast.error(e?.message || `Failed to ${act}`);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm" onClick={onClose}>
@@ -301,6 +316,36 @@ function BoardDrawer({ taskId, onClose }: { taskId: string; onClose: () => void 
                 <span className="px-2 py-0.5 rounded-full border border-signal-rose/30 text-signal-rose">failing</span>
               )}
             </div>
+
+            <div className="flex flex-wrap gap-2">
+              {task.status !== "ready" && task.status !== "running" && task.status !== "done" && (
+                <Button size="sm" variant="outline" disabled={action.isPending} onClick={() => run("promote")}>
+                  Promote → ready
+                </Button>
+              )}
+              {task.status !== "blocked" && (
+                <Button size="sm" variant="outline" disabled={action.isPending} onClick={() => run("block", { reason: "blocked from Mission Control" })}>
+                  Block
+                </Button>
+              )}
+              {task.status === "blocked" && (
+                <Button size="sm" variant="outline" disabled={action.isPending} onClick={() => run("unblock")}>
+                  Unblock
+                </Button>
+              )}
+              {task.status !== "done" && (
+                <Button size="sm" disabled={action.isPending} onClick={() => run("complete")}>
+                  Complete
+                </Button>
+              )}
+              <Button size="sm" variant="outline" disabled={action.isPending} onClick={() => run("archive")}>
+                Archive
+              </Button>
+            </div>
+            <p className="text-[10px] text-cream-dim">
+              Moves queue to Studio and apply to Hermes kanban within ~1 min. Snapshot updates immediately.
+            </p>
+
             {task.body && (
               <div className="glass-panel rounded-xl p-3 text-sm text-cream-muted whitespace-pre-wrap max-h-64 overflow-y-auto">
                 {task.body}
@@ -482,6 +527,7 @@ export function FleetCronsPanel() {
 export function HistoryPanel() {
   const [agent, setAgent] = useState<string | null>(null);
   const [q, setQ] = useState("");
+  const [selected, setSelected] = useState<any | null>(null);
   const { data, isLoading, refetch, isFetching, isError, error } = useMissionControlHistory({
     agent,
     q: q.trim() || undefined,
@@ -556,7 +602,12 @@ export function HistoryPanel() {
       ) : (
         <div className="space-y-1.5">
           {entries.map((e: any) => (
-            <div key={e.id} className="glass-panel rounded-xl px-3 py-2.5 flex gap-3">
+            <button
+              key={e.id}
+              type="button"
+              onClick={() => setSelected(e)}
+              className="w-full text-left glass-panel rounded-xl px-3 py-2.5 flex gap-3 hover:border-brass/30 border border-transparent"
+            >
               <div className="pt-0.5">
                 {e.kind === "brief" ? (
                   <CalendarClock className="w-3.5 h-3.5 text-brass-light" />
@@ -579,8 +630,39 @@ export function HistoryPanel() {
                 <p className="text-sm text-cream mt-0.5 truncate">{e.title}</p>
                 {e.snippet && <p className="text-[11px] text-cream-muted line-clamp-2 mt-0.5">{e.snippet}</p>}
               </div>
-            </div>
+            </button>
           ))}
+        </div>
+      )}
+
+      {selected && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm" onClick={() => setSelected(null)}>
+          <div
+            className="w-full max-w-md h-full bg-forest-deep border-l border-brass/20 shadow-2xl overflow-y-auto p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-start gap-3">
+              <div>
+                <p className="ui-label text-brass-light mb-1">{String(selected.kind).replace(/_/g, " ")}</p>
+                <h2 className="font-display text-2xl italic text-cream leading-tight">{selected.title}</h2>
+                <p className="text-[10px] text-cream-dim mt-1">
+                  {selected.agent_slug || "—"} · {selected.ts ? formatRelative(selected.ts) : ""}
+                </p>
+              </div>
+              <button type="button" onClick={() => setSelected(null)} className="p-1.5 rounded-lg border border-brass/20 text-cream-dim">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="glass-panel rounded-xl p-3 text-sm text-cream-muted whitespace-pre-wrap">
+              {selected.body || selected.snippet || "No body."}
+            </div>
+            {selected.doc_ref && (
+              <p className="text-[11px] font-mono text-cream-dim">ref: {selected.doc_ref}</p>
+            )}
+            {selected.source && (
+              <p className="text-[11px] text-cream-dim">source: {selected.source}</p>
+            )}
+          </div>
         </div>
       )}
     </div>

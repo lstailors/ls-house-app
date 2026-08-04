@@ -1008,3 +1008,31 @@ export function useMissionControlHistory(params?: {
     refetchInterval: 45_000,
   });
 }
+
+export function useMissionControlBoardAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      action,
+      reason,
+      assignee,
+      comment,
+    }: {
+      id: string;
+      action: string;
+      reason?: string;
+      assignee?: string;
+      comment?: string;
+    }) =>
+      api.post<any>(`/api/mission-control/board/${id}/action`, {
+        action,
+        reason,
+        assignee,
+        comment,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["mission-control", "board"] });
+    },
+  });
+}
