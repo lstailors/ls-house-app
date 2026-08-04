@@ -1,0 +1,26 @@
+{
+  "summary": {
+    "mode": "write",
+    "customers": 1,
+    "promoted_current": 0,
+    "superseded": 0,
+    "cache_updates": 0
+  },
+  "customers": [
+    {
+      "customer": "Robert Fribourg",
+      "winner": "BMS-Robert Fribourg-0753",
+      "winner_rows": 2,
+      "winner_was": "Current",
+      "supersede": [],
+      "cache": {
+        "lsh_outseam": 38.5
+      },
+      "action_current": false,
+      "cache_patch": {}
+    }
+  ],
+  "cache_updates": 0,
+  "promoted_current": 0,
+  "superseded": 0
+}

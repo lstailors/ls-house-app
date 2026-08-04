@@ -1,0 +1,25 @@
+{
+  "mode": "write",
+  "status": "Draft",
+  "stats": {
+    "fail": 1
+  },
+  "results": [
+    {
+      "order": "LST-122487-3",
+      "customer": "Curtis Nielsen",
+      "ok": false,
+      "skipped": false,
+      "parsed_fit": 1,
+      "parsed_fmap": 0,
+      "master_count": 0,
+      "order_meas_count": 0,
+      "unit": "inches",
+      "master_types": [],
+      "error": "no master measurements resolved",
+      "sample_labels": [
+        "Vest Back"
+      ]
+    }
+  ]
+}

@@ -1,4 +1,9 @@
-import { useMemo, useState } from "react";
+/**
+ * SPEC 072 Phase 2 — fleet chat / admin / artifacts for Hermes tab.
+ * One-shot command reuses SPEC 069 queue (mc_commands), not a second chat SoT.
+ */
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   ExternalLink,
   RefreshCw,
@@ -14,17 +19,38 @@ import {
   AlertTriangle,
   Link2,
   Monitor,
+  Send,
+  Bot,
+  Package,
+  Shield,
+  Network,
 } from "lucide-react";
 import { Button } from "@ls/design/ui/button";
 import { cn } from "@ls/design/utils";
+import { toast } from "sonner";
 import {
+  useAgents,
   useHermesMirrorStatus,
   useHermesMirrorSessions,
   useHermesMirrorSkills,
   useHermesMirrorCron,
+  useHermesMirrorMcp,
+  useHermesMirrorArtifacts,
+  useSendAgentCommand,
+  useCancelAgentCommand,
+  useAgentCommand,
+  type AgentCommandRun,
 } from "@/lib/queries";
 
-type Sub = "overview" | "sessions" | "skills" | "cron" | "map";
+type Sub =
+  | "overview"
+  | "chat"
+  | "sessions"
+  | "skills"
+  | "cron"
+  | "admin"
+  | "artifacts"
+  | "map";
 
 const MODE_STYLE: Record<string, string> = {
   mirror: "border-signal-emerald/30 text-signal-emerald bg-signal-emerald/10",
@@ -40,6 +66,9 @@ export function HermesMirrorPanel() {
   const sessionsQ = useHermesMirrorSessions(sub === "sessions");
   const skillsQ = useHermesMirrorSkills(sub === "skills");
   const cronQ = useHermesMirrorCron(sub === "cron");
+  const mcpQ = useHermesMirrorMcp(sub === "admin");
+  const artQ = useHermesMirrorArtifacts(sub === "artifacts");
+  const agentsQ = useAgents();
 
   const payload = (statusQ.data as any)?.data ?? statusQ.data ?? {};
   const st = payload.status ?? {};
@@ -47,6 +76,12 @@ export function HermesMirrorPanel() {
   const map = payload.feature_map ?? [];
   const authOk = Boolean(payload.auth_configured);
   const liveOk = Boolean(payload.ok);
+
+  const agents = useMemo(() => {
+    const raw = agentsQ.data as any;
+    const list = Array.isArray(raw) ? raw : raw?.data ?? [];
+    return list as any[];
+  }, [agentsQ.data]);
 
   const platforms = useMemo(() => {
     const p = st.gateway_platforms || {};
@@ -59,12 +94,11 @@ export function HermesMirrorPanel() {
 
   return (
     <div className="space-y-4">
-      {/* Header strip */}
       <div className="glass-panel rounded-2xl p-4 border border-brass/15 flex flex-wrap gap-3 items-start justify-between">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <Monitor className="h-4 w-4 text-brass-light" />
-            <p className="ui-label text-[10px] text-brass-light">HERMES MIRROR · SPEC 072</p>
+            <p className="ui-label text-[10px] text-brass-light">HERMES MIRROR · SPEC 072 · PHASE 2</p>
             <span
               className={cn(
                 "text-[9px] px-1.5 py-0.5 rounded-full border",
@@ -90,9 +124,8 @@ export function HermesMirrorPanel() {
             Desktop mapped into Mission Control
           </h2>
           <p className="text-xs text-cream-muted mt-1 max-w-2xl">
-            Live status + deep links now. Sessions / skills / cron manage unlock when dashboard
-            credentials are on the server. Full streaming chat, files, git stay on Desktop or Open
-            Console.
+            Phase 2: fleet one-shot chat, admin hub (MCP/channels), artifacts gallery. Streaming TUI
+            chat still opens in Console. Sessions/skills/cron lists need dashboard password once.
           </p>
           {payload.base_url && (
             <p className="text-[10px] font-mono text-cream-dim mt-2">{payload.base_url}</p>
@@ -105,7 +138,7 @@ export function HermesMirrorPanel() {
           </Button>
           <Button size="sm" variant="outline" onClick={() => open(links.chat)}>
             <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
-            Chat
+            Live Chat
           </Button>
           <Button
             size="sm"
@@ -118,13 +151,8 @@ export function HermesMirrorPanel() {
         </div>
       </div>
 
-      {/* Live status cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat
-          label="Version"
-          value={st.version || "—"}
-          sub={st.release_date || ""}
-        />
+        <Stat label="Version" value={st.version || "—"} sub={st.release_date || ""} />
         <Stat
           label="Gateway"
           value={st.gateway_running ? "running" : "down"}
@@ -161,15 +189,17 @@ export function HermesMirrorPanel() {
         </div>
       )}
 
-      {/* Sub tabs */}
       <div className="flex flex-wrap gap-1 border border-brass/10 rounded-xl p-1 bg-forest-raised/20">
         {(
           [
             ["overview", "Overview", Layers],
-            ["sessions", "Sessions", MessageSquare],
+            ["chat", "Chat", MessageSquare],
+            ["sessions", "Sessions", Radio],
             ["skills", "Skills", Sparkles],
-            ["cron", "Cron manage", Calendar],
-            ["map", "Feature map", BarChart3],
+            ["cron", "Cron", Calendar],
+            ["admin", "Admin", Settings],
+            ["artifacts", "Artifacts", Package],
+            ["map", "Map", BarChart3],
           ] as const
         ).map(([id, label, Icon]) => (
           <button
@@ -193,11 +223,11 @@ export function HermesMirrorPanel() {
             <p className="ui-label text-[10px]">QUICK OPENS · MAESTRO CONSOLE</p>
             <div className="grid grid-cols-2 gap-2">
               {[
-                ["Chat", links.chat, MessageSquare],
+                ["Chat (stream)", links.chat, MessageSquare],
                 ["Sessions", links.sessions, Radio],
                 ["Cron", links.cron, Calendar],
                 ["Skills", links.skills, Sparkles],
-                ["MCP", links.mcp, Settings],
+                ["MCP", links.mcp, Network],
                 ["Channels", links.channels, Link2],
                 ["Config", links.config, Settings],
                 ["Analytics", links.analytics, BarChart3],
@@ -210,7 +240,6 @@ export function HermesMirrorPanel() {
                   onClick={() => open(String(href))}
                   className="flex items-center gap-2 text-left text-xs text-cream-muted hover:text-cream border border-brass/10 rounded-lg px-2.5 py-2 hover:border-brass/30"
                 >
-                  {/* @ts-expect-error icon */}
                   <Icon className="h-3.5 w-3.5 text-brass-light shrink-0" />
                   {label}
                   <ExternalLink className="h-3 w-3 ml-auto opacity-50" />
@@ -219,43 +248,42 @@ export function HermesMirrorPanel() {
             </div>
           </div>
           <div className="glass-panel rounded-xl p-4 space-y-3">
-            <p className="ui-label text-[10px]">HOW THIS MIRROR WORKS</p>
+            <p className="ui-label text-[10px]">PHASE 2 SURFACE</p>
             <ul className="text-xs text-cream-muted space-y-2 list-disc pl-4">
               <li>
-                <span className="text-cream">Open Console</span> = full Hermes Web Dashboard at{" "}
-                <span className="font-mono text-[10px]">maestro.lstailors.com</span> (same backend
-                Desktop uses).
+                <button type="button" className="text-brass-light underline" onClick={() => setSub("chat")}>
+                  Chat
+                </button>{" "}
+                — fleet one-shot commands (mc_commands queue) + Open Console for streaming TUI.
               </li>
               <li>
-                <span className="text-cream">API panels</span> (Sessions / Skills / Cron) need server
-                credentials once — then they render inside MC.
+                <button type="button" className="text-brass-light underline" onClick={() => setSub("admin")}>
+                  Admin
+                </button>{" "}
+                — MCP list + channel/gateway status + config deep links.
               </li>
               <li>
-                L&S fleet Board / Approvals / activity stay MC-native (not Desktop).
-              </li>
-              <li>
-                Streaming chat with tool cards: Desktop app on Studio, or Console → Chat.
+                <button type="button" className="text-brass-light underline" onClick={() => setSub("artifacts")}>
+                  Artifacts
+                </button>{" "}
+                — recent outputs (links/files/images) from activity + command results.
               </li>
             </ul>
             {!authOk && (
               <div className="rounded-lg border border-signal-amber/25 bg-signal-amber/10 px-3 py-2 text-[11px] text-signal-amber flex gap-2">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                 <span>
-                  Wire <code className="font-mono">HERMES_DASHBOARD_BASIC_AUTH_USERNAME</code> +{" "}
-                  <code className="font-mono">PASSWORD</code> (or keychain{" "}
-                  <code className="font-mono">hermes-dashboard-username/password</code>) on Studio +
-                  Vercel to unlock mirrored sessions/skills/cron inside this tab.
+                  Dashboard password not on server yet — Sessions/Skills/Cron/MCP API panels stay empty until
+                  keychain/Vercel creds are set (see docs/ops/hermes-mc-mirror.md).
                 </span>
-              </div>
-            )}
-            {authOk && (
-              <div className="rounded-lg border border-signal-emerald/25 bg-signal-emerald/10 px-3 py-2 text-[11px] text-signal-emerald flex gap-2">
-                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                Dashboard API credentials configured — open Sessions / Skills / Cron subtabs.
               </div>
             )}
           </div>
         </div>
+      )}
+
+      {sub === "chat" && (
+        <FleetChatPane agents={agents} liveChatUrl={links.chat} />
       )}
 
       {sub === "sessions" && (
@@ -310,6 +338,20 @@ export function HermesMirrorPanel() {
         />
       )}
 
+      {sub === "admin" && (
+        <AdminHub
+          links={links}
+          platforms={platforms}
+          mcpQ={mcpQ}
+          onOpen={open}
+          authOk={authOk}
+        />
+      )}
+
+      {sub === "artifacts" && (
+        <ArtifactsPane artQ={artQ} onOpenConsole={() => open(links.sessions)} />
+      )}
+
       {sub === "map" && (
         <div className="space-y-1.5">
           <div className="grid grid-cols-[1.2fr_1.2fr_0.6fr_0.4fr] gap-2 px-2 text-[9px] uppercase tracking-wider text-cream-dim">
@@ -337,6 +379,365 @@ export function HermesMirrorPanel() {
                 {row.phase === 0 ? "—" : `P${row.phase}`}
               </span>
             </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FleetChatPane({ agents, liveChatUrl }: { agents: any[]; liveChatUrl?: string }) {
+  const defaultSlug = agents[0]?.slug || "maestro";
+  const [slug, setSlug] = useState(defaultSlug);
+  useEffect(() => {
+    if (!agents.find((a) => a.slug === slug) && agents[0]?.slug) setSlug(agents[0].slug);
+  }, [agents, slug]);
+
+  const agent = agents.find((a) => a.slug === slug);
+  const name = agent?.name || slug;
+
+  return (
+    <div className="grid lg:grid-cols-[220px_1fr] gap-3">
+      <div className="glass-panel rounded-xl p-3 space-y-1 max-h-[420px] overflow-y-auto">
+        <p className="ui-label text-[9px] mb-2">FLEET · ONE-SHOT</p>
+        {agents.length === 0 ? (
+          <p className="text-xs text-cream-dim">No agents loaded.</p>
+        ) : (
+          agents.map((a) => (
+            <button
+              key={a.slug}
+              type="button"
+              onClick={() => setSlug(a.slug)}
+              className={cn(
+                "w-full text-left px-2.5 py-2 rounded-lg text-xs border transition-colors",
+                slug === a.slug
+                  ? "border-brass/40 bg-brass/10 text-cream"
+                  : "border-transparent text-cream-muted hover:border-brass/15",
+              )}
+            >
+              <span className="font-medium">{a.name || a.slug}</span>
+              <span className="block text-[10px] text-cream-dim font-mono">{a.slug}</span>
+            </button>
+          ))
+        )}
+      </div>
+      <div className="space-y-3">
+        <div className="flex flex-wrap gap-2 items-center">
+          <p className="text-xs text-cream-muted">
+            Queue-backed command (same as agent detail). For streaming tool cards, open Live Chat.
+          </p>
+          <div className="ml-auto flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => liveChatUrl && window.open(liveChatUrl, "_blank")}>
+              <ExternalLink className="h-3.5 w-3.5 mr-1" />
+              Live Chat
+            </Button>
+            <Link
+              to={`/mission-control/agents/${slug}`}
+              className="inline-flex items-center text-xs text-brass-light border border-brass/25 rounded-lg px-2.5 py-1.5 hover:bg-brass/10"
+            >
+              Full agent page
+            </Link>
+          </div>
+        </div>
+        <InlineAgentCommand slug={slug} agentName={name} />
+      </div>
+    </div>
+  );
+}
+
+function InlineAgentCommand({ slug, agentName }: { slug: string; agentName: string }) {
+  const [input, setInput] = useState("");
+  const [commandId, setCommandId] = useState<string | null>(null);
+  const [echo, setEcho] = useState<string | null>(null);
+  const [status, setStatus] = useState<string>("idle");
+  const [err, setErr] = useState<string | null>(null);
+  const started = useRef<number | null>(null);
+  const [tick, setTick] = useState(0);
+
+  const send = useSendAgentCommand(slug);
+  const cancelMut = useCancelAgentCommand(slug);
+  const { data: remote } = useAgentCommand(slug, commandId);
+  const run: AgentCommandRun | null = remote ?? null;
+
+  useEffect(() => {
+    // reset when agent changes
+    setCommandId(null);
+    setEcho(null);
+    setStatus("idle");
+    setErr(null);
+    started.current = null;
+    setInput("");
+  }, [slug]);
+
+  useEffect(() => {
+    if (!run) return;
+    setStatus(run.status);
+    if (run.command) setEcho(run.command);
+    if (run.started_at) started.current = new Date(run.started_at).getTime();
+  }, [run]);
+
+  useEffect(() => {
+    if (status !== "queued" && status !== "running") return;
+    const id = window.setInterval(() => setTick((t) => t + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [status]);
+
+  const inflight = status === "queued" || status === "running";
+
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || inflight || send.isPending) return;
+    setEcho(text);
+    setStatus("queued");
+    setErr(null);
+    setCommandId(null);
+    started.current = Date.now();
+    setInput("");
+    try {
+      const data = await send.mutateAsync({ prompt: text });
+      setCommandId(data.id);
+      setStatus(data.status === "running" ? "running" : "queued");
+    } catch (e: any) {
+      setStatus("error");
+      setErr(e?.message || "Failed");
+      toast.error(e?.message || "Failed to enqueue");
+    }
+  };
+
+  const elapsed = started.current
+    ? Math.floor((Date.now() - started.current) / 1000)
+    : tick;
+
+  return (
+    <div className="glass-panel rounded-2xl p-4 border border-brass/15 space-y-3">
+      <div className="flex items-center gap-2 border-b border-brass/10 pb-3">
+        <div className="h-8 w-8 rounded-full bg-cream/10 border border-brass/20 flex items-center justify-center">
+          <Bot className="h-4 w-4 text-brass-light" />
+        </div>
+        <div>
+          <p className="text-sm text-cream">{agentName}</p>
+          <p className="text-[10px] text-cream-dim font-mono">{slug} · one-shot</p>
+        </div>
+        {status !== "idle" && (
+          <span className="ml-auto text-[10px] uppercase tracking-wide text-brass-light border border-brass/20 rounded-full px-2 py-0.5">
+            {status}
+            {inflight ? ` · ${elapsed}s` : ""}
+          </span>
+        )}
+      </div>
+
+      {echo && (
+        <p className="font-mono text-xs text-cream-muted">
+          <span className="text-brass-light mr-1">›</span>
+          {echo}
+        </p>
+      )}
+
+      {status === "running" && (
+        <div className="space-y-2">
+          <div className="glass-panel rounded h-3 animate-pulse w-[90%]" />
+          <div className="glass-panel rounded h-3 animate-pulse w-[70%]" />
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-signal-rose/30 text-signal-rose h-7 text-xs"
+            disabled={!commandId || cancelMut.isPending}
+            onClick={() => commandId && cancelMut.mutateAsync(commandId).then((d) => setStatus(d.status))}
+          >
+            Cancel
+          </Button>
+        </div>
+      )}
+
+      {(status === "done" || status === "error" || status === "timeout") && (
+        <div
+          className={cn(
+            "rounded-xl border p-3 text-xs whitespace-pre-wrap max-h-72 overflow-y-auto",
+            status === "error"
+              ? "border-signal-rose/25 text-signal-rose bg-signal-rose/5"
+              : "border-brass/15 text-cream-muted bg-forest-deep/40 font-mono",
+          )}
+        >
+          {status === "error" ? err || run?.error || "Error" : run?.result || "(no output)"}
+        </div>
+      )}
+
+      <div className="flex gap-2 items-end pt-2 border-t border-brass/10">
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void handleSend();
+            }
+          }}
+          rows={2}
+          disabled={inflight}
+          placeholder={`Command ${agentName}…`}
+          className="flex-1 text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40 resize-none"
+        />
+        <Button
+          className="btn-brass h-10 w-10 p-0"
+          disabled={!input.trim() || inflight || send.isPending}
+          onClick={() => void handleSend()}
+        >
+          <Send className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function AdminHub({
+  links,
+  platforms,
+  mcpQ,
+  onOpen,
+  authOk,
+}: {
+  links: any;
+  platforms: [string, any][];
+  mcpQ: any;
+  onOpen: (u?: string) => void;
+  authOk: boolean;
+}) {
+  const mcpPayload = mcpQ.data?.data ?? mcpQ.data ?? {};
+  const servers = mcpPayload.servers ?? [];
+
+  return (
+    <div className="grid md:grid-cols-2 gap-3">
+      <div className="glass-panel rounded-xl p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Network className="h-4 w-4 text-brass-light" />
+          <p className="ui-label text-[10px]">MCP SERVERS</p>
+          <Button size="sm" variant="outline" className="ml-auto h-7 text-xs" onClick={() => onOpen(links.mcp)}>
+            Manage
+          </Button>
+        </div>
+        {mcpQ.isLoading ? (
+          <div className="h-16 animate-pulse glass-panel rounded-lg" />
+        ) : servers.length === 0 ? (
+          <p className="text-xs text-cream-dim">
+            {mcpPayload.error || (authOk ? "No MCP servers configured." : "Auth required to list MCP servers.")}
+          </p>
+        ) : (
+          <div className="space-y-1.5">
+            {servers.map((s: any, i: number) => (
+              <div key={s.name || i} className="border border-brass/10 rounded-lg px-2.5 py-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-cream">{s.name}</span>
+                  <span
+                    className={cn(
+                      "ml-auto text-[9px] uppercase",
+                      s.enabled === false ? "text-cream-dim" : "text-signal-emerald",
+                    )}
+                  >
+                    {s.enabled === false ? "off" : "on"}
+                  </span>
+                </div>
+                {s.url && <p className="text-[10px] font-mono text-cream-dim truncate mt-0.5">{s.url}</p>}
+                {s.command && (
+                  <p className="text-[10px] font-mono text-cream-dim truncate mt-0.5">{s.command}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="glass-panel rounded-xl p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Shield className="h-4 w-4 text-brass-light" />
+          <p className="ui-label text-[10px]">CHANNELS · GATEWAY</p>
+          <Button size="sm" variant="outline" className="ml-auto h-7 text-xs" onClick={() => onOpen(links.channels)}>
+            Channels
+          </Button>
+        </div>
+        {platforms.length === 0 ? (
+          <p className="text-xs text-cream-dim">No platform state in status payload.</p>
+        ) : (
+          platforms.map(([name, info]) => (
+            <div key={name} className="flex items-center gap-2 text-xs border border-brass/10 rounded-lg px-2.5 py-2">
+              <span className="text-cream">{name}</span>
+              <span
+                className={cn(
+                  "ml-auto text-[10px]",
+                  info?.state === "connected" ? "text-signal-emerald" : "text-signal-rose",
+                )}
+              >
+                {info?.state || "—"}
+              </span>
+            </div>
+          ))
+        )}
+        <div className="flex flex-wrap gap-2 pt-2">
+          {[
+            ["Config", links.config],
+            ["Pairing", links.pairing],
+            ["Profiles", links.profiles],
+            ["Logs", links.logs],
+          ].map(([label, href]) => (
+            <button
+              key={String(label)}
+              type="button"
+              onClick={() => onOpen(String(href))}
+              className="text-[11px] border border-brass/15 rounded-lg px-2 py-1 text-cream-muted hover:text-cream"
+            >
+              {label} ↗
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ArtifactsPane({ artQ, onOpenConsole }: { artQ: any; onOpenConsole: () => void }) {
+  const payload = artQ.data?.data ?? artQ.data ?? {};
+  const items = payload.artifacts ?? [];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-between items-center">
+        <p className="text-xs text-cream-muted">
+          Recent links, files, and image-like outputs from activity feed + command results.
+        </p>
+        <Button size="sm" variant="outline" onClick={onOpenConsole}>
+          <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+          Sessions
+        </Button>
+      </div>
+      {artQ.isLoading ? (
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-14 glass-panel rounded-xl animate-pulse" />
+          ))}
+        </div>
+      ) : items.length === 0 ? (
+        <div className="border border-dashed border-brass/20 rounded-2xl px-6 py-10 text-center text-sm text-cream-dim">
+          {payload.error || "No artifacts found in recent activity."}
+        </div>
+      ) : (
+        <div className="grid sm:grid-cols-2 gap-2">
+          {items.map((a: any) => (
+            <a
+              key={a.id}
+              href={a.url || "#"}
+              target="_blank"
+              rel="noreferrer"
+              className="glass-panel rounded-xl p-3 border border-brass/10 hover:border-brass/30 block"
+            >
+              <div className="flex items-center gap-2">
+                <Package className="h-3.5 w-3.5 text-brass-light" />
+                <span className="text-[9px] uppercase text-cream-dim">{a.kind || "link"}</span>
+                {a.agent && <span className="text-[10px] text-brass-light ml-auto">{a.agent}</span>}
+              </div>
+              <p className="text-sm text-cream mt-1 truncate">{a.title || a.url}</p>
+              {a.snippet && (
+                <p className="text-[11px] text-cream-muted line-clamp-2 mt-0.5">{a.snippet}</p>
+              )}
+            </a>
           ))}
         </div>
       )}
