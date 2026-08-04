@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Activity, AlertTriangle, CheckCircle2, XCircle, Clock, Eye,
   Bot, ChevronDown, ChevronUp, Send, Cpu, Wifi, WifiOff,
@@ -21,6 +21,7 @@ import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
 import { formatRelative } from "@ls/design/format";
 import { BoardPanel, FleetCronsPanel, HistoryPanel } from "@/pages/mission-control/McPanels";
+import { AlertsBell } from "@/pages/mission-control/AlertsBell";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -456,7 +457,7 @@ function ApprovalCard({ item }: { item: any }) {
   );
 }
 
-function ApprovalsPanel() {
+function ApprovalsPanel({ highlightId }: { highlightId?: string | null }) {
   const { data: pending, isLoading } = usePendingApprovals();
   const items: any[] = (pending as any)?.byAgent
     ? Object.values((pending as any).byAgent).flat()
@@ -465,11 +466,25 @@ function ApprovalsPanel() {
   const active = items.filter(i => i.status === "pending" || i.status === "awaiting_second");
   const resolved = items.filter(i => !["pending", "awaiting_second"].includes(i.status));
 
+  // Deep-link: sort highlighted item to top
+  const ordered = highlightId
+    ? [
+        ...active.filter((i) => i.id === highlightId || i.name === highlightId),
+        ...active.filter((i) => i.id !== highlightId && i.name !== highlightId),
+      ]
+    : active;
+
+  useEffect(() => {
+    if (!highlightId) return;
+    const el = document.getElementById(`approval-${highlightId}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightId, ordered.length]);
+
   if (isLoading) return <div className="text-cream-muted text-sm">Loading…</div>;
 
   return (
     <div className="space-y-4">
-      {active.length === 0 ? (
+      {ordered.length === 0 ? (
         <div className="glass-panel rounded-2xl p-10 text-center border border-dashed border-brass/15">
           <CheckCircle2 className="h-8 w-8 text-signal-emerald/50 mx-auto mb-3" />
           <p className="text-cream-muted text-sm">Queue clear — no dual-control items waiting.</p>
@@ -481,9 +496,20 @@ function ApprovalsPanel() {
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <span className="ui-label text-[10px]">AWAITING YOUR DECISION</span>
-            <span className="h-4 min-w-4 px-1 rounded-full bg-signal-amber text-[9px] font-bold text-forest-deep flex items-center justify-center">{active.length}</span>
+            <span className="h-4 min-w-4 px-1 rounded-full bg-signal-amber text-[9px] font-bold text-forest-deep flex items-center justify-center">{ordered.length}</span>
           </div>
-          {active.map((item: any) => <ApprovalCard key={item.id} item={item} />)}
+          {ordered.map((item: any) => (
+            <div
+              key={item.id}
+              id={`approval-${item.id}`}
+              className={cn(
+                (item.id === highlightId || item.name === highlightId) &&
+                  "ring-1 ring-brass/50 rounded-xl"
+              )}
+            >
+              <ApprovalCard item={item} />
+            </div>
+          ))}
         </div>
       )}
 
@@ -952,7 +978,36 @@ function AuditPanel() {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function MissionControl() {
-  const [tab, setTab] = useState<Tab>("fleet");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab") as Tab | null;
+  const validTabs: Tab[] = [
+    "fleet", "board", "approvals", "live", "sofia", "costs", "crons", "history", "cron", "audit",
+  ];
+  const initialTab = tabParam && validTabs.includes(tabParam) ? tabParam : "fleet";
+  const [tab, setTab] = useState<Tab>(initialTab);
+  const highlightApprovalId = searchParams.get("id");
+  const cronStatus = searchParams.get("status");
+  const cronJob = searchParams.get("job");
+
+  useEffect(() => {
+    if (tabParam && validTabs.includes(tabParam) && tabParam !== tab) {
+      setTab(tabParam);
+    }
+  }, [tabParam]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectTab = (id: Tab) => {
+    setTab(id);
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", id);
+    // Clear deep-link filters when manually switching away
+    if (id !== "approvals") next.delete("id");
+    if (id !== "crons") {
+      next.delete("status");
+      next.delete("job");
+    }
+    setSearchParams(next, { replace: true });
+  };
+
   const { data: agents = [], isLoading: agentsLoading } = useAgents();
   const { data: pending } = usePendingApprovals();
   const { data: costs } = useAgentCosts(7);
@@ -988,19 +1043,22 @@ export default function MissionControl() {
         description="Every agent, every task, every decision — one pane of glass."
       />
 
-      {/* Tab bar */}
-      <div className="flex items-center gap-1 flex-wrap border border-brass/10 rounded-xl p-1 bg-forest-raised/20 backdrop-blur-xl">
-        {TABS.map(t => (
-          <TabBtn
-            key={t.id}
-            id={t.id}
-            label={t.label}
-            icon={t.icon}
-            active={tab === t.id}
-            badge={t.badge}
-            onClick={() => setTab(t.id)}
-          />
-        ))}
+      {/* Tab bar + global Alerts bell (SPEC 071) */}
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 flex-wrap flex-1 border border-brass/10 rounded-xl p-1 bg-forest-raised/20 backdrop-blur-xl min-w-0">
+          {TABS.map(t => (
+            <TabBtn
+              key={t.id}
+              id={t.id}
+              label={t.label}
+              icon={t.icon}
+              active={tab === t.id}
+              badge={t.badge}
+              onClick={() => selectTab(t.id)}
+            />
+          ))}
+        </div>
+        <AlertsBell />
       </div>
 
       {/* Panel content */}
@@ -1015,11 +1073,16 @@ export default function MissionControl() {
           <>
             {tab === "fleet"     && <FleetPanel agents={agentList} costs={costs} />}
             {tab === "board"     && <BoardPanel />}
-            {tab === "approvals" && <ApprovalsPanel />}
+            {tab === "approvals" && <ApprovalsPanel highlightId={highlightApprovalId} />}
             {tab === "live"      && <LiveFeedPanel />}
             {tab === "sofia"     && <SofiaPanel />}
             {tab === "costs"     && <CostsPanel agents={agentList} />}
-            {tab === "crons"     && <FleetCronsPanel />}
+            {tab === "crons"     && (
+              <FleetCronsPanel
+                initialStatus={cronStatus}
+                highlightJobId={cronJob}
+              />
+            )}
             {tab === "history"   && <HistoryPanel />}
             {tab === "cron"      && <CronPanel />}
             {tab === "audit"     && <AuditPanel />}

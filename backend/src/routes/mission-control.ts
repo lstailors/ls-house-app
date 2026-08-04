@@ -1,13 +1,19 @@
-// Mission Control — Board / Crons / History
+// Mission Control — Board / Crons / History / Alerts
 // Auth: super_admin + store_manager
 // Data: lsh.* snapshots (Studio writers) — Edge-safe
+// Alerts (SPEC 071): derived read over cron_health + approval_queue — no new SoT
 
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
 import { lshSelect, lshInsert, lshUpdate, supabaseConfig } from "../lib/supabase-lsh";
-import { mcListActivity, mcListBriefs } from "../lib/mc-data";
+import { mcListActivity, mcListApprovals, mcListBriefs } from "../lib/mc-data";
 
 export const missionControlRouter = new Hono();
+
+/** Default stale-approval threshold (hours). Per-source overrides = v2. */
+const STALE_APPROVAL_HOURS_DEFAULT = Number(
+  process.env.MC_STALE_APPROVAL_HOURS || 4
+);
 
 function isMissionControl(role: string): boolean {
   return role === "super_admin" || role === "store_manager";
@@ -18,6 +24,33 @@ function ageDays(iso: string | null | undefined): number | undefined {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return undefined;
   return Math.max(0, (Date.now() - t) / 86_400_000);
+}
+
+function ageHours(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, (Date.now() - t) / 3_600_000);
+}
+
+function formatStuckAge(hours: number | null): string {
+  if (hours == null) return "unknown age";
+  if (hours < 1) {
+    const m = Math.max(1, Math.round(hours * 60));
+    return `${m}m`;
+  }
+  if (hours < 48) {
+    const h = Math.floor(hours);
+    const m = Math.round((hours - h) * 60);
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  }
+  const d = Math.floor(hours / 24);
+  return `${d}d`;
+}
+
+function titleCaseName(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function mapKanbanRow(r: any) {
@@ -346,6 +379,204 @@ missionControlRouter.get("/history", async (c) => {
       entries: page,
       hasMore: filtered.length > limit,
       query: { agent, from, to, q, limit },
+    },
+  });
+});
+
+// ── SPEC 071 Alerts ──────────────────────────────────────────────────────────
+// Derived standing-state aggregation. Dedupe key = {type}:{source_id}.
+// agent_dark + cost_anomaly gated OFF until real heartbeats / token metering.
+
+type McAlertRow = {
+  id: string;
+  type: "cron_error" | "stale_approval" | "agent_dark" | "cost_anomaly";
+  severity: "critical" | "warning";
+  title: string;
+  context: string;
+  source_tab: "crons" | "approvals" | "fleet" | "costs";
+  source_id: string;
+  href: string;
+  first_seen: string | null;
+  last_seen: string | null;
+  occurrences: number;
+  age_hours: number | null;
+};
+
+missionControlRouter.get("/alerts", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+
+  const thresholdH = Number.isFinite(STALE_APPROVAL_HOURS_DEFAULT)
+    ? Math.max(0.25, STALE_APPROVAL_HOURS_DEFAULT)
+    : 4;
+
+  const alerts: McAlertRow[] = [];
+  const sources: {
+    cron_health: "ok" | "error" | "missing" | "unconfigured";
+    approvals: "ok" | "error";
+    agent_dark: "gated_off";
+    cost_anomaly: "gated_off";
+  } = {
+    cron_health: "unconfigured",
+    approvals: "ok",
+    agent_dark: "gated_off",
+    cost_anomaly: "gated_off",
+  };
+  const sourceErrors: string[] = [];
+
+  // ── cron_error: red rows in lsh.cron_health ──
+  if (!supabaseConfig()) {
+    sources.cron_health = "unconfigured";
+    sourceErrors.push("cron_health: supabase_not_configured");
+  } else {
+    try {
+      const rows = await lshSelect<any>("cron_health", {
+        filters: ["health_color=eq.red"],
+        order: "last_run_at.asc.nullslast",
+        limit: 200,
+      });
+      sources.cron_health = "ok";
+      for (const r of rows) {
+        const sourceId = `${r.profile}:${r.job_id}`;
+        const jobLabel = r.job_name || r.job_id || "cron";
+        const profileLabel = titleCaseName(String(r.profile || "agent"));
+        const lastSeen = r.last_run_at || r.snapshot_at || null;
+        const firstSeen = r.last_run_at || r.snapshot_at || null;
+        const hours = ageHours(firstSeen);
+        const reasons = Array.isArray(r.health_reasons) ? r.health_reasons : [];
+        const failBit = String(r.last_error || r.last_delivery_error || reasons[0] || "").trim();
+        const titleCore = failBit
+          ? `${profileLabel}'s ${jobLabel} — ${failBit.slice(0, 72)}`
+          : `${profileLabel}'s ${jobLabel} — red health`;
+        alerts.push({
+          id: `cron_error:${sourceId}`,
+          type: "cron_error",
+          severity: "critical",
+          title: titleCore.slice(0, 160),
+          context: `Crons · stuck red for ${formatStuckAge(hours)}`,
+          source_tab: "crons",
+          source_id: sourceId,
+          href: `/mission-control?tab=crons&status=red&job=${encodeURIComponent(sourceId)}`,
+          first_seen: firstSeen,
+          last_seen: lastSeen,
+          occurrences: 1,
+          age_hours: hours,
+        });
+      }
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      if (msg.includes("42P01") || msg.includes("does not exist") || msg.includes("404")) {
+        sources.cron_health = "missing";
+        sourceErrors.push("cron_health: table_missing");
+      } else {
+        sources.cron_health = "error";
+        sourceErrors.push(`cron_health: ${msg.slice(0, 120)}`);
+      }
+    }
+  }
+
+  // ── stale_approval: pending items older than threshold ──
+  try {
+    const pending = await mcListApprovals(["pending", "awaiting_second"]);
+    sources.approvals = "ok";
+    for (const item of pending as any[]) {
+      if (item.category === "financial" && user.role !== "super_admin") continue;
+      const created = item.creation || item.created_at || null;
+      const hours = ageHours(created);
+      if (hours == null || hours < thresholdH) continue;
+      const id = String(item.name || item.id || "");
+      if (!id) continue;
+      const titleBase = item.title || "Approval pending";
+      const ageLabel = formatStuckAge(hours);
+      const severity: "critical" | "warning" =
+        hours >= thresholdH * 2 ? "critical" : "warning";
+      const agent = item.source_agent ? titleCaseName(String(item.source_agent)) : null;
+      const summaryBit = item.summary
+        ? String(item.summary).replace(/\s+/g, " ").slice(0, 60)
+        : null;
+      alerts.push({
+        id: `stale_approval:${id}`,
+        type: "stale_approval",
+        severity,
+        title: `Approval pending ${ageLabel} — ${titleBase}`.slice(0, 160),
+        context: [
+          "Approvals",
+          agent,
+          summaryBit,
+          `${ageLabel} old`,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        source_tab: "approvals",
+        source_id: id,
+        href: `/mission-control?tab=approvals&id=${encodeURIComponent(id)}`,
+        first_seen: created,
+        last_seen: created,
+        occurrences: 1,
+        age_hours: hours,
+      });
+    }
+  } catch (e: any) {
+    sources.approvals = "error";
+    sourceErrors.push(`approvals: ${String(e?.message || e).slice(0, 120)}`);
+  }
+
+  // agent_dark + cost_anomaly intentionally gated — do not wire against fake signals
+
+  // Sort: critical first, then oldest first_seen within tier
+  const sevRank = (s: string) => (s === "critical" ? 0 : 1);
+  alerts.sort((a, b) => {
+    const sd = sevRank(a.severity) - sevRank(b.severity);
+    if (sd !== 0) return sd;
+    const at = a.first_seen ? Date.parse(a.first_seen) : Number.POSITIVE_INFINITY;
+    const bt = b.first_seen ? Date.parse(b.first_seen) : Number.POSITIVE_INFINITY;
+    return at - bt;
+  });
+
+  // Dedupe by id (defensive — sources already unique)
+  const seen = new Set<string>();
+  const deduped = alerts.filter((a) => {
+    if (seen.has(a.id)) return false;
+    seen.add(a.id);
+    return true;
+  });
+
+  const critical_count = deduped.filter((a) => a.severity === "critical").length;
+  const warning_count = deduped.filter((a) => a.severity === "warning").length;
+  const highest_severity =
+    critical_count > 0 ? "critical" : warning_count > 0 ? "warning" : null;
+
+  const feedBroken =
+    sources.cron_health === "error" ||
+    sources.cron_health === "unconfigured" ||
+    sources.approvals === "error";
+  // Both primary sources hard-failed → error (not silent all-clear)
+  const bothFailed =
+    (sources.cron_health === "error" || sources.cron_health === "unconfigured" || sources.cron_health === "missing") &&
+    sources.approvals === "error";
+
+  return c.json({
+    data: {
+      alerts: deduped,
+      count: deduped.length,
+      critical_count,
+      warning_count,
+      highest_severity,
+      generated_at: new Date().toISOString(),
+      stale_approval_threshold_hours: thresholdH,
+      gated: { agent_dark: true, cost_anomaly: true },
+      sources,
+      error: bothFailed
+        ? sourceErrors.join("; ") || "Alerts feed unavailable"
+        : null,
+      warning:
+        !bothFailed && feedBroken
+          ? sourceErrors.join("; ")
+          : sources.cron_health === "missing"
+            ? "cron_health table not applied yet"
+            : null,
+      cache_age_minutes: null,
     },
   });
 });

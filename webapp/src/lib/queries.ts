@@ -25,6 +25,7 @@ import type {
   YZProductionBrief,
   KanbanTask,
   MissionControlBoardResponse,
+  MissionControlAlertsResponse,
 } from "@ls/types";
 
 export interface DepositReceipt {
@@ -1034,5 +1035,18 @@ export function useMissionControlBoardAction() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["mission-control", "board"] });
     },
+  });
+}
+
+// SPEC 071 — global Alerts (derived standing state)
+export function useMissionControlAlerts() {
+  return useQuery({
+    queryKey: ["mission-control", "alerts"],
+    queryFn: () =>
+      api.get<MissionControlAlertsResponse>(`/api/mission-control/alerts`),
+    staleTime: 20_000,
+    refetchInterval: 45_000,
+    // Keep last-known on error so badge doesn't go silent (SPEC §4.3)
+    placeholderData: (prev) => prev,
   });
 }
