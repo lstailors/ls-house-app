@@ -1173,3 +1173,53 @@ export function useHermesMirrorArtifacts(enabled = true) {
     enabled,
   });
 }
+
+export function useHermesMirrorMemory(enabled = true) {
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "memory"],
+    queryFn: () => api.get<any>(`/api/mission-control/hermes/memory`),
+    staleTime: 60_000,
+    enabled,
+  });
+}
+
+export function useHermesMirrorSessionStats(enabled = true) {
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "sessions", "stats"],
+    queryFn: () => api.get<any>(`/api/mission-control/hermes/sessions/stats`),
+    staleTime: 30_000,
+    enabled,
+  });
+}
+
+export function useHermesMirrorSessionMessages(sessionId: string | null) {
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "sessions", sessionId, "messages"],
+    queryFn: () =>
+      api.get<any>(
+        `/api/mission-control/hermes/sessions/${encodeURIComponent(sessionId!)}/messages?limit=100`,
+      ),
+    staleTime: 15_000,
+    enabled: Boolean(sessionId),
+  });
+}
+
+export function useHermesMirrorAnalytics(days = 14, enabled = true) {
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "analytics", days],
+    queryFn: () =>
+      api.get<any>(`/api/mission-control/hermes/analytics?days=${days}`),
+    staleTime: 60_000,
+    enabled,
+  });
+}
+
+export function useHermesMirrorModels(days = 14, enabled = true) {
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "analytics", "models", days],
+    queryFn: () =>
+      api.get<any>(`/api/mission-control/hermes/analytics/models?days=${days}`),
+    staleTime: 60_000,
+    enabled,
+  });
+}

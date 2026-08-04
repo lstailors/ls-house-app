@@ -27,11 +27,13 @@ export function hermesDashboardBase(): string {
 function creds(): { user: string; pass: string } {
   const user =
     process.env.HERMES_DASHBOARD_BASIC_AUTH_USERNAME ||
+    kc("hermes-dashboard-username", "hermes") ||
     kc("hermes-dashboard-username") ||
     kc("hermes-dashboard-basic-auth-username") ||
     "";
   const pass =
     process.env.HERMES_DASHBOARD_BASIC_AUTH_PASSWORD ||
+    kc("hermes-dashboard-password", "hermes") ||
     kc("hermes-dashboard-password") ||
     kc("hermes-dashboard-basic-auth-password") ||
     "";
@@ -208,9 +210,23 @@ export const HERMES_FEATURE_MAP = [
   },
   {
     id: "memory",
-    desktop: "Memory graph",
-    mc: "Deep-link / later",
-    mode: "planned",
+    desktop: "Memory graph / MEMORY.md",
+    mc: "Hermes Memory hub + Console system",
+    mode: "mirror",
+    phase: 3,
+  },
+  {
+    id: "session-stream",
+    desktop: "Live session transcript / tool cards",
+    mc: "Hermes Sessions · message transcript + Live Chat",
+    mode: "mirror",
+    phase: 3,
+  },
+  {
+    id: "costs-depth",
+    desktop: "Usage analytics (tokens/models)",
+    mc: "Costs tab · Hermes usage feed",
+    mode: "mirror",
     phase: 3,
   },
   {
@@ -244,5 +260,7 @@ export function hermesDeepLinks(base = hermesDashboardBase()) {
     analytics: `${b}/analytics`,
     logs: `${b}/logs`,
     profiles: `${b}/profiles`,
+    memory: `${b}/system`, // memory lives under System admin
+    system: `${b}/system`,
   };
 }
