@@ -81,6 +81,7 @@ const SECTIONS: NavSection[] = [
     title: "Financials",
     roles: MGMT,
     items: [
+      { to: "/owner", label: "Owner Dashboard", icon: LayoutDashboard, roles: ["super_admin"] },
       { to: "/financials", label: "Financials", icon: Wallet, roles: MGMT },
       { to: "/reference/fabrics", label: "Fabric Pricing", icon: Palette, roles: MGMT },
       { to: "/reference/styles", label: "Style Library", icon: Layers, roles: MGMT },

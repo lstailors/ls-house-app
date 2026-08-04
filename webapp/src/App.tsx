@@ -26,6 +26,7 @@ const DeliveryLabel = lazy(() => import('./pages/DeliveryLabel'));
 const DeliveryDetail = lazy(() => import('./pages/DeliveryDetail'));
 const Communications = lazy(() => import('./pages/Communications'));
 const Financials = lazy(() => import('./pages/Financials'));
+const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'));
 const Settings = lazy(() => import('./pages/Settings'));
 const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'));
 const AdminLocations = lazy(() => import('./pages/admin/AdminLocations'));
@@ -244,6 +245,14 @@ const App = () => (
               }
             />
             <Route path="/financials" element={<Financials />} />
+            <Route
+              path="/owner"
+              element={
+                <RoleGuard allow={["super_admin"]}>
+                  <OwnerDashboard />
+                </RoleGuard>
+              }
+            />
 
             <Route path="/settings" element={<Settings />} />
 

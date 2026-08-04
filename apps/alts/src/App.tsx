@@ -43,6 +43,7 @@ const Invoices = lazy(() => import("@alts/pages/Invoices"));
 const InvoiceDetail = lazy(() => import("@alts/pages/InvoiceDetail"));
 const AddWork = lazy(() => import("@alts/pages/AddWork"));
 const FloorPerformance = lazy(() => import("@alts/pages/FloorPerformance"));
+const Reports = lazy(() => import("@alts/pages/Reports"));
 
 const FOH = ["super_admin", "store_manager", "salesperson", "tailor"] as const;
 
@@ -301,6 +302,14 @@ export default function App() {
                   element={
                     <RoleGuard allow={[...FOH]}>
                       <AdminBoard />
+                    </RoleGuard>
+                  }
+                />
+                <Route
+                  path="/reports"
+                  element={
+                    <RoleGuard allow={[...FOH]}>
+                      <Reports />
                     </RoleGuard>
                   }
                 />

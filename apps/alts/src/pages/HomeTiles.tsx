@@ -854,11 +854,10 @@ export default function HomeTiles() {
       ),
     },
     {
-      key: "admin",
-      href: "https://app.lstailors.com",
-      title: "Reports & Admin",
-      sub: "Workload, money, pricing, users",
-      external: true,
+      key: "reports",
+      to: "/reports",
+      title: "Floor Reports",
+      sub: "Pipeline, tally, revenue · this location",
       icon: (
         <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 44h40" strokeWidth="1.6" />
@@ -866,6 +865,20 @@ export default function HomeTiles() {
           <rect x="22" y="18" width="8" height="26" rx="1.5" />
           <rect x="34" y="24" width="8" height="20" rx="1.5" />
           <path d="M10 12l10-4 10 6 12-6" strokeWidth="1.3" opacity=".6" />
+        </svg>
+      ),
+    },
+    {
+      key: "admin",
+      href: "https://app.lstailors.com/owner",
+      title: "Owner / Admin",
+      sub: "Company dashboard, pricing, users",
+      external: true,
+      icon: (
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="26" cy="18" r="8" />
+          <path d="M10 44c2-10 10-14 16-14s14 4 16 14" />
+          <path d="M38 12l4 2-2 4" opacity=".6" />
         </svg>
       ),
     },
