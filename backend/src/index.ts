@@ -106,6 +106,7 @@ app.route("/api/intake-alterations", intakeAlterationsRouter);
 app.route("/api/alts", altsRouter);
 app.route("/api/raven", ravenRouter);
 app.route("/api/agents", agentsRouter);
+app.route("/api/mission-control", missionControlRouter);
 app.route("/api/comms", commsRouter);
 app.route("/api/webhooks", webhooksRouter);
 app.route("/api/unifi", unifiRouter);

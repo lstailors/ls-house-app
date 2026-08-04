@@ -1225,27 +1225,54 @@ export type ErpCustomerUpdate = z.infer<typeof ErpCustomerUpdate>;
 export const KanbanTask = z.object({
   id: z.string(),
   title: z.string(),
+  body: z.string().nullable().optional(),
   assignee: z.string().nullable(),
-  status: z.enum(["triage", "todo", "ready", "running", "blocked", "done", "archived"]),
-  priority: z.number().int().min(1).max(5).optional(),
+  status: z.enum([
+    "triage",
+    "todo",
+    "scheduled",
+    "ready",
+    "running",
+    "blocked",
+    "done",
+    "archived",
+  ]),
+  priority: z.number().optional(),
   age_days: z.number().optional(),
-  blocked_reason: z.string().nullable().optional(),
+  consecutive_failures: z.number().optional(),
   last_failure_error: z.string().nullable().optional(),
+  block_kind: z.string().nullable().optional(),
+  result_summary: z.string().nullable().optional(),
+  parent_ids: z.array(z.string()).optional(),
+  child_ids: z.array(z.string()).optional(),
+  comment_count: z.number().optional(),
   created_at: z.string().optional(),
-  updated_at: z.string().optional(),
+  started_at: z.string().optional(),
+  completed_at: z.string().optional(),
+  snapshot_at: z.string().nullable().optional(),
 });
 export type KanbanTask = z.infer<typeof KanbanTask>;
 
 export const CronHealth = z.object({
   id: z.string(),
+  profile: z.string().optional(),
   agent_slug: z.string(),
+  job_id: z.string().optional(),
   job_name: z.string(),
   enabled: z.boolean(),
   status: z.enum(["green", "amber", "red"]),
+  health_reasons: z.array(z.string()).optional(),
+  last_status: z.string().nullable().optional(),
   last_run_at: z.string().nullable(),
   next_run_at: z.string().nullable(),
   last_error: z.string().nullable(),
+  last_delivery_error: z.string().nullable().optional(),
+  model: z.string().nullable().optional(),
   model_snapshot: z.string().nullable(),
+  model_drift: z.boolean().optional(),
+  stale: z.boolean().optional(),
+  schedule_display: z.string().nullable().optional(),
+  snapshot_at: z.string().nullable().optional(),
 });
 export type CronHealth = z.infer<typeof CronHealth>;
 
@@ -1256,8 +1283,8 @@ export const HistoryEntry = z.object({
   kind: z.enum(["brief", "event", "kanban_comment", "kanban_done", "telemetry", "approval"]),
   title: z.string(),
   snippet: z.string().nullable(),
-  doc_ref: z.string().nullable().optional(), // e.g. CUST-xxx or SO-xxx
-  metadata: z.record(z.any()).optional(),
+  doc_ref: z.string().nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 export type HistoryEntry = z.infer<typeof HistoryEntry>;
 
