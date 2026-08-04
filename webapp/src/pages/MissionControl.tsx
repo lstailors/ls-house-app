@@ -1072,8 +1072,8 @@ export default function MissionControl() {
     setTab(id);
     const next = new URLSearchParams(searchParams);
     next.set("tab", id);
-    // Clear deep-link filters when manually switching away
-    if (id !== "approvals") next.delete("id");
+    // Clear deep-link filters when manually switching (approvals already returned above)
+    next.delete("id");
     if (id !== "crons") {
       next.delete("status");
       next.delete("job");
