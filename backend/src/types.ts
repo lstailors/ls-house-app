@@ -1217,3 +1217,105 @@ export const ErpCustomerUpdate = z.object({
   customer_details: z.string().optional(),
 });
 export type ErpCustomerUpdate = z.infer<typeof ErpCustomerUpdate>;
+
+// ─── Mission Control (Board / Crons / History) scaffolds ───────────────────────
+// Response shapes for /api/mission-control/* (read-only v1, backed by lsh.* snapshots)
+// See mc-data-access.md for why snapshots (Vercel Edge cannot reach ~/.hermes)
+
+export const KanbanTask = z.object({
+  id: z.string(),
+  title: z.string(),
+  body: z.string().nullable().optional(),
+  assignee: z.string().nullable(),
+  status: z.enum([
+    "triage",
+    "todo",
+    "scheduled",
+    "ready",
+    "running",
+    "blocked",
+    "done",
+    "archived",
+  ]),
+  priority: z.number().optional(),
+  age_days: z.number().optional(),
+  consecutive_failures: z.number().optional(),
+  last_failure_error: z.string().nullable().optional(),
+  block_kind: z.string().nullable().optional(),
+  result_summary: z.string().nullable().optional(),
+  parent_ids: z.array(z.string()).optional(),
+  child_ids: z.array(z.string()).optional(),
+  comment_count: z.number().optional(),
+  created_at: z.string().optional(),
+  started_at: z.string().optional(),
+  completed_at: z.string().optional(),
+  snapshot_at: z.string().nullable().optional(),
+});
+export type KanbanTask = z.infer<typeof KanbanTask>;
+
+export const CronHealth = z.object({
+  id: z.string(),
+  profile: z.string().optional(),
+  agent_slug: z.string(),
+  job_id: z.string().optional(),
+  job_name: z.string(),
+  enabled: z.boolean(),
+  status: z.enum(["green", "amber", "red"]),
+  health_reasons: z.array(z.string()).optional(),
+  last_status: z.string().nullable().optional(),
+  last_run_at: z.string().nullable(),
+  next_run_at: z.string().nullable(),
+  last_error: z.string().nullable(),
+  last_delivery_error: z.string().nullable().optional(),
+  model: z.string().nullable().optional(),
+  model_snapshot: z.string().nullable(),
+  model_drift: z.boolean().optional(),
+  stale: z.boolean().optional(),
+  schedule_display: z.string().nullable().optional(),
+  snapshot_at: z.string().nullable().optional(),
+});
+export type CronHealth = z.infer<typeof CronHealth>;
+
+export const HistoryEntry = z.object({
+  id: z.string(),
+  ts: z.string(),
+  agent_slug: z.string().nullable(),
+  kind: z.enum(["brief", "event", "kanban_comment", "kanban_done", "telemetry", "approval"]),
+  title: z.string(),
+  snippet: z.string().nullable(),
+  doc_ref: z.string().nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+export type HistoryEntry = z.infer<typeof HistoryEntry>;
+
+export const MissionControlBoardResponse = z.object({
+  tasks: z.array(KanbanTask),
+  total: z.number(),
+  filters: z.object({
+    assignee: z.string().nullable().optional(),
+    status: z.string().nullable().optional(),
+    blockedOnly: z.boolean().optional(),
+  }),
+});
+
+export const MissionControlCronsResponse = z.object({
+  crons: z.array(CronHealth),
+  summary: z.object({
+    green: z.number(),
+    amber: z.number(),
+    red: z.number(),
+    total: z.number(),
+  }),
+});
+
+export const MissionControlHistoryResponse = z.object({
+  entries: z.array(HistoryEntry),
+  hasMore: z.boolean(),
+  query: z.object({
+    agent: z.string().nullable().optional(),
+    from: z.string().nullable().optional(),
+    to: z.string().nullable().optional(),
+    q: z.string().nullable().optional(),
+    limit: z.number(),
+  }),
+});

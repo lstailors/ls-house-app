@@ -1,0 +1,14 @@
+kanban_snapshot dry-run: total=16 by_status={'blocked': 6, 'todo': 3, 'done': 6, 'running': 1} failing=0 db=/Users/Maestro_1/.hermes/kanban.db
+  blocked    simone       t_c19664f7  SPEC 056 - Walk-in rename (alts + POS framing)  c=1 e=6
+  blocked    simone       t_de7ea59f  SPEC 057 - Add items Walk-in Alter | Sell cart  c=2 e=17
+  blocked    simone       t_0c825fc9  SPEC 055 - Ask Rocco query Daily Espresso AI  c=1 e=10
+  blocked    simone       t_6933791a  SPEC 057b - Add items mobile bottom sheet + dock  c=1 e=14
+  blocked    simone       t_3e05b26f  SPEC 054 — Daily Espresso collapsible (phone home)  c=1 e=9
+  blocked    simone       t_ec472716  SPEC 053 — Garment catalog + cart (one-page intake  c=1 e=12
+  todo       lucia        t_37056150  Review SPEC 053 render vs mock 034  c=0 e=1
+  done       lucia        t_e22e8be8  SPEC 062 — Mission Control Board (Hermes Kanban) d  c=0 e=13
+  done       simone       t_7b581ee1  MC Phase 2 infra — lsh.cron_health + 15m snapshot   c=1 e=13
+  done       coder        t_6e4eb38f  MC — resolve Vercel vs Studio data path + API scaf  c=0 e=18
+  done       simone       t_424184c0  MC Phase 1 infra — lsh.kanban_snapshot + 5m writer  c=0 e=6
+  done       lucia        t_cb4aa863  SPEC 063 — Mission Control Crons health design  c=0 e=9
+  … +4 more

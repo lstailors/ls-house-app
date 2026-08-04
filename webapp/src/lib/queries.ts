@@ -23,6 +23,8 @@ import type {
   YZTicket,
   YZOrder,
   YZProductionBrief,
+  KanbanTask,
+  MissionControlBoardResponse,
 } from "@ls/types";
 
 export interface DepositReceipt {
@@ -931,5 +933,78 @@ export function useHelpdeskCreateTicket() {
     mutationFn: (body: { subject: string; description?: string; priority?: string; agentGroup?: string }) =>
       api.post<HDTicket>("/api/helpdesk/tickets", body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["helpdesk"] }),
+  });
+}
+
+// ─── Mission Control Board (SPEC 062 Phase 1) ────────────────────────────────
+export function useMissionControlBoard(params?: {
+  assignee?: string | null;
+  blockedOnly?: boolean;
+  q?: string;
+}) {
+  const search = new URLSearchParams();
+  if (params?.assignee) search.set("assignee", params.assignee);
+  if (params?.blockedOnly) search.set("blockedOnly", "true");
+  if (params?.q) search.set("q", params.q);
+  const qs = search.toString() ? `?${search}` : "";
+
+  return useQuery({
+    queryKey: ["mission-control", "board", params ?? {}],
+    queryFn: () =>
+      api.get<MissionControlBoardResponse>(`/api/mission-control/board${qs}`),
+    staleTime: 20_000,
+    refetchInterval: 45_000,
+  });
+}
+
+export function useMissionControlBoardTask(id: string | undefined) {
+  return useQuery({
+    queryKey: ["mission-control", "board", "task", id],
+    queryFn: () =>
+      api.get<{
+        task: KanbanTask | null;
+        comments: any[];
+        events: any[];
+        parents: any[];
+        children: any[];
+      }>(`/api/mission-control/board/${id}`),
+    enabled: !!id,
+    staleTime: 10_000,
+  });
+}
+
+export function useMissionControlCrons(params?: {
+  profile?: string | null;
+  status?: string | null;
+}) {
+  const search = new URLSearchParams();
+  if (params?.profile) search.set("profile", params.profile);
+  if (params?.status) search.set("status", params.status);
+  const qs = search.toString() ? `?${search}` : "";
+
+  return useQuery({
+    queryKey: ["mission-control", "crons", params ?? {}],
+    queryFn: () => api.get<any>(`/api/mission-control/crons${qs}`),
+    staleTime: 20_000,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useMissionControlHistory(params?: {
+  agent?: string | null;
+  q?: string;
+  limit?: number;
+}) {
+  const search = new URLSearchParams();
+  if (params?.agent) search.set("agent", params.agent);
+  if (params?.q) search.set("q", params.q);
+  if (params?.limit) search.set("limit", String(params.limit));
+  const qs = search.toString() ? `?${search}` : "";
+
+  return useQuery({
+    queryKey: ["mission-control", "history", params ?? {}],
+    queryFn: () => api.get<any>(`/api/mission-control/history${qs}`),
+    staleTime: 15_000,
+    refetchInterval: 45_000,
   });
 }

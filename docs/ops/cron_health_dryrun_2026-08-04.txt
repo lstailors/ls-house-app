@@ -1,0 +1,59 @@
+cron_health dry-run: total=58 green=43 amber=14 red=1 profiles=11
+  red    lapenna       La Penna: Weekly Analytics Brief            last_status=error err=RuntimeError: HTTP 400: You have reached your specified API 
+  amber  lapenna       La Penna: Monthly Voice Refresh + Trend Br  stale_age=262723s>2x86400s
+  amber  lapenna       La Penna: Quarterly VIP & Cohort Deep-Dive  never_run
+  amber  lucia         Morning audit — alterations build status    delivery_error deliv=live adapter send failed: Group migrated to superg
+  amber  maestro       AI Fashion Intel — Daily Digest             paused,disabled
+  amber  maestro       Evening Brief — 5:30 PM                     paused,disabled
+  amber  maestro       L&S Intelligence Brief                      paused,disabled
+  amber  maestro       Midday Brief — 1:00 PM                      paused,disabled
+  amber  maestro       Morning Brief — 8:30 AM                     paused,disabled
+  amber  maestro       Morning Brief — C                           paused,disabled
+  amber  maestro       Morning Email Review                        paused,disabled
+  amber  maestro       Overnight Ops Monitor (Sofia clone + agent  paused,disabled
+  amber  maestro       YZ Production Morning Brief                 paused,disabled
+  amber  mia           Mia: Calendar Consistency Pass (2x daily)   stale_age=65030s>2x18000s
+  amber  simone        MC cron_health snapshot (15m)               paused,disabled
+  green  filo          Email Intel — AM                            -
+  green  filo          Email Intel — Weekly                        -
+  green  filo          Monthly Customer Master Hygiene             -
+  green  filo          Weekly Books Audit (Filo)                   -
+  green  filo          Weekly Production WIP Aging                 -
+  green  giada         Giada: Filo Brief Reader                    -
+  green  giovanna      Giovanna: Filo Brief Reader                 -
+  green  lapenna       La Penna: Daily Anomaly Check (quiet)       -
+  green  lapenna       La Penna: Draft-Reply Sweep                 -
+  green  lapenna       La Penna: Morning Briefing                  -
+  green  lapenna       YZ Morning Reply Drafts                     -
+  green  maestro       Escalation Bridge — customer→C (Supabase)   -
+  green  maestro       MTMPro BMS Auto-Promote                     -
+  green  maestro       MTMPro→ERPNext sync reconciliation          -
+  green  maestro       Maestro — Weekly Agent Audit                -
+  green  maestro       Maestro — Weekly Production Schedule Revie  -
+  green  maestro       Mia — Daily YZ + Alterations Schedule Swee  -
+  green  maestro       YZ Fabric Import Watcher                    -
+  green  marco         Marco — Daily Sweep & Digest                -
+  green  marco         Marco — Weekly Cycle-Time Report            -
+  green  marco         Marco: Weekly Data Hygiene                  -
+  green  melana        Melana · Daily Accounting Run               -
+  green  melana        Melana · Mail Sync (pre-flight)             -
+  green  melana        Melana · Morning Briefing                   -
+  green  melana        Melana: Filo Brief Reader                   -
+  green  melana        Melena · Invoice PDF Intake (2x daily)      -
+  green  melana        Rocco · Floor Sweep (alts)                  -
+  green  mia           Mia AM Brief                                -
+  green  mia           Mia PM Check                                -
+  green  mia           Mia — Leave-Time Monitor                    -
+  green  mia           Mia: Daily Production Mirror + Conflict Sw  -
+  green  mia           Mia: Filo Brief Reader                      -
+  green  mia           Weekly Logistics & Shipment Sweep           -
+  green  rocco         Alteration Schedule Monitor                 -
+  green  rocco         Rocco: Daily Morning Sweep + Digest         -
+  green  rocco         Rocco: Filo Brief Reader                    -
+  green  rocco         Rocco: Nightly MTMPro/YZ Gap Close          -
+  green  rocco         YZ Production Monitor                       -
+  green  simone        Alts auto In Progress 24h                   -
+  green  simone        MTMPro auto-promote masters                 -
+  green  simone        Plaud L3 extraction (nightly)               -
+  green  simone        Plaud identity digest                       -
+  green  simone        Plaud → ERP ingest (L1)                     -

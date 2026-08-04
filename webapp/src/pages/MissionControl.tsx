@@ -6,7 +6,7 @@ import {
   DollarSign, Calendar, ListTodo, Shield, Radio, Play,
   RefreshCw, Filter, Bell, Zap, Server, Cloud,
   TrendingUp, ToggleLeft, ToggleRight, MessageSquare,
-  Scissors, ChevronRight, Circle,
+  Scissors, ChevronRight, Circle, LayoutGrid,
 } from "lucide-react";
 import { SectionHeader } from "@ls/design";
 import { GlassCard } from "@ls/design";
@@ -20,11 +20,12 @@ import {
 import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
 import { formatRelative } from "@ls/design/format";
+import { BoardPanel, FleetCronsPanel, HistoryPanel } from "@/pages/mission-control/McPanels";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type AgentStatus = "active" | "idle" | "error" | "offline" | "paused";
-type Tab = "fleet" | "approvals" | "live" | "sofia" | "costs" | "cron" | "audit";
+type Tab = "fleet" | "board" | "approvals" | "live" | "sofia" | "costs" | "crons" | "history" | "cron" | "audit";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -946,12 +947,15 @@ export default function MissionControl() {
 
   const TABS: { id: Tab; label: string; icon: any; badge?: number }[] = [
     { id: "fleet",     label: "Fleet",     icon: Radio },
+    { id: "board",     label: "Board",     icon: LayoutGrid },
     { id: "approvals", label: "Approvals", icon: Shield, badge: pendingCount },
     { id: "live",      label: "Live Feed", icon: Activity },
     { id: "sofia",     label: "Sofia",     icon: MessageSquare },
     { id: "costs",     label: "Costs",     icon: DollarSign },
-    { id: "cron",      label: "Schedule",  icon: Calendar },
-    { id: "audit",     label: "Audit",     icon: ListTodo },
+    { id: "crons",     label: "Crons",     icon: Calendar },
+    { id: "history",   label: "History",   icon: ListTodo },
+    { id: "cron",      label: "Schedule",  icon: Server },
+    { id: "audit",     label: "Audit",     icon: Eye },
   ];
 
   return (
@@ -992,10 +996,13 @@ export default function MissionControl() {
         ) : (
           <>
             {tab === "fleet"     && <FleetPanel agents={agentList} costs={costs} />}
+            {tab === "board"     && <BoardPanel />}
             {tab === "approvals" && <ApprovalsPanel />}
             {tab === "live"      && <LiveFeedPanel />}
             {tab === "sofia"     && <SofiaPanel />}
             {tab === "costs"     && <CostsPanel agents={agentList} />}
+            {tab === "crons"     && <FleetCronsPanel />}
+            {tab === "history"   && <HistoryPanel />}
             {tab === "cron"      && <CronPanel />}
             {tab === "audit"     && <AuditPanel />}
           </>
