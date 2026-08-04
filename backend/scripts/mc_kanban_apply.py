@@ -98,6 +98,12 @@ def apply_one(cmd: dict) -> tuple[bool, str]:
         out = (r.stdout or "") + (r.stderr or "")
         return r.returncode == 0, out[-400:]
 
+    # SPEC 069 chat_run — one-shot agent command. target = Hermes profile slug.
+    if action in ("chat_send", "send") and (
+        payload.get("kind") == "chat_run" or action == "chat_send"
+    ):
+        return apply_chat_send(cmd, payload)
+
     if action == "promote":
         code, out = hermes_kanban("promote", tid)
     elif action == "block":
@@ -106,7 +112,9 @@ def apply_one(cmd: dict) -> tuple[bool, str]:
     elif action == "unblock":
         code, out = hermes_kanban("unblock", tid)
     elif action == "complete":
-        code, out = hermes_kanban("complete", tid, "--summary", str(payload.get("summary") or "Completed from Mission Control"))
+        code, out = hermes_kanban(
+            "complete", tid, "--summary", str(payload.get("summary") or "Completed from Mission Control")
+        )
     elif action == "archive":
         code, out = hermes_kanban("archive", tid)
     elif action == "schedule":
@@ -120,16 +128,129 @@ def apply_one(cmd: dict) -> tuple[bool, str]:
     return code == 0, out
 
 
+def apply_chat_send(cmd: dict, payload: dict) -> tuple[bool, str]:
+    """Run a one-shot hermes chat against the target profile; write result into payload."""
+    slug = str(payload.get("agent_slug") or cmd.get("task_id") or "").strip()
+    prompt = str(payload.get("prompt") or payload.get("command") or "").strip()
+    if not slug or not prompt:
+        return False, "chat_send missing agent_slug/prompt"
+
+    # Honour user cancel before we start
+    if payload.get("cancelled_by_user"):
+        return False, "cancelled before start"
+
+    timeout_s = int(payload.get("timeout_s") or 180)
+    timeout_s = max(30, min(timeout_s, 600))
+
+    # Flip to leased/running with session/pid placeholders so the UI run card lights up
+    started = __import__("datetime").datetime.utcnow().isoformat() + "Z"
+    running_payload = {
+        **payload,
+        "started_at": started,
+        "session_id": payload.get("session_id") or f"sess_{cmd['id'][:8]}",
+        "pid": os.getpid(),
+    }
+    sb(
+        f"kanban_commands?id=eq.{cmd['id']}",
+        method="PATCH",
+        body={"status": "leased", "payload": running_payload},
+    )
+
+    # Re-check cancel
+    st, rows = sb(f"kanban_commands?id=eq.{cmd['id']}&select=status,payload")
+    if st < 300 and isinstance(rows, list) and rows:
+        cur = rows[0]
+        if cur.get("status") == "cancelled":
+            return False, "cancelled"
+        p2 = cur.get("payload") or {}
+        if isinstance(p2, str):
+            try:
+                p2 = json.loads(p2)
+            except Exception:
+                p2 = {}
+        if p2.get("cancelled_by_user"):
+            return False, "cancelled"
+
+    env = os.environ.copy()
+    home = Path.home() / ".hermes"
+    env["HERMES_HOME"] = str(home)
+    try:
+        r = subprocess.run(
+            ["hermes", "-p", slug, "chat", "-q", prompt],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=timeout_s,
+        )
+        out = ((r.stdout or "") + (r.stderr or "")).strip()
+        # Truncate huge agent dumps for the UI result pane
+        if len(out) > 12000:
+            out = out[:12000] + "\n…[truncated]"
+        ok = r.returncode == 0
+        final_payload = {
+            **running_payload,
+            "result": out or ("(ok)" if ok else "(no output)"),
+            "format": "code" if ("\n" in out or len(out) > 400) else "prose",
+            "finished_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+            "pid": os.getpid(),
+        }
+        # Write result onto payload; main() will set status applied/failed
+        sb(
+            f"kanban_commands?id=eq.{cmd['id']}",
+            method="PATCH",
+            body={"payload": final_payload},
+        )
+        return ok, out[-400:] if out else ("ok" if ok else "empty")
+    except subprocess.TimeoutExpired:
+        final_payload = {
+            **running_payload,
+            "result": None,
+            "error": f"timed out after {timeout_s}s",
+            "ui_timeout": True,
+            "finished_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        }
+        sb(
+            f"kanban_commands?id=eq.{cmd['id']}",
+            method="PATCH",
+            body={"payload": final_payload, "status": "failed", "error": f"timed out after {timeout_s}s"},
+        )
+        return False, f"timed out after {timeout_s}s"
+    except Exception as e:
+        return False, str(e)[:400]
+
+
 def main():
     status, rows = sb(
-        "kanban_commands?status=eq.pending&order=created_at.asc&limit=30",
+        "kanban_commands?status=in.(pending)&order=created_at.asc&limit=30",
     )
     if status >= 300 or not isinstance(rows, list):
         print("fetch pending", status, rows)
         return 1 if status >= 400 else 0
     print(f"pending={len(rows)}")
     for cmd in rows:
+        # Skip if already cancelled mid-queue
+        if cmd.get("status") == "cancelled":
+            continue
         ok, detail = apply_one(cmd)
+        # If apply_chat_send already terminalized timeout, don't overwrite
+        st_check, cur_rows = sb(f"kanban_commands?id=eq.{cmd['id']}&select=status,payload")
+        cur_status = None
+        cur_payload = {}
+        if st_check < 300 and isinstance(cur_rows, list) and cur_rows:
+            cur_status = cur_rows[0].get("status")
+            cur_payload = cur_rows[0].get("payload") or {}
+            if isinstance(cur_payload, str):
+                try:
+                    cur_payload = json.loads(cur_payload)
+                except Exception:
+                    cur_payload = {}
+        if cur_status == "cancelled" or cur_payload.get("cancelled_by_user"):
+            print(cmd["id"], cmd["action"], cmd["task_id"], "cancelled")
+            continue
+        if cur_payload.get("ui_timeout") and cur_status == "failed":
+            print(cmd["id"], cmd["action"], cmd["task_id"], "timeout")
+            continue
+
         patch = {
             "status": "applied" if ok else "failed",
             "error": None if ok else detail[:500],
@@ -140,7 +261,14 @@ def main():
             method="PATCH",
             body=patch,
         )
-        print(cmd["id"], cmd["action"], cmd["task_id"], "ok" if ok else "FAIL", st, detail[:120].replace("\n", " "))
+        print(
+            cmd["id"],
+            cmd["action"],
+            cmd["task_id"],
+            "ok" if ok else "FAIL",
+            st,
+            detail[:120].replace("\n", " "),
+        )
     return 0
 
 

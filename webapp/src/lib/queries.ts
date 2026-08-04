@@ -681,6 +681,74 @@ export function useSendAgentMessage(slug: string | undefined) {
   });
 }
 
+// ─── SPEC 069 one-shot agent command console ─────────────────────────────────
+
+export type AgentCommandStatus =
+  | "queued"
+  | "running"
+  | "done"
+  | "error"
+  | "timeout"
+  | "cancelled";
+
+export type AgentCommandRun = {
+  id: string;
+  agent_slug: string;
+  command: string;
+  status: AgentCommandStatus;
+  session_id: string | null;
+  pid: number | string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  result: string | null;
+  format: "code" | "prose" | null;
+  error: string | null;
+  created_at: string | null;
+  timeout_s: number;
+  source_table?: string;
+};
+
+export function useAgentCommand(slug: string | undefined, commandId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["agents", slug, "commands", commandId],
+    queryFn: () => api.get<AgentCommandRun>(`/api/agents/${slug}/commands/${commandId}`),
+    enabled: !!slug && !!commandId,
+    staleTime: 1_000,
+    refetchInterval: (q) => {
+      const s = q.state.data?.status;
+      if (!s || s === "queued" || s === "running") return 1_500;
+      return false;
+    },
+  });
+}
+
+export function useSendAgentCommand(slug: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { prompt: string; idempotency_key?: string; timeout_s?: number }) =>
+      api.post<AgentCommandRun>(`/api/agents/${slug}/commands`, input),
+    onSuccess: (data) => {
+      if (data?.id) {
+        qc.setQueryData(["agents", slug, "commands", data.id], data);
+      }
+      qc.invalidateQueries({ queryKey: ["agents", slug, "events"] });
+    },
+  });
+}
+
+export function useCancelAgentCommand(slug: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (commandId: string) =>
+      api.post<AgentCommandRun>(`/api/agents/${slug}/commands/${commandId}/cancel`),
+    onSuccess: (data) => {
+      if (data?.id) {
+        qc.setQueryData(["agents", slug, "commands", data.id], data);
+      }
+    },
+  });
+}
+
 // ─── Profile & Password ───────────────────────────────────────────────────────
 
 export function useUpdateMe() {
