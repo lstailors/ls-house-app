@@ -1,0 +1,15 @@
+{
+  "mode": "write",
+  "stats": {
+    "skipped": 1
+  },
+  "targets": 1,
+  "results": [
+    {
+      "customer": "Robert Fribourg",
+      "ok": false,
+      "skipped": true,
+      "reason": "already complete"
+    }
+  ]
+}

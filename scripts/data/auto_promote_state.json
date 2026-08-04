@@ -1,0 +1,15 @@
+{
+  "last_run": "2026-08-04T10:58:24",
+  "mode": "write",
+  "candidates": 7,
+  "customers": [
+    "Brandon Conovitz",
+    "Curtis Nielsen",
+    "Evan Reid-Smith",
+    "Gene Norden",
+    "Patrick Lappin",
+    "Robert Fribourg"
+  ],
+  "report": "/Users/Maestro_1/ls-house-app/scripts/data/auto_promote_write_20260804_105827.json",
+  "ok": true
+}

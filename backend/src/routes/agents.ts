@@ -4,23 +4,26 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
 import {
-  listAgents,
-  getAgentBySlug,
   updateAgent,
-  listAgentTasks,
   createAgentTask,
   updateAgentTask,
-  listAgentEvents,
   insertAgentEvents,
-  listApprovalQueue,
-  listAgentBriefs,
-  listAgentCosts,
-  listCronJobs,
   updateCronJob,
-  listAuditLogs,
-  listAgentMessages,
   insertAgentMessage,
 } from "../lib/erpnext/agents";
+import {
+  mcListAgents,
+  mcGetAgent,
+  mcListActivity,
+  mcListCosts,
+  mcListCronJobs,
+  mcListAudit,
+  mcListBriefs,
+  mcListTasksForAgent,
+  mcListApprovals,
+  mcListMessages,
+} from "../lib/mc-data";
+import { lshSelect, lshInsert, lshUpdate, supabaseConfig } from "../lib/supabase-lsh";
 
 async function callAnthropic(system: string, messages: { role: string; content: string }[]): Promise<string> {
   const key = process.env.ANTHROPIC_API_KEY;
@@ -66,9 +69,9 @@ const PRIORITY_WEIGHT: Record<string, number> = {
 function mapAgent(row: any) {
   return {
     ...row,
-    id: row.name,
-    name: row.agent_name ?? row.slug,
-    created_at: row.creation,
+    id: row.id || row.name || row.slug,
+    name: row.name || row.agent_name || row.slug,
+    created_at: row.created_at || row.creation,
   };
 }
 
@@ -77,17 +80,20 @@ agentsRouter.get("/", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
 
-  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-  const [agents, recentTasks, pendingApprovals] = await Promise.all([
-    listAgents(),
-    listAgentTasks({ since: since24h, limit: 500 }),
-    listApprovalQueue({ status: ["pending"] }),
+  const [agents, pendingApprovals, kanbanOpen] = await Promise.all([
+    mcListAgents(),
+    mcListApprovals(["pending"]),
+    supabaseConfig()
+      ? lshSelect<any>("kanban_snapshot", {
+          filters: ["status=neq.done", "status=neq.archived"],
+          limit: 500,
+        }).catch(() => [])
+      : Promise.resolve([]),
   ]);
 
   const taskCountBySlug: Record<string, number> = {};
-  for (const t of recentTasks) {
-    if (t.assigned_to) taskCountBySlug[t.assigned_to] = (taskCountBySlug[t.assigned_to] ?? 0) + 1;
+  for (const t of kanbanOpen as any[]) {
+    if (t.assignee) taskCountBySlug[t.assignee] = (taskCountBySlug[t.assignee] ?? 0) + 1;
   }
 
   const approvalCountBySlug: Record<string, number> = {};
@@ -109,7 +115,7 @@ agentsRouter.get("/approvals/pending", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
 
-  const data = await listApprovalQueue({ status: ["pending", "awaiting_second"], limit: 100 });
+  const data = await mcListApprovals(["pending", "awaiting_second"]);
 
   const filtered = data.filter((item: any) => {
     if (item.category === "financial" && user.role !== "super_admin") return false;
@@ -120,17 +126,28 @@ agentsRouter.get("/approvals/pending", async (c) => {
     const pa = PRIORITY_WEIGHT[a.priority ?? "low"] ?? 1;
     const pb = PRIORITY_WEIGHT[b.priority ?? "low"] ?? 1;
     if (pb !== pa) return pb - pa;
-    return new Date(b.creation ?? 0).getTime() - new Date(a.creation ?? 0).getTime();
+    return new Date(b.creation ?? b.created_at ?? 0).getTime() - new Date(a.creation ?? a.created_at ?? 0).getTime();
   });
 
   const byAgent: Record<string, any[]> = {};
   for (const item of filtered) {
     const slug = item.source_agent ?? "unknown";
     if (!byAgent[slug]) byAgent[slug] = [];
-    byAgent[slug].push({ ...item, id: item.name, created_at: item.creation });
+    byAgent[slug].push({ ...item, id: item.name || item.id, created_at: item.creation || item.created_at });
   }
 
-  return c.json({ data: { byAgent, total: filtered.length } });
+  return c.json({
+    data: {
+      byAgent,
+      total: filtered.length,
+      setup: filtered.length === 0
+        ? {
+            message:
+              "No pending approvals. Queue is empty — agents escalate via Maestro when dual-control is required. Not a wiring failure.",
+          }
+        : null,
+    },
+  });
 });
 
 agentsRouter.get("/briefs", async (c) => {
@@ -139,8 +156,8 @@ agentsRouter.get("/briefs", async (c) => {
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
 
   const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10) || 20, 100);
-  const data = await listAgentBriefs({ limit });
-  return c.json({ data: data.map((r: any) => ({ ...r, id: r.name, created_at: r.creation })) });
+  const data = await mcListBriefs(limit);
+  return c.json({ data });
 });
 
 agentsRouter.get("/costs", async (c) => {
@@ -150,14 +167,14 @@ agentsRouter.get("/costs", async (c) => {
 
   const days = parseInt(c.req.query("days") ?? "30", 10) || 30;
   const since = new Date(Date.now() - days * 86400000).toISOString().split("T")[0]!;
-  const data = await listAgentCosts({ since });
+  const data = await mcListCosts(since);
 
   const byAgent: Record<string, { totalCost: number; totalTokens: number; model: string; daily: any[] }> = {};
   for (const row of data) {
     const bucket = byAgent[row.agent_slug] ?? { totalCost: 0, totalTokens: 0, model: row.model, daily: [] as any[] };
     if (!byAgent[row.agent_slug]) byAgent[row.agent_slug] = bucket;
-    bucket.totalCost += Number(row.cost_usd);
-    bucket.totalTokens += row.input_tokens + row.output_tokens;
+    bucket.totalCost += Number(row.cost_usd || 0);
+    bucket.totalTokens += Number(row.input_tokens || 0) + Number(row.output_tokens || 0);
     bucket.daily.push(row);
   }
 
@@ -169,8 +186,8 @@ agentsRouter.get("/cron", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
 
-  const data = await listCronJobs();
-  return c.json({ data: data.map((r: any) => ({ ...r, id: r.name })) });
+  const data = await mcListCronJobs();
+  return c.json({ data });
 });
 
 agentsRouter.patch("/cron/:id", async (c) => {
@@ -183,6 +200,31 @@ agentsRouter.patch("/cron/:id", async (c) => {
   const update: Record<string, any> = {};
   if (typeof body.enabled === "boolean") update.enabled = body.enabled ? 1 : 0;
   if (Object.keys(update).length === 0) return c.json({ error: { message: "Nothing to update" } }, 400);
+
+  // Hermes jobs: queue enable toggle note (Studio applies). ERP ids still update ERP.
+  if (id.includes(":") && supabaseConfig()) {
+    try {
+      await lshInsert("kanban_commands", {
+        task_id: id,
+        action: body.enabled ? "cron_enable" : "cron_disable",
+        payload: { job: id, enabled: !!body.enabled },
+        requested_by: user.email,
+        status: "pending",
+      });
+      // optimistic health flip
+      const [profile, jobId] = id.split(":");
+      if (profile && jobId) {
+        await lshUpdate(
+          "cron_health",
+          [`profile=eq.${profile}`, `job_id=eq.${jobId}`],
+          { enabled: !!body.enabled }
+        );
+      }
+      return c.json({ data: { id, enabled: !!body.enabled, queued: true } });
+    } catch (e: any) {
+      return c.json({ error: { message: e.message } }, 500);
+    }
+  }
 
   try {
     const data = await updateCronJob(id, update);
@@ -199,8 +241,8 @@ agentsRouter.get("/audit", async (c) => {
 
   const limit = Math.min(parseInt(c.req.query("limit") ?? "100", 10), 500);
   const agentSlug = c.req.query("agent");
-  const data = await listAuditLogs({ agentSlug: agentSlug ?? undefined, limit });
-  return c.json({ data: data.map((r: any) => ({ ...r, id: r.name, created_at: r.creation })) });
+  const data = await mcListAudit({ agentSlug: agentSlug ?? undefined, limit });
+  return c.json({ data });
 });
 
 agentsRouter.get("/live", async (c) => {
@@ -208,21 +250,8 @@ agentsRouter.get("/live", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
 
-  const since = new Date(Date.now() - 2 * 3600000).toISOString();
-  const all = await listAgentEvents({ limit: 200 });
-  const data = all.filter((e: any) => e.creation >= since);
-  return c.json({
-    data: data.map((r: any) => ({
-      id: r.name,
-      agent_slug: r.agent_slug,
-      event_type: r.event_type,
-      title: r.title,
-      body: r.body,
-      severity: r.severity,
-      metadata: r.metadata,
-      created_at: r.creation,
-    })),
-  });
+  const data = await mcListActivity({ limit: 200, sinceHours: 48 });
+  return c.json({ data });
 });
 
 agentsRouter.get("/:slug", async (c) => {
@@ -231,25 +260,25 @@ agentsRouter.get("/:slug", async (c) => {
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
 
   const slug = c.req.param("slug");
-  const agent = await getAgentBySlug(slug);
+  const agent = await mcGetAgent(slug);
   if (!agent) return c.json({ error: { message: "Agent not found" } }, 404);
 
-  const [events, tasks, activeTasks, pendingApprovals] = await Promise.all([
-    listAgentEvents({ agentSlug: slug, limit: 20 }),
-    listAgentTasks({ assignedTo: slug, limit: 10 }),
-    listAgentTasks({ assignedTo: slug, status: ["in_progress", "pending"], limit: 50 }),
-    listApprovalQueue({ status: ["pending"] }),
+  const [events, tasks, pendingApprovals] = await Promise.all([
+    mcListActivity({ agentSlug: slug, limit: 40 }),
+    mcListTasksForAgent(slug),
+    mcListApprovals(["pending"]),
   ]);
 
-  const agentApprovals = pendingApprovals.filter((a: any) => a.source_agent === slug);
+  const agentApprovals = pendingApprovals.filter((a: any) => a.source_agent === slug || a.source_agent === "hermes" && slug === "maestro");
+  const activeTasks = tasks.filter((t: any) => !["done", "completed", "archived", "cancelled"].includes(String(t.status)));
 
   return c.json({
     data: {
       ...mapAgent(agent),
-      events: events.map((r: any) => ({ ...r, id: r.name, created_at: r.creation })),
-      tasks: tasks.map((r: any) => ({ ...r, id: r.name, created_at: r.creation })),
+      events: events.map((r: any) => ({ ...r, id: r.id || r.name, created_at: r.created_at || r.creation })),
+      tasks: tasks.map((r: any) => ({ ...r, id: r.id || r.name, created_at: r.created_at || r.creation })),
       active_task_count: activeTasks.length,
-      pending_approvals: agentApprovals.map((r: any) => ({ ...r, id: r.name, created_at: r.creation })),
+      pending_approvals: agentApprovals.map((r: any) => ({ ...r, id: r.name || r.id, created_at: r.creation || r.created_at })),
     },
   });
 });
@@ -261,13 +290,11 @@ agentsRouter.get("/:slug/events", async (c) => {
 
   const slug = c.req.param("slug");
   const limit = Math.min(parseInt(c.req.query("limit") ?? "50", 10) || 50, 200);
-  const offset = parseInt(c.req.query("offset") ?? "0", 10) || 0;
-  const all = await listAgentEvents({ agentSlug: slug, limit: offset + limit });
-  const page = all.slice(offset, offset + limit);
+  const page = await mcListActivity({ agentSlug: slug, limit });
 
   return c.json({
-    data: page.map((r: any) => ({ ...r, id: r.name, created_at: r.creation })),
-    total: all.length,
+    data: page,
+    total: page.length,
   });
 });
 
@@ -279,12 +306,13 @@ agentsRouter.get("/:slug/tasks", async (c) => {
   const slug = c.req.param("slug");
   const statusParam = c.req.query("status") ?? "all";
 
-  let status: string[] | undefined;
-  if (statusParam === "active") status = ["pending", "in_progress"];
-  else if (statusParam === "completed") status = ["completed"];
-
-  const data = await listAgentTasks({ assignedTo: slug, status, limit: 100 });
-  return c.json({ data: data.map((r: any) => ({ ...r, id: r.name, created_at: r.creation })) });
+  let data = await mcListTasksForAgent(slug);
+  if (statusParam === "active") {
+    data = data.filter((t) => ["pending", "in_progress", "todo", "ready", "running", "blocked"].includes(String(t.status)));
+  } else if (statusParam === "completed") {
+    data = data.filter((t) => ["completed", "done"].includes(String(t.status)));
+  }
+  return c.json({ data });
 });
 
 agentsRouter.post("/:slug/tasks", async (c) => {
@@ -384,10 +412,8 @@ agentsRouter.get("/:slug/messages", async (c) => {
 
   const slug = c.req.param("slug");
   const limit = Math.min(parseInt(c.req.query("limit") ?? "50", 10) || 50, 100);
-  const data = await listAgentMessages({ agentSlug: slug, limit });
-  return c.json({
-    data: data.map((m: any) => ({ id: m.name, role: m.role, content: m.content, created_at: m.creation })),
-  });
+  const data = await mcListMessages(slug, limit);
+  return c.json({ data });
 });
 
 agentsRouter.post("/:slug/messages", async (c) => {
@@ -405,7 +431,7 @@ agentsRouter.post("/:slug/messages", async (c) => {
 
   await insertAgentMessage({ agent_slug: slug, role: "user", content: userContent, user_id: user.id });
 
-  const history = await listAgentMessages({ agentSlug: slug, limit: 20 });
+  const history = await mcListMessages(slug, 20);
   const messages: { role: "user" | "assistant"; content: string }[] = history.map((m: any) => ({
     role: m.role as "user" | "assistant",
     content: m.content,
