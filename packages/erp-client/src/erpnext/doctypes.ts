@@ -9,6 +9,7 @@ export const DT = {
   CUSTOM_ORDER_GARMENT: "LSH Custom Order Garment",
   SMS_MESSAGE: "LSH SMS Message",
   APPROVAL_QUEUE: "LSH Approval Queue",
+  AGENT_APPROVAL: "LSH Agent Approval",
   APPROVAL_DECISION: "LSH Approval Decision",
   AGENT_BRIEF: "LSH Agent Brief",
   AGENT: "LSH Agent",

@@ -1119,6 +1119,62 @@ export function useMissionControlAlerts() {
   });
 }
 
+// SPEC 067 — dedicated Approvals (LSH Agent Approval + legacy queue)
+export function useMissionControlApprovals(params?: {
+  view?: "queue" | "history";
+  risk?: string | null;
+  agent?: string | null;
+  financialOnly?: boolean;
+  q?: string | null;
+  days?: number;
+  outcome?: string | null;
+}) {
+  const search = new URLSearchParams();
+  if (params?.view) search.set("view", params.view);
+  if (params?.risk) search.set("risk", params.risk);
+  if (params?.agent) search.set("agent", params.agent);
+  if (params?.financialOnly) search.set("financialOnly", "true");
+  if (params?.q) search.set("q", params.q);
+  if (params?.days != null) search.set("days", String(params.days));
+  if (params?.outcome) search.set("outcome", params.outcome);
+  const qs = search.toString() ? `?${search}` : "";
+
+  return useQuery({
+    queryKey: ["mission-control", "approvals", params],
+    queryFn: () => api.get<any>(`/api/mission-control/approvals${qs}`),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useMissionControlApprovalDecide() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      action,
+      notes,
+      payload,
+    }: {
+      id: string;
+      action: "approve" | "reject" | "edit_approve";
+      notes?: string;
+      payload?: unknown;
+    }) =>
+      api.post(`/api/mission-control/approvals/${encodeURIComponent(id)}/decide`, {
+        action,
+        notes,
+        payload,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["mission-control", "approvals"] });
+      qc.invalidateQueries({ queryKey: ["maestro", "approvals"] });
+      qc.invalidateQueries({ queryKey: ["agents", "approvals", "pending"] });
+      qc.invalidateQueries({ queryKey: ["mission-control", "alerts"] });
+    },
+  });
+}
+
 // SPEC 072 — Hermes Desktop / Dashboard mirror
 export function useHermesMirrorStatus() {
   return useQuery({

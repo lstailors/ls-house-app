@@ -1038,6 +1038,7 @@ function AuditPanel() {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function MissionControl() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab") as Tab | null;
   const validTabs: Tab[] = [
@@ -1055,12 +1056,24 @@ export default function MissionControl() {
     }
   }, [tabParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // SPEC 067: Approvals tab is a dedicated route
+  useEffect(() => {
+    if (tabParam === "approvals") {
+      const id = searchParams.get("id");
+      navigate(id ? `/approvals?id=${encodeURIComponent(id)}` : "/approvals", { replace: true });
+    }
+  }, [tabParam]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const selectTab = (id: Tab) => {
+    if (id === "approvals") {
+      navigate("/approvals");
+      return;
+    }
     setTab(id);
     const next = new URLSearchParams(searchParams);
     next.set("tab", id);
-    // Clear deep-link filters when manually switching away
-    if (id !== "approvals") next.delete("id");
+    // Clear deep-link filters when manually switching (approvals already returned above)
+    next.delete("id");
     if (id !== "crons") {
       next.delete("status");
       next.delete("job");

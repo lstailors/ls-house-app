@@ -131,7 +131,7 @@ function DailyEspresso() {
           <div className={`kpi-number text-4xl mb-1 ${approvals.total > 0 ? "text-signal-amber" : "text-cream"}`}>
             {approvals.total}
           </div>
-          <button onClick={() => navigate("/mission-control?tab=approvals")}
+          <button onClick={() => navigate("/approvals")}
             className="text-xs text-brass-light hover:text-brass transition-colors">
             Review →
           </button>

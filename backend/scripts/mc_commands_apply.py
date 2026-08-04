@@ -278,22 +278,41 @@ def apply_chat(cmd: dict, payload: dict) -> tuple[bool, str, dict | None]:
 
 
 def apply_approval(cmd: dict, payload: dict) -> tuple[bool, str]:
-    """Best-effort until SPEC 065 CONFLICT #2 (approval SoT) is resolved."""
+    """SPEC 067: LSH Agent Approval (ERP) first; fallback queue tables."""
     action = cmd["action"]
-    target = cmd["target_id"]
-    note = str(payload.get("note") or "")
+    target = str(cmd["target_id"] or "")
+    note = str(payload.get("notes") or payload.get("note") or "")
+    edited = payload.get("edited_payload")
+    source = str(payload.get("source") or "")
     if action not in ("approve", "reject", "edit"):
         return False, f"unsupported approval action {action}"
-    # Try lsh.approval_queue then public.approval_queue
-    status_map = {"approve": "approved", "reject": "rejected", "edit": "edited"}
+
+    # ERP LSH Agent Approval (APR-*)
+    if target.upper().startswith("APR-") or source == "agent_approval":
+        erp_status = {"approve": "Approved", "reject": "Denied", "edit": "Approved"}[action]
+        body: dict = {
+            "status": erp_status,
+            "decided_at": now_iso().replace("T", " ")[:19],
+            "decision_channel": "API",
+        }
+        if note:
+            body["decision_note"] = note[:140]
+        if edited is not None and action in ("approve", "edit"):
+            body["payload"] = edited if isinstance(edited, str) else json.dumps(edited)
+        ok, detail = erp_update_doc("LSH Agent Approval", target, body)
+        if ok:
+            return True, f"LSH Agent Approval → {erp_status}"
+        # fall through to queue tables with detail
+
+    # Queue tables (lowercase statuses)
+    status_map = {"approve": "approved", "reject": "denied", "edit": "approved"}
     new_status = status_map[action]
-    body = {"status": new_status, "decision_note": note or None, "decided_at": now_iso()}
-    # strip Nones
-    body = {k: v for k, v in body.items() if v is not None}
-    st, resp = sb(f"approval_queue?id=eq.{urllib.parse.quote(str(target))}", method="PATCH", body=body)
+    body_q = {"status": new_status}
+    if note:
+        body_q["decision_note"] = note
+    st, resp = sb(f"approval_queue?id=eq.{urllib.parse.quote(target)}", method="PATCH", body=body_q)
     if st < 300:
         return True, f"lsh.approval_queue → {new_status}"
-    # public schema
     url, key = supabase()
     headers = {
         "apikey": key,
@@ -304,8 +323,8 @@ def apply_approval(cmd: dict, payload: dict) -> tuple[bool, str]:
         "User-Agent": UA,
     }
     req = urllib.request.Request(
-        f"{url}/rest/v1/approval_queue?id=eq.{urllib.parse.quote(str(target))}",
-        data=json.dumps(body).encode(),
+        f"{url}/rest/v1/approval_queue?id=eq.{urllib.parse.quote(target)}",
+        data=json.dumps(body_q).encode(),
         method="PATCH",
         headers=headers,
     )
@@ -316,8 +335,45 @@ def apply_approval(cmd: dict, payload: dict) -> tuple[bool, str]:
         err = e.read().decode()[:200]
         return (
             False,
-            f"approval SoT unresolved (CONFLICT #2); lsh={st}/{resp}; public={e.code}/{err}",
+            f"approval apply failed; target={target}; public={e.code}/{err}",
         )
+
+
+def erp_creds() -> tuple[str, str, str]:
+    base = (
+        os.environ.get("ERPNEXT_BASE_URL")
+        or kc("erpnext-base-url")
+        or "http://localhost:8080"
+    ).rstrip("/")
+    key = os.environ.get("ERPNEXT_API_KEY") or kc("erpnext-api-key") or ""
+    secret = os.environ.get("ERPNEXT_API_SECRET") or kc("erpnext-api-secret") or ""
+    # common L&S keychain names
+    if not key:
+        key = kc("ls-mcp-api-key") or kc("erpnext-api-key", "ls-mcp") or ""
+    if not secret:
+        secret = kc("ls-mcp-api-secret") or kc("erpnext-api-secret", "ls-mcp") or ""
+    return base, key, secret
+
+
+def erp_update_doc(doctype: str, name: str, fields: dict) -> tuple[bool, str]:
+    base, key, secret = erp_creds()
+    if not base or not key or not secret:
+        return False, "erp creds missing"
+    url = f"{base}/api/resource/{urllib.parse.quote(doctype)}/{urllib.parse.quote(name)}"
+    headers = {
+        "Authorization": f"token {key}:{secret}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; L&S-MC-CommandsApply/1.0)",
+    }
+    req = urllib.request.Request(url, data=json.dumps(fields).encode(), method="PUT", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=45) as r:
+            return True, r.read().decode()[:200]
+    except urllib.error.HTTPError as e:
+        return False, e.read().decode()[:300]
+    except Exception as e:
+        return False, str(e)[:200]
 
 
 def apply_one(cmd: dict) -> tuple[bool, str, dict | None]:
