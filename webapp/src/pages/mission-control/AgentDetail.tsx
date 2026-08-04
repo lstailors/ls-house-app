@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Activity, Play, CheckCircle2, Send, Sparkles, Clock,
@@ -15,8 +15,11 @@ import {
   useDelegateTask,
   useUpdateAgent,
   useApproveAction,
-  useAgentMessages,
-  useSendAgentMessage,
+  useAgentCommand,
+  useSendAgentCommand,
+  useCancelAgentCommand,
+  type AgentCommandResult,
+  type AgentCommandStatus,
 } from "@/lib/queries";
 import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
@@ -241,36 +244,132 @@ const AGENT_PHOTO: Record<string, string> = {
   filo:    "/agents/filo.jpg",
 };
 
-// ─── Agent Chat ───────────────────────────────────────────────────────────────
+// ─── Agent Command (SPEC 069 — one-shot console, replaces AgentChat) ──────────
 
-function AgentChat({ slug, agentName }: { slug: string; agentName: string }) {
+function formatElapsed(ms: number | null | undefined): string {
+  if (ms == null || ms < 0) return "0:00";
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function looksLikeCode(text: string): boolean {
+  if (!text) return false;
+  if (text.length > 280) return true;
+  if (text.includes("\n")) return true;
+  if (/^[\s]*[{[\]]/.test(text)) return true;
+  if (/error:|traceback|at\s+\S+\(|\$\s/i.test(text)) return true;
+  return false;
+}
+
+function AgentCommand({ slug, agentName }: { slug: string; agentName: string }) {
   const [input, setInput] = useState("");
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const { data: messages = [], isLoading } = useAgentMessages(slug);
-  const send = useSendAgentMessage(slug);
+  const [commandId, setCommandId] = useState<string | null>(null);
+  const [echo, setEcho] = useState<string | null>(null);
+  const [localStatus, setLocalStatus] = useState<AgentCommandStatus | "idle">("idle");
+  const [tick, setTick] = useState(0);
+  const [lastResult, setLastResult] = useState<AgentCommandResult | null>(null);
+  const send = useSendAgentCommand(slug);
+  const cancel = useCancelAgentCommand(slug);
+  const { data: polled } = useAgentCommand(slug, commandId);
   const photo = AGENT_PHOTO[slug];
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  const cmd: AgentCommandResult | null = polled ?? lastResult;
+  const status: AgentCommandStatus | "idle" =
+    cmd?.status ?? (localStatus === "idle" ? "idle" : localStatus);
 
-  const handleSend = async () => {
-    const text = input.trim();
-    if (!text || send.isPending) return;
-    setInput("");
+  const inFlight = status === "queued" || status === "running";
+
+  // Live elapsed timer while running/queued
+  useEffect(() => {
+    if (!inFlight) return;
+    const id = window.setInterval(() => setTick((t) => t + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [inFlight]);
+
+  useEffect(() => {
+    if (polled) setLastResult(polled);
+    if (polled && (polled.status === "done" || polled.status === "error" || polled.status === "timeout" || polled.status === "cancelled")) {
+      setLocalStatus(polled.status);
+    }
+  }, [polled]);
+
+  const startedAt = cmd?.started_at || cmd?.created_at || null;
+  const elapsedMs = (() => {
+    if (cmd?.elapsed_ms != null && !inFlight) return cmd.elapsed_ms;
+    if (!startedAt) return inFlight ? tick * 1000 : null;
+    const start = Date.parse(startedAt);
+    if (Number.isNaN(start)) return null;
+    if (cmd?.finished_at && !inFlight) {
+      const end = Date.parse(cmd.finished_at);
+      return Number.isNaN(end) ? null : Math.max(0, end - start);
+    }
+    return Math.max(0, Date.now() - start);
+  })();
+
+  const handleSend = async (promptOverride?: string) => {
+    const text = (promptOverride ?? input).trim();
+    if (!text || inFlight || send.isPending) return;
+    setEcho(text);
+    setLocalStatus("queued");
+    setLastResult(null);
+    if (!promptOverride) setInput("");
     try {
-      await send.mutateAsync(text);
+      const data = await send.mutateAsync({
+        prompt: text,
+        idempotency_key: crypto.randomUUID(),
+      });
+      setCommandId(data.id);
+      setLastResult(data);
+      setLocalStatus(data.status);
     } catch (e: any) {
-      toast.error(e?.message ?? "Failed to send");
+      setLocalStatus("error");
+      setLastResult({
+        id: "local-error",
+        prompt: text,
+        status: "error",
+        session_id: null,
+        pid: null,
+        result: null,
+        result_format: null,
+        error: e?.message ?? "Command failed to complete.",
+        timeout_seconds: null,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        finished_at: new Date().toISOString(),
+        elapsed_ms: 0,
+      });
+      setCommandId(null);
+      toast.error(e?.message ?? "Failed to send command");
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!commandId || !inFlight) return;
+    try {
+      const data = await cancel.mutateAsync(commandId);
+      setLastResult(data);
+      setLocalStatus(data.status);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Cancel failed");
     }
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
   };
 
+  const inputLocked = inFlight || send.isPending;
+  const showEcho = echo != null && status !== "idle";
+  const sessionLabel = cmd?.session_id || "—";
+  const pidLabel = cmd?.pid != null ? String(cmd.pid) : "—";
+
   return (
-    <GlassCard variant="strong" className="p-5 rounded-2xl flex flex-col" style={{ minHeight: 420 }}>
+    <GlassCard variant="strong" className="p-5 rounded-2xl flex flex-col">
       <div className="flex items-center gap-3 mb-4 border-b border-brass/10 pb-4">
         {photo ? (
           <img src={photo} alt={agentName} className="h-8 w-8 rounded-full object-cover border border-brass/20" />
@@ -281,82 +380,177 @@ function AgentChat({ slug, agentName }: { slug: string; agentName: string }) {
         )}
         <div>
           <div className="ui-label">{agentName}</div>
-          <div className="text-[10px] text-cream-dim">Direct channel</div>
+          <div className="text-[10px] text-cream-dim">One-shot command</div>
         </div>
       </div>
 
-      {/* Message thread */}
-      <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-thin mb-4" style={{ maxHeight: 320 }}>
-        {isLoading ? (
-          <div className="text-cream-dim text-xs text-center py-6">Loading…</div>
-        ) : messages.length === 0 ? (
-          <div className="text-cream-dim text-xs text-center py-8 border border-dashed border-brass/15 rounded-xl">
-            No messages yet. Say something to {agentName}.
-          </div>
-        ) : (
-          messages.map((msg: any) => {
-            const isUser = msg.role === "user";
-            return (
-              <div key={msg.id} className={cn("flex gap-2", isUser ? "flex-row-reverse" : "flex-row")}>
-                {!isUser && (
-                  photo ? (
-                    <img src={photo} alt={agentName} className="h-7 w-7 rounded-full object-cover border border-brass/15 shrink-0 mt-0.5" />
-                  ) : (
-                    <div className="h-7 w-7 rounded-full bg-cream/10 border border-brass/15 flex items-center justify-center shrink-0 mt-0.5">
-                      <Bot className="h-3.5 w-3.5 text-brass-light" />
-                    </div>
-                  )
-                )}
-                <div className={cn(
-                  "max-w-[78%] px-3 py-2 rounded-2xl text-sm leading-snug",
-                  isUser
-                    ? "bg-brass/20 border border-brass/30 text-cream rounded-tr-sm"
-                    : "bg-cream/5 border border-brass/10 text-cream-muted rounded-tl-sm"
-                )}>
-                  {msg.content}
-                  <div className={cn("text-[9px] mt-1 opacity-50", isUser ? "text-right" : "text-left")}>
-                    {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-        {send.isPending && (
-          <div className="flex gap-2">
-            {photo ? (
-              <img src={photo} alt={agentName} className="h-7 w-7 rounded-full object-cover border border-brass/15 shrink-0" />
-            ) : (
-              <div className="h-7 w-7 rounded-full bg-cream/10 border border-brass/15 flex items-center justify-center shrink-0">
-                <Bot className="h-3.5 w-3.5 text-brass-light" />
-              </div>
-            )}
-            <div className="px-3 py-2 rounded-2xl rounded-tl-sm bg-cream/5 border border-brass/10">
-              <span className="flex gap-1 items-center h-4">
-                <span className="h-1.5 w-1.5 rounded-full bg-brass-light animate-bounce" style={{ animationDelay: "0ms" }} />
-                <span className="h-1.5 w-1.5 rounded-full bg-brass-light animate-bounce" style={{ animationDelay: "150ms" }} />
-                <span className="h-1.5 w-1.5 rounded-full bg-brass-light animate-bounce" style={{ animationDelay: "300ms" }} />
+      {showEcho && (
+        <div className="font-mono text-xs text-cream-muted mb-3">
+          <span className="text-brass-light mr-1.5">›</span>
+          {echo}
+        </div>
+      )}
+
+      {status !== "idle" && (
+        <div className="space-y-2 mb-3">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {status === "queued" && (
+              <span className="pill pill-amber">
+                <span className="h-1.5 w-1.5 rounded-full bg-signal-amber animate-pulse" />
+                Queued
               </span>
-            </div>
+            )}
+            {status === "running" && (
+              <span className="pill pill-emerald">
+                <span className={cn("h-1.5 w-1.5 rounded-full", AGENT_DOT_CLASS.active)} />
+                Running
+              </span>
+            )}
+            {status === "done" && (
+              <span className="pill pill-emerald">
+                Done{elapsedMs != null ? ` · ${Math.round(elapsedMs / 1000)}s` : ""}
+              </span>
+            )}
+            {status === "error" && (
+              <span className="pill pill-rose">Error</span>
+            )}
+            {status === "timeout" && (
+              <span className="pill pill-amber">Timed out</span>
+            )}
+            {status === "cancelled" && (
+              <span className="pill pill-muted">Cancelled</span>
+            )}
+
+            {(status === "running" || status === "queued") && (
+              <span className="font-mono text-[10px] text-brass-light ml-auto">
+                session {sessionLabel} · pid {pidLabel}
+              </span>
+            )}
           </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
+
+          {(status === "running" || status === "queued") && (
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] text-cream-dim">
+                {formatElapsed(elapsedMs)} elapsed
+              </span>
+              {status === "running" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCancel}
+                  disabled={cancel.isPending}
+                  className="ml-auto border-signal-rose/30 text-signal-rose hover:bg-signal-rose/10"
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Result slot */}
+      {status === "running" && (
+        <div className="mb-3 space-y-2">
+          <div className="glass-panel rounded h-3 animate-pulse" style={{ width: "90%" }} />
+          <div className="glass-panel rounded h-3 animate-pulse" style={{ width: "70%" }} />
+          <div className="glass-panel rounded h-3 animate-pulse" style={{ width: "40%" }} />
+        </div>
+      )}
+
+      {status === "done" && cmd?.result != null && (
+        <div className="mb-3">
+          {cmd.result_format === "text" || (!cmd.result_format && !looksLikeCode(cmd.result)) ? (
+            <p className="text-sm text-cream-muted leading-relaxed whitespace-pre-wrap">{cmd.result}</p>
+          ) : (
+            <pre className="glass-panel rounded-xl p-3.5 bg-forest-raised/40 font-mono text-xs text-cream-muted whitespace-pre-wrap max-h-80 overflow-y-auto">
+              {cmd.result}
+            </pre>
+          )}
+          <div className="flex justify-end mt-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-brass/30 text-brass-light hover:bg-brass/10"
+              onClick={() => handleSend(echo || cmd.prompt)}
+            >
+              Run again
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {status === "done" && (cmd?.result == null || cmd.result === "") && (
+        <div className="mb-3">
+          <p className="text-sm text-cream-muted">Command completed with no output.</p>
+          <div className="flex justify-end mt-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-brass/30 text-brass-light hover:bg-brass/10"
+              onClick={() => handleSend(echo || cmd?.prompt || "")}
+            >
+              Run again
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {status === "error" && (
+        <div className="mb-3">
+          <div className="rounded-xl p-3.5 border border-signal-rose/25 bg-signal-rose/5 text-signal-rose text-sm">
+            {cmd?.error || "Command failed to complete."}
+          </div>
+          <div className="flex justify-end mt-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-brass/30 text-brass-light hover:bg-brass/10"
+              onClick={() => handleSend(echo || cmd?.prompt || "")}
+            >
+              Retry
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {status === "timeout" && (
+        <div className="mb-3">
+          <div className="rounded-xl p-3.5 border border-signal-amber/25 bg-signal-amber/5 text-sm text-cream-muted leading-relaxed">
+            No response after {cmd?.timeout_seconds ?? Math.round((elapsedMs ?? 0) / 1000) || "—"}s.
+            It may still be running in the background — check Live Activity above, or retry.
+          </div>
+          <div className="flex justify-end mt-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-brass/30 text-brass-light hover:bg-brass/10"
+              onClick={() => handleSend(echo || cmd?.prompt || "")}
+            >
+              Retry
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Input */}
-      <div className="flex gap-2 items-end border-t border-brass/10 pt-3">
+      <div className={cn("flex gap-2 items-end border-t border-brass/10 pt-3", status !== "idle" && "mt-1")}>
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKey}
-          placeholder={`Message ${agentName}…`}
+          placeholder={`Send a command to ${agentName}…`}
           rows={1}
-          className="flex-1 text-base sm:text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40 resize-none"
+          disabled={inputLocked}
+          className={cn(
+            "flex-1 text-base sm:text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40 resize-none",
+            inputLocked && "opacity-50 pointer-events-none"
+          )}
           style={{ minHeight: 40, maxHeight: 120 }}
         />
         <Button
-          onClick={handleSend}
-          disabled={!input.trim() || send.isPending}
+          onClick={() => handleSend()}
+          disabled={!input.trim() || inputLocked}
           className="btn-brass h-10 w-10 p-0 shrink-0"
           aria-label="Send"
         >
@@ -850,8 +1044,8 @@ export default function AgentDetail() {
             </GlassCard>
           )}
 
-          {/* Chat */}
-          <AgentChat slug={slug!} agentName={agent.name} />
+          {/* One-shot command console (SPEC 069) */}
+          <AgentCommand slug={slug!} agentName={agent.name} />
         </div>
       </div>
     </div>

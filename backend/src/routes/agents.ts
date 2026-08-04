@@ -406,6 +406,234 @@ const AGENT_PERSONAS: Record<string, string> = {
   filo: `You are Filo — ingestion and intelligence agent at L&S Custom Tailors. You run locally on the Mac Studio. You watch every inbox, the Downloads folder, and all attachments the moment they land. You parse, classify, extract, and backfile data into ERPNext. You are fast, thorough, and confidence-tiered: you auto-commit low-risk data and queue financial fields for Melena. Answer questions about data ingestion, document processing, and intelligence pipelines.`,
 };
 
+// ─── One-shot Command console (SPEC 069) via lsh.mc_commands chat_run ────────
+
+type UiCommandStatus = "queued" | "running" | "done" | "error" | "timeout" | "cancelled";
+
+function parsePayload(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  if (typeof raw === "string") {
+    try {
+      const p = JSON.parse(raw);
+      if (p && typeof p === "object") return p as Record<string, unknown>;
+    } catch {
+      /* ignore */
+    }
+  }
+  return {};
+}
+
+function mapMcCommandToUi(row: any) {
+  const payload = parsePayload(row.payload);
+  const dbStatus = String(row.status || "pending");
+  const timedOut = payload.timed_out === true || /timed?\s*out/i.test(String(row.error || ""));
+  let status: UiCommandStatus = "queued";
+  if (dbStatus === "pending") status = "queued";
+  else if (dbStatus === "leased") status = "running";
+  else if (dbStatus === "applied") status = "done";
+  else if (dbStatus === "cancelled") status = "cancelled";
+  else if (dbStatus === "failed") status = timedOut ? "timeout" : "error";
+
+  const startedAt =
+    (typeof payload.started_at === "string" && payload.started_at) ||
+    row.leased_at ||
+    null;
+  const finishedAt =
+    (typeof payload.finished_at === "string" && payload.finished_at) ||
+    row.applied_at ||
+    null;
+
+  let elapsedMs: number | null = null;
+  const startMs = startedAt ? Date.parse(String(startedAt)) : NaN;
+  if (!Number.isNaN(startMs)) {
+    const endMs = finishedAt ? Date.parse(String(finishedAt)) : Date.now();
+    if (!Number.isNaN(endMs)) elapsedMs = Math.max(0, endMs - startMs);
+  }
+
+  const pidRaw = payload.pid;
+  const pid =
+    typeof pidRaw === "number"
+      ? pidRaw
+      : typeof pidRaw === "string" && /^\d+$/.test(pidRaw)
+        ? parseInt(pidRaw, 10)
+        : null;
+
+  const result =
+    typeof payload.result === "string"
+      ? payload.result
+      : status === "done" && !payload.result
+        ? null
+        : null;
+
+  const format =
+    payload.format === "text" || payload.format === "code"
+      ? payload.format
+      : result && (result.includes("\n") || result.length > 280)
+        ? "code"
+        : result
+          ? "text"
+          : null;
+
+  return {
+    id: row.id as string,
+    prompt: typeof payload.prompt === "string" ? payload.prompt : "",
+    status,
+    session_id: typeof payload.session_id === "string" ? payload.session_id : null,
+    pid,
+    result,
+    result_format: format as "text" | "code" | null,
+    error: row.error ?? (status === "error" ? "Command failed to complete." : null),
+    timeout_seconds:
+      typeof payload.timeout_seconds === "number" ? payload.timeout_seconds : null,
+    created_at: row.created_at ?? null,
+    started_at: startedAt,
+    finished_at: finishedAt,
+    elapsed_ms: elapsedMs,
+    requested_by: row.requested_by ?? null,
+  };
+}
+
+/** POST /api/agents/:slug/commands — enqueue one-shot chat_run */
+agentsRouter.post("/:slug/commands", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (user.role !== "super_admin") return c.json({ error: { message: "Forbidden" } }, 403);
+  if (!supabaseConfig()) return c.json({ error: { message: "Supabase not configured" } }, 503);
+
+  const slug = c.req.param("slug");
+  const body = await c.req.json().catch(() => null);
+  const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
+  if (!prompt) return c.json({ error: { message: "prompt is required" } }, 400);
+  if (prompt.length > 8000) return c.json({ error: { message: "prompt too long (max 8000)" } }, 400);
+
+  const idempotencyKey =
+    typeof body?.idempotency_key === "string" && body.idempotency_key.trim()
+      ? body.idempotency_key.trim().slice(0, 120)
+      : null;
+
+  // One in-flight command per agent
+  try {
+    const open = await lshSelect<any>("mc_commands", {
+      filters: [
+        `kind=eq.chat_run`,
+        `target_id=eq.${slug}`,
+        `status=in.(pending,leased)`,
+      ],
+      limit: 1,
+    });
+    if (open.length > 0) {
+      return c.json(
+        {
+          error: {
+            message: "A command is already in flight for this agent",
+            existing: mapMcCommandToUi(open[0]),
+          },
+        },
+        409
+      );
+    }
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    if (msg.includes("404") || msg.includes("does not exist") || msg.includes("42P01")) {
+      return c.json(
+        { error: { message: "mc_commands table missing — apply migration_009_mc_commands.sql" } },
+        503
+      );
+    }
+    // continue — insert may still work
+  }
+
+  try {
+    const row = {
+      kind: "chat_run",
+      action: "send",
+      target_id: slug,
+      payload: {
+        prompt,
+        timeout_seconds: typeof body?.timeout_seconds === "number" ? body.timeout_seconds : 180,
+      },
+      requested_by: user.email,
+      origin_surface: "mission_control",
+      status: "pending",
+      ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
+    };
+    const inserted = await lshInsert<any>(
+      "mc_commands",
+      row,
+      idempotencyKey ? { upsert: true, onConflict: "idempotency_key" } : {}
+    );
+    const cmd = Array.isArray(inserted) ? inserted[0] : inserted;
+    if (!cmd) return c.json({ error: { message: "Failed to enqueue command" } }, 500);
+    return c.json({ data: mapMcCommandToUi(cmd) }, 201);
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    if (msg.includes("404") || msg.includes("does not exist")) {
+      return c.json(
+        { error: { message: "mc_commands table missing — apply migration_009_mc_commands.sql" } },
+        503
+      );
+    }
+    return c.json({ error: { message: msg.slice(0, 300) } }, 500);
+  }
+});
+
+/** GET /api/agents/:slug/commands/:id — poll one-shot command status */
+agentsRouter.get("/:slug/commands/:id", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  if (!supabaseConfig()) return c.json({ error: { message: "Supabase not configured" } }, 503);
+
+  const slug = c.req.param("slug");
+  const id = c.req.param("id");
+  try {
+    const rows = await lshSelect<any>("mc_commands", {
+      filters: [`id=eq.${id}`, `kind=eq.chat_run`, `target_id=eq.${slug}`],
+      limit: 1,
+    });
+    const row = rows[0];
+    if (!row) return c.json({ error: { message: "Command not found" } }, 404);
+    return c.json({ data: mapMcCommandToUi(row) });
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    if (msg.includes("404") || msg.includes("does not exist")) {
+      return c.json({ error: { message: "mc_commands table missing" } }, 503);
+    }
+    return c.json({ error: { message: msg.slice(0, 300) } }, 500);
+  }
+});
+
+/** POST /api/agents/:slug/commands/:id/cancel — cancel pending/running chat_run */
+agentsRouter.post("/:slug/commands/:id/cancel", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (user.role !== "super_admin") return c.json({ error: { message: "Forbidden" } }, 403);
+  if (!supabaseConfig()) return c.json({ error: { message: "Supabase not configured" } }, 503);
+
+  const slug = c.req.param("slug");
+  const id = c.req.param("id");
+  try {
+    const rows = await lshSelect<any>("mc_commands", {
+      filters: [`id=eq.${id}`, `kind=eq.chat_run`, `target_id=eq.${slug}`],
+      limit: 1,
+    });
+    const row = rows[0];
+    if (!row) return c.json({ error: { message: "Command not found" } }, 404);
+    if (!["pending", "leased"].includes(String(row.status))) {
+      return c.json({ data: mapMcCommandToUi(row), message: "already terminal" });
+    }
+    await lshUpdate("mc_commands", [`id=eq.${id}`], {
+      status: "cancelled",
+      error: null,
+      applied_at: new Date().toISOString(),
+    });
+    const refreshed = await lshSelect<any>("mc_commands", { filters: [`id=eq.${id}`], limit: 1 });
+    return c.json({ data: mapMcCommandToUi(refreshed[0] ?? { ...row, status: "cancelled" }) });
+  } catch (e: any) {
+    return c.json({ error: { message: String(e?.message || e).slice(0, 300) } }, 500);
+  }
+});
+
 agentsRouter.get("/:slug/messages", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);

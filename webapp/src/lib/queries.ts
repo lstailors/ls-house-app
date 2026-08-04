@@ -681,6 +681,72 @@ export function useSendAgentMessage(slug: string | undefined) {
   });
 }
 
+// ─── One-shot Agent Command (SPEC 069) ───────────────────────────────────────
+
+export type AgentCommandStatus =
+  | "queued"
+  | "running"
+  | "done"
+  | "error"
+  | "timeout"
+  | "cancelled";
+
+export interface AgentCommandResult {
+  id: string;
+  prompt: string;
+  status: AgentCommandStatus;
+  session_id: string | null;
+  pid: number | null;
+  result: string | null;
+  result_format: "text" | "code" | null;
+  error: string | null;
+  timeout_seconds: number | null;
+  created_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  elapsed_ms: number | null;
+  requested_by?: string | null;
+}
+
+export function useAgentCommand(slug: string | undefined, commandId: string | null) {
+  return useQuery({
+    queryKey: ["agents", slug, "commands", commandId],
+    queryFn: () => api.get<AgentCommandResult>(`/api/agents/${slug}/commands/${commandId}`),
+    enabled: !!slug && !!commandId,
+    refetchInterval: (q) => {
+      const s = q.state.data?.status;
+      if (s === "queued" || s === "running") return 1500;
+      return false;
+    },
+  });
+}
+
+export function useSendAgentCommand(slug: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { prompt: string; idempotency_key?: string }) =>
+      api.post<AgentCommandResult>(`/api/agents/${slug}/commands`, input),
+    onSuccess: (data) => {
+      if (data?.id) {
+        qc.setQueryData(["agents", slug, "commands", data.id], data);
+      }
+    },
+  });
+}
+
+export function useCancelAgentCommand(slug: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (commandId: string) =>
+      api.post<AgentCommandResult>(`/api/agents/${slug}/commands/${commandId}/cancel`, {}),
+    onSuccess: (data) => {
+      if (data?.id) {
+        qc.setQueryData(["agents", slug, "commands", data.id], data);
+      }
+    },
+  });
+}
+
 // ─── Profile & Password ───────────────────────────────────────────────────────
 
 export function useUpdateMe() {
