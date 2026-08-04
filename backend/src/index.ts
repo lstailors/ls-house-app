@@ -26,6 +26,7 @@ import { altsRouter } from "./routes/alts";
 import { sofiaRouter } from "./routes/sofia";
 import { ravenRouter } from "./routes/raven";
 import { agentsRouter } from "./routes/agents";
+import { missionControlRouter } from "./routes/mission-control";
 import { filesRouter } from "./routes/files";
 import { squareRouter } from "./routes/square-terminal";
 import { printRouter } from "./routes/print";

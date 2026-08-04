@@ -1217,3 +1217,78 @@ export const ErpCustomerUpdate = z.object({
   customer_details: z.string().optional(),
 });
 export type ErpCustomerUpdate = z.infer<typeof ErpCustomerUpdate>;
+
+// ─── Mission Control (Board / Crons / History) scaffolds ───────────────────────
+// Response shapes for /api/mission-control/* (read-only v1, backed by lsh.* snapshots)
+// See mc-data-access.md for why snapshots (Vercel Edge cannot reach ~/.hermes)
+
+export const KanbanTask = z.object({
+  id: z.string(),
+  title: z.string(),
+  assignee: z.string().nullable(),
+  status: z.enum(["triage", "todo", "ready", "running", "blocked", "done", "archived"]),
+  priority: z.number().int().min(1).max(5).optional(),
+  age_days: z.number().optional(),
+  blocked_reason: z.string().nullable().optional(),
+  last_failure_error: z.string().nullable().optional(),
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
+});
+export type KanbanTask = z.infer<typeof KanbanTask>;
+
+export const CronHealth = z.object({
+  id: z.string(),
+  agent_slug: z.string(),
+  job_name: z.string(),
+  enabled: z.boolean(),
+  status: z.enum(["green", "amber", "red"]),
+  last_run_at: z.string().nullable(),
+  next_run_at: z.string().nullable(),
+  last_error: z.string().nullable(),
+  model_snapshot: z.string().nullable(),
+});
+export type CronHealth = z.infer<typeof CronHealth>;
+
+export const HistoryEntry = z.object({
+  id: z.string(),
+  ts: z.string(),
+  agent_slug: z.string().nullable(),
+  kind: z.enum(["brief", "event", "kanban_comment", "kanban_done", "telemetry", "approval"]),
+  title: z.string(),
+  snippet: z.string().nullable(),
+  doc_ref: z.string().nullable().optional(), // e.g. CUST-xxx or SO-xxx
+  metadata: z.record(z.any()).optional(),
+});
+export type HistoryEntry = z.infer<typeof HistoryEntry>;
+
+export const MissionControlBoardResponse = z.object({
+  tasks: z.array(KanbanTask),
+  total: z.number(),
+  filters: z.object({
+    assignee: z.string().nullable().optional(),
+    status: z.string().nullable().optional(),
+    blockedOnly: z.boolean().optional(),
+  }),
+});
+
+export const MissionControlCronsResponse = z.object({
+  crons: z.array(CronHealth),
+  summary: z.object({
+    green: z.number(),
+    amber: z.number(),
+    red: z.number(),
+    total: z.number(),
+  }),
+});
+
+export const MissionControlHistoryResponse = z.object({
+  entries: z.array(HistoryEntry),
+  hasMore: z.boolean(),
+  query: z.object({
+    agent: z.string().nullable().optional(),
+    from: z.string().nullable().optional(),
+    to: z.string().nullable().optional(),
+    q: z.string().nullable().optional(),
+    limit: z.number(),
+  }),
+});
