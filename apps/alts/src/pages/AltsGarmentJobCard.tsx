@@ -265,6 +265,8 @@ export default function GarmentJobCardPage() {
         onOpenChange={setCompleteOpen}
         isSubmitting={completeMutation.isPending}
         defaultMinutes={estMinutes > 0 ? estMinutes : null}
+        ticket={ticket}
+        garmentId={garmentId}
         onConfirm={(worker, actualMinutes) =>
           completeMutation.mutate({ worker, actual_minutes: actualMinutes })
         }

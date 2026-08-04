@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2 } from "lucide-react";
+import { Camera, CheckCircle2, ImagePlus, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +21,7 @@ import { Label } from "@ls/design/ui/label";
 import { Button } from "@ls/design/ui/button";
 import { cn } from "@ls/design/utils";
 import { api } from "@ls/api-client";
+import { getStoredToken } from "@ls/auth/authClient";
 import type { GarmentWorker } from "@ls/types";
 
 /** Floor chips — quick select, no start/stop timer. */
@@ -36,6 +37,9 @@ export const TIME_CHIPS: ReadonlyArray<{ minutes: number; label: string }> = [
 ];
 
 const LAST_WORKER_KEY = "alts.last-complete-worker";
+const API = import.meta.env.VITE_BACKEND_URL || "";
+
+type StagedPhoto = { id: string; file: File; url: string };
 
 interface Props {
   open: boolean;
@@ -44,6 +48,40 @@ interface Props {
   isSubmitting: boolean;
   /** Prefill from est. minutes when available */
   defaultMinutes?: number | null;
+  /** When set, show optional finished-piece photo capture (uploads before complete). */
+  ticket?: string | null;
+  garmentId?: string | null;
+  /** Override title for batch progress mode */
+  title?: string;
+  description?: string;
+}
+
+async function uploadFinishedPhoto(ticket: string, garment: string, file: File) {
+  const fd = new FormData();
+  const safeName = (file.name || "photo.jpg").replace(/[^\w.\-]+/g, "_");
+  fd.append("file", file);
+  fd.append("path", `alts/${ticket}/${garment}/done-${Date.now()}-${safeName}`);
+  fd.append("ticketName", ticket);
+  fd.append("garmentRef", garment);
+  const token = getStoredToken();
+  const res = await fetch(`${API}/api/intake-alterations/photos`, {
+    method: "POST",
+    credentials: "include",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: fd,
+  });
+  const json = (await res.json().catch(() => ({}))) as {
+    error?: { message?: string } | string;
+    data?: unknown;
+  };
+  if (!res.ok) {
+    const msg =
+      typeof json.error === "string"
+        ? json.error
+        : json.error?.message || `Photo upload failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return json.data;
 }
 
 export function CompleteGarmentDialog({
@@ -52,11 +90,22 @@ export function CompleteGarmentDialog({
   onConfirm,
   isSubmitting,
   defaultMinutes,
+  ticket,
+  garmentId,
+  title,
+  description,
 }: Props) {
   const [worker, setWorker] = useState<string>("");
   const [minutes, setMinutes] = useState<number | null>(null);
   const [custom, setCustom] = useState("");
   const [useCustom, setUseCustom] = useState(false);
+  const [photos, setPhotos] = useState<StagedPhoto[]>([]);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const libraryRef = useRef<HTMLInputElement>(null);
+
+  const photosEnabled = !!(ticket && garmentId);
 
   const { data: workers = [], isLoading } = useQuery({
     queryKey: ["garment-workers"],
@@ -64,7 +113,7 @@ export function CompleteGarmentDialog({
     enabled: open,
   });
 
-  // Prefill last worker + nearest chip when dialog opens
+  // Prefill last worker + nearest chip when dialog opens; clear staged photos
   useEffect(() => {
     if (!open) return;
     try {
@@ -75,18 +124,33 @@ export function CompleteGarmentDialog({
     }
     setUseCustom(false);
     setCustom("");
+    setPhotoError(null);
+    setUploadingPhotos(false);
+    setPhotos((prev) => {
+      for (const p of prev) URL.revokeObjectURL(p.url);
+      return [];
+    });
     if (defaultMinutes && defaultMinutes > 0) {
-      const nearest =
-        TIME_CHIPS.reduce((best, c) =>
-          Math.abs(c.minutes - defaultMinutes) < Math.abs(best.minutes - defaultMinutes)
-            ? c
-            : best,
-        ).minutes;
+      const nearest = TIME_CHIPS.reduce((best, c) =>
+        Math.abs(c.minutes - defaultMinutes) < Math.abs(best.minutes - defaultMinutes)
+          ? c
+          : best,
+      ).minutes;
       setMinutes(nearest);
     } else {
       setMinutes(null);
     }
   }, [open, defaultMinutes]);
+
+  // Revoke object URLs on unmount
+  useEffect(() => {
+    return () => {
+      setPhotos((prev) => {
+        for (const p of prev) URL.revokeObjectURL(p.url);
+        return prev;
+      });
+    };
+  }, []);
 
   const resolvedMinutes = (() => {
     if (useCustom) {
@@ -96,25 +160,70 @@ export function CompleteGarmentDialog({
     return minutes;
   })();
 
-  const canSubmit = !!worker && resolvedMinutes != null && resolvedMinutes > 0 && !isSubmitting;
+  const busy = isSubmitting || uploadingPhotos;
+  const canSubmit = !!worker && resolvedMinutes != null && resolvedMinutes > 0 && !busy;
 
-  const handleConfirm = () => {
+  const stageFiles = (list: FileList | null) => {
+    if (!list?.length) return;
+    const next: StagedPhoto[] = [];
+    for (const file of Array.from(list)) {
+      if (!file.type.startsWith("image/")) continue;
+      next.push({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        file,
+        url: URL.createObjectURL(file),
+      });
+    }
+    if (next.length) {
+      setPhotos((prev) => [...prev, ...next].slice(0, 8));
+      setPhotoError(null);
+    }
+  };
+
+  const removePhoto = (id: string) => {
+    setPhotos((prev) => {
+      const hit = prev.find((p) => p.id === id);
+      if (hit) URL.revokeObjectURL(hit.url);
+      return prev.filter((p) => p.id !== id);
+    });
+  };
+
+  const handleConfirm = async () => {
     if (!worker || resolvedMinutes == null || resolvedMinutes <= 0) return;
     try {
       localStorage.setItem(LAST_WORKER_KEY, worker);
     } catch {
       /* ignore */
     }
+
+    if (photosEnabled && photos.length > 0 && ticket && garmentId) {
+      setUploadingPhotos(true);
+      setPhotoError(null);
+      try {
+        for (const p of photos) {
+          await uploadFinishedPhoto(ticket, garmentId, p.file);
+        }
+      } catch (e) {
+        setUploadingPhotos(false);
+        setPhotoError(e instanceof Error ? e.message : "Photo upload failed");
+        return;
+      }
+      setUploadingPhotos(false);
+    }
+
     onConfirm(worker, resolvedMinutes);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-forest-raised/95 backdrop-blur-2xl border-brass/25 text-cream max-w-md">
+      <DialogContent className="bg-forest-raised/95 backdrop-blur-2xl border-brass/25 text-cream max-w-md max-h-[min(92dvh,720px)] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="display-heading text-2xl">Mark complete</DialogTitle>
+          <DialogTitle className="display-heading text-2xl">
+            {title ?? "Mark complete"}
+          </DialogTitle>
           <DialogDescription className="text-cream-muted">
-            Who finished it, and about how long? Chips only — no start/stop timer.
+            {description ??
+              "Who finished it, and about how long? Chips only — no start/stop timer."}
           </DialogDescription>
         </DialogHeader>
 
@@ -196,24 +305,103 @@ export function CompleteGarmentDialog({
               <p className="text-[11px] text-signal-amber">Pick a time chip to continue</p>
             )}
           </div>
+
+          {photosEnabled ? (
+            <div className="space-y-2">
+              <Label className="ui-label">Finished photos · optional</Label>
+              <p className="text-[11px] text-cream-dim">
+                Snap the finished piece before you log it. Saved on the ticket under {garmentId}.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={busy || photos.length >= 8}
+                  onClick={() => cameraRef.current?.click()}
+                  className="min-h-[48px] rounded-xl border border-brass/40 bg-brass/15 text-cream text-xs font-bold uppercase tracking-wide inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  <Camera className="h-4 w-4" />
+                  Take photo
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || photos.length >= 8}
+                  onClick={() => libraryRef.current?.click()}
+                  className="min-h-[48px] rounded-xl border border-brass/25 bg-forest-deep/40 text-cream-muted text-xs font-bold uppercase tracking-wide inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  Library
+                </button>
+              </div>
+              <input
+                ref={cameraRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => {
+                  stageFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+              <input
+                ref={libraryRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  stageFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+              {photos.length > 0 ? (
+                <div className="grid grid-cols-4 gap-2">
+                  {photos.map((p) => (
+                    <div
+                      key={p.id}
+                      className="relative aspect-square rounded-lg overflow-hidden border border-brass/25 bg-black/40"
+                    >
+                      <img src={p.url} alt="" className="h-full w-full object-cover" />
+                      <button
+                        type="button"
+                        aria-label="Remove photo"
+                        disabled={busy}
+                        onClick={() => removePhoto(p.id)}
+                        className="absolute top-0.5 right-0.5 h-6 w-6 rounded-full bg-forest-deep/90 border border-brass/30 text-cream grid place-items-center"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-cream-dim/80">No photos — complete still works without them.</p>
+              )}
+              {photoError ? (
+                <p className="text-[11px] text-signal-rose">{photoError}</p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <DialogFooter>
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            disabled={isSubmitting}
+            disabled={busy}
             className="min-h-[44px] border-brass/25 text-cream-muted hover:bg-brass/10"
           >
             Cancel
           </Button>
-          <Button
-            onClick={handleConfirm}
-            disabled={!canSubmit}
-            className="btn-brass min-h-[44px] gap-1.5"
-          >
+          <Button onClick={() => void handleConfirm()} disabled={!canSubmit} className="btn-brass min-h-[44px] gap-1.5">
             <CheckCircle2 className="h-4 w-4" />
-            {isSubmitting ? "Saving…" : "Confirm complete"}
+            {uploadingPhotos
+              ? `Uploading photo${photos.length === 1 ? "" : "s"}…`
+              : isSubmitting
+                ? "Saving…"
+                : photos.length
+                  ? `Confirm · ${photos.length} photo${photos.length === 1 ? "" : "s"}`
+                  : "Confirm complete"}
           </Button>
         </DialogFooter>
       </DialogContent>

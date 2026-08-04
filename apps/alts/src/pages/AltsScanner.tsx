@@ -937,6 +937,10 @@ export default function Scanner() {
           onConfirm={(worker, mins) => void confirmProgress(worker, mins)}
           isSubmitting={progressSaving}
           defaultMinutes={progressEst}
+          ticket={progressTarget?.ticket}
+          garmentId={progressTarget?.garment}
+          title="Mark progress"
+          description="Who finished it, how long, optional finished photos — then next hang tag."
         />
       ) : null}
     </div>
