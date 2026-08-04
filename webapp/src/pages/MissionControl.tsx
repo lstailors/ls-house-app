@@ -16,6 +16,7 @@ import {
   useAgentCosts, useCronJobs, useToggleCronJob,
   useAuditLog, useLiveFeed, useSofiaConversations,
   useAgentBriefs,
+  useHermesMirrorAnalytics, useHermesMirrorModels,
 } from "@/lib/queries";
 import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
@@ -670,6 +671,14 @@ function CostsPanel({ agents }: { agents: any[] }) {
   const [days, setDays] = useState(7);
   const { data: costs, isLoading } = useAgentCosts(days);
   const costsData = (costs as any)?.data ?? costs ?? {};
+  const hermesUsageQ = useHermesMirrorAnalytics(days, true);
+  const hermesModelsQ = useHermesMirrorModels(days, true);
+  const hermesUsage = (hermesUsageQ.data as any)?.data?.usage ?? (hermesUsageQ.data as any)?.data ?? {};
+  const hermesTotals = hermesUsage.totals || (hermesModelsQ.data as any)?.data?.totals || {};
+  const hermesErr =
+    (hermesUsageQ.data as any)?.data?.error ||
+    (hermesModelsQ.data as any)?.data?.error ||
+    null;
 
   const totalCost = Object.values(costsData).reduce((s: number, a: any) => s + (a.totalCost ?? 0), 0);
   const today = new Date().toISOString().split("T")[0];
@@ -678,8 +687,58 @@ function CostsPanel({ agents }: { agents: any[] }) {
     return s + (a.daily ?? []).filter((d: any) => d.day === today).reduce((ss: number, d: any) => ss + Number(d.cost_usd ?? 0), 0);
   }, 0);
 
+  const fmtTok = (n: number | null | undefined) => {
+    if (n == null || Number.isNaN(Number(n))) return "—";
+    const v = Number(n);
+    if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+    if (v >= 1_000) return `${(v / 1_000).toFixed(1)}k`;
+    return String(Math.round(v));
+  };
+
   return (
     <div className="space-y-5">
+      {/* Hermes Studio usage (SPEC 072) — real token feed */}
+      <div className="glass-panel rounded-2xl p-4 border border-brass/15">
+        <div className="flex items-center gap-2 mb-3">
+          <Monitor className="h-3.5 w-3.5 text-brass-light" />
+          <span className="ui-label text-[10px] tracking-widest">HERMES STUDIO · TOKEN FEED</span>
+          <button
+            type="button"
+            className="ml-auto text-[10px] text-brass-light hover:underline"
+            onClick={() => {
+              const sp = new URLSearchParams(window.location.search);
+              sp.set("tab", "hermes");
+              window.location.search = sp.toString();
+            }}
+          >
+            Open Hermes tab →
+          </button>
+        </div>
+        {hermesErr ? (
+          <p className="text-xs text-signal-amber">{String(hermesErr)}</p>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {[
+              { label: `Input · ${days}d`, value: fmtTok(hermesTotals.input_tokens) },
+              { label: "Output", value: fmtTok(hermesTotals.output_tokens) },
+              { label: "Cache read", value: fmtTok(hermesTotals.cache_read_tokens) },
+              {
+                label: "Est. cost",
+                value:
+                  hermesTotals.estimated_cost != null || hermesTotals.actual_cost != null
+                    ? `$${Number(hermesTotals.estimated_cost ?? hermesTotals.actual_cost ?? 0).toFixed(2)}`
+                    : "—",
+              },
+            ].map((k) => (
+              <div key={k.label} className="rounded-xl border border-brass/10 px-3 py-2">
+                <div className="ui-label text-[9px] mb-0.5">{k.label}</div>
+                <div className="font-mono text-sm text-cream">{k.value}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* KPI bar */}
       <div className="grid grid-cols-3 gap-3">
         {[
