@@ -1,5 +1,5 @@
 /**
- * SPEC 072 Phase 2 — fleet chat / admin / artifacts for Hermes tab.
+ * SPEC 072 Phases 1–3 — Hermes Desktop mirror into Mission Control.
  * One-shot command reuses SPEC 069 queue (mc_commands), not a second chat SoT.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -24,6 +24,8 @@ import {
   Package,
   Shield,
   Network,
+  Brain,
+  DollarSign,
 } from "lucide-react";
 import { Button } from "@ls/design/ui/button";
 import { cn } from "@ls/design/utils";
@@ -36,11 +38,16 @@ import {
   useHermesMirrorCron,
   useHermesMirrorMcp,
   useHermesMirrorArtifacts,
+  useHermesMirrorMemory,
+  useHermesMirrorSessionStats,
+  useHermesMirrorAnalytics,
+  useHermesMirrorModels,
   useSendAgentCommand,
   useCancelAgentCommand,
   useAgentCommand,
   type AgentCommandRun,
 } from "@/lib/queries";
+import { SessionsPane, MemoryPane, UsagePane } from "@/pages/mission-control/HermesPhase3Panes";
 
 type Sub =
   | "overview"
@@ -50,6 +57,8 @@ type Sub =
   | "cron"
   | "admin"
   | "artifacts"
+  | "memory"
+  | "usage"
   | "map";
 
 const MODE_STYLE: Record<string, string> = {
@@ -68,6 +77,11 @@ export function HermesMirrorPanel() {
   const cronQ = useHermesMirrorCron(sub === "cron");
   const mcpQ = useHermesMirrorMcp(sub === "admin");
   const artQ = useHermesMirrorArtifacts(sub === "artifacts");
+  const memQ = useHermesMirrorMemory(sub === "memory");
+  const statsQ = useHermesMirrorSessionStats(sub === "sessions" || sub === "usage");
+  const usageQ = useHermesMirrorAnalytics(14, sub === "usage");
+  const modelsQ = useHermesMirrorModels(14, sub === "usage");
+  const [openSessionId, setOpenSessionId] = useState<string | null>(null);
   const agentsQ = useAgents();
 
   const payload = (statusQ.data as any)?.data ?? statusQ.data ?? {};
@@ -98,7 +112,7 @@ export function HermesMirrorPanel() {
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <Monitor className="h-4 w-4 text-brass-light" />
-            <p className="ui-label text-[10px] text-brass-light">HERMES MIRROR · SPEC 072 · PHASE 2</p>
+            <p className="ui-label text-[10px] text-brass-light">HERMES MIRROR · SPEC 072 · PHASE 3</p>
             <span
               className={cn(
                 "text-[9px] px-1.5 py-0.5 rounded-full border",
@@ -124,8 +138,8 @@ export function HermesMirrorPanel() {
             Desktop mapped into Mission Control
           </h2>
           <p className="text-xs text-cream-muted mt-1 max-w-2xl">
-            Phase 2: fleet one-shot chat, admin hub (MCP/channels), artifacts gallery. Streaming TUI
-            chat still opens in Console. Sessions/skills/cron lists need dashboard password once.
+            Phase 3: memory hub, session transcripts, Hermes usage/models. Live TUI tool-cards still
+            open in Console Chat (WS/PTY stays on Studio).
           </p>
           {payload.base_url && (
             <p className="text-[10px] font-mono text-cream-dim mt-2">{payload.base_url}</p>
@@ -195,6 +209,8 @@ export function HermesMirrorPanel() {
             ["overview", "Overview", Layers],
             ["chat", "Chat", MessageSquare],
             ["sessions", "Sessions", Radio],
+            ["memory", "Memory", Brain],
+            ["usage", "Usage", DollarSign],
             ["skills", "Skills", Sparkles],
             ["cron", "Cron", Calendar],
             ["admin", "Admin", Settings],
@@ -205,7 +221,10 @@ export function HermesMirrorPanel() {
           <button
             key={id}
             type="button"
-            onClick={() => setSub(id)}
+            onClick={() => {
+              setSub(id);
+              if (id !== "sessions") setOpenSessionId(null);
+            }}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors",
               sub === id ? "bg-brass/15 text-brass-light" : "text-cream-dim hover:text-cream",
@@ -231,6 +250,7 @@ export function HermesMirrorPanel() {
                 ["Channels", links.channels, Link2],
                 ["Config", links.config, Settings],
                 ["Analytics", links.analytics, BarChart3],
+                ["System/Memory", links.memory || links.system, Brain],
                 ["Logs", links.logs, Terminal],
                 ["Profiles", links.profiles, Layers],
               ].map(([label, href, Icon]) => (
@@ -287,20 +307,24 @@ export function HermesMirrorPanel() {
       )}
 
       {sub === "sessions" && (
-        <MirrorList
-          loading={sessionsQ.isLoading}
-          error={(sessionsQ.data as any)?.data?.error || (sessionsQ.error as Error)?.message}
-          empty="No sessions (or auth not configured)."
-          items={((sessionsQ.data as any)?.data?.sessions ?? []).map((s: any, i: number) => ({
-            key: s.id || s.session_id || String(i),
-            title: s.title || s.id || s.session_id || "session",
-            meta: [s.model, s.message_count != null ? `${s.message_count} msgs` : null, s.updated_at || s.last_active]
-              .filter(Boolean)
-              .join(" · "),
-            body: s.preview || s.last_message || "",
-          }))}
-          onOpen={() => open(links.sessions)}
-          openLabel="Open Sessions in Console"
+        <SessionsPane
+          sessionsQ={sessionsQ}
+          statsQ={statsQ}
+          openSessionId={openSessionId}
+          setOpenSessionId={setOpenSessionId}
+          links={links}
+          onOpen={open}
+        />
+      )}
+
+      {sub === "memory" && <MemoryPane memQ={memQ} onOpen={open} />}
+
+      {sub === "usage" && (
+        <UsagePane
+          usageQ={usageQ}
+          modelsQ={modelsQ}
+          statsQ={statsQ}
+          onOpen={() => open(links.analytics)}
         />
       )}
 

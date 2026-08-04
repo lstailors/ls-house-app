@@ -850,4 +850,129 @@ missionControlRouter.get("/hermes/artifacts", async (c) => {
   });
 });
 
+// SPEC 072 Phase 3 — memory hub, session transcript, session stats
+
+missionControlRouter.get("/hermes/memory", async (c) => {
+  const user = getAuthedUser(c);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  const r = await hermesFetch("/api/memory", {}, { auth: true });
+  if (r.error || r.status >= 400) {
+    return c.json({
+      data: {
+        active: null,
+        providers: [],
+        builtin_files: {},
+        auth_configured: hermesCredsConfigured(),
+        error: r.error || r.json?.detail || r.json?.error || `status ${r.status}`,
+        links: hermesDeepLinks(),
+      },
+    });
+  }
+  return c.json({
+    data: {
+      ...(r.json || {}),
+      auth_configured: true,
+      links: hermesDeepLinks(),
+      note: "Graph providers configure in Console → System. Built-in MEMORY.md/USER.md sizes shown.",
+    },
+  });
+});
+
+missionControlRouter.get("/hermes/sessions/stats", async (c) => {
+  const user = getAuthedUser(c);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  const profile = c.req.query("profile");
+  const qs = profile ? `?profile=${encodeURIComponent(profile)}` : "";
+  const r = await hermesFetch(`/api/sessions/stats${qs}`, {}, { auth: true });
+  if (r.error || r.status >= 400) {
+    return c.json({
+      data: {
+        stats: null,
+        auth_configured: hermesCredsConfigured(),
+        error: r.error || r.json?.detail || r.json?.error || `status ${r.status}`,
+      },
+    });
+  }
+  return c.json({ data: { stats: r.json, auth_configured: true } });
+});
+
+missionControlRouter.get("/hermes/sessions/:id", async (c) => {
+  const user = getAuthedUser(c);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  const id = encodeURIComponent(c.req.param("id"));
+  const r = await hermesFetch(`/api/sessions/${id}`, {}, { auth: true });
+  if (r.error || r.status >= 400) {
+    return c.json(
+      {
+        data: {
+          session: null,
+          error: r.error || r.json?.detail || r.json?.error || `status ${r.status}`,
+          links: hermesDeepLinks(),
+        },
+      },
+      r.status === 404 ? 404 : 200,
+    );
+  }
+  return c.json({ data: { session: r.json, links: hermesDeepLinks() } });
+});
+
+missionControlRouter.get("/hermes/sessions/:id/messages", async (c) => {
+  const user = getAuthedUser(c);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  const id = encodeURIComponent(c.req.param("id"));
+  const limit = c.req.query("limit") || "80";
+  const r = await hermesFetch(
+    `/api/sessions/${id}/messages?limit=${encodeURIComponent(limit)}`,
+    {},
+    { auth: true },
+  );
+  if (r.error || r.status >= 400) {
+    return c.json({
+      data: {
+        messages: [],
+        error: r.error || r.json?.detail || r.json?.error || `status ${r.status}`,
+        links: hermesDeepLinks(),
+      },
+    });
+  }
+  const messages = Array.isArray(r.json)
+    ? r.json
+    : r.json?.messages ?? r.json?.data ?? [];
+  return c.json({
+    data: {
+      session_id: c.req.param("id"),
+      messages,
+      links: hermesDeepLinks(),
+    },
+  });
+});
+
+missionControlRouter.get("/hermes/analytics/models", async (c) => {
+  const user = getAuthedUser(c);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  const days = c.req.query("days") || "14";
+  const r = await hermesFetch(
+    `/api/analytics/models?days=${encodeURIComponent(days)}`,
+    {},
+    { auth: true },
+  );
+  if (r.error || r.status >= 400) {
+    return c.json({
+      data: {
+        models: [],
+        totals: null,
+        auth_configured: hermesCredsConfigured(),
+        error: r.error || r.json?.detail || r.json?.error || `status ${r.status}`,
+      },
+    });
+  }
+  return c.json({
+    data: {
+      ...(r.json || {}),
+      auth_configured: true,
+      links: hermesDeepLinks(),
+    },
+  });
+});
+
 export default missionControlRouter;
