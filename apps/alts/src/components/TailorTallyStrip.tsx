@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
@@ -66,19 +67,27 @@ export function TailorTallyStrip({ className }: { className?: string }) {
             Time from complete chips · {data?.date ?? "…"}
           </div>
         </div>
-        {data && !empty ? (
-          <div className="flex gap-3 text-xs text-cream-muted flex-wrap">
-            <span>
-              <strong className="text-cream tabular-nums">{data.totals.pieces}</strong> pcs
-            </span>
-            <span>
-              <strong className="text-cream tabular-nums">{fmtMins(data.totals.minutes)}</strong>
-            </span>
-            <span>
-              <strong className="text-cream tabular-nums">{money(data.totals.revenue)}</strong> work $
-            </span>
-          </div>
-        ) : null}
+        <div className="flex items-center gap-3 flex-wrap">
+          {data && !empty ? (
+            <div className="flex gap-3 text-xs text-cream-muted flex-wrap">
+              <span>
+                <strong className="text-cream tabular-nums">{data.totals.pieces}</strong> pcs
+              </span>
+              <span>
+                <strong className="text-cream tabular-nums">{fmtMins(data.totals.minutes)}</strong>
+              </span>
+              <span>
+                <strong className="text-cream tabular-nums">{money(data.totals.revenue)}</strong> work $
+              </span>
+            </div>
+          ) : null}
+          <Link
+            to="/floor-performance"
+            className="text-xs font-semibold text-brass hover:text-brass-light whitespace-nowrap min-h-[44px] inline-flex items-center"
+          >
+            See all →
+          </Link>
+        </div>
       </div>
 
       {q.isLoading ? (

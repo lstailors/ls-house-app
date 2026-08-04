@@ -66,32 +66,179 @@ async function erpRunMethodMsgOrData(
   return json.message ?? json.data ?? null;
 }
 
+const TALLY_TZ = "America/New_York";
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+/** YYYY-MM-DD in America/New_York for "now". */
+function nyToday(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: TALLY_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+  return `${get("year")}-${pad2(get("month"))}-${pad2(get("day"))}`;
+}
+
+/** Calendar day → Frappe datetime bounds (store-local wall clock, no TZ offset math). */
 function dayBounds(dateStr?: string | null): { start: string; end: string; date: string } {
-  // America/New_York calendar day for floor reporting
-  const tz = "America/New_York";
-  const now = new Date();
-  let y: number, m: number, d: number;
-  if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    [y, m, d] = dateStr.split("-").map(Number) as [number, number, number];
-  } else {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(now);
-    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
-    y = get("year");
-    m = get("month");
-    d = get("day");
-  }
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const date = `${y}-${pad(m)}-${pad(d)}`;
+  const date = dateStr && ISO_DATE.test(dateStr) ? dateStr : nyToday();
   return {
     date,
     start: `${date} 00:00:00`,
     end: `${date} 23:59:59`,
   };
+}
+
+/** Inclusive date range for week rollup. Cap 31 days. */
+function rangeBounds(
+  startQ?: string | null,
+  endQ?: string | null,
+  dateQ?: string | null,
+): { startDate: string; endDate: string; start: string; end: string; singleDay: boolean } {
+  if (startQ && endQ && ISO_DATE.test(startQ) && ISO_DATE.test(endQ)) {
+    let a = startQ;
+    let b = endQ;
+    if (a > b) [a, b] = [b, a];
+    // Cap span at 31 calendar days via UTC date math on the YYYY-MM-DD labels
+    const aMs = Date.parse(`${a}T12:00:00Z`);
+    const bMs = Date.parse(`${b}T12:00:00Z`);
+    const days = Math.floor((bMs - aMs) / 86_400_000) + 1;
+    if (days > 31) {
+      const capped = new Date(aMs + 30 * 86_400_000);
+      b = `${capped.getUTCFullYear()}-${pad2(capped.getUTCMonth() + 1)}-${pad2(capped.getUTCDate())}`;
+    }
+    return {
+      startDate: a,
+      endDate: b,
+      start: `${a} 00:00:00`,
+      end: `${b} 23:59:59`,
+      singleDay: a === b,
+    };
+  }
+  const one = dayBounds(dateQ);
+  return {
+    startDate: one.date,
+    endDate: one.date,
+    start: one.start,
+    end: one.end,
+    singleDay: true,
+  };
+}
+
+function eachDateInclusive(startDate: string, endDate: string): string[] {
+  const out: string[] = [];
+  let ms = Date.parse(`${startDate}T12:00:00Z`);
+  const endMs = Date.parse(`${endDate}T12:00:00Z`);
+  while (ms <= endMs) {
+    const d = new Date(ms);
+    out.push(`${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`);
+    ms += 86_400_000;
+  }
+  return out;
+}
+
+function aggregateRows(
+  rows: GarmentRow[],
+  nameById: Map<string, string>,
+): {
+  totals: { pieces: number; minutes: number; hours: number; revenue: number; workers: number };
+  tailors: Array<{
+    workerId: string;
+    workerName: string;
+    pieces: number;
+    minutes: number;
+    hours: number;
+    revenue: number;
+    tickets: number;
+    workLocation: null;
+  }>;
+} {
+  type Bucket = {
+    workerId: string;
+    workerName: string;
+    pieces: number;
+    minutes: number;
+    revenue: number;
+    tickets: Set<string>;
+  };
+  const byWorker = new Map<string, Bucket>();
+
+  for (const r of rows) {
+    const wid = (r.completed_by || "").trim() || "unassigned";
+    let b = byWorker.get(wid);
+    if (!b) {
+      b = {
+        workerId: wid,
+        workerName: wid === "unassigned" ? "Unassigned" : nameById.get(wid) || wid,
+        pieces: 0,
+        minutes: 0,
+        revenue: 0,
+        tickets: new Set(),
+      };
+      byWorker.set(wid, b);
+    }
+    b.pieces += 1;
+    b.minutes += Number(r.actual_minutes) || 0;
+    b.revenue += Number(r.garment_total) || 0;
+    if (r.parent) b.tickets.add(r.parent);
+  }
+
+  const tailors = Array.from(byWorker.values())
+    .map((b) => ({
+      workerId: b.workerId,
+      workerName: b.workerName,
+      pieces: b.pieces,
+      minutes: b.minutes,
+      hours: Math.round((b.minutes / 60) * 10) / 10,
+      revenue: Math.round(b.revenue * 100) / 100,
+      tickets: b.tickets.size,
+      // Real Shop/Home signal does not exist on completion yet — never invent.
+      workLocation: null as null,
+    }))
+    .sort((a, b) => b.minutes - a.minutes || b.pieces - a.pieces);
+
+  const totals = tailors.reduce(
+    (acc, t) => {
+      acc.pieces += t.pieces;
+      acc.minutes += t.minutes;
+      acc.revenue += t.revenue;
+      return acc;
+    },
+    { pieces: 0, minutes: 0, revenue: 0 },
+  );
+
+  return {
+    totals: {
+      pieces: totals.pieces,
+      minutes: totals.minutes,
+      hours: Math.round((totals.minutes / 60) * 10) / 10,
+      revenue: Math.round(totals.revenue * 100) / 100,
+      workers: tailors.length,
+    },
+    tailors,
+  };
+}
+
+function mapGarments(rows: GarmentRow[], nameById: Map<string, string>) {
+  return rows.map((r) => ({
+    ticket: r.parent,
+    garmentId: r.garment_id,
+    type: r.garment_type,
+    workerId: r.completed_by,
+    workerName: r.completed_by ? nameById.get(r.completed_by) || r.completed_by : "Unassigned",
+    completedAt: r.completed_at,
+    minutes: Number(r.actual_minutes) || 0,
+    revenue: Number(r.garment_total) || 0,
+    status: r.garment_status,
+    // Honest omission until complete-chip captures work_location
+    workLocation: null as null,
+  }));
 }
 
 // POST /api/garment/job-card
@@ -216,21 +363,25 @@ type GarmentRow = {
 
 /**
  * GET /api/garment/tally?date=YYYY-MM-DD
- * Pieces completed today (NYC) by tailor — minutes + garment $ from complete chips.
+ * GET /api/garment/tally?start=YYYY-MM-DD&end=YYYY-MM-DD  (week rollup, max 31d)
+ * Pieces completed (NYC calendar) by tailor — minutes + garment Work $ from complete chips.
+ * workLocation is always null until a real complete-time field exists (SPEC 061).
  */
 garmentRouter.get("/tally", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
-  const { date, start, end } = dayBounds(c.req.query("date"));
+  const bounds = rangeBounds(c.req.query("start"), c.req.query("end"), c.req.query("date"));
+  const multiDay = !bounds.singleDay;
+  const limit = multiDay ? 2000 : 500;
 
   try {
     const [rows, employees] = await Promise.all([
       erpList<GarmentRow>("Alteration Ticket Garment", {
         parent: "Alteration Ticket",
         filters: [
-          ["completed_at", ">=", start],
-          ["completed_at", "<=", end],
+          ["completed_at", ">=", bounds.start],
+          ["completed_at", "<=", bounds.end],
         ],
         fields: [
           "name",
@@ -243,7 +394,7 @@ garmentRouter.get("/tally", async (c) => {
           "garment_total",
           "garment_status",
         ],
-        limit: 500,
+        limit,
         order_by: "completed_at desc",
       }),
       erpList<{ name: string; employee_name: string }>("Employee", {
@@ -254,84 +405,36 @@ garmentRouter.get("/tally", async (c) => {
     ]);
 
     const nameById = new Map(employees.map((e) => [e.name, e.employee_name || e.name]));
+    const { totals, tailors } = aggregateRows(rows, nameById);
+    const garments = mapGarments(rows, nameById);
 
-    type Bucket = {
-      workerId: string;
-      workerName: string;
-      pieces: number;
-      minutes: number;
-      revenue: number;
-      tickets: Set<string>;
-    };
-    const byWorker = new Map<string, Bucket>();
+    let byDay:
+      | Array<{
+          date: string;
+          totals: typeof totals;
+          tailors: typeof tailors;
+        }>
+      | undefined;
 
-    for (const r of rows) {
-      const wid = (r.completed_by || "").trim() || "unassigned";
-      let b = byWorker.get(wid);
-      if (!b) {
-        b = {
-          workerId: wid,
-          workerName: wid === "unassigned" ? "Unassigned" : nameById.get(wid) || wid,
-          pieces: 0,
-          minutes: 0,
-          revenue: 0,
-          tickets: new Set(),
-        };
-        byWorker.set(wid, b);
-      }
-      b.pieces += 1;
-      b.minutes += Number(r.actual_minutes) || 0;
-      b.revenue += Number(r.garment_total) || 0;
-      if (r.parent) b.tickets.add(r.parent);
+    if (multiDay) {
+      const dates = eachDateInclusive(bounds.startDate, bounds.endDate);
+      byDay = dates.map((date) => {
+        const dayRows = rows.filter((r) => (r.completed_at || "").slice(0, 10) === date);
+        const agg = aggregateRows(dayRows, nameById);
+        return { date, totals: agg.totals, tailors: agg.tailors };
+      });
     }
-
-    const tailors = Array.from(byWorker.values())
-      .map((b) => ({
-        workerId: b.workerId,
-        workerName: b.workerName,
-        pieces: b.pieces,
-        minutes: b.minutes,
-        hours: Math.round((b.minutes / 60) * 10) / 10,
-        revenue: Math.round(b.revenue * 100) / 100,
-        tickets: b.tickets.size,
-      }))
-      .sort((a, b) => b.minutes - a.minutes || b.pieces - a.pieces);
-
-    const totals = tailors.reduce(
-      (acc, t) => {
-        acc.pieces += t.pieces;
-        acc.minutes += t.minutes;
-        acc.revenue += t.revenue;
-        return acc;
-      },
-      { pieces: 0, minutes: 0, revenue: 0 },
-    );
 
     return c.json({
       data: {
-        date,
-        timezone: "America/New_York",
-        totals: {
-          pieces: totals.pieces,
-          minutes: totals.minutes,
-          hours: Math.round((totals.minutes / 60) * 10) / 10,
-          revenue: Math.round(totals.revenue * 100) / 100,
-          workers: tailors.length,
-        },
+        date: multiDay ? null : bounds.startDate,
+        start: bounds.startDate,
+        end: bounds.endDate,
+        timezone: TALLY_TZ,
+        totals,
         tailors,
-        garments: rows.map((r) => ({
-          ticket: r.parent,
-          garmentId: r.garment_id,
-          type: r.garment_type,
-          workerId: r.completed_by,
-          workerName: r.completed_by
-            ? nameById.get(r.completed_by) || r.completed_by
-            : "Unassigned",
-          completedAt: r.completed_at,
-          minutes: Number(r.actual_minutes) || 0,
-          revenue: Number(r.garment_total) || 0,
-          status: r.garment_status,
-        })),
+        garments,
+        ...(byDay ? { byDay } : {}),
       },
     });
   } catch (err) {

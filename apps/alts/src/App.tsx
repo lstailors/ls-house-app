@@ -42,6 +42,7 @@ const PodCapture = lazy(() => import("@alts/pages/PodCapture"));
 const Invoices = lazy(() => import("@alts/pages/Invoices"));
 const InvoiceDetail = lazy(() => import("@alts/pages/InvoiceDetail"));
 const AddWork = lazy(() => import("@alts/pages/AddWork"));
+const FloorPerformance = lazy(() => import("@alts/pages/FloorPerformance"));
 
 const FOH = ["super_admin", "store_manager", "salesperson", "tailor"] as const;
 
@@ -104,6 +105,15 @@ export default function App() {
                 element={
                   <RoleGuard allow={[...FOH]}>
                     <ShopFloorBoard />
+                  </RoleGuard>
+                }
+              />
+              {/* SPEC 061 — Tailor productivity / Floor Performance */}
+              <Route
+                path="/floor-performance"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <FloorPerformance />
                   </RoleGuard>
                 }
               />
