@@ -15,18 +15,28 @@ export const authRouter = new Hono();
 
 const ERP_BASE = () => process.env.ERPNEXT_BASE_URL ?? "";
 
+/** Browser UA required — bare fetch against erp.lstailors.com hits Cloudflare 1010. */
+const ERP_UA = "Mozilla/5.0 (compatible; L&S-House-App/1.0; +https://app.lstailors.com)";
+
 authRouter.post(
   "/login",
   zValidator("json", z.object({ email: z.string().email(), password: z.string().min(1) })),
   async (c) => {
-    const { email, password } = (c.req as any).valid("json");
+    const body = (c.req as any).valid("json") as { email: string; password: string };
+    // Normalize — Frappe User name is lowercase email; Carl@… still works via name resolve
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = body.password;
     const base = ERP_BASE();
     if (!base) return c.json({ error: { message: "Auth service unavailable" } }, 503);
 
     // Validate credentials against ERPNext
     const loginRes = await fetch(`${base}/api/method/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": ERP_UA,
+      },
       body: JSON.stringify({ usr: email, pwd: password }),
     }).catch(() => null);
 
@@ -34,7 +44,7 @@ authRouter.post(
       return c.json({ error: { message: "Invalid email or password" } }, 401);
     }
 
-    const loginJson = await loginRes.json().catch(() => ({})) as any;
+    const loginJson = (await loginRes.json().catch(() => ({}))) as any;
     // ERPNext returns { message: "Logged In" } on success
     if (loginJson?.message !== "Logged In") {
       return c.json({ error: { message: "Invalid email or password" } }, 401);
@@ -47,10 +57,16 @@ authRouter.post(
     if (key && secret) {
       const userRes = await fetch(
         `${base}/api/resource/User/${encodeURIComponent(email)}?fields=["full_name"]`,
-        { headers: { Authorization: `token ${key}:${secret}`, Accept: "application/json" } },
+        {
+          headers: {
+            Authorization: `token ${key}:${secret}`,
+            Accept: "application/json",
+            "User-Agent": ERP_UA,
+          },
+        },
       ).catch(() => null);
       if (userRes?.ok) {
-        const userJson = await userRes.json().catch(() => ({})) as any;
+        const userJson = (await userRes.json().catch(() => ({}))) as any;
         fullName = userJson?.data?.full_name ?? email;
       }
     }
