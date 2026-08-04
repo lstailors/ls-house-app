@@ -6,7 +6,7 @@ import {
   DollarSign, Calendar, ListTodo, Shield, Radio, Play,
   RefreshCw, Filter, Bell, Zap, Server, Cloud,
   TrendingUp, ToggleLeft, ToggleRight, MessageSquare,
-  Scissors, ChevronRight, Circle, LayoutGrid,
+  Monitor, LayoutGrid,
 } from "lucide-react";
 import { SectionHeader } from "@ls/design";
 import { GlassCard } from "@ls/design";
@@ -22,11 +22,12 @@ import { toast } from "sonner";
 import { formatRelative } from "@ls/design/format";
 import { BoardPanel, FleetCronsPanel, HistoryPanel } from "@/pages/mission-control/McPanels";
 import { AlertsBell } from "@/pages/mission-control/AlertsBell";
+import { HermesMirrorPanel } from "@/pages/mission-control/HermesMirrorPanel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type AgentStatus = "active" | "idle" | "error" | "offline" | "paused";
-type Tab = "fleet" | "board" | "approvals" | "live" | "sofia" | "costs" | "crons" | "history" | "cron" | "audit";
+type Tab = "fleet" | "board" | "approvals" | "live" | "sofia" | "costs" | "crons" | "history" | "cron" | "audit" | "hermes";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -981,7 +982,7 @@ export default function MissionControl() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab") as Tab | null;
   const validTabs: Tab[] = [
-    "fleet", "board", "approvals", "live", "sofia", "costs", "crons", "history", "cron", "audit",
+    "fleet", "board", "approvals", "live", "sofia", "costs", "crons", "history", "cron", "audit", "hermes",
   ];
   const initialTab = tabParam && validTabs.includes(tabParam) ? tabParam : "fleet";
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -1029,6 +1030,7 @@ export default function MissionControl() {
     { id: "history",   label: "History",   icon: ListTodo },
     { id: "cron",      label: "Schedule",  icon: Server },
     { id: "audit",     label: "Audit",     icon: Eye },
+    { id: "hermes",    label: "Hermes",    icon: Monitor },
   ];
 
   return (
@@ -1086,6 +1088,7 @@ export default function MissionControl() {
             {tab === "history"   && <HistoryPanel />}
             {tab === "cron"      && <CronPanel />}
             {tab === "audit"     && <AuditPanel />}
+            {tab === "hermes"    && <HermesMirrorPanel />}
           </>
         )}
       </div>

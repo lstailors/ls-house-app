@@ -1118,3 +1118,40 @@ export function useMissionControlAlerts() {
     placeholderData: (prev) => prev,
   });
 }
+
+// SPEC 072 — Hermes Desktop / Dashboard mirror
+export function useHermesMirrorStatus() {
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "status"],
+    queryFn: () => api.get<any>(`/api/mission-control/hermes/status`),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useHermesMirrorSessions(enabled = true) {
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "sessions"],
+    queryFn: () => api.get<any>(`/api/mission-control/hermes/sessions`),
+    staleTime: 20_000,
+    enabled,
+  });
+}
+
+export function useHermesMirrorSkills(enabled = true) {
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "skills"],
+    queryFn: () => api.get<any>(`/api/mission-control/hermes/skills`),
+    staleTime: 60_000,
+    enabled,
+  });
+}
+
+export function useHermesMirrorCron(enabled = true) {
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "cron"],
+    queryFn: () => api.get<any>(`/api/mission-control/hermes/cron`),
+    staleTime: 30_000,
+    enabled,
+  });
+}
