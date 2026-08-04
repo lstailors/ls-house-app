@@ -87,7 +87,7 @@ export function TailorTallyStrip({ className }: { className?: string }) {
         <p className="text-sm text-signal-amber">Couldn’t load tally</p>
       ) : empty ? (
         <p className="text-sm text-cream-dim">
-          No completions logged yet today. Scan hang tag → Mark complete → pick time chip.
+          No completions logged yet today. Home → <b>Mark Progress</b> · scan hang tag · time chip.
         </p>
       ) : (
         <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">

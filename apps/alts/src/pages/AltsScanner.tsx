@@ -13,6 +13,7 @@ import { ScannerResultSheet } from "@alts/components/scanner/ScannerResultSheet"
 import {
   openPathForResult,
   parsePickupScanTarget,
+  parseProgressScanTarget,
   routeForScannerResult,
   routeFromRawScan,
 } from "@alts/lib/scanRoutes";
@@ -22,6 +23,8 @@ import {
   readPickupBagKeys,
   ticketBagKey,
 } from "@alts/lib/pickupBag";
+import { CompleteGarmentDialog } from "@alts/components/garment/CompleteGarmentDialog";
+import type { GarmentActionResult, GarmentJobCard } from "@ls/types";
 
 const RESCAN_DEBOUNCE_MS = 900;
 /** How often to poll for a QR (BarcodeDetector path) */
@@ -108,6 +111,7 @@ export default function Scanner() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const pickupMode = searchParams.get("mode") === "pickup";
+  const progressMode = searchParams.get("mode") === "progress";
   const queryClient = useQueryClient();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -118,6 +122,16 @@ export default function Scanner() {
   const lastScanRef = useRef<{ value: string; at: number } | null>(null);
   const handleDecodeRef = useRef<(decoded: string, via: string) => void>(() => {});
   const wedgeBufRef = useRef("");
+  /** Mark Progress session: continuous scan → who + time → next */
+  const [progressTarget, setProgressTarget] = useState<{
+    ticket: string;
+    garment: string;
+  } | null>(null);
+  const [progressOpen, setProgressOpen] = useState(false);
+  const [progressEst, setProgressEst] = useState<number | null>(null);
+  const [progressSaving, setProgressSaving] = useState(false);
+  const [progressCount, setProgressCount] = useState(0);
+  const [progressLabel, setProgressLabel] = useState("");
   const wedgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const attemptsRef = useRef(0);
@@ -130,9 +144,15 @@ export default function Scanner() {
   const [showManual, setShowManual] = useState(false);
   const [manualValue, setManualValue] = useState("");
   const [statusLine, setStatusLine] = useState(
-    pickupMode ? "Pickup mode — scan tags into bag…" : "Starting camera…",
+    pickupMode
+      ? "Pickup mode — scan tags into bag…"
+      : progressMode
+        ? "Mark progress — scan hang tag…"
+        : "Starting camera…",
   );
-  const [debugLine, setDebugLine] = useState(pickupMode ? "v4 pickup" : "v4");
+  const [debugLine, setDebugLine] = useState(
+    pickupMode ? "v4 pickup" : progressMode ? "v4 progress" : "v4",
+  );
   const [snapping, setSnapping] = useState(false);
   const [bagCount, setBagCount] = useState(() => readPickupBagKeys().length);
 
@@ -221,6 +241,47 @@ export default function Scanner() {
         return;
       }
 
+      // ── Mark Progress: hang tag → who + time → next ─────────────────────
+      if (progressMode) {
+        if (progressOpen || progressSaving) return;
+        const target = parseProgressScanTarget(value);
+        if (!target) {
+          toast.error("Scan the hang tag (piece) — not the ticket thermal");
+          setStatusLine("Need /g/… hang tag · keep scanning");
+          scanningRef.current = true;
+          return;
+        }
+        scanningRef.current = false;
+        buzz();
+        setProgressTarget(target);
+        setProgressLabel(`${target.ticket} · ${target.garment}`);
+        setProgressEst(null);
+        setProgressOpen(true);
+        setStatusLine(`Logging ${target.garment}…`);
+        setDebugLine(`progress ${via}: ${target.ticket}/${target.garment}`);
+        // Prefill est minutes from job card (non-blocking)
+        void api
+          .post<GarmentJobCard>("/api/garment/job-card", {
+            ticket: target.ticket,
+            garment_id: target.garment,
+          })
+          .then((card) => {
+            const est = (card.lines ?? []).reduce((sum, l) => {
+              const n = Number(
+                l.est_minutes ?? (l as { estimated_minutes?: number }).estimated_minutes ?? 0,
+              );
+              return sum + (Number.isFinite(n) ? n : 0);
+            }, 0);
+            if (est > 0) setProgressEst(est);
+            const cust = (card as { customer?: string }).customer;
+            if (cust) setProgressLabel(`${cust} · ${target.garment}`);
+          })
+          .catch(() => {
+            /* dialog still works without est */
+          });
+        return;
+      }
+
       scanningRef.current = false;
       buzz();
       setStatusLine(`Got it (${via}) — opening…`);
@@ -236,7 +297,7 @@ export default function Scanner() {
       }
       void resolveToken(value);
     },
-    [resolveToken, navigate, stopCamera, pickupMode],
+    [resolveToken, navigate, stopCamera, pickupMode, progressMode, progressOpen, progressSaving],
   );
 
   handleDecodeRef.current = handleDecode;
@@ -487,15 +548,83 @@ export default function Scanner() {
     if (sheetOpen) scanningRef.current = false;
   }, [sheetOpen]);
 
+  useEffect(() => {
+    if (progressOpen) scanningRef.current = false;
+  }, [progressOpen]);
+
   const scanAgain = useCallback(() => {
     setSheetOpen(false);
     setResult(null);
     setResolving(false);
     setPendingAction(null);
     lastScanRef.current = null;
-    setStatusLine("Point at any L&S QR");
+    setStatusLine(
+      progressMode
+        ? progressCount > 0
+          ? `Logged ${progressCount} · scan next hang tag`
+          : "Mark progress — scan hang tag…"
+        : "Point at any L&S QR",
+    );
     void startCamera();
-  }, [startCamera]);
+  }, [startCamera, progressMode, progressCount]);
+
+  const resumeProgressScan = useCallback(() => {
+    setProgressOpen(false);
+    setProgressTarget(null);
+    setProgressEst(null);
+    setProgressSaving(false);
+    lastScanRef.current = null;
+    scanningRef.current = true;
+    setStatusLine(
+      progressCount > 0
+        ? `Logged ${progressCount} · scan next hang tag`
+        : "Mark progress — scan hang tag…",
+    );
+    void startCamera();
+  }, [startCamera, progressCount]);
+
+  const confirmProgress = useCallback(
+    async (worker: string, actualMinutes: number) => {
+      if (!progressTarget) return;
+      setProgressSaving(true);
+      try {
+        const res = await api.post<GarmentActionResult>("/api/garment/complete", {
+          ticket: progressTarget.ticket,
+          garment_id: progressTarget.garment,
+          worker,
+          actual_minutes: actualMinutes,
+        });
+        const next = progressCount + 1;
+        setProgressCount(next);
+        buzz();
+        if (res.all_garments_ready === true) {
+          toast.success("Order complete — customer notified", {
+            description: `${progressTarget.garment} · ${actualMinutes}m · session ${next}`,
+          });
+        } else {
+          toast.success(`Logged · ${progressTarget.garment} · ${actualMinutes}m`, {
+            description: `Session ${next} · keep scanning`,
+          });
+        }
+        void queryClient.invalidateQueries({ queryKey: ["shop-floor-tickets"] });
+        void queryClient.invalidateQueries({ queryKey: ["alts-home-stats"] });
+        void queryClient.invalidateQueries({ queryKey: ["pickup-ready"] });
+        void queryClient.invalidateQueries({ queryKey: ["tailor-tally"] });
+        setProgressOpen(false);
+        setProgressTarget(null);
+        setProgressEst(null);
+        setProgressSaving(false);
+        lastScanRef.current = null;
+        scanningRef.current = true;
+        setStatusLine(`Logged ${next} · scan next hang tag`);
+        void startCamera();
+      } catch {
+        toast.error("Could not log complete — try again");
+        setProgressSaving(false);
+      }
+    },
+    [progressTarget, progressCount, queryClient, startCamera],
+  );
 
   const snapAndDecode = useCallback(async () => {
     setSnapping(true);
@@ -626,8 +755,12 @@ export default function Scanner() {
       navigate("/pickup", { replace: true });
       return;
     }
+    if (progressMode) {
+      navigate("/", { replace: true });
+      return;
+    }
     navigate(-1);
-  }, [navigate, stopCamera, pickupMode]);
+  }, [navigate, stopCamera, pickupMode, progressMode]);
 
   const openPickupBag = useCallback(() => {
     stopCamera();
@@ -655,7 +788,7 @@ export default function Scanner() {
 
       <div className="pointer-events-none absolute inset-0 bg-forest-deep/10" />
 
-      {!sheetOpen ? (
+      {!sheetOpen && !progressOpen ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="relative h-[min(80vw,26rem)] w-[min(80vw,26rem)]">
             <span className="absolute left-0 top-0 h-14 w-14 border-l-[3px] border-t-[3px] border-brass rounded-tl-2xl" />
@@ -680,9 +813,14 @@ export default function Scanner() {
           {pickupMode && (
             <div className="text-[10px] uppercase tracking-widest text-brass mb-0.5">Pickup bag scan</div>
           )}
+          {progressMode && (
+            <div className="text-[10px] uppercase tracking-widest text-brass mb-0.5">
+              Mark progress{progressCount > 0 ? ` · ${progressCount} logged` : ""}
+            </div>
+          )}
           <div className="text-cream text-sm font-medium truncate">{statusLine}</div>
           <div className="text-[10px] tracking-wide text-cream/55 mt-0.5 truncate font-mono">
-            {debugLine}
+            {progressOpen && progressLabel ? progressLabel : debugLine}
           </div>
         </div>
         <button
@@ -714,12 +852,14 @@ export default function Scanner() {
       ) : null}
 
       {/* Snap + hint */}
-      {!showManual && !sheetOpen ? (
+      {!showManual && !sheetOpen && !progressOpen ? (
         <div className="absolute inset-x-0 bottom-0 z-10 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-3">
           <p className="text-center text-cream/75 text-xs">
             {pickupMode
               ? "Pickup · scan hang tags into bag · keep going"
-              : "Auto-scan on · gun/wedge OK · or tap Snap"}
+              : progressMode
+                ? "Progress · scan hang tag · who + time · next"
+                : "Auto-scan on · gun/wedge OK · or tap Snap"}
           </p>
           {pickupMode && bagCount > 0 ? (
             <button
@@ -730,6 +870,11 @@ export default function Scanner() {
               <ArrowRight className="h-5 w-5" />
               Open bag · {bagCount}
             </button>
+          ) : null}
+          {progressMode && progressCount > 0 ? (
+            <div className="rounded-full border border-signal-emerald/40 bg-signal-emerald/15 px-4 py-2 text-xs font-semibold text-signal-emerald">
+              Session · {progressCount} piece{progressCount === 1 ? "" : "s"} logged
+            </div>
           ) : null}
           <button
             type="button"
@@ -782,6 +927,18 @@ export default function Scanner() {
           if (!o) scanAgain();
         }}
       />
+
+      {progressMode ? (
+        <CompleteGarmentDialog
+          open={progressOpen}
+          onOpenChange={(o) => {
+            if (!o && !progressSaving) resumeProgressScan();
+          }}
+          onConfirm={(worker, mins) => void confirmProgress(worker, mins)}
+          isSubmitting={progressSaving}
+          defaultMinutes={progressEst}
+        />
+      ) : null}
     </div>
   );
 }

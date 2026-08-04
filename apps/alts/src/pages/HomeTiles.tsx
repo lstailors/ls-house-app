@@ -748,6 +748,20 @@ export default function HomeTiles() {
       ),
     },
     {
+      key: "progress",
+      to: "/scanner?mode=progress",
+      title: "Mark Progress",
+      sub: "Scan hang tag · who · time chip · next — EOD batch ready",
+      icon: (
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="10" y="8" width="24" height="32" rx="3" />
+          <path d="M16 16h12M16 22h12M16 28h8" strokeWidth="1.3" opacity=".7" />
+          <circle cx="38" cy="36" r="9" strokeWidth="1.4" />
+          <path d="M34.5 36.5l2.5 2.5 5-5.5" stroke="#4FBF8E" strokeWidth="2" />
+        </svg>
+      ),
+    },
+    {
       key: "pickup",
       to: "/pickup",
       title: "Pickup",
