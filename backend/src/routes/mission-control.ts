@@ -530,7 +530,7 @@ missionControlRouter.get("/alerts", async (c) => {
           .join(" · "),
         source_tab: "approvals",
         source_id: id,
-        href: `/mission-control?tab=approvals&id=${encodeURIComponent(id)}`,
+        href: `/approvals?id=${encodeURIComponent(id)}`,
         first_seen: created,
         last_seen: created,
         occurrences: 1,
