@@ -82,6 +82,15 @@ export function useFinancials() {
   });
 }
 
+export function useOwnerDashboard(range: string = "30d") {
+  return useQuery({
+    queryKey: ["owner-dashboard", range],
+    queryFn: () => api.get<unknown>(`/api/dashboard/owner?range=${range}`),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
 export function useAlterations() {
   const { activeLocationId } = useActiveLocation();
   return useQuery({
