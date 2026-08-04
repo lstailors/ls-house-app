@@ -24,6 +24,12 @@ import {
   mcListMessages,
 } from "../lib/mc-data";
 import { lshSelect, lshInsert, lshUpdate, supabaseConfig } from "../lib/supabase-lsh";
+import {
+  cancelChatCommand,
+  enqueueChatCommand,
+  getChatCommand,
+  latestChatCommand,
+} from "../lib/mc-commands";
 
 async function callAnthropic(system: string, messages: { role: string; content: string }[]): Promise<string> {
   const key = process.env.ANTHROPIC_API_KEY;
@@ -415,6 +421,104 @@ const AGENT_PERSONAS: Record<string, string> = {
   melena: `You are Melena — head of accounting and books at L&S Custom Tailors. You own the money: billing, invoicing, Square reconciliation across LSTNY, LSTX, and Holdings. You draft only — you never auto-send. You escalate every discrepancy. You are precise, cautious with numbers, and thorough. Answer questions about financials, billing, invoicing, and reconciliation.`,
   filo: `You are Filo — ingestion and intelligence agent at L&S Custom Tailors. You run locally on the Mac Studio. You watch every inbox, the Downloads folder, and all attachments the moment they land. You parse, classify, extract, and backfile data into ERPNext. You are fast, thorough, and confidence-tiered: you auto-commit low-risk data and queue financial fields for Melena. Answer questions about data ingestion, document processing, and intelligence pipelines.`,
 };
+
+// ─── One-shot command console (SPEC 069) ─────────────────────────────────────
+// Enqueues onto the unified MC command queue (mc_commands when live, else
+// kanban_commands with action=chat_send). No parallel queue.
+
+agentsRouter.get("/:slug/commands/latest", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  if (!supabaseConfig()) return c.json({ error: { message: "Supabase not configured" } }, 503);
+
+  const slug = c.req.param("slug");
+  try {
+    const data = await latestChatCommand(slug);
+    return c.json({ data });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message || "failed" } }, 500);
+  }
+});
+
+agentsRouter.get("/:slug/commands/:id", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  if (!supabaseConfig()) return c.json({ error: { message: "Supabase not configured" } }, 503);
+
+  const id = c.req.param("id");
+  try {
+    const data = await getChatCommand(id);
+    if (!data) return c.json({ error: { message: "Command not found" } }, 404);
+    // Soft scope: only return if it targets this slug
+    if (data.agent_slug && data.agent_slug !== c.req.param("slug")) {
+      return c.json({ error: { message: "Command not found" } }, 404);
+    }
+    return c.json({ data });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message || "failed" } }, 500);
+  }
+});
+
+agentsRouter.post("/:slug/commands", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  if (user.role !== "super_admin") {
+    // SPEC 066: enqueue is super_admin only at the DB layer; keep API aligned.
+    return c.json({ error: { message: "Forbidden — command enqueue is super_admin only" } }, 403);
+  }
+  if (!supabaseConfig()) return c.json({ error: { message: "Supabase not configured" } }, 503);
+
+  const slug = c.req.param("slug");
+  const body = await c.req.json().catch(() => null);
+  const prompt =
+    (typeof body?.prompt === "string" && body.prompt) ||
+    (typeof body?.content === "string" && body.content) ||
+    (typeof body?.command === "string" && body.command) ||
+    "";
+  if (!prompt.trim()) return c.json({ error: { message: "prompt is required" } }, 400);
+
+  try {
+    const data = await enqueueChatCommand({
+      slug,
+      prompt,
+      requestedBy: user.email,
+      idempotencyKey: typeof body?.idempotency_key === "string" ? body.idempotency_key : null,
+      timeoutS: typeof body?.timeout_s === "number" ? body.timeout_s : undefined,
+    });
+    return c.json({ data }, 201);
+  } catch (e: any) {
+    if (e?.code === "in_flight") {
+      return c.json(
+        { error: { message: e.message, code: "in_flight" }, data: { existing: e.existing } },
+        409
+      );
+    }
+    return c.json({ error: { message: e?.message || "failed to enqueue" } }, 500);
+  }
+});
+
+agentsRouter.post("/:slug/commands/:id/cancel", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  if (!supabaseConfig()) return c.json({ error: { message: "Supabase not configured" } }, 503);
+
+  const id = c.req.param("id");
+  try {
+    const existing = await getChatCommand(id);
+    if (!existing || (existing.agent_slug && existing.agent_slug !== c.req.param("slug"))) {
+      return c.json({ error: { message: "Command not found" } }, 404);
+    }
+    const data = await cancelChatCommand(id, { reason: `Cancelled by ${user.email}` });
+    return c.json({ data });
+  } catch (e: any) {
+    if (e?.code === "not_found") return c.json({ error: { message: "Command not found" } }, 404);
+    return c.json({ error: { message: e?.message || "cancel failed" } }, 500);
+  }
+});
 
 agentsRouter.get("/:slug/messages", async (c) => {
   const user = await getAuthedUser(c);

@@ -1319,3 +1319,55 @@ export const MissionControlHistoryResponse = z.object({
     limit: z.number(),
   }),
 });
+
+// SPEC 071 — Mission Control Alerts (derived read; no new SoT)
+export const McAlertType = z.enum([
+  "cron_error",
+  "stale_approval",
+  "agent_dark",
+  "cost_anomaly",
+]);
+export type McAlertType = z.infer<typeof McAlertType>;
+
+export const McAlertSeverity = z.enum(["critical", "warning"]);
+export type McAlertSeverity = z.infer<typeof McAlertSeverity>;
+
+export const MissionControlAlert = z.object({
+  id: z.string(),
+  type: McAlertType,
+  severity: McAlertSeverity,
+  title: z.string(),
+  context: z.string(),
+  source_tab: z.enum(["crons", "approvals", "fleet", "costs"]),
+  source_id: z.string(),
+  href: z.string(),
+  first_seen: z.string().nullable(),
+  last_seen: z.string().nullable(),
+  occurrences: z.number(),
+  age_hours: z.number().nullable(),
+});
+export type MissionControlAlert = z.infer<typeof MissionControlAlert>;
+
+export const MissionControlAlertsResponse = z.object({
+  alerts: z.array(MissionControlAlert),
+  count: z.number(),
+  critical_count: z.number(),
+  warning_count: z.number(),
+  highest_severity: McAlertSeverity.nullable(),
+  generated_at: z.string(),
+  stale_approval_threshold_hours: z.number(),
+  gated: z.object({
+    agent_dark: z.boolean(),
+    cost_anomaly: z.boolean(),
+  }),
+  sources: z.object({
+    cron_health: z.enum(["ok", "error", "missing", "unconfigured"]),
+    approvals: z.enum(["ok", "error"]),
+    agent_dark: z.literal("gated_off"),
+    cost_anomaly: z.literal("gated_off"),
+  }),
+  error: z.string().nullable().optional(),
+  warning: z.string().nullable().optional(),
+  cache_age_minutes: z.number().nullable().optional(),
+});
+export type MissionControlAlertsResponse = z.infer<typeof MissionControlAlertsResponse>;
