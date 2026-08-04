@@ -1,43 +1,34 @@
 /**
  * Server-side client for Hermes Web Dashboard (maestro.lstailors.com / :9119).
  * Never expose credentials to the browser.
+ *
+ * Edge-safe: no node:child_process. Vercel uses env vars only
+ * (HERMES_DASHBOARD_BASIC_AUTH_USERNAME / _PASSWORD).
  */
-import { execFileSync } from "node:child_process";
-
 const UA = "L&S-MC-HermesMirror/1.0";
 
-function kc(service: string, account?: string): string {
-  try {
-    const args = ["find-generic-password", "-s", service, "-w"];
-    if (account) args.splice(2, 0, "-a", account);
-    return execFileSync("security", args, { encoding: "utf8" }).trim();
-  } catch {
-    return "";
-  }
+function cleanEnv(v: string | undefined): string {
+  return (v || "").trim().replace(/\\n/g, "").replace(/\r/g, "");
 }
 
 export function hermesDashboardBase(): string {
-  return (
+  return cleanEnv(
     process.env.HERMES_DASHBOARD_URL ||
-    process.env.HERMES_MIRROR_URL ||
-    "https://maestro.lstailors.com"
+      process.env.HERMES_MIRROR_URL ||
+      "https://maestro.lstailors.com",
   ).replace(/\/$/, "");
 }
 
 function creds(): { user: string; pass: string } {
-  const user =
+  const user = cleanEnv(
     process.env.HERMES_DASHBOARD_BASIC_AUTH_USERNAME ||
-    kc("hermes-dashboard-username", "hermes") ||
-    kc("hermes-dashboard-username") ||
-    kc("hermes-dashboard-basic-auth-username") ||
-    "";
-  const pass =
+      process.env.HERMES_DASHBOARD_USERNAME,
+  );
+  const pass = cleanEnv(
     process.env.HERMES_DASHBOARD_BASIC_AUTH_PASSWORD ||
-    kc("hermes-dashboard-password", "hermes") ||
-    kc("hermes-dashboard-password") ||
-    kc("hermes-dashboard-basic-auth-password") ||
-    "";
-  return { user: user.trim(), pass: pass.trim() };
+      process.env.HERMES_DASHBOARD_PASSWORD,
+  );
+  return { user, pass };
 }
 
 export function hermesCredsConfigured(): boolean {

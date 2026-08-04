@@ -602,7 +602,8 @@ missionControlRouter.get("/alerts", async (c) => {
 // ─── Hermes Desktop / Dashboard mirror (SPEC 072) ────────────────────────────
 
 missionControlRouter.get("/hermes/status", async (c) => {
-  const user = getAuthedUser(c);
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
 
   const pub = await hermesFetch("/api/status", {}, { auth: false });
@@ -624,7 +625,8 @@ missionControlRouter.get("/hermes/status", async (c) => {
 });
 
 missionControlRouter.get("/hermes/sessions", async (c) => {
-  const user = getAuthedUser(c);
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
   const profile = c.req.query("profile");
   const qs = profile ? `?profile=${encodeURIComponent(profile)}` : "";
@@ -653,7 +655,8 @@ missionControlRouter.get("/hermes/sessions", async (c) => {
 });
 
 missionControlRouter.get("/hermes/skills", async (c) => {
-  const user = getAuthedUser(c);
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
   const profile = c.req.query("profile");
   const qs = profile ? `?profile=${encodeURIComponent(profile)}` : "";
@@ -673,7 +676,8 @@ missionControlRouter.get("/hermes/skills", async (c) => {
 });
 
 missionControlRouter.get("/hermes/cron", async (c) => {
-  const user = getAuthedUser(c);
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
   const profile = c.req.query("profile");
   const qs = profile ? `?profile=${encodeURIComponent(profile)}` : "";
@@ -694,7 +698,8 @@ missionControlRouter.get("/hermes/cron", async (c) => {
 });
 
 missionControlRouter.get("/hermes/analytics", async (c) => {
-  const user = getAuthedUser(c);
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
   const days = c.req.query("days") || "14";
   const r = await hermesFetch(`/api/analytics/usage?days=${encodeURIComponent(days)}`, {}, { auth: true });
@@ -714,7 +719,8 @@ missionControlRouter.get("/hermes/analytics", async (c) => {
 // SPEC 072 Phase 2 — MCP list (auth) + artifacts gallery (lsh activity + commands)
 
 missionControlRouter.get("/hermes/mcp", async (c) => {
-  const user = getAuthedUser(c);
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
   const profile = c.req.query("profile");
   const qs = profile ? `?profile=${encodeURIComponent(profile)}` : "";
@@ -737,7 +743,8 @@ const URL_RE = /https?:\/\/[^\s<>"')\]]+/gi;
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg)(\?|$)/i;
 
 missionControlRouter.get("/hermes/artifacts", async (c) => {
-  const user = getAuthedUser(c);
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
 
   const artifacts: any[] = [];
@@ -853,7 +860,8 @@ missionControlRouter.get("/hermes/artifacts", async (c) => {
 // SPEC 072 Phase 3 — memory hub, session transcript, session stats
 
 missionControlRouter.get("/hermes/memory", async (c) => {
-  const user = getAuthedUser(c);
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
   const r = await hermesFetch("/api/memory", {}, { auth: true });
   if (r.error || r.status >= 400) {
@@ -879,7 +887,8 @@ missionControlRouter.get("/hermes/memory", async (c) => {
 });
 
 missionControlRouter.get("/hermes/sessions/stats", async (c) => {
-  const user = getAuthedUser(c);
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
   const profile = c.req.query("profile");
   const qs = profile ? `?profile=${encodeURIComponent(profile)}` : "";
@@ -897,7 +906,8 @@ missionControlRouter.get("/hermes/sessions/stats", async (c) => {
 });
 
 missionControlRouter.get("/hermes/sessions/:id", async (c) => {
-  const user = getAuthedUser(c);
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
   const id = encodeURIComponent(c.req.param("id"));
   const r = await hermesFetch(`/api/sessions/${id}`, {}, { auth: true });
@@ -917,7 +927,8 @@ missionControlRouter.get("/hermes/sessions/:id", async (c) => {
 });
 
 missionControlRouter.get("/hermes/sessions/:id/messages", async (c) => {
-  const user = getAuthedUser(c);
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
   const id = encodeURIComponent(c.req.param("id"));
   const limit = c.req.query("limit") || "80";
@@ -948,7 +959,8 @@ missionControlRouter.get("/hermes/sessions/:id/messages", async (c) => {
 });
 
 missionControlRouter.get("/hermes/analytics/models", async (c) => {
-  const user = getAuthedUser(c);
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
   const days = c.req.query("days") || "14";
   const r = await hermesFetch(
