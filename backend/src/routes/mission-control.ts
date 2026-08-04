@@ -162,10 +162,15 @@ missionControlRouter.get("/board/:id", async (c) => {
 });
 
 // Queue Hermes kanban action + optimistic snapshot update
+// SPEC 066: enqueue onto lsh.mc_commands (insert gate = super_admin only)
 missionControlRouter.post("/board/:id/action", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  // Enqueue is super_admin-only (matches lsh.mc_commands RLS insert policy)
+  if (user.role !== "super_admin") {
+    return c.json({ error: { message: "Forbidden: command enqueue requires super_admin" } }, 403);
+  }
   if (!supabaseConfig()) return c.json({ error: { message: "Supabase not configured" } }, 503);
 
   const id = c.req.param("id");
@@ -182,13 +187,19 @@ missionControlRouter.post("/board/:id/action", async (c) => {
   if (typeof body.comment === "string") payload.comment = body.comment;
 
   try {
-    const queued = await lshInsert<any>("kanban_commands", {
-      task_id: id,
+    const insertRow: Record<string, unknown> = {
+      kind: "kanban_task",
       action,
+      target_id: id,
       payload,
       requested_by: user.email,
+      origin_surface: "mission_control",
       status: "pending",
-    });
+    };
+    if (typeof body.idempotency_key === "string" && body.idempotency_key.trim()) {
+      insertRow.idempotency_key = body.idempotency_key.trim();
+    }
+    const queued = await lshInsert<any>("mc_commands", insertRow);
 
     const optStatus =
       action === "promote"
