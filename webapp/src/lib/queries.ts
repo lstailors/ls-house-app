@@ -1129,10 +1129,11 @@ export function useHermesMirrorStatus() {
   });
 }
 
-export function useHermesMirrorSessions(enabled = true) {
+export function useHermesMirrorSessions(enabled = true, profile?: string | null) {
+  const qs = profile ? `?profile=${encodeURIComponent(profile)}` : "";
   return useQuery({
-    queryKey: ["mission-control", "hermes", "sessions"],
-    queryFn: () => api.get<any>(`/api/mission-control/hermes/sessions`),
+    queryKey: ["mission-control", "hermes", "sessions", profile || "all"],
+    queryFn: () => api.get<any>(`/api/mission-control/hermes/sessions${qs}`),
     staleTime: 20_000,
     enabled,
   });
@@ -1221,5 +1222,107 @@ export function useHermesMirrorModels(days = 14, enabled = true) {
       api.get<any>(`/api/mission-control/hermes/analytics/models?days=${days}`),
     staleTime: 60_000,
     enabled,
+  });
+}
+
+// SPEC 072 Phase 4
+export function useHermesSessionSearch(q: string, profile?: string | null, enabled = true) {
+  const qs = new URLSearchParams({ q, limit: "30" });
+  if (profile) qs.set("profile", profile);
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "sessions", "search", q, profile || "all"],
+    queryFn: () => api.get<any>(`/api/mission-control/hermes/sessions/search?${qs}`),
+    staleTime: 15_000,
+    enabled: enabled && q.trim().length >= 2,
+  });
+}
+
+export function useHermesProfiles(enabled = true) {
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "profiles"],
+    queryFn: () => api.get<any>(`/api/mission-control/hermes/profiles`),
+    staleTime: 120_000,
+    enabled,
+  });
+}
+
+export function useHermesLearningGraph(enabled = true, profile?: string | null) {
+  const qs = profile ? `?profile=${encodeURIComponent(profile)}` : "";
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "learning-graph", profile || "all"],
+    queryFn: () => api.get<any>(`/api/mission-control/hermes/learning/graph${qs}`),
+    staleTime: 60_000,
+    enabled,
+  });
+}
+
+export function useHermesCronDeliveryTargets(enabled = true) {
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "cron", "delivery-targets"],
+    queryFn: () => api.get<any>(`/api/mission-control/hermes/cron/delivery-targets`),
+    staleTime: 120_000,
+    enabled,
+  });
+}
+
+export function useHermesCronJobRuns(jobId: string | null) {
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "cron", "runs", jobId],
+    queryFn: () =>
+      api.get<any>(`/api/mission-control/hermes/cron/jobs/${encodeURIComponent(jobId!)}/runs`),
+    staleTime: 20_000,
+    enabled: Boolean(jobId),
+  });
+}
+
+export function useHermesCronCreate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      name?: string;
+      schedule: string;
+      prompt?: string;
+      deliver?: string;
+      profile?: string;
+      script?: string;
+      no_agent?: boolean;
+    }) => api.post<any>(`/api/mission-control/hermes/cron/jobs`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["mission-control", "hermes", "cron"] });
+    },
+  });
+}
+
+export function useHermesCronAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; action: "pause" | "resume" | "trigger"; profile?: string }) => {
+      const qs = input.profile ? `?profile=${encodeURIComponent(input.profile)}` : "";
+      return api.post<any>(
+        `/api/mission-control/hermes/cron/jobs/${encodeURIComponent(input.id)}/${input.action}${qs}`,
+        {},
+      );
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["mission-control", "hermes", "cron"] });
+    },
+  });
+}
+
+export function useHermesCronUpdate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      id: string;
+      updates: Record<string, unknown>;
+      profile?: string;
+    }) =>
+      api.put<any>(`/api/mission-control/hermes/cron/jobs/${encodeURIComponent(input.id)}`, {
+        updates: input.updates,
+        profile: input.profile,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["mission-control", "hermes", "cron"] });
+    },
   });
 }
