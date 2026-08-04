@@ -15,8 +15,11 @@ import {
   useDelegateTask,
   useUpdateAgent,
   useApproveAction,
-  useAgentMessages,
-  useSendAgentMessage,
+  useSendAgentCommand,
+  useCancelAgentCommand,
+  useAgentCommand,
+  type AgentCommandRun,
+  type AgentCommandStatus,
 } from "@/lib/queries";
 import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
@@ -241,39 +244,280 @@ const AGENT_PHOTO: Record<string, string> = {
   filo:    "/agents/filo.jpg",
 };
 
-// ─── Agent Chat ───────────────────────────────────────────────────────────────
+// ─── Agent Command (SPEC 069 — one-shot console, replaces AgentChat) ──────────
 
-function AgentChat({ slug, agentName }: { slug: string; agentName: string }) {
+type LocalPhase = AgentCommandStatus | "idle";
+
+function formatElapsed(totalSec: number): string {
+  const s = Math.max(0, Math.floor(totalSec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, "0")}`;
+}
+
+function formatFrozenDuration(sec: number): string {
+  if (sec < 60) return `${Math.max(1, Math.round(sec))}s`;
+  const m = Math.floor(sec / 60);
+  const r = Math.round(sec % 60);
+  return r > 0 ? `${m}m ${r}s` : `${m}m`;
+}
+
+function looksLikeCode(text: string): boolean {
+  if (text.length > 400) return true;
+  if (text.includes("\n") && /[{}\[\]`$]|^\s{2,}\S/m.test(text)) return true;
+  return false;
+}
+
+function AgentCommand({ slug, agentName }: { slug: string; agentName: string }) {
   const [input, setInput] = useState("");
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const { data: messages = [], isLoading } = useAgentMessages(slug);
-  const send = useSendAgentMessage(slug);
+  const [commandId, setCommandId] = useState<string | null>(null);
+  const [echo, setEcho] = useState<string | null>(null);
+  const [localStatus, setLocalStatus] = useState<LocalPhase>("idle");
+  const [clientTimedOut, setClientTimedOut] = useState(false);
+  const [tick, setTick] = useState(0);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const startedAtRef = useRef<number | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const send = useSendAgentCommand(slug);
+  const cancelMut = useCancelAgentCommand(slug);
+  const { data: remote } = useAgentCommand(slug, commandId);
   const photo = AGENT_PHOTO[slug];
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  const run: AgentCommandRun | null = remote ?? null;
 
-  const handleSend = async () => {
-    const text = input.trim();
-    if (!text || send.isPending) return;
-    setInput("");
+  // Merge remote status into local phase (client timeout wins until new send)
+  useEffect(() => {
+    if (!run) return;
+    if (clientTimedOut && (run.status === "queued" || run.status === "running")) return;
+    setLocalStatus(run.status);
+    setEcho(run.command || echo);
+    if (run.started_at && !startedAtRef.current) {
+      startedAtRef.current = new Date(run.started_at).getTime();
+    }
+    if (run.created_at && !startedAtRef.current) {
+      startedAtRef.current = new Date(run.created_at).getTime();
+    }
+  }, [run, clientTimedOut]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Elapsed timer while queued/running
+  useEffect(() => {
+    const active = localStatus === "queued" || localStatus === "running";
+    if (!active) return;
+    const id = window.setInterval(() => setTick((t) => t + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [localStatus]);
+
+  // Client-side timeout (SPEC 069 §3.6) — distinct from error
+  useEffect(() => {
+    if (!run || clientTimedOut) return;
+    if (run.status !== "queued" && run.status !== "running") return;
+    const base = startedAtRef.current ?? (run.created_at ? new Date(run.created_at).getTime() : Date.now());
+    const timeoutMs = (run.timeout_s || 180) * 1000;
+    if (Date.now() - base >= timeoutMs) {
+      setClientTimedOut(true);
+      setLocalStatus("timeout");
+    }
+  }, [run, tick, clientTimedOut]);
+
+  const inflight = localStatus === "queued" || localStatus === "running";
+  const terminal =
+    localStatus === "done" ||
+    localStatus === "error" ||
+    localStatus === "timeout" ||
+    localStatus === "cancelled";
+
+  const elapsedSec = (() => {
+    if (!startedAtRef.current) {
+      if (run?.created_at) return Math.floor((Date.now() - new Date(run.created_at).getTime()) / 1000);
+      return tick;
+    }
+    const end =
+      terminal && run?.finished_at
+        ? new Date(run.finished_at).getTime()
+        : Date.now();
+    return Math.max(0, Math.floor((end - startedAtRef.current) / 1000));
+  })();
+
+  const handleSend = async (textOverride?: string) => {
+    const text = (textOverride ?? input).trim();
+    if (!text || inflight || send.isPending) return;
+
+    setEcho(text);
+    setLocalStatus("queued");
+    setClientTimedOut(false);
+    setLocalError(null);
+    setCommandId(null);
+    startedAtRef.current = Date.now();
+    setTick(0);
+    if (!textOverride) setInput("");
+
     try {
-      await send.mutateAsync(text);
+      const data = await send.mutateAsync({ prompt: text });
+      setCommandId(data.id);
+      setLocalStatus(data.status === "running" ? "running" : "queued");
+      if (data.started_at) startedAtRef.current = new Date(data.started_at).getTime();
     } catch (e: any) {
-      toast.error(e?.message ?? "Failed to send");
+      setLocalStatus("error");
+      setLocalError(e?.message ?? "Command failed to complete.");
+      toast.error(e?.message ?? "Failed to enqueue command");
     }
   };
 
+  const lastError = run?.error || localError || null;
+
   const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void handleSend();
+    }
   };
 
+  const handleCancel = async () => {
+    if (!commandId || !inflight) return;
+    try {
+      const data = await cancelMut.mutateAsync(commandId);
+      setLocalStatus(data.status === "cancelled" ? "cancelled" : data.status);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Cancel failed");
+    }
+  };
+
+  const handleRerun = () => {
+    if (!echo || inflight) return;
+    void handleSend(echo);
+  };
+
+  const statusPill = (() => {
+    switch (localStatus) {
+      case "queued":
+        return (
+          <span className="pill pill-amber">
+            <span className="h-1.5 w-1.5 rounded-full bg-signal-amber animate-pulse" />
+            Queued
+          </span>
+        );
+      case "running":
+        return (
+          <span className="pill pill-emerald">
+            <span className="h-1.5 w-1.5 rounded-full bg-signal-emerald animate-pulse shadow-[0_0_6px_rgba(79,191,142,0.7)]" />
+            Running
+          </span>
+        );
+      case "done":
+        return (
+          <span className="pill pill-emerald">
+            <span className="h-1.5 w-1.5 rounded-full bg-signal-emerald" />
+            Done · {formatFrozenDuration(elapsedSec)}
+          </span>
+        );
+      case "error":
+        return (
+          <span className="pill pill-rose">
+            <span className="h-1.5 w-1.5 rounded-full bg-signal-rose" />
+            Error
+          </span>
+        );
+      case "timeout":
+        return (
+          <span className="pill pill-amber">
+            <span className="h-1.5 w-1.5 rounded-full bg-signal-amber" />
+            Timed out
+          </span>
+        );
+      case "cancelled":
+        return (
+          <span className="pill pill-muted">
+            <span className="h-1.5 w-1.5 rounded-full bg-cream-dim" />
+            Cancelled
+          </span>
+        );
+      default:
+        return null;
+    }
+  })();
+
+  const sessionLabel = (() => {
+    if (localStatus !== "running" && localStatus !== "done" && localStatus !== "error" && localStatus !== "timeout") {
+      return null;
+    }
+    const sess = run?.session_id || "—";
+    const pid = run?.pid != null && run.pid !== "" ? String(run.pid) : "—";
+    return (
+      <span className="font-mono text-[10px] text-brass-light ml-auto">
+        session {sess} · pid {pid}
+      </span>
+    );
+  })();
+
+  const resultBody = (() => {
+    if (localStatus === "idle" || localStatus === "queued" || localStatus === "cancelled") return null;
+
+    if (localStatus === "running") {
+      return (
+        <div className="space-y-2">
+          <div className="glass-panel rounded h-3 animate-pulse w-[92%]" />
+          <div className="glass-panel rounded h-3 animate-pulse w-[71%]" />
+          <div className="glass-panel rounded h-3 animate-pulse w-[40%]" />
+        </div>
+      );
+    }
+
+    if (localStatus === "error") {
+      return (
+        <div className="rounded-xl border border-signal-rose/25 bg-signal-rose/5 p-3.5 text-sm text-signal-rose leading-relaxed">
+          {lastError || "Command failed to complete."}
+        </div>
+      );
+    }
+
+    if (localStatus === "timeout") {
+      const n = run?.timeout_s || 180;
+      return (
+        <div className="rounded-xl border border-signal-amber/25 bg-signal-amber/5 p-3.5 text-sm text-cream-muted leading-relaxed">
+          No response after {n}s. It may still be running in the background — check Live Activity
+          above, or retry.
+        </div>
+      );
+    }
+
+    // done
+    const text = run?.result ?? "";
+    if (!text) {
+      return (
+        <div className="glass-panel rounded-xl p-3.5 bg-forest-raised/40 font-mono text-xs text-cream-dim">
+          (no output)
+        </div>
+      );
+    }
+    const asCode = run?.format === "code" || (run?.format !== "prose" && looksLikeCode(text));
+    if (asCode) {
+      return (
+        <pre
+          className="glass-panel rounded-xl p-3.5 bg-forest-raised/40 font-mono text-xs text-cream-muted whitespace-pre-wrap overflow-y-auto scrollbar-thin"
+          style={{ maxHeight: 320 }}
+        >
+          {text}
+        </pre>
+      );
+    }
+    return (
+      <div className="text-sm text-cream-muted leading-relaxed whitespace-pre-wrap">{text}</div>
+    );
+  })();
+
+  const showActions =
+    localStatus === "done" || localStatus === "error" || localStatus === "timeout";
+
   return (
-    <GlassCard variant="strong" className="p-5 rounded-2xl flex flex-col" style={{ minHeight: 420 }}>
+    <GlassCard variant="strong" className="p-5 rounded-2xl flex flex-col">
       <div className="flex items-center gap-3 mb-4 border-b border-brass/10 pb-4">
         {photo ? (
-          <img src={photo} alt={agentName} className="h-8 w-8 rounded-full object-cover border border-brass/20" />
+          <img
+            src={photo}
+            alt={agentName}
+            className="h-8 w-8 rounded-full object-cover border border-brass/20"
+          />
         ) : (
           <div className="h-8 w-8 rounded-full bg-cream/10 border border-brass/20 flex items-center justify-center">
             <Bot className="h-4 w-4 text-brass-light" />
@@ -281,82 +525,88 @@ function AgentChat({ slug, agentName }: { slug: string; agentName: string }) {
         )}
         <div>
           <div className="ui-label">{agentName}</div>
-          <div className="text-[10px] text-cream-dim">Direct channel</div>
+          <div className="text-[11px] text-cream-dim italic">One-shot command</div>
         </div>
       </div>
 
-      {/* Message thread */}
-      <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-thin mb-4" style={{ maxHeight: 320 }}>
-        {isLoading ? (
-          <div className="text-cream-dim text-xs text-center py-6">Loading…</div>
-        ) : messages.length === 0 ? (
-          <div className="text-cream-dim text-xs text-center py-8 border border-dashed border-brass/15 rounded-xl">
-            No messages yet. Say something to {agentName}.
+      {/* Command echo — persists across states once sent */}
+      {echo && (
+        <div className="font-mono text-xs text-cream-muted mb-3">
+          <span className="text-brass-light mr-1.5">›</span>
+          {echo}
+        </div>
+      )}
+
+      {/* Status row */}
+      {localStatus !== "idle" && (
+        <div className="space-y-2 mb-3">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {statusPill}
+            {sessionLabel}
           </div>
-        ) : (
-          messages.map((msg: any) => {
-            const isUser = msg.role === "user";
-            return (
-              <div key={msg.id} className={cn("flex gap-2", isUser ? "flex-row-reverse" : "flex-row")}>
-                {!isUser && (
-                  photo ? (
-                    <img src={photo} alt={agentName} className="h-7 w-7 rounded-full object-cover border border-brass/15 shrink-0 mt-0.5" />
-                  ) : (
-                    <div className="h-7 w-7 rounded-full bg-cream/10 border border-brass/15 flex items-center justify-center shrink-0 mt-0.5">
-                      <Bot className="h-3.5 w-3.5 text-brass-light" />
-                    </div>
-                  )
-                )}
-                <div className={cn(
-                  "max-w-[78%] px-3 py-2 rounded-2xl text-sm leading-snug",
-                  isUser
-                    ? "bg-brass/20 border border-brass/30 text-cream rounded-tr-sm"
-                    : "bg-cream/5 border border-brass/10 text-cream-muted rounded-tl-sm"
-                )}>
-                  {msg.content}
-                  <div className={cn("text-[9px] mt-1 opacity-50", isUser ? "text-right" : "text-left")}>
-                    {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-        {send.isPending && (
-          <div className="flex gap-2">
-            {photo ? (
-              <img src={photo} alt={agentName} className="h-7 w-7 rounded-full object-cover border border-brass/15 shrink-0" />
-            ) : (
-              <div className="h-7 w-7 rounded-full bg-cream/10 border border-brass/15 flex items-center justify-center shrink-0">
-                <Bot className="h-3.5 w-3.5 text-brass-light" />
-              </div>
-            )}
-            <div className="px-3 py-2 rounded-2xl rounded-tl-sm bg-cream/5 border border-brass/10">
-              <span className="flex gap-1 items-center h-4">
-                <span className="h-1.5 w-1.5 rounded-full bg-brass-light animate-bounce" style={{ animationDelay: "0ms" }} />
-                <span className="h-1.5 w-1.5 rounded-full bg-brass-light animate-bounce" style={{ animationDelay: "150ms" }} />
-                <span className="h-1.5 w-1.5 rounded-full bg-brass-light animate-bounce" style={{ animationDelay: "300ms" }} />
+
+          {localStatus === "running" && (
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] text-cream-dim">
+                {formatElapsed(elapsedSec)} elapsed
               </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void handleCancel()}
+                disabled={cancelMut.isPending}
+                className="ml-auto border-signal-rose/30 text-signal-rose hover:bg-signal-rose/10 h-7 text-xs"
+              >
+                Cancel
+              </Button>
             </div>
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
+          )}
+
+          {(localStatus === "running" ||
+            localStatus === "done" ||
+            localStatus === "error" ||
+            localStatus === "timeout") && (
+            <div className="h-px w-full bg-brass/15" />
+          )}
+        </div>
+      )}
+
+      {/* Result slot */}
+      {resultBody && <div className="mb-3">{resultBody}</div>}
+
+      {showActions && (
+        <div className="flex justify-end mb-3">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleRerun}
+            disabled={send.isPending}
+            className="border-brass/35 text-brass-light hover:bg-brass/10 h-7 text-xs"
+          >
+            {localStatus === "done" ? "Run again" : "Retry"}
+          </Button>
+        </div>
+      )}
 
       {/* Input */}
-      <div className="flex gap-2 items-end border-t border-brass/10 pt-3">
+      <div className="flex gap-2 items-end border-t border-brass/10 pt-3 mt-auto">
         <textarea
+          ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKey}
-          placeholder={`Message ${agentName}…`}
+          placeholder={`Send a command to ${agentName}…`}
           rows={1}
-          className="flex-1 text-base sm:text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40 resize-none"
+          disabled={inflight}
+          className={cn(
+            "flex-1 text-base sm:text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40 resize-none",
+            inflight && "opacity-50 pointer-events-none"
+          )}
           style={{ minHeight: 40, maxHeight: 120 }}
         />
         <Button
-          onClick={handleSend}
-          disabled={!input.trim() || send.isPending}
+          onClick={() => void handleSend()}
+          disabled={!input.trim() || inflight || send.isPending}
           className="btn-brass h-10 w-10 p-0 shrink-0"
           aria-label="Send"
         >
@@ -850,8 +1100,8 @@ export default function AgentDetail() {
             </GlassCard>
           )}
 
-          {/* Chat */}
-          <AgentChat slug={slug!} agentName={agent.name} />
+          {/* One-shot command console (SPEC 069) */}
+          <AgentCommand slug={slug!} agentName={agent.name} />
         </div>
       </div>
     </div>
