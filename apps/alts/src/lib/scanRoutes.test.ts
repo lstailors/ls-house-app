@@ -8,6 +8,7 @@ import {
   parseTicketUrl,
   parsePayUrl,
   parsePickupScanTarget,
+  parseProgressScanTarget,
   routeForScannerResult,
   openPathForResult,
   routeFromRawScan,
@@ -56,6 +57,15 @@ assert(
   parsePickupScanTarget("LSTNY-SINV-2026-00165")?.kind === "invoice",
   "pickup bare invoice",
 );
+
+// mark-progress scan target (piece-level only)
+const prog = parseProgressScanTarget("https://alts.lstailors.com/g/ALT-NYC-1/G2");
+assert(prog?.ticket === "ALT-NYC-1" && prog?.garment === "G2", "progress garment url");
+assert(
+  parseProgressScanTarget("ALT-NYC-2026-00061/G1")?.garment === "G1",
+  "progress slash paste",
+);
+assert(parseProgressScanTarget("ALT-NYC-2026-00061") === null, "progress bare ticket rejected");
 
 // garment fast route from raw scan (any host)
 const gFast = routeFromRawScan("https://app.lstailors.com/g/ALT-NYC-1/G2");

@@ -149,6 +149,25 @@ export function parsePickupScanTarget(
 }
 
 /**
+ * Mark Progress mode — must resolve to a single piece (hang tag).
+ * Thermal ticket-only is not enough: time is logged per garment.
+ */
+export function parseProgressScanTarget(
+  decoded: string,
+): { ticket: string; garment: string } | null {
+  const garment = parseGarmentTagUrl(decoded);
+  if (garment) return garment;
+
+  // ALT-…/G1 or ALT-…:G1 paste
+  const slash = decoded.trim().match(/^((?:LS-)?ALT-[A-Z0-9-]+)[/:](G\d+)$/i);
+  if (slash) {
+    return { ticket: slash[1], garment: slash[2].toUpperCase() };
+  }
+
+  return null;
+}
+
+/**
  * Destination after a successful resolve.
  * Auto-navigate types load the working page immediately; others keep the sheet.
  */
