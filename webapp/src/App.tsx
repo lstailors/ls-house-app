@@ -244,7 +244,14 @@ const App = () => (
                 </RoleGuard>
               }
             />
-            <Route path="/financials" element={<Financials />} />
+            <Route
+              path="/financials"
+              element={
+                <RoleGuard allow={["super_admin", "store_manager"]}>
+                  <Financials />
+                </RoleGuard>
+              }
+            />
             <Route
               path="/owner"
               element={
