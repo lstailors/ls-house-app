@@ -711,4 +711,143 @@ missionControlRouter.get("/hermes/analytics", async (c) => {
   return c.json({ data: { usage: r.json, auth_configured: true, links: hermesDeepLinks() } });
 });
 
+// SPEC 072 Phase 2 — MCP list (auth) + artifacts gallery (lsh activity + commands)
+
+missionControlRouter.get("/hermes/mcp", async (c) => {
+  const user = getAuthedUser(c);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  const profile = c.req.query("profile");
+  const qs = profile ? `?profile=${encodeURIComponent(profile)}` : "";
+  const r = await hermesFetch(`/api/mcp/servers${qs}`, {}, { auth: true });
+  if (r.error || r.status >= 400) {
+    return c.json({
+      data: {
+        servers: [],
+        auth_configured: hermesCredsConfigured(),
+        error: r.error || r.json?.detail || r.json?.error || `status ${r.status}`,
+        links: hermesDeepLinks(),
+      },
+    });
+  }
+  const servers = Array.isArray(r.json) ? r.json : r.json?.servers ?? r.json?.data ?? [];
+  return c.json({ data: { servers, auth_configured: true, links: hermesDeepLinks() } });
+});
+
+const URL_RE = /https?:\/\/[^\s<>"')\]]+/gi;
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg)(\?|$)/i;
+
+missionControlRouter.get("/hermes/artifacts", async (c) => {
+  const user = getAuthedUser(c);
+  if (!isMissionControl(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+
+  const artifacts: any[] = [];
+  const seen = new Set<string>();
+
+  const push = (a: {
+    id: string;
+    kind: string;
+    title?: string;
+    url?: string;
+    snippet?: string;
+    agent?: string | null;
+    ts?: string | null;
+  }) => {
+    const key = a.url || a.id;
+    if (seen.has(key)) return;
+    seen.add(key);
+    artifacts.push(a);
+  };
+
+  try {
+    const activity = await mcListActivity({ limit: 80 });
+    for (const row of activity) {
+      const text = [row.title, row.body, row.snippet, row.message].filter(Boolean).join("\n");
+      const urls = text.match(URL_RE) || [];
+      for (const url of urls.slice(0, 3)) {
+        const clean = url.replace(/[.,;:]+$/, "");
+        push({
+          id: `act-${row.id || row.name}-${clean.slice(-24)}`,
+          kind: IMAGE_EXT.test(clean) ? "image" : "link",
+          title: row.title || clean,
+          url: clean,
+          snippet: (row.body || row.snippet || "").slice(0, 160),
+          agent: row.agent_slug || row.agent || null,
+          ts: row.ts || row.created_at || row.creation || null,
+        });
+      }
+      // file-ish titles without URL
+      if (!urls.length && /\.(pdf|png|jpg|zip|csv|docx?)$/i.test(String(row.title || ""))) {
+        push({
+          id: `act-file-${row.id || row.name}`,
+          kind: "file",
+          title: row.title,
+          snippet: (row.body || "").slice(0, 160),
+          agent: row.agent_slug || row.agent || null,
+          ts: row.ts || row.created_at || null,
+        });
+      }
+    }
+  } catch (e: any) {
+    // continue — try commands
+  }
+
+  try {
+    if (supabaseConfig()) {
+      let rows: any[] = [];
+      try {
+        rows = await lshSelect<any>("mc_commands", {
+          select: "id,kind,target_id,status,payload,result,error,created_at,applied_at",
+          order: "created_at.desc",
+          limit: 40,
+        });
+      } catch {
+        rows = await lshSelect<any>("kanban_commands", {
+          select: "id,action,task_id,status,payload,error,created_at,applied_at",
+          order: "created_at.desc",
+          limit: 40,
+        });
+      }
+      for (const row of rows) {
+        let payload = row.payload || {};
+        if (typeof payload === "string") {
+          try {
+            payload = JSON.parse(payload);
+          } catch {
+            payload = {};
+          }
+        }
+        const blob = [payload.result, row.result, payload.prompt, payload.command]
+          .filter(Boolean)
+          .join("\n");
+        const urls = String(blob).match(URL_RE) || [];
+        for (const url of urls.slice(0, 4)) {
+          const clean = url.replace(/[.,;:]+$/, "");
+          push({
+            id: `cmd-${row.id}-${clean.slice(-24)}`,
+            kind: IMAGE_EXT.test(clean) ? "image" : "link",
+            title: payload.prompt?.slice?.(0, 80) || `command ${row.id}`,
+            url: clean,
+            snippet: String(blob).slice(0, 160),
+            agent: row.target_id || row.task_id || payload.agent_slug || null,
+            ts: row.applied_at || row.created_at || null,
+          });
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  artifacts.sort((a, b) => String(b.ts || "").localeCompare(String(a.ts || "")));
+
+  return c.json({
+    data: {
+      artifacts: artifacts.slice(0, 60),
+      count: Math.min(artifacts.length, 60),
+      links: hermesDeepLinks(),
+      note: "Derived from lsh activity_feed + command results — not Desktop gallery index.",
+    },
+  });
+});
+
 export default missionControlRouter;

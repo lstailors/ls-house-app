@@ -153,9 +153,9 @@ export const HERMES_FEATURE_MAP = [
   {
     id: "chat",
     desktop: "Streaming chat + tool cards",
-    mc: "Agent Command + Open Console (Chat)",
-    mode: "deep-link",
-    phase: 1,
+    mc: "Hermes Chat (one-shot) + Open Console live stream",
+    mode: "mirror",
+    phase: 2,
   },
   {
     id: "cron",
@@ -181,15 +181,15 @@ export const HERMES_FEATURE_MAP = [
   {
     id: "mcp",
     desktop: "MCP servers",
-    mc: "Open Console → MCP",
-    mode: "deep-link",
+    mc: "Hermes Admin · MCP list + Console manage",
+    mode: "mirror",
     phase: 2,
   },
   {
     id: "channels",
     desktop: "Messaging channels / pairing",
-    mc: "Open Console → Channels",
-    mode: "deep-link",
+    mc: "Hermes Admin · gateway channels",
+    mode: "mirror",
     phase: 2,
   },
   {
@@ -202,8 +202,8 @@ export const HERMES_FEATURE_MAP = [
   {
     id: "artifacts",
     desktop: "Artifacts gallery",
-    mc: "Planned native gallery",
-    mode: "planned",
+    mc: "Hermes Artifacts (activity + command outputs)",
+    mode: "mirror",
     phase: 2,
   },
   {

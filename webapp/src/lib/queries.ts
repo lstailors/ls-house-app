@@ -1155,3 +1155,21 @@ export function useHermesMirrorCron(enabled = true) {
     enabled,
   });
 }
+
+export function useHermesMirrorMcp(enabled = true) {
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "mcp"],
+    queryFn: () => api.get<any>(`/api/mission-control/hermes/mcp`),
+    staleTime: 60_000,
+    enabled,
+  });
+}
+
+export function useHermesMirrorArtifacts(enabled = true) {
+  return useQuery({
+    queryKey: ["mission-control", "hermes", "artifacts"],
+    queryFn: () => api.get<any>(`/api/mission-control/hermes/artifacts`),
+    staleTime: 30_000,
+    enabled,
+  });
+}
