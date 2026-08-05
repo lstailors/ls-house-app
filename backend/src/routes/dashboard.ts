@@ -998,3 +998,269 @@ dashboardRouter.get("/floor-brief/trigger", async (c) => {
     return c.json({ ok: false, error: e?.message ?? "failed" }, 500);
   }
 });
+
+/**
+ * GET /api/dashboard/alts-home
+ * One-screen alts dashboard feed — location-scoped live lines + strip counts.
+ * Mirrors /board 60s refetch pattern. No mock figures.
+ */
+dashboardRouter.get("/alts-home", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  // Alts FOH is NYC-only (same as intake tickets).
+  const origin = "NYC";
+  const today = new Date().toISOString().slice(0, 10);
+
+  try {
+    const [tickets, deliveries, invoices, lastGarment, lastCustomer] = await Promise.all([
+      erpList<{
+        name: string;
+        customer_name?: string;
+        workflow_state?: string;
+        due_date?: string;
+        assigned_tailor?: string;
+        origin_location?: string;
+        notified_ready_at?: string | null;
+        modified?: string;
+        creation?: string;
+      }>("Alteration Ticket", {
+        filters: [
+          ["workflow_state", "!=", "Cancelled"],
+          ["origin_location", "=", origin],
+        ],
+        fields: [
+          "name",
+          "customer_name",
+          "workflow_state",
+          "due_date",
+          "assigned_tailor",
+          "origin_location",
+          "notified_ready_at",
+          "modified",
+          "creation",
+        ],
+        limit: 400,
+        order_by: "modified desc",
+      }).catch(() => []),
+      erpList<{ name: string; lsh_status?: string; lsh_delivered_at?: string | null }>("LSH Delivery", {
+        filters: [["lsh_origin_location", "=", "NYC"]],
+        fields: ["name", "lsh_status", "lsh_delivered_at"],
+        limit: 300,
+        order_by: "modified desc",
+      }).catch(() =>
+        erpList<{ name: string; lsh_status?: string; lsh_delivered_at?: string | null }>("LSH Delivery", {
+          fields: ["name", "lsh_status", "lsh_delivered_at"],
+          limit: 300,
+          order_by: "modified desc",
+        }).catch(() => []),
+      ),
+      erpList<{
+        name: string;
+        outstanding_amount?: number;
+        posting_date?: string;
+        due_date?: string;
+      }>("Sales Invoice", {
+        filters: [
+          ["docstatus", "=", 1],
+          ["outstanding_amount", ">", 0],
+        ],
+        fields: ["name", "outstanding_amount", "posting_date", "due_date"],
+        limit: 500,
+        order_by: "posting_date asc",
+      }).catch(() => []),
+      erpList<{
+        parent?: string;
+        garment_id?: string;
+        garment_type?: string;
+        completed_by?: string;
+        completed_at?: string;
+      }>("Alteration Ticket Garment", {
+        parent: "Alteration Ticket",
+        filters: [["completed_at", "is", "set"]],
+        fields: ["parent", "garment_id", "garment_type", "completed_by", "completed_at"],
+        limit: 5,
+        order_by: "completed_at desc",
+      }).catch(() => []),
+      erpList<{ name: string; customer_name?: string; modified?: string }>("Customer", {
+        filters: [["disabled", "=", 0]],
+        fields: ["name", "customer_name", "modified"],
+        limit: 1,
+        order_by: "modified desc",
+      }).catch(() => []),
+    ]);
+
+    let open = 0;
+    let ready = 0;
+    let dueToday = 0;
+    let overdue = 0;
+    let inProgress = 0;
+    let atHome = 0;
+    let readyNotTexted = 0;
+    let lateTransferCount = 0;
+    const lateNames: string[] = [];
+
+    // Most recent by creation for "New Ticket" live line
+    let newest: (typeof tickets)[number] | null = null;
+    for (const t of tickets) {
+      const st = t.workflow_state ?? "";
+      if (st === "Picked Up" || st === "Cancelled") continue;
+      open += 1;
+      if (st === "Ready") {
+        ready += 1;
+        if (!t.notified_ready_at) readyNotTexted += 1;
+      }
+      if (st === "In Progress") inProgress += 1;
+      if (t.due_date) {
+        if (t.due_date < today) overdue += 1;
+        else if (t.due_date === today) dueToday += 1;
+      }
+      if (t.assigned_tailor && st !== "Ready" && st !== "Picked Up") {
+        atHome += 1;
+        if (t.due_date && t.due_date < today) {
+          lateTransferCount += 1;
+          const cn = (t.customer_name || t.name || "").trim();
+          if (cn && !lateNames.includes(cn) && lateNames.length < 3) lateNames.push(cn);
+        }
+      }
+      if (!newest || (t.creation || "") > (newest.creation || "")) {
+        newest = t;
+      }
+    }
+
+    let outForDelivery = 0;
+    let deliveredToday = 0;
+    let pendingBoard = 0;
+    for (const d of deliveries) {
+      const st = (d.lsh_status || "").toLowerCase().replace(/\s+/g, "_");
+      if (st === "out_for_delivery") outForDelivery += 1;
+      if (st === "scheduled" || st === "out_for_delivery" || st === "queued") pendingBoard += 1;
+      if (
+        st === "delivered" &&
+        d.lsh_delivered_at &&
+        String(d.lsh_delivered_at).slice(0, 10) === today
+      ) {
+        deliveredToday += 1;
+      }
+    }
+
+    let openInvoicesAmount = 0;
+    let oldestUnpaidDays: number | null = null;
+    const openInvoices = invoices.length;
+    const nowMs = Date.now();
+    for (const inv of invoices) {
+      openInvoicesAmount += Number(inv.outstanding_amount) || 0;
+      const anchor = inv.posting_date || inv.due_date;
+      if (anchor) {
+        const days = Math.max(
+          0,
+          Math.floor((nowMs - Date.parse(`${anchor}T12:00:00Z`)) / 86_400_000),
+        );
+        if (oldestUnpaidDays == null || days > oldestUnpaidDays) oldestUnpaidDays = days;
+      }
+    }
+    openInvoicesAmount = Math.round(openInvoicesAmount * 100) / 100;
+
+    // Resolve last progress worker name
+    let lastProgress: {
+      workerName: string;
+      garmentLabel: string;
+      completedAt: string;
+      ticket?: string;
+    } | null = null;
+    const g0 = lastGarment[0];
+    if (g0?.completed_at) {
+      let workerName = (g0.completed_by || "").trim() || "Tailor";
+      if (g0.completed_by) {
+        const emp = await erpList<{ name: string; employee_name?: string }>("Employee", {
+          filters: [["name", "=", g0.completed_by]],
+          fields: ["name", "employee_name"],
+          limit: 1,
+        }).catch(() => []);
+        if (emp[0]?.employee_name) workerName = emp[0].employee_name.split(" ")[0] || emp[0].employee_name;
+        else workerName = workerName.split(" ")[0] || workerName;
+      } else {
+        workerName = "Tailor";
+      }
+      const gType = (g0.garment_type || g0.garment_id || "garment").toString();
+      lastProgress = {
+        workerName,
+        garmentLabel: gType,
+        completedAt: g0.completed_at,
+        ticket: g0.parent,
+      };
+    }
+
+    const cust0 = lastCustomer[0];
+    const lastTouchedCustomer = cust0
+      ? {
+          name: cust0.customer_name || cust0.name,
+          modified: cust0.modified || null,
+        }
+      : null;
+
+    // Optional: garment count on open tickets (best-effort)
+    let openGarments = 0;
+    try {
+      const openNames = tickets
+        .filter((t) => {
+          const st = t.workflow_state ?? "";
+          return st && st !== "Picked Up" && st !== "Cancelled";
+        })
+        .map((t) => t.name)
+        .slice(0, 200);
+      if (openNames.length) {
+        const gRows = await erpList<{ name: string }>("Alteration Ticket Garment", {
+          parent: "Alteration Ticket",
+          filters: [["parent", "in", openNames]],
+          fields: ["name"],
+          limit: 2000,
+        }).catch(() => []);
+        openGarments = gRows.length;
+      }
+    } catch {
+      openGarments = 0;
+    }
+
+    return c.json({
+      data: {
+        location: origin,
+        syncedAt: Date.now(),
+        strip: {
+          overdue,
+          dueToday,
+          outForDelivery,
+          deliveredToday,
+        },
+        counts: {
+          open,
+          ready,
+          inProgress,
+          atHome,
+          readyNotTexted,
+          pendingBoard,
+          openGarments: openGarments || open,
+          openInvoices,
+          openInvoicesAmount,
+          oldestUnpaidDays,
+          lateTransferCount,
+        },
+        feeds: {
+          lastTicket: newest
+            ? {
+                name: newest.name,
+                customerName: newest.customer_name || newest.name,
+                createdAt: newest.creation || newest.modified || null,
+              }
+            : null,
+          lastProgress,
+          lastTouchedCustomer,
+          lateTransferNames: lateNames,
+        },
+      },
+    });
+  } catch (e: any) {
+    console.error("[alts-home]", e?.message);
+    return c.json({ error: { message: e?.message ?? "alts-home failed" } }, 502);
+  }
+});

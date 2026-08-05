@@ -323,7 +323,7 @@ intakeAlterationsRouter.get('/tickets', async (c) => {
       : [['workflow_state', '!=', 'Cancelled']];
     if (origin) filters.push(['origin_location', '=', origin]);
     const rows = await mcpList<any>('Alteration Ticket',
-      ['name','customer_name','customer_phone','customer','origin_location','workflow_state','ticket_date','due_date','is_rush','ticket_total','payment_status','billing_status','assigned_tailor','linked_sales_order','included_in_custom','sales_invoice','delivery_method'],
+      ['name','customer_name','customer_phone','customer','origin_location','workflow_state','ticket_date','due_date','is_rush','ticket_total','payment_status','billing_status','assigned_tailor','linked_sales_order','included_in_custom','sales_invoice','delivery_method','notified_ready_at','modified','creation'],
       filters, limit, 'modified desc');
     return c.json({ data: rows });
   } catch (e: any) {
