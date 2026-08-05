@@ -1187,10 +1187,10 @@ export default function HomeTiles() {
               >
                 {t.icon}
               </div>
-              <h2 className={cn("display mt-2 sm:mt-2.5 leading-tight", t.external ? "text-[18px] sm:text-[20px]" : "text-[19px] sm:text-[22px]")}>
+              <h2 className={cn("display mt-2 sm:mt-2.5 leading-tight text-center w-full", t.external ? "text-[22px] sm:text-[25px]" : "text-[24px] sm:text-[28px]")}>
                 {t.title}
               </h2>
-              <p className="text-[11px] sm:text-[12px] text-[var(--cm)] mt-1 sm:mt-1.5 leading-snug pr-6 line-clamp-2">{t.sub}</p>
+              <p className="text-[11px] sm:text-[12px] text-[var(--cm)] mt-1 sm:mt-1.5 leading-snug text-center w-full line-clamp-2">{t.sub}</p>
               {t.external && (
                 <div className="font-mono text-[10px] text-[var(--bd)] tracking-wide mt-1">app.lstailors.com ↗</div>
               )}
