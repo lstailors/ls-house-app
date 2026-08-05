@@ -58,20 +58,29 @@ function storeHoursLine() {
 
 function briefAge(iso?: string | null) {
   if (!iso) return "";
-  const ms = Date.parse(iso.includes("T") ? iso : iso.replace(" ", "T"));
+  const raw = iso.includes("T") ? iso : iso.replace(" ", "T");
+  // Frappe datetimes are store-local without Z — parse as local-ish
+  const ms = Date.parse(raw.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(raw) ? raw : `${raw}`);
   if (!Number.isFinite(ms)) return "";
   const sec = Math.max(0, Math.round((Date.now() - ms) / 1000));
-  if (sec < 60) return `${sec}s ago`;
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 45) return "just now";
+  if (sec < 3600) return `${Math.max(1, Math.floor(sec / 60))}m ago`;
   if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-  return new Date(ms).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const days = Math.floor(sec / 86400);
+  if (days < 30) return `${days}d ago`;
+  return `${Math.floor(days / 7)}w ago`;
+}
+
+function firstName(full?: string | null) {
+  if (!full) return "—";
+  const parts = full.trim().split(/\s+/).filter(Boolean);
+  return parts[0] || "—";
 }
 
 function shortName(full?: string | null) {
   if (!full) return "Client";
   const parts = full.trim().split(/\s+/).filter(Boolean);
   if (parts.length <= 1) return parts[0] || "Client";
-  // Prefer "Last" or "First Last" when short
   if (parts.length === 2) return parts.join(" ");
   return `${parts[0]} ${parts[parts.length - 1]}`;
 }
@@ -137,11 +146,7 @@ function espressoSubline(data?: { fromCache?: boolean; createdAt?: string; body?
   if (!data) return "Rocco · floor sweep";
   const freshness = data.fromCache ? "cached" : "fresh";
   const age = data.createdAt ? briefAge(data.createdAt) : "";
-  const peek = espressoContentLines(data.body)[0];
-  const head = age ? `Rocco · ${freshness} · ${age}` : `Rocco · ${freshness}`;
-  if (!peek) return head;
-  const short = peek.length > 72 ? `${peek.slice(0, 70)}…` : peek;
-  return `${head} · ${short}`;
+  return age ? `Rocco · ${freshness} · ${age}` : `Rocco · ${freshness}`;
 }
 
 type AskMsg = {
@@ -640,7 +645,8 @@ export default function HomeTiles() {
     return {
       text: (
         <>
-          Last: <b>{age || "recent"}</b> — {who}
+          <b>{who}</b>
+          {age ? ` · ${age}` : ""}
         </>
       ),
       tone: "em" as LiveTone,
@@ -654,7 +660,7 @@ export default function HomeTiles() {
     return {
       text: (
         <>
-          <b>{ip}</b> in progress · {ah} at home
+          <b>{ip}</b> in progress · <b>{ah}</b> at home
         </>
       ),
       tone,
@@ -663,12 +669,15 @@ export default function HomeTiles() {
 
   const progressLive = (() => {
     const p = feeds?.lastProgress;
-    if (!p) return { text: "No completions today yet", tone: "cd" as LiveTone };
+    if (!p) return { text: "No completions yet", tone: "cd" as LiveTone };
     const age = briefAge(p.completedAt);
+    const who = firstName(p.workerName);
+    const g = (p.garmentLabel || "garment").toString().split(/\s+/)[0];
     return {
       text: (
         <>
-          Last: <b>{p.workerName}</b> · {p.garmentLabel} · {age}
+          <b>{who}</b> · {g}
+          {age ? ` · ${age}` : ""}
         </>
       ),
       tone: "em" as LiveTone,
@@ -679,14 +688,20 @@ export default function HomeTiles() {
     const n = c?.readyNotTexted ?? 0;
     if (n <= 0) {
       return {
-        text: c?.ready ? `${c.ready} ready · all texted` : "Nothing on the ready rack",
+        text: c?.ready ? (
+          <>
+            <b>{c.ready}</b> ready · all texted
+          </>
+        ) : (
+          "Nothing on the rack"
+        ),
         tone: (c?.ready ? "em" : "cd") as LiveTone,
       };
     }
     return {
       text: (
         <>
-          <b>{n}</b> ready, not texted yet
+          <b>{n}</b> ready · not texted
         </>
       ),
       tone: "am" as LiveTone,
@@ -699,15 +714,21 @@ export default function HomeTiles() {
     if (n <= 0) {
       const ah = c?.atHome ?? 0;
       return {
-        text: ah > 0 ? `${ah} at home · none late` : "No at-home work out",
+        text: ah > 0 ? (
+          <>
+            <b>{ah}</b> at home · on time
+          </>
+        ) : (
+          "No work at home"
+        ),
         tone: (ah > 0 ? "em" : "cd") as LiveTone,
       };
     }
-    const label = names.map(shortName).join(", ");
+    const label = names.map(firstName).slice(0, 2).join(", ");
     return {
       text: (
         <>
-          <b>{n}</b> late{label ? ` — ${label}` : ""}
+          <b>{n}</b> late{label ? ` · ${label}` : ""}
         </>
       ),
       tone: "ro" as LiveTone,
@@ -715,18 +736,27 @@ export default function HomeTiles() {
   })();
 
   const findLive = {
-    text: `${c?.open ?? 0} open tickets on file`,
+    text: (
+      <>
+        <b>{c?.open ?? 0}</b> open on file
+      </>
+    ),
     tone: ((c?.open ?? 0) > 0 ? "em" : "cd") as LiveTone,
   };
 
   const delivLive = (() => {
     const n = c?.pendingBoard ?? 0;
-    if (n <= 0) return { text: "No active runs today", tone: "cd" as LiveTone };
+    if (n <= 0) return { text: "No active runs", tone: "cd" as LiveTone };
     return {
       text: (
         <>
-          <b>{n}</b> on the board
-          {(strip?.outForDelivery ?? 0) > 0 ? ` · ${strip!.outForDelivery} out` : ""}
+          <b>{n}</b> on board
+          {(strip?.outForDelivery ?? 0) > 0 ? (
+            <>
+              {" "}
+              · <b>{strip!.outForDelivery}</b> out
+            </>
+          ) : null}
         </>
       ),
       tone: (strip?.outForDelivery ?? 0) > 0 ? ("am" as LiveTone) : ("em" as LiveTone),
@@ -735,12 +765,12 @@ export default function HomeTiles() {
 
   const custLive = (() => {
     const t = feeds?.lastTouchedCustomer;
-    if (!t) return { text: "No recent customer edits", tone: "cd" as LiveTone };
+    if (!t) return { text: "No recent edits", tone: "cd" as LiveTone };
     const age = briefAge(t.modified);
     return {
       text: (
         <>
-          Last touched: <b>{shortName(t.name)}</b>
+          <b>{shortName(t.name)}</b>
           {age ? ` · ${age}` : ""}
         </>
       ),
@@ -751,12 +781,12 @@ export default function HomeTiles() {
   const invLive = (() => {
     const n = c?.openInvoices ?? 0;
     const oldest = c?.oldestUnpaidDays;
-    if (n <= 0) return { text: "No open invoices", tone: "cd" as LiveTone };
+    if (n <= 0) return { text: "All clear", tone: "cd" as LiveTone };
     return {
       text: (
         <>
           <b>{n}</b> unpaid
-          {oldest != null ? ` · oldest ${oldest}d` : ""}
+          {oldest != null ? ` · ${oldest}d oldest` : ""}
         </>
       ),
       tone: n > 0 ? ("am" as LiveTone) : ("em" as LiveTone),
@@ -773,7 +803,7 @@ export default function HomeTiles() {
       key: "new",
       to: "/intake/kind",
       title: "New Ticket",
-      sub: "Walk-in, custom order, or re-do",
+      sub: "Walk-in · custom · re-do",
       primary: true,
       live: lastTicketLive.text,
       liveTone: lastTicketLive.tone,
@@ -791,7 +821,7 @@ export default function HomeTiles() {
       key: "floor",
       to: "/shop-floor",
       title: "Shop Floor",
-      sub: `${c?.openGarments ?? c?.open ?? 0} garments · ${c?.ready ?? 0} ready`,
+      sub: `${c?.openGarments ?? c?.open ?? 0} pcs · ${c?.ready ?? 0} ready`,
       badge: c?.open || null,
       badgeKind: (strip?.overdue ?? 0) > 0 ? "alert" : "warn",
       live: shopLive.text,
@@ -808,7 +838,7 @@ export default function HomeTiles() {
       key: "progress",
       to: "/scanner?mode=progress",
       title: "Mark Progress",
-      sub: "Scan tag · time chip",
+      sub: "Scan · who · time chip",
       live: progressLive.text,
       liveTone: progressLive.tone,
       icon: (
@@ -823,7 +853,7 @@ export default function HomeTiles() {
       key: "pickup",
       to: "/pickup",
       title: "Pickup",
-      sub: "Hand back & settle balance",
+      sub: "Hand back · settle",
       badge: c?.ready || null,
       badgeKind: "warn",
       live: pickupLive.text,
@@ -839,7 +869,7 @@ export default function HomeTiles() {
       key: "transfers",
       to: "/transfers",
       title: "Transfers",
-      sub: "Send & take back at-home work",
+      sub: "Send · take back home",
       live: xferLive.text,
       liveTone: xferLive.tone,
       icon: (
@@ -854,7 +884,7 @@ export default function HomeTiles() {
       key: "lookup",
       to: "/lookup",
       title: "Find a Ticket",
-      sub: "Number, name, phone, tag scan",
+      sub: "Name · phone · tag",
       live: findLive.text,
       liveTone: findLive.tone,
       icon: (
@@ -868,7 +898,7 @@ export default function HomeTiles() {
       key: "deliveries",
       to: "/deliveries",
       title: "Deliveries",
-      sub: "Board status · driver route · POD",
+      sub: "Board · route · POD",
       badge: c?.pendingBoard || null,
       badgeKind: "neutral",
       dim: (c?.pendingBoard ?? 0) === 0,
@@ -885,7 +915,7 @@ export default function HomeTiles() {
       key: "customers",
       to: "/customers",
       title: "Customers",
-      sub: "Profiles, phones, addresses",
+      sub: "Profiles · phones",
       live: custLive.text,
       liveTone: custLive.tone,
       icon: (
@@ -901,7 +931,7 @@ export default function HomeTiles() {
       key: "invoices",
       to: "/invoices",
       title: "Invoices",
-      sub: "All sales invoices · custom + alts",
+      sub: "Custom + alts AR",
       badge: moneyBadge,
       badgeKind: "money",
       live: invLive.text,
@@ -918,7 +948,7 @@ export default function HomeTiles() {
       key: "reports",
       to: "/reports",
       title: "Floor Reports",
-      sub: "Pipeline, tally, revenue · this location",
+      sub: "Pipeline · tally · $",
       admin: true,
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -1136,7 +1166,7 @@ export default function HomeTiles() {
                   className="host"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  app.lstailors.com ↗ Owner/Admin
+                  app.lstailors.com/owner
                 </a>
               ) : t.live != null ? (
                 <div className={cn("live", t.liveTone === "am" && "am", t.liveTone === "ro" && "ro")}>
