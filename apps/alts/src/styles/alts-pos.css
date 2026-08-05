@@ -532,6 +532,8 @@
     overflow: hidden;
   }
   .home-007 .home-tiles {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     grid-auto-rows: minmax(130px, 1fr);
   }
