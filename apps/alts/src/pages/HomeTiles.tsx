@@ -10,61 +10,10 @@ import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
 import { clearAltsPrivateStorage } from "@alts/lib/logoutPrivacy";
-import { TailorTallyStrip } from "@alts/components/TailorTallyStrip";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
-/** Live date/time pill (SPEC_060) — neutral outline, updates every minute.
- *  SPEC_061: leads the pill row (right after the greeting) + live pulse dot
- *  + live open-tickets badge count so the clock also reads as "floor is live". */
-function TimeClockPill({ openCount }: { openCount: number }) {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
-  }, []);
-  const time = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  const date = now.toLocaleDateString([], { month: "short", day: "numeric" });
-  return (
-    <div className="relative flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full border border-cream/30 bg-white/[0.02] text-[11px] sm:text-xs min-h-[40px] text-[var(--cd)]">
-      <span
-        className="w-[6px] h-[6px] rounded-full bg-[var(--em)] shadow-[0_0_6px_rgba(79,191,142,0.8)] animate-pulse shrink-0"
-        aria-hidden
-        title="Live"
-      />
-      <span className="font-mono tabular-nums">{time}</span>
-      <span className="opacity-60">·</span>
-      <span>{date}</span>
-      {openCount > 0 && (
-        <span
-          className="ml-1 min-w-[20px] h-[20px] px-1.5 rounded-full grid place-items-center text-[10px] font-bold bg-white/[0.08] border border-brass/30 text-cream shrink-0"
-          title="Open tickets right now"
-        >
-          {openCount}
-        </span>
-      )}
-    </div>
-  );
-}
-
-
-/** Phone default collapsed; tablet (≥720) default open. Honor localStorage if set. */
-function readEspressoOpenDefault(): boolean {
-  try {
-    const v = localStorage.getItem(ESPRESSO_OPEN_KEY);
-    if (v === "0") return false;
-    if (v === "1") return true;
-  } catch {
-    /* private mode */
-  }
-  if (typeof window !== "undefined") {
-    return window.matchMedia("(min-width: 720px)").matches;
-  }
-  return false;
-}
-
 function peelLeadingIcon(line: string): { icon: string | null; text: string } {
-  // Leading emoji / pictograph cluster (⚡ 👉 🔴 etc.)
   const m = line.match(/^((?:[\p{Extended_Pictographic}\p{Emoji_Presentation}]|\uFE0F|\u200D)+)\s*(.*)$/u);
   if (m) return { icon: m[1], text: m[2] ?? "" };
   return { icon: null, text: line };
@@ -89,31 +38,6 @@ function espressoContentLines(body?: string | null): string[] {
     .filter((l) => l && !isSignatureLine(l));
 }
 
-type Stats = {
-  open: number;
-  ready: number;
-  dueToday: number;
-  overdue: number;
-  outToTailors: number;
-  parked: number;
-  outForDelivery: number;
-  deliveredToday: number;
-  pendingBoard: number;
-  openInvoices: number;
-  syncedAt: number;
-};
-
-const Arrow = ({ external }: { external?: boolean }) =>
-  external ? (
-    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 16L16 6M9 6h7v7" />
-    </svg>
-  ) : (
-    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 11h13M12 6l5 5-5 5" />
-    </svg>
-  );
-
 function greetingName(name?: string | null) {
   if (!name) return "there";
   return name.split(" ")[0] ?? "there";
@@ -128,17 +52,41 @@ function timeGreeting() {
 
 function storeHoursLine() {
   const d = new Date();
-  const day = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const day = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   return `${day} · East 61st Street · open until 6:00 PM`;
 }
 
 function briefAge(iso?: string | null) {
   if (!iso) return "";
-  const sec = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
-  if (sec < 60) return "just now";
+  const ms = Date.parse(iso.includes("T") ? iso : iso.replace(" ", "T"));
+  if (!Number.isFinite(ms)) return "";
+  const sec = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (sec < 60) return `${sec}s ago`;
   if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
   if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-  return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return new Date(ms).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function shortName(full?: string | null) {
+  if (!full) return "Client";
+  const parts = full.trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return parts[0] || "Client";
+  // Prefer "Last" or "First Last" when short
+  if (parts.length === 2) return parts.join(" ");
+  return `${parts[0]} ${parts[parts.length - 1]}`;
+}
+
+function formatCompactMoney(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "$0";
+  if (n >= 1_000_000) {
+    const v = n / 1_000_000;
+    return `$${v >= 10 ? Math.round(v) : v.toFixed(1).replace(/\.0$/, "")}M`;
+  }
+  if (n >= 1000) {
+    const v = n / 1000;
+    return `$${v >= 100 ? Math.round(v) : v.toFixed(1).replace(/\.0$/, "")}k`;
+  }
+  return `$${Math.round(n)}`;
 }
 
 /** Render Daily Espresso lines — icon column + action brass wash. */
@@ -185,19 +133,15 @@ function EspressoBody({ text }: { text: string }) {
   );
 }
 
-function espressoSubline(data?: { fromCache?: boolean; createdAt?: string } | null) {
+function espressoSubline(data?: { fromCache?: boolean; createdAt?: string; body?: string } | null) {
   if (!data) return "Rocco · floor sweep";
   const freshness = data.fromCache ? "cached" : "fresh";
   const age = data.createdAt ? briefAge(data.createdAt) : "";
-  return age ? `Rocco · ${freshness} · ${age}` : `Rocco · ${freshness}`;
-}
-
-function espressoIsStale(data?: { fromCache?: boolean; createdAt?: string } | null) {
-  if (!data) return true;
-  if (data.fromCache) return true;
-  if (!data.createdAt) return false;
-  const hours = (Date.now() - new Date(data.createdAt).getTime()) / 3_600_000;
-  return hours > 6;
+  const peek = espressoContentLines(data.body)[0];
+  const head = age ? `Rocco · ${freshness} · ${age}` : `Rocco · ${freshness}`;
+  if (!peek) return head;
+  const short = peek.length > 72 ? `${peek.slice(0, 70)}…` : peek;
+  return `${head} · ${short}`;
 }
 
 type AskMsg = {
@@ -217,10 +161,9 @@ const ASK_CHIPS: Array<{ label: string; question: string }> = [
 const ASK_THREAD_MAX = 6;
 
 function trimAskThread(msgs: AskMsg[]): AskMsg[] {
-  // Keep last N non-thinking messages; drop orphan thinking if over.
   const withoutThinking = msgs.filter((m) => m.role !== "thinking");
   if (withoutThinking.length <= ASK_THREAD_MAX) {
-    return msgs.slice(-(ASK_THREAD_MAX + 1)); // allow one thinking
+    return msgs.slice(-(ASK_THREAD_MAX + 1));
   }
   return withoutThinking.slice(-ASK_THREAD_MAX);
 }
@@ -360,10 +303,7 @@ function AskRoccoComposer({
       </div>
 
       {thread.length > 0 && (
-        <div
-          className="flex flex-col gap-2 mb-2.5 max-h-[220px] overflow-y-auto"
-          aria-live="polite"
-        >
+        <div className="flex flex-col gap-2 mb-2.5 max-h-[220px] overflow-y-auto" aria-live="polite">
           {thread.map((m) => {
             if (m.role === "user") {
               return (
@@ -435,7 +375,6 @@ function AskRoccoComposer({
             "bg-black/40 border border-brass/32 text-cream placeholder:text-[var(--cd)]",
             "focus:border-brass focus:shadow-[0_0_0_3px_rgba(176,141,87,0.14)]",
             "disabled:opacity-60 appearance-none",
-            "[&:-webkit-autofill]:shadow-[inset_0_0_0_1000px_rgba(0,0,0,0.85)] [&:-webkit-autofill]:[-webkit-text-fill-color:#F1E9D6]",
           )}
         />
         <button
@@ -464,6 +403,85 @@ function AskRoccoComposer({
   );
 }
 
+type AltsHomeFeed = {
+  location: string;
+  syncedAt: number;
+  strip: {
+    overdue: number;
+    dueToday: number;
+    outForDelivery: number;
+    deliveredToday: number;
+  };
+  counts: {
+    open: number;
+    ready: number;
+    inProgress: number;
+    atHome: number;
+    readyNotTexted: number;
+    pendingBoard: number;
+    openGarments: number;
+    openInvoices: number;
+    openInvoicesAmount: number;
+    oldestUnpaidDays: number | null;
+    lateTransferCount: number;
+  };
+  feeds: {
+    lastTicket: { name: string; customerName: string; createdAt: string | null } | null;
+    lastProgress: {
+      workerName: string;
+      garmentLabel: string;
+      completedAt: string;
+      ticket?: string;
+    } | null;
+    lastTouchedCustomer: { name: string; modified: string | null } | null;
+    lateTransferNames: string[];
+  };
+};
+
+type LiveTone = "em" | "am" | "ro" | "cd" | null;
+
+type TileDef = {
+  key: string;
+  to?: string;
+  href?: string;
+  title: string;
+  sub: string;
+  primary?: boolean;
+  admin?: boolean;
+  dim?: boolean;
+  badge?: React.ReactNode;
+  badgeKind?: "warn" | "alert" | "neutral" | "money";
+  live?: React.ReactNode;
+  liveTone?: LiveTone;
+  icon: React.ReactNode;
+};
+
+function LiveDot({ tone }: { tone?: LiveTone }) {
+  const t = tone ?? "em";
+  return (
+    <span
+      className={cn(
+        "home-live-dot",
+        t === "am" && "is-am",
+        t === "ro" && "is-ro",
+        t === "cd" && "is-cd",
+      )}
+      aria-hidden
+    />
+  );
+}
+
+function readEspressoOpenDefault(): boolean {
+  try {
+    const v = localStorage.getItem(ESPRESSO_OPEN_KEY);
+    if (v === "0") return false;
+    if (v === "1") return true;
+  } catch {
+    /* private mode */
+  }
+  return false;
+}
+
 export default function HomeTiles() {
   const { data: me } = useMe();
   const nav = useNavigate();
@@ -485,95 +503,19 @@ export default function HomeTiles() {
     });
   }, []);
 
-  const stats = useQuery({
+  // Key stays "alts-home-stats" so intake/scanner/pod invalidations still refresh this feed.
+  const home = useQuery({
     queryKey: ["alts-home-stats"],
-    queryFn: async (): Promise<Stats> => {
-      const [rows, parked, deliveries, invoices] = await Promise.all([
-        api.get<
-          Array<{
-            workflow_state?: string;
-            due_date?: string;
-            name: string;
-            origin_location?: string;
-            assigned_tailor?: string;
-          }>
-        >("/api/intake-alterations/tickets?limit=200"),
-        api.get<Array<unknown>>("/api/carts").catch(() => [] as unknown[]),
-        // HER-75: board counts for Deliveries tile + status strip
-        api
-          .get<
-            Array<{ status?: string; deliveredAt?: string | null }>
-          >("/api/deliveries")
-          .catch(() => [] as Array<{ status?: string; deliveredAt?: string | null }>),
-        api
-          .raw("/api/invoices?status=open&limit=100")
-          .then(async (r) => {
-            const j = await r.json().catch(() => ({}));
-            if (!r.ok) return { openCount: 0 };
-            return {
-              openCount:
-                typeof j?.summary?.openCount === "number"
-                  ? j.summary.openCount
-                  : Array.isArray(j?.data)
-                    ? j.data.filter((i) => Number(i.outstandingAmount) > 0.005).length
-                    : 0,
-            };
-          })
-          .catch(() => ({ openCount: 0 })),
-      ]);
-      const list = Array.isArray(rows) ? rows : (rows as any)?.tickets ?? [];
-      const today = new Date().toISOString().slice(0, 10);
-      let open = 0;
-      let ready = 0;
-      let dueToday = 0;
-      let overdue = 0;
-      let outToTailors = 0;
-      for (const t of list) {
-        const st = t.workflow_state ?? "";
-        if (st === "Ready") ready += 1;
-        if (st && st !== "Picked Up" && st !== "Cancelled") {
-          open += 1;
-          if (t.due_date) {
-            if (t.due_date < today) overdue += 1;
-            else if (t.due_date === today) dueToday += 1;
-          }
-          const ol = (t.origin_location || "").toLowerCase();
-          if (ol.includes("home") || (t.assigned_tailor && ol && ol !== "nyc")) {
-            outToTailors += 1;
-          }
-        }
-      }
-      const deliv = Array.isArray(deliveries) ? deliveries : [];
-      let outForDelivery = 0;
-      let deliveredToday = 0;
-      let pendingBoard = 0;
-      for (const d of deliv) {
-        const st = (d.status || "").toLowerCase();
-        if (st === "out_for_delivery") outForDelivery += 1;
-        if (st === "scheduled" || st === "out_for_delivery" || st === "queued") pendingBoard += 1;
-        if (st === "delivered" && d.deliveredAt && String(d.deliveredAt).slice(0, 10) === today) {
-          deliveredToday += 1;
-        }
-      }
-      return {
-        open,
-        ready,
-        dueToday,
-        overdue,
-        outToTailors,
-        parked: Array.isArray(parked) ? parked.length : 0,
-        outForDelivery,
-        deliveredToday,
-        pendingBoard,
-        openInvoices: invoices.openCount || 0,
-        syncedAt: Date.now(),
-      };
+    queryFn: async (): Promise<AltsHomeFeed> => {
+      const res = await api.raw("/api/dashboard/alts-home");
+      const j = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(j?.error?.message || "Home feed failed");
+      return (j?.data ?? j) as AltsHomeFeed;
     },
     staleTime: 30_000,
     refetchInterval: 60_000,
     retry: 2,
   });
-
 
   type FloorBrief = {
     body: string;
@@ -608,7 +550,6 @@ export default function HomeTiles() {
     },
   });
 
-  // SPEC_061: live weather chip — same Open-Meteo source the espresso brief already uses.
   type WeatherReading = { temp: number; weathercode: number; description: string };
   const weather = useQuery({
     queryKey: ["alts-home-weather"],
@@ -664,28 +605,18 @@ export default function HomeTiles() {
     [askRocco],
   );
 
-  const empty: Stats = {
-    open: 0,
-    ready: 0,
-    dueToday: 0,
-    overdue: 0,
-    outToTailors: 0,
-    parked: 0,
-    outForDelivery: 0,
-    deliveredToday: 0,
-    pendingBoard: 0,
-    openInvoices: 0,
-    syncedAt: Date.now(),
-  };
-
-  const s = stats.data ?? empty;
+  const feed = home.data;
+  const c = feed?.counts;
+  const strip = feed?.strip;
+  const feeds = feed?.feeds;
 
   const syncAge = useMemo(() => {
-    const sec = Math.max(0, Math.round((Date.now() - s.syncedAt) / 1000));
+    const ts = feed?.syncedAt ?? Date.now();
+    const sec = Math.max(0, Math.round((Date.now() - ts) / 1000));
     if (sec < 5) return "just now";
     if (sec < 60) return `${sec}s ago`;
     return `${Math.floor(sec / 60)}m ago`;
-  }, [s.syncedAt, stats.dataUpdatedAt]);
+  }, [feed?.syncedAt, home.dataUpdatedAt]);
 
   const logout = async () => {
     clearAltsPrivateStorage();
@@ -701,26 +632,153 @@ export default function HomeTiles() {
     .slice(0, 2)
     .toUpperCase();
 
-  const tiles: Array<{
-    key: string;
-    to?: string;
-    href?: string;
-    title: string;
-    sub: string;
-    primary?: boolean;
-    external?: boolean;
-    badge?: number | null;
-    badgeKind?: "warn" | "alert" | "neutral";
-    icon: React.ReactNode;
-  }> = [
+  const lastTicketLive = (() => {
+    const t = feeds?.lastTicket;
+    if (!t) return { text: "No tickets yet", tone: "cd" as LiveTone };
+    const age = briefAge(t.createdAt);
+    const who = shortName(t.customerName);
+    return {
+      text: (
+        <>
+          Last: <b>{age || "recent"}</b> — {who}
+        </>
+      ),
+      tone: "em" as LiveTone,
+    };
+  })();
+
+  const shopLive = (() => {
+    const ip = c?.inProgress ?? 0;
+    const ah = c?.atHome ?? 0;
+    const tone: LiveTone = ip > 0 || ah > 0 ? "am" : "em";
+    return {
+      text: (
+        <>
+          <b>{ip}</b> in progress · {ah} at home
+        </>
+      ),
+      tone,
+    };
+  })();
+
+  const progressLive = (() => {
+    const p = feeds?.lastProgress;
+    if (!p) return { text: "No completions today yet", tone: "cd" as LiveTone };
+    const age = briefAge(p.completedAt);
+    return {
+      text: (
+        <>
+          Last: <b>{p.workerName}</b> · {p.garmentLabel} · {age}
+        </>
+      ),
+      tone: "em" as LiveTone,
+    };
+  })();
+
+  const pickupLive = (() => {
+    const n = c?.readyNotTexted ?? 0;
+    if (n <= 0) {
+      return {
+        text: c?.ready ? `${c.ready} ready · all texted` : "Nothing on the ready rack",
+        tone: (c?.ready ? "em" : "cd") as LiveTone,
+      };
+    }
+    return {
+      text: (
+        <>
+          <b>{n}</b> ready, not texted yet
+        </>
+      ),
+      tone: "am" as LiveTone,
+    };
+  })();
+
+  const xferLive = (() => {
+    const n = c?.lateTransferCount ?? 0;
+    const names = feeds?.lateTransferNames ?? [];
+    if (n <= 0) {
+      const ah = c?.atHome ?? 0;
+      return {
+        text: ah > 0 ? `${ah} at home · none late` : "No at-home work out",
+        tone: (ah > 0 ? "em" : "cd") as LiveTone,
+      };
+    }
+    const label = names.map(shortName).join(", ");
+    return {
+      text: (
+        <>
+          <b>{n}</b> late{label ? ` — ${label}` : ""}
+        </>
+      ),
+      tone: "ro" as LiveTone,
+    };
+  })();
+
+  const findLive = {
+    text: `${c?.open ?? 0} open tickets on file`,
+    tone: ((c?.open ?? 0) > 0 ? "em" : "cd") as LiveTone,
+  };
+
+  const delivLive = (() => {
+    const n = c?.pendingBoard ?? 0;
+    if (n <= 0) return { text: "No active runs today", tone: "cd" as LiveTone };
+    return {
+      text: (
+        <>
+          <b>{n}</b> on the board
+          {(strip?.outForDelivery ?? 0) > 0 ? ` · ${strip!.outForDelivery} out` : ""}
+        </>
+      ),
+      tone: (strip?.outForDelivery ?? 0) > 0 ? ("am" as LiveTone) : ("em" as LiveTone),
+    };
+  })();
+
+  const custLive = (() => {
+    const t = feeds?.lastTouchedCustomer;
+    if (!t) return { text: "No recent customer edits", tone: "cd" as LiveTone };
+    const age = briefAge(t.modified);
+    return {
+      text: (
+        <>
+          Last touched: <b>{shortName(t.name)}</b>
+          {age ? ` · ${age}` : ""}
+        </>
+      ),
+      tone: "em" as LiveTone,
+    };
+  })();
+
+  const invLive = (() => {
+    const n = c?.openInvoices ?? 0;
+    const oldest = c?.oldestUnpaidDays;
+    if (n <= 0) return { text: "No open invoices", tone: "cd" as LiveTone };
+    return {
+      text: (
+        <>
+          <b>{n}</b> unpaid
+          {oldest != null ? ` · oldest ${oldest}d` : ""}
+        </>
+      ),
+      tone: n > 0 ? ("am" as LiveTone) : ("em" as LiveTone),
+    };
+  })();
+
+  const moneyBadge =
+    (c?.openInvoices ?? 0) > 0
+      ? `${c!.openInvoices} · ${formatCompactMoney(c!.openInvoicesAmount)}`
+      : null;
+
+  const tiles: TileDef[] = [
     {
       key: "new",
       to: "/intake/kind",
       title: "New Ticket",
-      sub: "Walk-in, custom order, or re-do — then intake",
+      sub: "Walk-in, custom order, or re-do",
       primary: true,
+      live: lastTicketLive.text,
+      liveTone: lastTicketLive.tone,
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M28 5H11a3 3 0 0 0-3 3v36a3 3 0 0 0 3 3h24a3 3 0 0 0 3-3V15z" />
           <path d="M28 5v10h10" />
           <path d="M16 25h14M16 32h14M16 39h8" />
@@ -733,17 +791,16 @@ export default function HomeTiles() {
       key: "floor",
       to: "/shop-floor",
       title: "Shop Floor",
-      sub: "Every garment, every station, what’s next",
-      badge: s.open || null,
-      badgeKind: s.overdue > 0 ? "alert" : "warn",
+      sub: `${c?.openGarments ?? c?.open ?? 0} garments · ${c?.ready ?? 0} ready`,
+      badge: c?.open || null,
+      badgeKind: (strip?.overdue ?? 0) > 0 ? "alert" : "warn",
+      live: shopLive.text,
+      liveTone: shopLive.tone,
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <rect x="5" y="9" width="12" height="34" rx="2.5" />
           <rect x="20" y="9" width="12" height="34" rx="2.5" />
           <rect x="35" y="9" width="12" height="34" rx="2.5" />
-          <path d="M8 16h6M23 16h6M38 16h6" strokeWidth="1.3" opacity=".75" />
-          <path d="M8 22h6M23 22h6" strokeWidth="1.3" opacity=".55" />
-          <path d="M8 28h6" strokeWidth="1.3" opacity=".4" />
         </svg>
       ),
     },
@@ -751,13 +808,14 @@ export default function HomeTiles() {
       key: "progress",
       to: "/scanner?mode=progress",
       title: "Mark Progress",
-      sub: "Scan hang tag · who · time chip · next — EOD batch ready",
+      sub: "Scan tag · time chip",
+      live: progressLive.text,
+      liveTone: progressLive.tone,
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="10" y="8" width="24" height="32" rx="3" />
-          <path d="M16 16h12M16 22h12M16 28h8" strokeWidth="1.3" opacity=".7" />
-          <circle cx="38" cy="36" r="9" strokeWidth="1.4" />
-          <path d="M34.5 36.5l2.5 2.5 5-5.5" stroke="#4FBF8E" strokeWidth="2" />
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M28 5H11a3 3 0 0 0-3 3v36a3 3 0 0 0 3 3h24a3 3 0 0 0 3-3V15z" />
+          <path d="M28 5v10h10" />
+          <path d="M17 34l4 4 8-9" stroke="#4FBF8E" strokeWidth="2" />
         </svg>
       ),
     },
@@ -765,13 +823,14 @@ export default function HomeTiles() {
       key: "pickup",
       to: "/pickup",
       title: "Pickup",
-      sub: "Hand back finished work, settle the balance",
-      badge: s.ready || null,
-      badgeKind: "neutral",
+      sub: "Hand back & settle balance",
+      badge: c?.ready || null,
+      badgeKind: "warn",
+      live: pickupLive.text,
+      liveTone: pickupLive.tone,
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M26 6a5 5 0 0 0-5 5c0 2.5 2 3.6 3.6 4.4L9 25.5a3 3 0 0 0-1.5 2.6V31a2 2 0 0 0 2 2h33a2 2 0 0 0 2-2v-2.9a3 3 0 0 0-1.5-2.6L27.4 15.4C29 14.6 31 13.5 31 11a5 5 0 0 0-5-5z" />
-          <path d="M14 38h24M14 44h16" strokeWidth="1.4" opacity=".7" />
           <path d="M40 41l4 4 7-8" stroke="#4FBF8E" strokeWidth="2" />
         </svg>
       ),
@@ -780,15 +839,14 @@ export default function HomeTiles() {
       key: "transfers",
       to: "/transfers",
       title: "Transfers",
-      sub: "Send work to at-home tailors · take it back in",
-      badge: s.outToTailors || null,
-      badgeKind: "neutral",
+      sub: "Send & take back at-home work",
+      live: xferLive.text,
+      liveTone: xferLive.tone,
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <rect x="4" y="14" width="19" height="15" rx="2.5" />
           <rect x="29" y="26" width="19" height="15" rx="2.5" />
           <path d="M27 10h13M35 5l5 5-5 5" />
-          <path d="M25 45H12M18 40l-5 5 5 5" opacity=".85" />
         </svg>
       ),
     },
@@ -796,29 +854,30 @@ export default function HomeTiles() {
       key: "lookup",
       to: "/lookup",
       title: "Find a Ticket",
-      sub: "Search by number, name, phone, or scan a tag",
+      sub: "Number, name, phone, tag scan",
+      live: findLive.text,
+      liveTone: findLive.tone,
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="22" cy="22" r="14" />
           <path d="M32.5 32.5L46 46" strokeWidth="2" />
-          <path d="M15 19h14M15 25h9" strokeWidth="1.3" opacity=".7" />
         </svg>
       ),
     },
     {
       key: "deliveries",
-      // Alts board + POD live here; full ops board still on app
       to: "/deliveries",
       title: "Deliveries",
       sub: "Board status · driver route · POD",
-      badge: s.pendingBoard || null,
-      badgeKind: s.outForDelivery > 0 ? "warn" : "neutral",
+      badge: c?.pendingBoard || null,
+      badgeKind: "neutral",
+      dim: (c?.pendingBoard ?? 0) === 0,
+      live: delivLive.text,
+      liveTone: delivLive.tone,
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M6 16.5 26 7l20 9.5v17L26 43 6 33.5z" />
-          <path d="M6 16.5 26 26l20-9.5M26 26v17" opacity=".7" />
-          <circle cx="38" cy="36" r="8" stroke="#9B8BC4" strokeWidth="1.4" />
-          <path d="M38 32.5v7M34.5 36h7" stroke="#9B8BC4" strokeWidth="1.4" />
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 30l10-15h16l10 15v10a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3z" />
+          <path d="M6 30h36" strokeWidth="1.4" />
         </svg>
       ),
     },
@@ -826,13 +885,15 @@ export default function HomeTiles() {
       key: "customers",
       to: "/customers",
       title: "Customers",
-      sub: "Profiles, phones, addresses, photo — open any client",
+      sub: "Profiles, phones, addresses",
+      live: custLive.text,
+      liveTone: custLive.tone,
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="26" cy="18" r="8" />
-          <path d="M10 44c2.5-10 11-14 16-14s13.5 4 16 14" />
-          <circle cx="40" cy="16" r="5" opacity=".7" />
-          <path d="M42 28c4 1.5 7 5 8 12" opacity=".55" />
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="18" cy="16" r="7" />
+          <path d="M6 40c0-8 5-13 12-13s12 5 12 13" strokeWidth="1.5" />
+          <circle cx="37" cy="18" r="5.5" opacity=".75" />
+          <path d="M30 40c0-6 3.5-10 9-10" opacity=".75" />
         </svg>
       ),
     },
@@ -840,16 +901,16 @@ export default function HomeTiles() {
       key: "invoices",
       to: "/invoices",
       title: "Invoices",
-      sub: "All sales invoices — custom + alts. Charge card & close out",
-      badge: s.openInvoices || null,
-      badgeKind: s.openInvoices > 0 ? "warn" : "neutral",
+      sub: "All sales invoices · custom + alts",
+      badge: moneyBadge,
+      badgeKind: "money",
+      live: invLive.text,
+      liveTone: invLive.tone,
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M14 6h18l10 10v30a2 2 0 0 1-2 2H14a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />
-          <path d="M32 6v10h10" />
-          <path d="M18 26h16M18 33h16M18 40h10" strokeWidth="1.4" opacity=".75" />
-          <circle cx="40" cy="40" r="8" stroke="#E3C48F" strokeWidth="1.4" />
-          <path d="M40 36.5v7M36.5 40h7" stroke="#E3C48F" strokeWidth="1.4" />
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 5h20l8 8v34a2 2 0 0 1-2 2H12a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" />
+          <path d="M32 5v8h8" />
+          <path d="M16 26h6M16 32h6" strokeWidth="1.4" />
         </svg>
       ),
     },
@@ -858,52 +919,36 @@ export default function HomeTiles() {
       to: "/reports",
       title: "Floor Reports",
       sub: "Pipeline, tally, revenue · this location",
+      admin: true,
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 44h40" strokeWidth="1.6" />
           <rect x="10" y="28" width="8" height="16" rx="1.5" />
           <rect x="22" y="18" width="8" height="26" rx="1.5" />
           <rect x="34" y="24" width="8" height="20" rx="1.5" />
-          <path d="M10 12l10-4 10 6 12-6" strokeWidth="1.3" opacity=".6" />
-        </svg>
-      ),
-    },
-    {
-      key: "admin",
-      href: "https://app.lstailors.com/owner",
-      title: "Owner / Admin",
-      sub: "Company dashboard, pricing, users",
-      external: true,
-      icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="26" cy="18" r="8" />
-          <path d="M10 44c2-10 10-14 16-14s14 4 16 14" />
-          <path d="M38 12l4 2-2 4" opacity=".6" />
         </svg>
       ),
     },
   ];
 
   return (
-    <div className="alts-root home-007 flex flex-col min-h-[100dvh] overflow-x-hidden overflow-y-auto px-3.5 sm:px-5 lg:px-[26px] pt-[max(12px,env(safe-area-inset-top))] pb-[max(16px,env(safe-area-inset-bottom))]">
-      <header className="flex items-center gap-2 sm:gap-3 pb-2.5 sm:pb-3 border-b border-brass/15 shrink-0">
-        {/* Official CUSTOM L&S TAILORS mark → home */}
-        <BrandSeal className="shrink-0" size={44} />
+    <div className="alts-root home-040 flex flex-col h-[100dvh] max-h-[100dvh] overflow-hidden px-[14px] sm:px-[22px] pt-[max(12px,env(safe-area-inset-top))] pb-[max(12px,env(safe-area-inset-bottom))] gap-2.5">
+      {/* Header — seal, brand, search, loc, weather, avatar */}
+      <header className="home-040-hd flex items-center gap-3 shrink-0">
+        <BrandSeal className="shrink-0" size={34} />
         <div className="min-w-0 hidden sm:block shrink-0">
-          <div className="display text-[18px] sm:text-[22px] leading-tight">L&S House</div>
-          <div className="text-[10px] sm:text-xs tracking-[0.14em] sm:tracking-[0.18em] uppercase text-[var(--cd)] truncate">
-            Alterations · alts.lstailors.com
-          </div>
+          <div className="display text-[19px] leading-tight">L&S House</div>
+          <div className="text-[9px] tracking-[0.16em] uppercase text-[var(--cd)]">Alterations</div>
         </div>
-        <UniversalSearchInline className="mx-0.5 sm:mx-1" />
-        <div className="hidden lg:flex items-center rounded-full border border-brass/20 bg-black/30 px-3.5 py-2.5 text-xs font-bold tracking-[0.14em] uppercase text-brass-light shrink-0">
+        <UniversalSearchInline className="mx-0.5 sm:mx-1 flex-1 max-w-[320px]" />
+        <div className="flex-1" />
+        <div className="hidden md:flex items-center rounded-full border border-brass/35 px-3 py-1.5 text-[10.5px] font-bold tracking-[0.1em] text-brass-light shrink-0">
           NYC
         </div>
-        {/* Weather chip (SPEC_060/061) — live via Open-Meteo (same source as the Espresso brief) */}
-        <div className="hidden lg:flex items-center rounded-full border border-brass/20 bg-black/30 px-3 py-1.5 text-xs font-bold tracking-[0.14em] uppercase text-brass-light shrink-0">
+        <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-[var(--cd)] shrink-0">
           {weather.data ? (
             <>
-              <span className="mr-1 not-italic normal-case" aria-hidden>{weatherEmoji(weather.data.weathercode)}</span>
+              <span aria-hidden>{weatherEmoji(weather.data.weathercode)}</span>
               {weather.data.temp}°F {weather.data.description}
             </>
           ) : (
@@ -913,290 +958,192 @@ export default function HomeTiles() {
         <button
           type="button"
           onClick={logout}
-          className="flex items-center gap-2 rounded-full border border-brass/20 bg-white/[0.04] pl-1.5 pr-2.5 sm:pl-2 sm:pr-3.5 py-1.5 min-h-[44px] hover:border-brass/40 transition-colors shrink-0"
+          className="w-8 h-8 rounded-full bg-forest-raised border border-brass/32 grid place-items-center text-[11.5px] font-bold text-brass-light shrink-0 min-h-0 min-w-0"
+          title={me?.name ?? "Staff"}
         >
-          <span className="w-8 h-8 rounded-full bg-forest-raised border border-brass/30 grid place-items-center text-xs font-bold text-brass-light">
-            {initials}
-          </span>
-          <span className="text-left hidden xl:block">
-            <span className="block text-xs font-semibold leading-tight">{me?.name ?? "Staff"}</span>
-            <span className="block text-xs text-[var(--cd)] capitalize">
-              {me?.role?.replace(/_/g, " ") || "Front of house"}
-            </span>
-          </span>
+          {initials}
         </button>
       </header>
 
-      <div className="flex flex-wrap items-end gap-2 sm:gap-3 pt-3 sm:pt-4 pb-2.5 sm:pb-3 shrink-0">
-        <div className="min-w-0 flex-1">
-          <h1 className="display text-[26px] sm:text-[32px] leading-none">
-            {timeGreeting()}, {greetingName(me?.name)}
-          </h1>
-          <p className="text-[11px] sm:text-xs text-[var(--cd)] mt-1 sm:mt-1.5">{storeHoursLine()}</p>
+      {/* Status strip — greeting + espresso + counts + live */}
+      <div className="home-040-strip shrink-0">
+        <div className="seg greet grow min-w-0">
+          <div className="min-w-0">
+            <b className="display block text-[18px] leading-tight truncate">
+              {timeGreeting()}, {greetingName(me?.name)}
+            </b>
+            <i className="block text-[10px] text-[var(--cd)] not-italic truncate">{storeHoursLine()}</i>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-1.5 sm:gap-2 items-end">
-          {/* Time Clock pill (SPEC_060/061) — leads the row, live pulse + date/time + open-ticket count */}
-          <TimeClockPill openCount={s.open} />
-          {s.overdue > 0 && (
-            <Link
-              to="/shop-floor"
-              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full border border-[rgba(217,123,108,0.42)] bg-[rgba(217,123,108,0.12)] text-[11px] sm:text-xs hover:border-[rgba(217,123,108,0.7)] min-h-[40px]"
-            >
-              <b className="text-[var(--ro)] font-bold">{s.overdue}</b> overdue
-            </Link>
-          )}
-          {s.dueToday > 0 && (
-            <Link
-              to="/shop-floor"
-              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full border border-[rgba(232,168,92,0.4)] bg-[rgba(232,168,92,0.12)] text-[11px] sm:text-xs hover:border-[rgba(232,168,92,0.7)] min-h-[40px]"
-            >
-              <b className="text-[var(--am)] font-bold">{s.dueToday}</b> due today
-            </Link>
-          )}
-          {s.parked > 0 && (
-            <Link
-              to="/parked"
-              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full border border-brass/35 bg-brass/10 text-[11px] sm:text-xs text-cream hover:border-brass/55 min-h-[40px]"
-            >
-              <b className="text-brass-light font-bold">{s.parked}</b> parked
-            </Link>
-          )}
-        </div>
-      </div>
 
-      {/* Daily Espresso ☕ — one line (SPEC_060), toggle restored (SPEC_061) */}
-      <div className="espresso-line shrink-0 mb-2.5 sm:mb-3 rounded-[12px] border border-brass/20 bg-black/20 px-3 py-2 flex items-center gap-2 text-[12px]">
         <button
           type="button"
           onClick={toggleEspresso}
           aria-expanded={espressoOpen}
-          aria-controls="espresso-body"
-          className="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
+          className="seg esp min-w-0 flex-1 text-left cursor-pointer hover:bg-white/[0.03] transition-colors border-0 bg-transparent"
         >
-          <span className="text-brass-light">☕</span>
-          <span className="font-semibold text-brass-light tracking-[0.08em] uppercase shrink-0">Daily Espresso</span>
-          <span className="text-[var(--cd)] flex-1 truncate">{espressoSubline(floorBrief.data)}</span>
+          <span className="cup text-[15px]" aria-hidden>
+            ☕
+          </span>
+          <div className="min-w-0">
+            <b className="block text-[11.5px] text-cream font-semibold">Daily Espresso</b>
+            <i className="block text-[9.5px] text-[var(--cd)] not-italic truncate">
+              {espressoSubline(floorBrief.data)}
+            </i>
+          </div>
         </button>
+
+        <Link
+          to="/shop-floor"
+          className={cn("seg pill", (strip?.overdue ?? 0) > 0 && "rd")}
+        >
+          <b className="display tabular-nums">{strip?.overdue ?? "—"}</b>
+          <span>overdue</span>
+        </Link>
+        <Link to="/deliveries" className="seg pill">
+          <b className="display tabular-nums">{strip?.outForDelivery ?? "—"}</b>
+          <span>out for delivery</span>
+        </Link>
+        <Link to="/deliveries" className="seg pill gr">
+          <b className="display tabular-nums">{strip?.deliveredToday ?? "—"}</b>
+          <span>delivered today</span>
+        </Link>
         <button
           type="button"
-          disabled={refreshBrief.isPending || floorBrief.isFetching}
-          onClick={() => refreshBrief.mutate()}
-          className="text-[10px] px-2 py-0.5 rounded border border-brass/30 text-brass-light hover:border-brass disabled:opacity-50 shrink-0"
+          onClick={() => home.refetch()}
+          className="seg refresh border-0 bg-transparent cursor-pointer"
         >
-          {refreshBrief.isPending ? "..." : "Brew"}
-        </button>
-        <button
-          type="button"
-          onClick={toggleEspresso}
-          aria-expanded={espressoOpen}
-          aria-controls="espresso-body"
-          aria-label={espressoOpen ? "Collapse Daily Espresso" : "Expand Daily Espresso"}
-          className="w-6 h-6 rounded-[8px] border border-brass/25 bg-black/20 grid place-items-center text-brass-light shrink-0 hover:border-brass/50 transition-transform"
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 14 14"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            className={cn("transition-transform duration-200", espressoOpen && "rotate-180")}
-          >
-            <path d="M3 5l4 4 4-4" />
-          </svg>
-        </button>
-      </div>
-
-        {/* Collapsed peek */}
-        {!espressoOpen && (
-          <div className="espresso-peek px-3.5 pb-3 pl-[58px]">
-            {floorBrief.isLoading && !floorBrief.data ? (
-              <p className="text-[12.5px] leading-snug text-[var(--cd)]">Brewing the floor read…</p>
-            ) : floorBrief.isError ? (
-              <p className="text-[12.5px] leading-snug text-[var(--am)]">
-                Espresso unavailable — try Brew.
-              </p>
-            ) : (() => {
-              const content = espressoContentLines(floorBrief.data?.body);
-              if (!content.length) {
-                return (
-                  <p className="text-[12.5px] leading-snug text-[var(--cd)]">
-                    No espresso yet — tap Brew.
-                  </p>
-                );
-              }
-              const more = Math.max(0, content.length - 1);
-              return (
-                <>
-                  <div className="peek-line text-[12.5px] leading-snug text-cream line-clamp-2">
-                    {content[0]}
-                  </div>
-                  {more > 0 && (
-                    <div className="mt-1.5 text-[10px] font-semibold tracking-[0.08em] uppercase text-[var(--cd)]">
-                      <b className="text-brass-light font-bold">{more}</b> more · tap to open
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-        )}
-
-        {/* Expanded body */}
-        {espressoOpen && (
-          <div
-            id="espresso-body"
-            className="espresso-body border-t border-brass/16 px-3 sm:px-3.5 pt-2.5 pb-3 max-h-[min(62vh,560px)] overflow-y-auto"
-          >
-            {floorBrief.isLoading && !floorBrief.data ? (
-              <p className="text-sm text-[var(--cd)] leading-relaxed">Brewing the floor read…</p>
-            ) : floorBrief.isError ? (
-              <p className="text-sm text-[var(--am)] leading-relaxed">
-                Espresso unavailable — counts still work. Try Brew now.
-              </p>
-            ) : floorBrief.data?.body ? (
-              <EspressoBody text={floorBrief.data.body} />
-            ) : (
-              <p className="text-sm text-[var(--cd)]">No espresso yet — tap Brew now.</p>
-            )}
-
-            {/* SPEC 055 — Ask Rocco (open espresso only; Brew does not clear thread) */}
-            <AskRoccoComposer
-              isPending={askRocco.isPending}
-              onAsk={runAskRocco}
-              thread={askThread}
-              setThread={setAskThread}
-              input={askInput}
-              setInput={setAskInput}
-              activeChip={askActiveChip}
-              setActiveChip={setAskActiveChip}
-            />
-          </div>
-        )}
-
-      {/* Live stats — trimmed to counts that aren't already on a pill or tile badge (SPEC_061) */}
-      <div className="home-stats rounded-[14px] sm:rounded-[15px] border border-brass/15 bg-black/25 grid grid-cols-2 overflow-hidden shrink-0 mb-2.5 sm:mb-3">
-        {(
-          [
-            { to: "/deliveries", lab: "Out for delivery", val: s.outForDelivery, tone: "text-[var(--am)]" },
-            { to: "/deliveries", lab: "Delivered today", val: s.deliveredToday, tone: "text-[var(--em)]" },
-          ] as const
-        ).map((cell, i) => (
-          <Link
-            key={cell.lab}
-            to={cell.to}
-            className={cn(
-              "px-3 sm:px-[18px] py-2.5 sm:py-[12px] flex items-baseline gap-2 hover:bg-white/[0.04] active:bg-white/[0.06] transition-colors min-h-[48px]",
-              "border-brass/10",
-              i === 0 && "border-r",
-            )}
-          >
-            <span className="text-[10px] sm:text-xs font-bold tracking-[0.12em] sm:tracking-[0.16em] uppercase text-[var(--cd)] leading-tight">
-              {cell.lab}
-            </span>
-            <span className={cn("display text-xl sm:text-2xl ml-auto tabular-nums", cell.tone)}>{cell.val}</span>
-          </Link>
-        ))}
-        <div className="col-span-2 flex items-center gap-2 px-3 sm:px-[18px] py-2 text-[11px] sm:text-xs text-[var(--cd)] border-t border-brass/10">
           <span
             className={cn(
-              "w-[7px] h-[7px] rounded-full shrink-0",
-              stats.isError
-                ? "bg-[var(--am)] shadow-[0_0_8px_rgba(232,168,92,0.7)]"
-                : "bg-[var(--em)] shadow-[0_0_8px_rgba(79,191,142,0.7)]",
+              "dot",
+              home.isError && "bg-[var(--am)] shadow-[0_0_8px_rgba(232,168,92,0.7)]",
             )}
           />
-          <span className="truncate">
-            {stats.isError ? "ERPNext unreachable" : `ERPNext live · ${syncAge}`}
+          <span className="leading-tight text-left">
+            {home.isError ? "ERPNext down" : "ERPNext live"}
+            <br />
+            <span className="normal-case tracking-normal opacity-80">{home.isFetching ? "…" : syncAge}</span>
           </span>
-          <button
-            type="button"
-            onClick={() => stats.refetch()}
-            className="ml-auto text-[10px] font-bold tracking-widest uppercase text-brass-light hover:text-cream shrink-0 min-h-[36px] px-1"
-          >
-            Refresh
-          </button>
-        </div>
+        </button>
       </div>
 
-      {/* Quick actions — only the ones with no dedicated tile below (SPEC_061 dedup) */}
-      <div className="home-quick flex gap-2 shrink-0 pb-2.5 sm:pb-3 overflow-x-auto -mx-1 px-1 scrollbar-none">
-        {[
-          { to: "/dispatch", lab: "Charge & dispatch" },
-          { to: "/quote", lab: "Send quote" },
-          { to: "/orders/alterations", lab: "Orders" },
-        ].map((l) => (
-          <Link
-            key={l.to}
-            to={l.to}
-            className="h-10 px-3.5 sm:px-4 rounded-full border border-brass/25 bg-black/25 text-[10px] sm:text-xs font-bold tracking-widest uppercase text-brass-light inline-flex items-center hover:border-brass/50 active:scale-[0.98] whitespace-nowrap shrink-0"
-          >
-            {l.lab}
-          </Link>
-        ))}
-      </div>
-
-      {stats.isError && (
-        <div className="mb-3 shrink-0">
-          <QueryErrorPanel
-            title="Could not load the shop board"
-            message="ERPNext stats failed — an outage must never look like an empty day. Tiles still work; counts may be stale."
-            onRetry={() => stats.refetch()}
+      {/* Espresso panel — overlay drawer so grid stays one-screen */}
+      {espressoOpen && (
+        <div
+          id="espresso-body"
+          className="home-040-espresso shrink-0 rounded-[14px] border border-brass/20 bg-black/35 px-3 sm:px-3.5 pt-2.5 pb-3 max-h-[min(42vh,420px)] overflow-y-auto"
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-brass-light">☕</span>
+            <span className="font-semibold text-brass-light tracking-[0.08em] uppercase text-[11px]">
+              Daily Espresso
+            </span>
+            <button
+              type="button"
+              disabled={refreshBrief.isPending || floorBrief.isFetching}
+              onClick={() => refreshBrief.mutate()}
+              className="ml-auto text-[10px] px-2 py-0.5 rounded border border-brass/30 text-brass-light hover:border-brass disabled:opacity-50 shrink-0 min-h-0"
+            >
+              {refreshBrief.isPending ? "…" : "Brew"}
+            </button>
+            <button
+              type="button"
+              onClick={toggleEspresso}
+              className="text-[10px] px-2 py-0.5 rounded border border-brass/25 text-[var(--cd)] hover:text-cream min-h-0"
+            >
+              Close
+            </button>
+          </div>
+          {floorBrief.isLoading && !floorBrief.data ? (
+            <p className="text-sm text-[var(--cd)] leading-relaxed">Brewing the floor read…</p>
+          ) : floorBrief.isError ? (
+            <p className="text-sm text-[var(--am)] leading-relaxed">
+              Espresso unavailable — counts still work. Try Brew now.
+            </p>
+          ) : floorBrief.data?.body ? (
+            <EspressoBody text={floorBrief.data.body} />
+          ) : (
+            <p className="text-sm text-[var(--cd)]">No espresso yet — tap Brew now.</p>
+          )}
+          <AskRoccoComposer
+            isPending={askRocco.isPending}
+            onAsk={runAskRocco}
+            thread={askThread}
+            setThread={setAskThread}
+            input={askInput}
+            setInput={setAskInput}
+            activeChip={askActiveChip}
+            setActiveChip={setAskActiveChip}
           />
         </div>
       )}
 
-      <TailorTallyStrip className="mb-3 shrink-0" />
+      {/* Quick actions */}
+      <div className="home-040-qa shrink-0 flex gap-2.5">
+        <Link to="/dispatch" className="qbtn primary">
+          <span aria-hidden>⚡</span> Charge &amp; Dispatch
+        </Link>
+        <Link to="/quote" className="qbtn">
+          <span aria-hidden>✎</span> Send Quote
+        </Link>
+        <Link to="/orders/alterations" className="qbtn">
+          <span aria-hidden>▤</span> Orders
+        </Link>
+      </div>
 
-      {/* Unified 8-tile grid (SPEC_060) — one viewport, no scroll */}
-      <div className="home-tiles grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-2.5 content-start pb-2">
+      {home.isError && (
+        <div className="shrink-0">
+          <QueryErrorPanel
+            title="Could not load the shop board"
+            message="ERPNext stats failed — an outage must never look like an empty day. Tiles still work; counts may be stale."
+            onRetry={() => home.refetch()}
+          />
+        </div>
+      )}
+
+      {/* 5×2 tile grid — fills remaining height */}
+      <div className="home-040-grid flex-1 min-h-0">
         {tiles.map((t) => {
           const className = cn(
-            "home-tile relative rounded-[18px] sm:rounded-[20px] border p-3.5 sm:p-4 flex flex-col",
-            "min-h-[124px] sm:min-h-[132px]",
-            "transition-all duration-150 active:scale-[0.988] cursor-pointer group",
-            "bg-gradient-to-br from-white/[0.045] to-white/[0.012]",
-            "border-brass/25 hover:border-brass/50 hover:-translate-y-0.5 hover:shadow-[var(--sl)] hover:from-white/[0.085] hover:to-white/[0.025]",
-            t.primary &&
-              "from-brass/20 to-brass/5 border-brass/50 hover:from-brass/28 hover:to-brass/8",
-            t.external && "border-dashed border-brass/40",
-            t.key === "deliveries" &&
-              "border-[rgba(155,139,196,0.42)] hover:border-[rgba(155,139,196,0.65)] from-[rgba(155,139,196,0.10)] to-white/[0.012]",
+            "home-040-tile",
+            t.primary && "pri",
+            t.admin && "admin",
+            t.dim && "dim",
           );
 
           const tileBody = (
             <>
-              {t.badge != null && t.badge > 0 && (
+              {t.badge != null && t.badge !== 0 && t.badge !== "" && (
                 <span
                   className={cn(
-                    "absolute top-3 right-3 min-w-[28px] h-[28px] sm:min-w-[30px] sm:h-[30px] px-2 rounded-full grid place-items-center text-xs sm:text-sm font-bold border",
-                    t.badgeKind === "alert" && "bg-[rgba(217,123,108,0.9)] border-transparent text-white",
-                    t.badgeKind === "warn" && "bg-[rgba(232,168,92,0.9)] border-transparent text-forest-deep",
-                    (!t.badgeKind || t.badgeKind === "neutral") && "bg-white/[0.07] border-brass/30 text-cream",
+                    "home-040-badge",
+                    t.badgeKind === "alert" && "al",
+                    t.badgeKind === "warn" && "wn",
+                    t.badgeKind === "money" && "money",
                   )}
                 >
                   {t.badge}
                 </span>
               )}
-              <div
-                className={cn(
-                  "text-brass-light opacity-90 mb-auto scale-[0.72] sm:scale-90 origin-top-left",
-                  t.primary && "text-[#E3C48F] opacity-100",
-                )}
-              >
-                {t.icon}
-              </div>
-              <h2 className={cn("display mt-1.5 sm:mt-2 leading-tight", t.external ? "text-[18px] sm:text-[20px]" : "text-[19px] sm:text-[22px]")}>
-                {t.title}
-              </h2>
-              <p className="text-[10px] sm:text-[11px] text-[var(--cd)] mt-0.5 sm:mt-1 leading-snug pr-6 line-clamp-2">{t.sub}</p>
-              {t.external && (
-                <div className="font-mono text-[10px] text-[var(--bd)] tracking-wide mt-1">app.lstailors.com ↗</div>
-              )}
-              <span className="absolute bottom-3 right-3.5 text-[var(--bd)] opacity-55 group-hover:opacity-100 group-hover:text-brass-light transition-opacity">
-                <Arrow external={t.external} />
-              </span>
+              <div className={cn("ic", t.primary && "text-[#E3C48F]")}>{t.icon}</div>
+              <h2>{t.title}</h2>
+              <div className="sub">{t.sub}</div>
+              {t.admin ? (
+                <a
+                  href="https://app.lstailors.com/owner"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="host"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  app.lstailors.com ↗ Owner/Admin
+                </a>
+              ) : t.live != null ? (
+                <div className={cn("live", t.liveTone === "am" && "am", t.liveTone === "ro" && "ro")}>
+                  <LiveDot tone={t.liveTone} />
+                  <span className="truncate min-w-0">{t.live}</span>
+                </div>
+              ) : null}
             </>
           );
 
