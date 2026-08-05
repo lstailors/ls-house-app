@@ -1155,9 +1155,11 @@ export default function HomeTiles() {
                   {t.badge}
                 </span>
               )}
-              <div className={cn("ic", t.primary && "text-[#E3C48F]")}>{t.icon}</div>
-              <h2>{t.title}</h2>
-              <div className="sub">{t.sub}</div>
+              <div className="mid">
+                <div className={cn("ic", t.primary && "text-[#E3C48F]")}>{t.icon}</div>
+                <h2>{t.title}</h2>
+                <div className="sub">{t.sub}</div>
+              </div>
               {t.admin ? (
                 <a
                   href="https://app.lstailors.com/owner"

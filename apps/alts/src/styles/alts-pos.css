@@ -803,7 +803,9 @@
   color: var(--bl);
   opacity: 0.95;
   flex: 0 0 auto;
-  margin-bottom: 2px;
+  margin: 0 auto 8px;
+  display: flex;
+  justify-content: center;
 }
 
 .home-040-tile.pri .ic {
@@ -812,44 +814,63 @@
 }
 
 .home-040-tile .ic svg {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   display: block;
-  stroke-width: 1.5;
+  stroke-width: 1.45;
+}
+
+/* Centered label stack — title is the primary readable element */
+.home-040-tile .mid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 4px 6px 2px;
+  width: 100%;
 }
 
 .home-040-tile h2 {
   font-family: "Cormorant Garamond", serif;
   font-style: italic;
-  font-size: 19px;
+  font-size: 24px;
   font-weight: 600;
-  line-height: 1.12;
-  margin-top: auto;
-  padding-top: 6px;
+  text-align: center;
+  line-height: 1.15;
+  margin: 0;
+  padding: 0;
   color: var(--cr);
   flex: 0 0 auto;
   letter-spacing: 0.01em;
+  width: 100%;
 }
 
 .home-040-tile .sub {
   font-size: 12px !important;
   font-weight: 500;
   color: var(--cd);
-  margin-top: 4px;
+  margin-top: 5px;
   line-height: 1.3;
   flex: 0 0 auto;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
+  text-align: center;
+  width: 100%;
+  max-width: 100%;
 }
 
 .home-040-tile .live {
-  margin-top: 8px;
-  padding-top: 7px;
+  margin-top: 0;
+  padding-top: 8px;
   border-top: 1px solid rgba(176, 141, 87, 0.16);
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
   font-size: 12px !important;
   font-weight: 500;
@@ -857,6 +878,8 @@
   line-height: 1.3;
   min-width: 0;
   flex: 0 0 auto;
+  text-align: center;
+  width: 100%;
 }
 
 .home-040-tile .live > span.truncate,
@@ -865,6 +888,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  text-align: center;
 }
 
 .home-040-tile .live b {
@@ -874,8 +898,8 @@
 }
 
 .home-040-tile .host {
-  margin-top: 8px;
-  padding-top: 7px;
+  margin-top: 0;
+  padding-top: 8px;
   border-top: 1px solid rgba(176, 141, 87, 0.16);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px !important;
@@ -888,6 +912,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: center;
+  width: 100%;
+  display: block;
 }
 
 .home-040-tile .host:hover {
@@ -1072,23 +1099,25 @@
   }
 
   .home-040-tile {
-    padding: 11px 12px 8px;
+    padding: 11px 10px 8px;
     border-radius: 14px;
   }
 
+  .home-040-tile .ic {
+    margin-bottom: 6px;
+  }
+
   .home-040-tile .ic svg {
-    width: 30px;
-    height: 30px;
+    width: 34px;
+    height: 34px;
   }
 
   .home-040-tile h2 {
-    font-size: 17px;
-    padding-top: 4px;
+    font-size: 21px;
   }
 
   .home-040-tile .live,
   .home-040-tile .host {
-    margin-top: 6px;
     padding-top: 6px;
   }
 
@@ -1121,21 +1150,24 @@
   }
 
   .home-040-tile {
-    padding: 9px 10px 7px;
+    padding: 8px 8px 6px;
+  }
+
+  .home-040-tile .ic {
+    margin-bottom: 4px;
   }
 
   .home-040-tile .ic svg {
-    width: 26px;
-    height: 26px;
+    width: 28px;
+    height: 28px;
   }
 
   .home-040-tile h2 {
-    font-size: 15.5px;
+    font-size: 18px;
   }
 
   .home-040-tile .live,
   .home-040-tile .host {
-    margin-top: 5px;
     padding-top: 5px;
   }
 }
