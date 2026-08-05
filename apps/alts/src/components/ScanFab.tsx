@@ -7,6 +7,8 @@ import { cn } from "@ls/design/utils";
  * Opens the in-app scanner (ERP resolve_qr under the hood) — not the Frappe desk.
  */
 function shouldHide(pathname: string): boolean {
+  // Home owns the full viewport — FAB steals bottom-right tile space
+  if (pathname === "/" || pathname === "") return true;
   if (/^\/(login|scanner)(\/|$)/i.test(pathname)) return true;
   if (/^\/(e-ticket|t)\//i.test(pathname)) return true;
   // Print / label routes — camera FAB would land on paper previews

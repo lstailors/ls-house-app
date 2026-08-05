@@ -932,7 +932,7 @@ export default function HomeTiles() {
   ];
 
   return (
-    <div className="alts-root home-040 flex flex-col h-[100dvh] max-h-[100dvh] overflow-hidden px-[14px] sm:px-[22px] pt-[max(12px,env(safe-area-inset-top))] pb-[max(12px,env(safe-area-inset-bottom))] gap-2.5">
+    <div className="alts-root home-040 flex flex-col h-full max-h-full min-h-0 overflow-hidden px-[14px] sm:px-[22px] pt-[max(10px,env(safe-area-inset-top))] pb-[max(10px,env(safe-area-inset-bottom))] gap-2.5">
       {/* Header — seal, brand, search, loc, weather, avatar */}
       <header className="home-040-hd flex items-center gap-3 shrink-0">
         <BrandSeal className="shrink-0" size={34} />
