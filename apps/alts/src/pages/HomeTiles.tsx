@@ -720,7 +720,7 @@ export default function HomeTiles() {
       sub: "Walk-in, custom order, or re-do — then intake",
       primary: true,
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
           <path d="M28 5H11a3 3 0 0 0-3 3v36a3 3 0 0 0 3 3h24a3 3 0 0 0 3-3V15z" />
           <path d="M28 5v10h10" />
           <path d="M16 25h14M16 32h14M16 39h8" />
@@ -737,7 +737,7 @@ export default function HomeTiles() {
       badge: s.open || null,
       badgeKind: s.overdue > 0 ? "alert" : "warn",
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
           <rect x="5" y="9" width="12" height="34" rx="2.5" />
           <rect x="20" y="9" width="12" height="34" rx="2.5" />
           <rect x="35" y="9" width="12" height="34" rx="2.5" />
@@ -753,7 +753,7 @@ export default function HomeTiles() {
       title: "Mark Progress",
       sub: "Scan hang tag · who · time chip · next — EOD batch ready",
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
           <rect x="10" y="8" width="24" height="32" rx="3" />
           <path d="M16 16h12M16 22h12M16 28h8" strokeWidth="1.3" opacity=".7" />
           <circle cx="38" cy="36" r="9" strokeWidth="1.4" />
@@ -769,7 +769,7 @@ export default function HomeTiles() {
       badge: s.ready || null,
       badgeKind: "neutral",
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
           <path d="M26 6a5 5 0 0 0-5 5c0 2.5 2 3.6 3.6 4.4L9 25.5a3 3 0 0 0-1.5 2.6V31a2 2 0 0 0 2 2h33a2 2 0 0 0 2-2v-2.9a3 3 0 0 0-1.5-2.6L27.4 15.4C29 14.6 31 13.5 31 11a5 5 0 0 0-5-5z" />
           <path d="M14 38h24M14 44h16" strokeWidth="1.4" opacity=".7" />
           <path d="M40 41l4 4 7-8" stroke="#4FBF8E" strokeWidth="2" />
@@ -784,7 +784,7 @@ export default function HomeTiles() {
       badge: s.outToTailors || null,
       badgeKind: "neutral",
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
           <rect x="4" y="14" width="19" height="15" rx="2.5" />
           <rect x="29" y="26" width="19" height="15" rx="2.5" />
           <path d="M27 10h13M35 5l5 5-5 5" />
@@ -798,7 +798,7 @@ export default function HomeTiles() {
       title: "Find a Ticket",
       sub: "Search by number, name, phone, or scan a tag",
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="22" cy="22" r="14" />
           <path d="M32.5 32.5L46 46" strokeWidth="2" />
           <path d="M15 19h14M15 25h9" strokeWidth="1.3" opacity=".7" />
@@ -814,7 +814,7 @@ export default function HomeTiles() {
       badge: s.pendingBoard || null,
       badgeKind: s.outForDelivery > 0 ? "warn" : "neutral",
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 16.5 26 7l20 9.5v17L26 43 6 33.5z" />
           <path d="M6 16.5 26 26l20-9.5M26 26v17" opacity=".7" />
           <circle cx="38" cy="36" r="8" stroke="#9B8BC4" strokeWidth="1.4" />
@@ -828,7 +828,7 @@ export default function HomeTiles() {
       title: "Customers",
       sub: "Profiles, phones, addresses, photo — open any client",
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="26" cy="18" r="8" />
           <path d="M10 44c2.5-10 11-14 16-14s13.5 4 16 14" />
           <circle cx="40" cy="16" r="5" opacity=".7" />
@@ -844,7 +844,7 @@ export default function HomeTiles() {
       badge: s.openInvoices || null,
       badgeKind: s.openInvoices > 0 ? "warn" : "neutral",
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
           <path d="M14 6h18l10 10v30a2 2 0 0 1-2 2H14a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />
           <path d="M32 6v10h10" />
           <path d="M18 26h16M18 33h16M18 40h10" strokeWidth="1.4" opacity=".75" />
@@ -859,7 +859,7 @@ export default function HomeTiles() {
       title: "Floor Reports",
       sub: "Pipeline, tally, revenue · this location",
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 44h40" strokeWidth="1.6" />
           <rect x="10" y="28" width="8" height="16" rx="1.5" />
           <rect x="22" y="18" width="8" height="26" rx="1.5" />
@@ -875,7 +875,7 @@ export default function HomeTiles() {
       sub: "Company dashboard, pricing, users",
       external: true,
       icon: (
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="26" cy="18" r="8" />
           <path d="M10 44c2-10 10-14 16-14s14 4 16 14" />
           <path d="M38 12l4 2-2 4" opacity=".6" />
@@ -1150,11 +1150,11 @@ export default function HomeTiles() {
       <TailorTallyStrip className="mb-3 shrink-0" />
 
       {/* Unified 8-tile grid (SPEC_060) — one viewport, no scroll */}
-      <div className="home-tiles grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-2.5 content-start pb-2">
+      <div className="home-tiles grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3 content-start pb-2">
         {tiles.map((t) => {
           const className = cn(
             "home-tile relative rounded-[18px] sm:rounded-[20px] border p-3.5 sm:p-4 flex flex-col",
-            "min-h-[124px] sm:min-h-[132px]",
+            "min-h-[136px] sm:min-h-[148px]",
             "transition-all duration-150 active:scale-[0.988] cursor-pointer group",
             "bg-gradient-to-br from-white/[0.045] to-white/[0.012]",
             "border-brass/25 hover:border-brass/50 hover:-translate-y-0.5 hover:shadow-[var(--sl)] hover:from-white/[0.085] hover:to-white/[0.025]",
@@ -1181,16 +1181,16 @@ export default function HomeTiles() {
               )}
               <div
                 className={cn(
-                  "text-brass-light opacity-90 mb-auto scale-[0.72] sm:scale-90 origin-top-left",
-                  t.primary && "text-[#E3C48F] opacity-100",
+                  "text-brass-light opacity-100 mb-auto scale-90 sm:scale-100 origin-top-left",
+                  t.primary && "text-[#E3C48F]",
                 )}
               >
                 {t.icon}
               </div>
-              <h2 className={cn("display mt-1.5 sm:mt-2 leading-tight", t.external ? "text-[18px] sm:text-[20px]" : "text-[19px] sm:text-[22px]")}>
+              <h2 className={cn("display mt-2 sm:mt-2.5 leading-tight", t.external ? "text-[18px] sm:text-[20px]" : "text-[19px] sm:text-[22px]")}>
                 {t.title}
               </h2>
-              <p className="text-[10px] sm:text-[11px] text-[var(--cd)] mt-0.5 sm:mt-1 leading-snug pr-6 line-clamp-2">{t.sub}</p>
+              <p className="text-[11px] sm:text-[12px] text-[var(--cm)] mt-1 sm:mt-1.5 leading-snug pr-6 line-clamp-2">{t.sub}</p>
               {t.external && (
                 <div className="font-mono text-[10px] text-[var(--bd)] tracking-wide mt-1">app.lstailors.com ↗</div>
               )}
