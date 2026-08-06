@@ -2,6 +2,7 @@
  * 004 / 027 — D520BT garment hang tags (3″ × 2″ continuous).
  * Path: PDF via system print → Share → LabelLife (no Web Bluetooth).
  * QR → alts /g/{ticket}/{garmentId}
+ * No RUSH ink · no crest · no pickup terms
  *
  * Rack hierarchy (classic purple slip):
  *   A14937
@@ -22,6 +23,7 @@ interface TicketDoc {
   name: string;
   customer_name: string;
   due_date?: string;
+  promised_date?: string;
   origin_location?: string;
   garments?: Array<{
     name: string;
@@ -111,7 +113,7 @@ export default function GarmentTagPrint() {
   }
 
   const short = shortTicketNo(ticket.name);
-  const due = fmtDueRack(ticket.due_date);
+  const due = fmtDueRack(ticket.promised_date || ticket.due_date);
 
   return (
     <>

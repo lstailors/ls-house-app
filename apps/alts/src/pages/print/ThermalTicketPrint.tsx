@@ -26,6 +26,7 @@ interface TicketDoc {
   workflow_state?: string;
   ticket_date?: string;
   due_date?: string;
+  promised_date?: string;
   ticket_total?: number;
   payment_status?: string;
   delivery_method?: string;
@@ -49,6 +50,24 @@ interface TicketDoc {
     description: string;
     price: number;
   }>;
+}
+
+const PRINT_SEEN_KEY = (name: string) => `ls-print-seen:${name}`;
+
+function markPrinted(name: string) {
+  try {
+    sessionStorage.setItem(PRINT_SEEN_KEY(name), "1");
+  } catch {
+    /* ignore */
+  }
+}
+
+function hasPrinted(name: string) {
+  try {
+    return sessionStorage.getItem(PRINT_SEEN_KEY(name)) === "1";
+  } catch {
+    return false;
+  }
 }
 
 function fmtLong(iso?: string) {
@@ -174,6 +193,38 @@ body { margin: 0; }
   display: block; margin-top: 6px; color: #000;
   letter-spacing: 0.22em; font-size: 13px; font-weight: 800;
 }
+.terms {
+  margin-top: 14px;
+  border-top: 2px solid #000;
+  border-bottom: 2px solid #000;
+  padding: 10px 4px;
+  text-align: center;
+}
+.terms .t1 {
+  font-size: 12px; font-weight: 800; letter-spacing: 0.04em; line-height: 1.45;
+}
+.terms .t2 {
+  margin-top: 6px; font-size: 11px; font-weight: 700; line-height: 1.4; color: #111;
+}
+.terms .t3 {
+  margin-top: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.03em; color: #222;
+}
+.footer-line {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 8px;
+  letter-spacing: 0.04em;
+}
+.dup-banner {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  margin: 0 0 10px;
+  padding: 6px 4px;
+  border: 2px solid #000;
+}
 `;
 
 export default function ThermalTicketPrint() {
@@ -212,10 +263,11 @@ export default function ThermalTicketPrint() {
   const erpPrint = async (what: "all" | "receipts") => {
     if (!ticket) return;
     setPrinting(what);
+    const reprint = hasPrinted(ticket.name) ? 1 : 0;
     try {
       const path = what === "receipts" ? "/api/print/receipt" : "/api/print/ticket";
       // /api/print/receipt expects { invoice } (ticket name or SI name);
-      // /api/print/ticket expects { ticket_name, what }.
+      // /api/print/ticket expects { ticket_name, what, reprint }.
       const payload =
         what === "receipts"
           ? {
@@ -223,8 +275,9 @@ export default function ThermalTicketPrint() {
                 ticket.payment_status === "Paid" && ticket.sales_invoice
                   ? ticket.sales_invoice
                   : ticket.name,
+              reprint,
             }
-          : { ticket_name: ticket.name, what };
+          : { ticket_name: ticket.name, what, reprint };
       const res = await api.raw(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -232,7 +285,16 @@ export default function ThermalTicketPrint() {
       });
       const result = await res.json().catch(() => ({}));
       if (!result.ok) throw new Error(result.error ?? "Print failed");
-      toast.success(what === "receipts" ? "Customer / receipts sent to Epson" : "Ticket sent to Epson");
+      markPrinted(ticket.name);
+      toast.success(
+        what === "receipts"
+          ? reprint
+            ? "Receipts sent (duplicate)"
+            : "Customer / receipts sent to Epson"
+          : reprint
+            ? "Ticket sent (duplicate)"
+            : "Ticket sent to Epson",
+      );
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Print failed");
     } finally {
@@ -260,11 +322,12 @@ export default function ThermalTicketPrint() {
   const scanUrl = ticket.sales_invoice ? payUrl(ticket.sales_invoice) : eticket;
   const payStatus = (ticket.payment_status || "Unpaid").toUpperCase();
   const pieces = ticket.garments?.length ?? 0;
-  const exit = (ticket.delivery_method || "Counter pickup").toUpperCase();
-  const takenBy = ticket.taken_by || ticket.owner || "—";
+  const exit = (ticket.delivery_method || "Pickup").toUpperCase();
+  const takenBy = ticket.owner || "—";
   const short = shortTicketNo(ticket.name);
-  const due = fmtDueRack(ticket.due_date);
+  const due = fmtDueRack(ticket.promised_date || ticket.due_date);
   const custName = ticket.customer_name || "—";
+  const showDup = hasPrinted(ticket.name);
 
   return (
     <>
@@ -326,6 +389,7 @@ export default function ThermalTicketPrint() {
         {/* STORE MASTER */}
         <div className="paper master">
           <div className="mhead">STORE MASTER</div>
+          {showDup ? <div className="dup-banner">DUPLICATE - REPRINT</div> : null}
           {/* Rack top — A14937 / Friday / 04:00 PM */}
           <div className="tknum">{short}</div>
           <div className="dueblock">
@@ -422,6 +486,7 @@ export default function ThermalTicketPrint() {
         {/* CUSTOMER COPY */}
         <div className="paper cust">
           <div className="brand">L &amp; S HOUSE</div>
+          {showDup ? <div className="dup-banner">DUPLICATE - REPRINT</div> : null}
           <div className="tknum">{short}</div>
           <div className="dueblock">
             {due.day ? <div className="day">{due.day}</div> : null}
@@ -465,10 +530,19 @@ export default function ThermalTicketPrint() {
             </div>
           </div>
           <div className="qcap">{ticket.sales_invoice ? "SCAN TO PAY" : "SCAN E-TICKET"}</div>
+
+          {/* Draft A pickup terms — above phone/web footer. No "warranty". */}
+          <div className="terms">
+            <div className="t1">Show this ticket at pickup.</div>
+            <div className="t2">Alterations balance is due at pickup.</div>
+            <div className="t3">Visa · Mastercard · Amex · Discover · Apple Pay · Check</div>
+          </div>
+
           <div className="closing">
             WITH OUR THANKS
             <b>L&amp;S HOUSE</b>
           </div>
+          <div className="footer-line">(212) 838-7372 &nbsp;|&nbsp; lstailors.com</div>
         </div>
       </div>
     </>
