@@ -158,27 +158,66 @@ intakeAlterationsRouter.get('/public/tickets/:name', async (c) => {
   }
 });
 
-// 1. GET /presets — NYC shop prices only (alts FOH)
+// 1. GET /presets — active Alteration Preset menu (Geelus hierarchy; NYC default_price)
+// SPEC 073 / 041-task-subitem-menu — includes is_group, parent_preset, item_code, quick_pick
 intakeAlterationsRouter.get('/presets', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: 'Unauthorized' } }, 401);
 
   try {
-    const list = await mcpList<any>('Alteration Preset',
-      ['name','preset_name','garment_type','alteration_category','default_price','estimated_minutes','is_active'],
-      [['is_active','=','1']], 200, 'garment_type asc, preset_name asc');
-    const normalized = list.map((p: any) => ({
-      id: p.name,
-      name: p.name,
-      preset_name: p.preset_name,
-      garment_type: p.garment_type,
-      // Frontend expects garment_types as array; also include 'All' catch-all
-      garment_types: p.garment_type ? [p.garment_type] : ['All'],
-      category: p.alteration_category,
-      price: p.default_price,
-      display_price: p.default_price,
-      est_minutes: p.estimated_minutes ?? null,
-    }));
+    const list = await mcpList<any>(
+      'Alteration Preset',
+      [
+        'name',
+        'preset_name',
+        'display_name',
+        'garment_type',
+        'alteration_category',
+        'default_price',
+        'default_price_hou',
+        'estimated_minutes',
+        'is_active',
+        'is_group',
+        'parent_preset',
+        'item_code',
+        'quick_pick',
+        'in_pos_menu',
+        'sort_order',
+        'menu_class',
+        'description',
+      ],
+      [
+        ['is_active', '=', 1],
+        ['in_pos_menu', '=', 1],
+      ],
+      500,
+      'sort_order asc, garment_type asc, preset_name asc',
+    );
+    const normalized = list.map((p: any) => {
+      const isGroup = p.is_group === 1 || p.is_group === true || p.is_group === '1';
+      const label = (p.display_name || p.preset_name || p.name || '').trim();
+      return {
+        id: p.name,
+        name: p.name,
+        preset_name: p.preset_name || p.name,
+        display_name: label,
+        garment_type: p.garment_type,
+        // Frontend expects garment_types as array; also include 'All' catch-all
+        garment_types: p.garment_type ? [p.garment_type] : ['All'],
+        category: p.alteration_category,
+        price: p.default_price,
+        display_price: p.default_price,
+        est_minutes: p.estimated_minutes ?? null,
+        is_group: isGroup ? 1 : 0,
+        parent_preset: p.parent_preset || null,
+        item_code: p.item_code || null,
+        quick_pick: p.quick_pick === 1 || p.quick_pick === true || p.quick_pick === '1' ? 1 : 0,
+        in_pos_menu: p.in_pos_menu === 0 || p.in_pos_menu === false || p.in_pos_menu === '0' ? 0 : 1,
+        sort_order: Number(p.sort_order) || 100,
+        menu_class: p.menu_class || null,
+        description: p.description || label,
+      };
+    });
     return c.json({ data: normalized });
   } catch (e: any) {
     console.error('presets fetch failed:', e?.message);

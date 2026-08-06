@@ -12,15 +12,13 @@ import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
+import TaskSubitemPicker, {
+  type HierarchyPreset,
+  isGroupPreset,
+} from "@alts/components/intake/TaskSubitemPicker";
 import "@alts/styles/alts-pos.css";
 
-type Preset = {
-  id: string;
-  preset_name: string;
-  price: number;
-  est_minutes?: number | null;
-  garment_types?: string[];
-};
+type Preset = HierarchyPreset;
 
 type TicketLine = {
   name?: string;
@@ -194,19 +192,17 @@ export default function AddWork() {
   }
 
   function addPreset(p: Preset) {
+    if (isGroupPreset(p)) return;
     const price = Number(p.price) || 0;
-    if (price <= 0) {
-      toast.error("Preset has no price");
-      return;
-    }
+    const label = (p.display_name || p.preset_name || p.id || "").trim();
     setPendingAdds((prev) => {
-      const exists = prev.find((x) => x.preset === p.id || x.description === p.preset_name);
+      const exists = prev.find((x) => x.preset === p.id || x.description === label);
       if (exists) return prev.filter((x) => x.key !== exists.key);
       return [
         ...prev,
         {
           key: `p-${p.id}-${Date.now()}`,
-          description: p.preset_name,
+          description: label,
           price,
           preset: p.id,
           minutes: p.est_minutes ?? 15,
@@ -533,32 +529,20 @@ export default function AddWork() {
               )}
             </section>
 
-            {/* Presets */}
+            {/* Presets — SPEC 073 Geelus picker */}
             <section>
               <div className="caps mb-2">Add to this garment</div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {presetsForGarment.slice(0, 24).map((p) => {
-                  const on = pendingAdds.some(
-                    (a) => a.preset === p.id || a.description === p.preset_name,
-                  );
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => addPreset(p)}
-                      className={cn(
-                        "text-left rounded-xl border px-3 py-3 min-h-11 transition-colors",
-                        on
-                          ? "border-brass bg-brass/15"
-                          : "border-brass/25 bg-black/25 hover:border-brass/40",
-                      )}
-                    >
-                      <div className="text-sm font-semibold truncate">{p.preset_name}</div>
-                      <div className="text-[12px] text-brass-light mt-0.5">{money(Number(p.price))}</div>
-                    </button>
-                  );
-                })}
-              </div>
+              {selected ? (
+                <TaskSubitemPicker
+                  presets={presetsQ.data ?? []}
+                  loading={presetsQ.isLoading}
+                  garmentType={selected.garment_type}
+                  selectedIds={pendingAdds.map((a) => a.preset).filter(Boolean) as string[]}
+                  onToggleLeaf={addPreset}
+                />
+              ) : (
+                <p className="text-cream-dim text-sm">Pick a garment first.</p>
+              )}
 
               <div className="mt-3 card-glass p-3 space-y-2">
                 <div className="caps">Custom line</div>

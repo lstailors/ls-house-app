@@ -1,6 +1,7 @@
 import { cn } from "@ls/design/utils";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+import TaskSubitemPicker, { type HierarchyPreset } from "@alts/components/intake/TaskSubitemPicker";
 
 function money(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -25,12 +26,7 @@ export type DrawerGarment = {
   photoPreviewUrls?: string[];
 };
 
-export type DrawerPreset = {
-  id: string;
-  preset_name: string;
-  price: number;
-  est_minutes?: number | null;
-};
+export type DrawerPreset = HierarchyPreset;
 
 type Props = {
   open: boolean;
@@ -433,47 +429,13 @@ function GarmentDrawerFields({
                 </div>
               )}
 
-              <div className="flex flex-col gap-1.5">
-                {presets.map((p) => {
-                  const on = !!garment.lines.find((l) => l.presetId === p.id);
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => onTogglePreset(p)}
-                      className={cn(
-                        "w-full flex items-center gap-3 min-h-14 px-3 py-2.5 rounded-[14px] border text-left transition-colors",
-                        on
-                          ? "border-brass bg-brass/15"
-                          : "border-brass/25 bg-white/[0.02] hover:border-brass/45 hover:bg-brass/[0.06]",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "w-[26px] h-[26px] rounded-full border grid place-items-center text-xs font-bold flex-none",
-                          on
-                            ? "bg-brass border-brass text-forest-deep"
-                            : "border-brass/40 text-transparent",
-                        )}
-                      >
-                        ✓
-                      </span>
-                      <span className="flex-1 min-w-0">
-                        <span className="block text-[13px] font-semibold leading-snug">{p.preset_name}</span>
-                        <span className="text-[10.5px] text-cream-dim">
-                          {p.est_minutes ? `${p.est_minutes} min` : "—"}
-                        </span>
-                      </span>
-                      <span className="display text-xl text-brass-light flex-none">
-                        {money(Number(p.price) || 0)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {!presets.length && !presetsLoading && (
-                <p className="text-cream-dim text-sm mt-2">No presets for this type — use a custom line.</p>
-              )}
+              <TaskSubitemPicker
+                presets={presets}
+                loading={presetsLoading}
+                garmentType={garment.garmentType}
+                selectedIds={garment.lines.map((l) => l.presetId).filter(Boolean) as string[]}
+                onToggleLeaf={onTogglePreset}
+              />
 
               <div className="text-[9px] font-bold tracking-[0.16em] uppercase text-brass-light mt-4 mb-2">
                 Custom line

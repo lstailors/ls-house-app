@@ -94,10 +94,16 @@ type SellItem = {
 type Preset = {
   id: string;
   preset_name: string;
+  display_name?: string;
   garment_type?: string;
   garment_types?: string[];
   price: number;
   est_minutes?: number | null;
+  is_group?: number | boolean;
+  parent_preset?: string | null;
+  item_code?: string | null;
+  quick_pick?: number | boolean;
+  sort_order?: number;
 };
 
 type Remind = "eod" | "3d" | "2w" | "never";
@@ -848,6 +854,9 @@ export default function IntakeStepped() {
 
   const togglePreset = (p: Preset) => {
     if (!active) return;
+    // SPEC 073 — never bill a group parent
+    if (p.is_group === 1 || p.is_group === true) return;
+    const label = (p.display_name || p.preset_name || p.id || "").trim();
     setGarments((prev) =>
       prev.map((g) => {
         if (g.ref !== active.ref) return g;
@@ -859,7 +868,7 @@ export default function IntakeStepped() {
             ...g.lines,
             {
               id: uid(),
-              description: p.preset_name,
+              description: label,
               price: Number(p.price) || 0,
               estMinutes: p.est_minutes,
               presetId: p.id,

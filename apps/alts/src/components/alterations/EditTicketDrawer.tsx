@@ -20,13 +20,15 @@ import {
 import { Input } from "@ls/design/ui/input"
 import { Button } from "@ls/design/ui/button"
 import { Label } from "@ls/design/ui/label"
+import TaskSubitemPicker, {
+  type HierarchyPreset,
+  isGroupPreset,
+  garmentMatchesPreset,
+} from "@alts/components/intake/TaskSubitemPicker"
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-interface Preset {
-  id: string
-  preset_name: string
-  price: number
+interface Preset extends HierarchyPreset {
   est_minutes: number | null
   garment_types: string[]
 }
@@ -215,24 +217,25 @@ export function EditTicketDrawer({
   // ── Preset helpers ──────────────────────────────────────────────────────
 
   function presetsForGarment(garmentType: string) {
-    return presets.filter(
-      (p) => p.garment_types.length === 0 || p.garment_types.includes(garmentType)
-    )
+    return presets.filter((p) => garmentMatchesPreset(p, garmentType))
   }
 
   function isPresetActive(garmentId: string, preset: Preset) {
+    const label = (preset.display_name || preset.preset_name || "").trim()
     return lines.some(
       (l) =>
         l.garment_ref === garmentId &&
-        (l.preset === preset.id || l.description === preset.preset_name)
+        (l.preset === preset.id || l.description === preset.preset_name || l.description === label)
     )
   }
 
   function togglePreset(garmentId: string, preset: Preset) {
+    if (isGroupPreset(preset)) return
+    const label = (preset.display_name || preset.preset_name || preset.id || "").trim()
     const existing = lines.find(
       (l) =>
         l.garment_ref === garmentId &&
-        (l.preset === preset.id || l.description === preset.preset_name)
+        (l.preset === preset.id || l.description === preset.preset_name || l.description === label)
     )
     if (existing) {
       if (isLineLocked(existing.line_status)) {
@@ -246,7 +249,7 @@ export function EditTicketDrawer({
         {
           _key: uid(),
           garment_ref: garmentId,
-          description: preset.preset_name,
+          description: label,
           price: preset.price,
           preset: preset.id,
           notes: '',
@@ -507,32 +510,18 @@ export function EditTicketDrawer({
                     )
                   })}
 
-                  {/* Preset chips */}
+                  {/* SPEC 073 Geelus picker */}
                   {presetsForGarment(g.garment_type).length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {presetsForGarment(g.garment_type).map((preset) => {
-                        const active = isPresetActive(g.garment_id, preset)
-                        return (
-                          <button
-                            key={preset.id}
-                            type="button"
-                            onClick={() => togglePreset(g.garment_id, preset)}
-                            className={cn(
-                              'px-2 py-0.5 rounded-full text-xs border transition-all',
-                              active
-                                ? 'bg-brass-shimmer/25 border-brass/60 text-brass-light font-medium'
-                                : 'bg-transparent border-brass/20 text-cream-dim/60 hover:border-brass/40 hover:text-cream-dim'
-                            )}
-                          >
-                            {preset.preset_name}
-                            {active ? null : (
-                              <span className="ml-1 text-cream-dim/40">
-                                ${preset.price}
-                              </span>
-                            )}
-                          </button>
-                        )
-                      })}
+                    <div className="pt-1">
+                      <TaskSubitemPicker
+                        presets={presets}
+                        garmentType={g.garment_type}
+                        selectedIds={lines
+                          .filter((l) => l.garment_ref === g.garment_id && l.preset)
+                          .map((l) => l.preset as string)}
+                        onToggleLeaf={(p) => togglePreset(g.garment_id, p as Preset)}
+                        compact
+                      />
                     </div>
                   ) : null}
 
