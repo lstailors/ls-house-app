@@ -180,7 +180,7 @@ export default function GarmentOptionsDrawer({
       <div
         className={cn(
           "fixed inset-y-0 z-[75] hidden md:flex flex-col",
-          "right-[340px] w-[min(420px,calc(100vw-340px))]",
+          "right-[340px] w-[min(480px,calc(100vw-360px))] min-w-[320px]",
           "border-l border-r border-brass/30",
           "shadow-[-24px_0_60px_rgba(0,0,0,0.5)]",
           "transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] will-change-transform",
