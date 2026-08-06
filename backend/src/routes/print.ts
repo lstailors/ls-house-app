@@ -200,7 +200,11 @@ printRouter.post("/ticket", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
-  const body = (await c.req.json().catch(() => null)) as { ticket_name?: string; what?: string } | null;
+  const body = (await c.req.json().catch(() => null)) as {
+    ticket_name?: string;
+    what?: string;
+    reprint?: boolean | number | string;
+  } | null;
   const ticket = body?.ticket_name?.trim();
   if (!ticket) return c.json({ ok: false, error: "ticket_name is required" });
 
@@ -213,10 +217,13 @@ printRouter.post("/ticket", async (c) => {
     });
   }
 
+  const reprint = body?.reprint === true || body?.reprint === 1 || body?.reprint === "1" ? 1 : 0;
+
   try {
     const out = await printViaErp("ls_alterations.ls_thermal.api.print_ticket", {
       ticket,
       what: body?.what ?? "all",
+      reprint,
     });
     return c.json(toClientResult(out));
   } catch (e) {
@@ -229,17 +236,23 @@ printRouter.post("/tags", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
-  const body = (await c.req.json().catch(() => null)) as { ticket_name?: string } | null;
+  const body = (await c.req.json().catch(() => null)) as {
+    ticket_name?: string;
+    reprint?: boolean | number | string;
+  } | null;
   const ticket = body?.ticket_name?.trim();
   if (!ticket) return c.json({ ok: false, error: "ticket_name is required" });
   if (!isAlterationTicket(ticket)) {
     return c.json({ ok: false, error: "Garment tags are only available for alteration tickets." });
   }
 
+  const reprint = body?.reprint === true || body?.reprint === 1 || body?.reprint === "1" ? 1 : 0;
+
   try {
     const out = await printViaErp("ls_alterations.ls_thermal.api.print_ticket", {
       ticket,
       what: "tags",
+      reprint,
     });
     return c.json(toClientResult(out));
   } catch (e) {
@@ -257,14 +270,24 @@ printRouter.post("/receipt", async (c) => {
     invoice?: string;
     ticket_name?: string;
     ticket?: string;
+    reprint?: boolean | number | string;
   } | null;
   const id = (body?.invoice ?? body?.ticket_name ?? body?.ticket)?.trim();
   if (!id) return c.json({ ok: false, error: "invoice is required" });
 
+  const reprint = body?.reprint === true || body?.reprint === 1 || body?.reprint === "1" ? 1 : 0;
+
   try {
     const out = isAlterationTicket(id)
-      ? await printViaErp("ls_alterations.ls_thermal.api.print_ticket", { ticket: id, what: "receipts" })
-      : await printViaErp("ls_alterations.ls_thermal.api.print_payment_receipt", { invoice: id });
+      ? await printViaErp("ls_alterations.ls_thermal.api.print_ticket", {
+          ticket: id,
+          what: "receipts",
+          reprint,
+        })
+      : await printViaErp("ls_alterations.ls_thermal.api.print_payment_receipt", {
+          invoice: id,
+          reprint,
+        });
     return c.json(toClientResult(out));
   } catch (e) {
     return c.json({ ok: false, error: e instanceof Error ? e.message : "Receipt print failed" });
@@ -279,12 +302,20 @@ printRouter.post("/payment-link", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
-  const body = (await c.req.json().catch(() => null)) as { invoice?: string; ticket?: string } | null;
+  const body = (await c.req.json().catch(() => null)) as {
+    invoice?: string;
+    ticket?: string;
+    reprint?: boolean | number | string;
+  } | null;
   const id = (body?.ticket ?? body?.invoice)?.trim();
   if (!id) return c.json({ ok: false, error: "invoice is required" });
 
+  const reprint = body?.reprint === true || body?.reprint === 1 || body?.reprint === "1" ? 1 : 0;
+
   try {
-    const kwargs = isAlterationTicket(id) ? { ticket: id } : { invoice: id };
+    const kwargs = isAlterationTicket(id)
+      ? { ticket: id, reprint }
+      : { invoice: id, reprint };
     const out = await printViaErp("ls_alterations.ls_thermal.api.print_pay_link", kwargs);
     return c.json({ ...toClientResult(out), url: out?.url });
   } catch (e) {

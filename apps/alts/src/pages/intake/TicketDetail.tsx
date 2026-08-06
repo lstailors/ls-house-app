@@ -1017,13 +1017,25 @@ export default function TicketDetail() {
 
   const printTicketMutation = useMutation({
     mutationFn: async () => {
+      const key = `ls-print-seen:${ticketName}`
+      let reprint = 0
+      try {
+        reprint = sessionStorage.getItem(key) === '1' ? 1 : 0
+      } catch {
+        /* ignore */
+      }
       const res = await api.raw('/api/print/ticket', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticket_name: ticketName }),
+        body: JSON.stringify({ ticket_name: ticketName, reprint }),
       })
       const result = await res.json().catch(() => ({}))
       if (!result.ok) throw new Error(result.error?.message ?? result.error ?? 'Print failed')
+      try {
+        sessionStorage.setItem(key, '1')
+      } catch {
+        /* ignore */
+      }
       return result
     },
     onSuccess: () => toast.success('✓ Printed'),
@@ -1038,13 +1050,25 @@ export default function TicketDetail() {
           ? ticket.sales_invoice
           : ticket?.name
       if (!invoiceRef) throw new Error('No ticket/invoice to print')
+      const key = `ls-print-seen:${ticketName}`
+      let reprint = 0
+      try {
+        reprint = sessionStorage.getItem(key) === '1' ? 1 : 0
+      } catch {
+        /* ignore */
+      }
       const res = await api.raw('/api/print/receipt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invoice: invoiceRef }),
+        body: JSON.stringify({ invoice: invoiceRef, reprint }),
       })
       const result = await res.json().catch(() => ({}))
       if (!result.ok) throw new Error(result.error?.message ?? result.error ?? 'Receipt print failed')
+      try {
+        sessionStorage.setItem(key, '1')
+      } catch {
+        /* ignore */
+      }
       return result
     },
     onSuccess: () => toast.success('✓ Printed'),

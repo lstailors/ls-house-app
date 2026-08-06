@@ -157,7 +157,7 @@ def _send(cfg, ticket, copy_type, target, payload):
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
-def print_ticket(ticket, what="all"):
+def print_ticket(ticket, what="all", reprint=0):
     """
     what:
       all      -> office copy + customer copy + one tag per garment
@@ -165,11 +165,13 @@ def print_ticket(ticket, what="all"):
       customer -> customer copy only
       office   -> office copy only
       tags     -> one tag per garment
+    reprint: 0|1 — when 1, prints DUPLICATE - REPRINT under header.
     """
     cfg = _settings()
     if not cfg["enabled"]:
         frappe.throw(_("Thermal printing is disabled in LSH Print Settings."))
 
+    is_reprint = str(reprint) in ("1", "true", "True", "yes")
     doc = frappe.get_doc("Alteration Ticket", ticket)
     base, garments = _ticket_payload_context(doc, cfg)
     results = []
@@ -182,7 +184,12 @@ def print_ticket(ticket, what="all"):
             qr_url=_master_qr(doc, base),
             ticket_date=doc.ticket_date, due_date=doc.due_date,
             promised_date=doc.promised_date, is_rush=doc.is_rush,
-            location=doc.origin_location, internal_notes=doc.internal_notes)
+            location=doc.origin_location, internal_notes=doc.internal_notes,
+            reprint=is_reprint,
+            payment_status=doc.payment_status,
+            delivery_method=doc.delivery_method,
+            sales_invoice=doc.sales_invoice,
+            workflow_state=doc.workflow_state)
         results.append(_send(cfg, doc.name, "office", doc.name, payload))
 
     def customer():
@@ -193,24 +200,32 @@ def print_ticket(ticket, what="all"):
             qr_url=_master_qr(doc, base),
             ticket_date=doc.ticket_date, due_date=doc.due_date,
             promised_date=doc.promised_date, is_rush=doc.is_rush,
-            location=doc.origin_location, customer_notes=doc.customer_notes)
+            location=doc.origin_location, customer_notes=doc.customer_notes,
+            reprint=is_reprint,
+            payment_status=doc.payment_status,
+            delivery_method=doc.delivery_method)
         results.append(_send(cfg, doc.name, "customer", doc.name, payload))
 
     def tags():
         total = len(garments)
         for i, g in enumerate(garments, start=1):
+            gid = g.get("garment_id") or ""
+            # Hang-tag QR → per-garment job card (PRINT pack + design review).
+            if gid:
+                qr_url = "{}/g/{}/{}".format(base, doc.name, gid)
+            else:
+                qr_url = "{}/t/{}".format(base, doc.name)
             payload = escpos_tm.build_garment_tag(
                 ticket=doc.name, garment=g,
-                # Ticket-level public lookup — /g/ and /garments/ are retired for tag QR.
-                qr_url="{}/t/{}".format(base, doc.name),
+                qr_url=qr_url,
                 due_date=doc.promised_date or doc.due_date, is_rush=doc.is_rush,
                 location=doc.origin_location, idx=i, total=total,
                 lines=g.get("lines") or [],
                 customer_name=doc.customer_name,
-                customer_phone=doc.customer_phone)
+                customer_phone=doc.customer_phone,
+                reprint=is_reprint)
             results.append(_send(cfg, doc.name, "garment",
-                                 g.get("garment_id"), payload))
-
+                                 gid or str(i), payload))
 
     if what == "all":
         office(); customer(); tags()
@@ -226,29 +241,32 @@ def print_ticket(ticket, what="all"):
         frappe.throw(_("Unknown print target: {0}").format(what))
 
     ok = all(r["ok"] for r in results) if results else False
-    return {"ok": ok, "ticket": doc.name, "jobs": results}
+    return {"ok": ok, "ticket": doc.name, "jobs": results, "reprint": is_reprint}
 
 
 @frappe.whitelist()
-def print_garment(ticket, garment_id):
-    """Reprint a single garment tag by its garment_id."""
+def print_garment(ticket, garment_id, reprint=1):
+    """Reprint a single garment tag by its garment_id. Defaults to reprint=1."""
     cfg = _settings()
     if not cfg["enabled"]:
         frappe.throw(_("Thermal printing is disabled in LSH Print Settings."))
+    is_reprint = str(reprint) not in ("0", "false", "False", "no")
     doc = frappe.get_doc("Alteration Ticket", ticket)
     base, garments = _ticket_payload_context(doc, cfg)
     match = next((g for g in garments if g.get("garment_id") == garment_id), None)
     if not match:
         frappe.throw(_("Garment {0} not found on {1}").format(garment_id, ticket))
+    qr_url = "{}/g/{}/{}".format(base, doc.name, garment_id)
     payload = escpos_tm.build_garment_tag(
         ticket=doc.name, garment=match,
-        qr_url="{}/t/{}".format(base, doc.name),
+        qr_url=qr_url,
         due_date=doc.promised_date or doc.due_date, is_rush=doc.is_rush,
         location=doc.origin_location, lines=match.get("lines") or [],
         customer_name=doc.customer_name,
-        customer_phone=doc.customer_phone)
+        customer_phone=doc.customer_phone,
+        reprint=is_reprint)
     res = _send(cfg, doc.name, "garment", garment_id, payload)
-    return {"ok": res["ok"], "ticket": doc.name, "jobs": [res]}
+    return {"ok": res["ok"], "ticket": doc.name, "jobs": [res], "reprint": is_reprint}
 
 
 @frappe.whitelist()
@@ -261,14 +279,15 @@ def test_printer():
     payload += escpos_tm.line(frappe.utils.now(), align=escpos_tm.ALIGN_CENTER)
     payload += escpos_tm.ALIGN_CENTER + escpos_tm.qr(
         cfg["base_url"], module_size=6) + escpos_tm.ALIGN_LEFT
-    payload += escpos_tm.feed(1) + escpos_tm.CUT
+    payload += escpos_tm.feed(2) + escpos_tm.CUT_FULL
     return _send(cfg, "—", "test", cfg["host"] or "unset", payload)
 
 
 @frappe.whitelist()
-def print_payment_receipt(invoice):
+def print_payment_receipt(invoice, reprint=0):
     """Print a payment receipt for a Sales Invoice (called after Square pays)."""
     cfg = _settings()
+    is_reprint = str(reprint) in ("1", "true", "True", "yes")
     inv = frappe.get_doc("Sales Invoice", invoice)
     ticket = frappe.db.get_value(
         "Alteration Ticket", {"sales_invoice": invoice}, "name")
@@ -285,15 +304,16 @@ def print_payment_receipt(invoice):
         invoice=invoice, customer_name=inv.customer_name or inv.customer,
         amount_paid=amount_paid, total=total, outstanding=outstanding,
         payment_ref=pay_ref, method="Card", paid_on=frappe.utils.nowdate(),
-        qr_url=qr_url, ticket=ticket)
+        qr_url=qr_url, ticket=ticket, reprint=is_reprint)
     res = _send(cfg, ticket or invoice, "payment", invoice, payload)
-    return {"ok": res["ok"], "invoice": invoice, "jobs": [res]}
+    return {"ok": res["ok"], "invoice": invoice, "jobs": [res], "reprint": is_reprint}
 
 
 @frappe.whitelist()
-def print_pay_link(invoice=None, ticket=None):
+def print_pay_link(invoice=None, ticket=None, reprint=0):
     """Create a Square payment link and print a 'Scan to Pay' slip for it."""
     cfg = _settings()
+    is_reprint = str(reprint) in ("1", "true", "True", "yes")
     import ls_alterations.ls_square.pos as pos
     res = pos.create_payment_link(invoice=invoice, ticket=ticket)
     if not res.get("ok"):
@@ -304,6 +324,6 @@ def print_pay_link(invoice=None, ticket=None):
         "Alteration Ticket", {"sales_invoice": inv_name}, "name")
     payload = escpos_tm.build_pay_qr(
         invoice=inv_name, customer_name=inv.customer_name or inv.customer,
-        amount=res["amount"], url=res["url"], ticket=tname)
+        amount=res["amount"], url=res["url"], ticket=tname, reprint=is_reprint)
     out = _send(cfg, tname or inv_name, "payment", inv_name, payload)
-    return {"ok": out["ok"], "invoice": inv_name, "url": res["url"], "jobs": [out]}
+    return {"ok": out["ok"], "invoice": inv_name, "url": res["url"], "jobs": [out], "reprint": is_reprint}

@@ -29,7 +29,10 @@ ESC = b"\x1b"
 GS = b"\x1d"
 
 INIT = ESC + b"@"
-CUT = GS + b"V\x42\x10"
+# GS V m n — m=65 full cut w/ feed, m=66 partial (tear) w/ feed. n = feed dots.
+CUT_FULL = GS + b"V\x41\x18"      # receipts — clean separate sheet
+CUT_PARTIAL = GS + b"V\x42\x18"   # hang tags — tear point
+CUT = CUT_PARTIAL                 # back-compat alias
 FONT_A = ESC + b"M\x00"
 
 ALIGN_LEFT = ESC + b"a\x00"
@@ -51,10 +54,22 @@ LINE_WIDTH_2W = 24
 DEFAULT_READY_TIME = "6:00 PM"
 
 BRAND = "L&S CUSTOM TAILORS"
+BRAND_HOUSE = "L & S HOUSE"
 SUB = "Bespoke since 1974"
 ADDR_NYC = "138 East 61st Street, Ste 201, NYC"
 PHONE = "(212) 838-7372"
 WEB = "lstailors.com"
+
+# Client-facing reprint banner (ASCII only — CP437 safe).
+REPRINT_MARK = "DUPLICATE - REPRINT"
+
+# Draft A pickup terms (C-approved design review). No "warranty". Static copy.
+# Placed on customer receipt ABOVE the phone/web footer.
+PICKUP_TERMS = (
+    "Show this ticket at pickup.",
+    "Alterations balance is due at pickup.",
+    "Visa · Mastercard · Amex · Discover · Apple Pay · Check",
+)
 
 
 def _enc(text):
@@ -234,36 +249,85 @@ def _kv(label, value, *, bold_value=True, size=SIZE_2H):
     return two_col(left, value, bold=bold_value, size=size)
 
 
+def _truthy(v):
+    if v is True:
+        return True
+    if v in (1, "1", "true", "True", "yes", "Yes"):
+        return True
+    return False
+
+
+def _garment_line_total(g):
+    """Prefer garment_total; else sum child line prices. Never invent $0 when lines have $."""
+    try:
+        gt = float(g.get("garment_total") or 0)
+    except (TypeError, ValueError):
+        gt = 0.0
+    if gt:
+        return gt
+    total = 0.0
+    for w in g.get("lines") or []:
+        if isinstance(w, dict):
+            try:
+                total += float(w.get("price") or 0)
+            except (TypeError, ValueError):
+                pass
+    return total
+
+
+def _reprint_banner(reprint):
+    if not _truthy(reprint):
+        return b""
+    out = b""
+    out += line(REPRINT_MARK, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    out += feed(1)
+    return out
+
+
+def _pickup_terms_block():
+    """Customer receipt only — above phone/web footer. Static Draft A."""
+    out = b""
+    out += rule(heavy=True)
+    for row in PICKUP_TERMS:
+        for chunk in _wrap(row, LINE_WIDTH):
+            out += line(chunk, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    out += rule(heavy=True)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Document builders
 # ---------------------------------------------------------------------------
 
 def build_garment_tag(*, ticket, garment, qr_url, due_date=None,
                       is_rush=False, location=None, idx=None, total=None,
-                      lines=None, customer_name=None, customer_phone=None):
+                      lines=None, customer_name=None, customer_phone=None,
+                      reprint=False):
     """
-    Rack tag:
-      00061
+    Rack tag (partial cut / tear):
+      [DUPLICATE - REPRINT]
+      A00061
       Friday
       6:00 PM
       Aug 4
       ========
-      Stefanie Frelick
-      phone
+      Customer Name
       Coat / G1
       -work lines
       QR
+    No RUSH ink. No pickup terms. is_rush accepted but ignored.
     """
+    _ = is_rush  # retired on tags (C) — keep kwarg so callers don't break
     g = garment or {}
     out = INIT + FONT_A
 
     short = short_ticket_no(ticket)
     out += line(short, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+    out += _reprint_banner(reprint)
 
     if due_date:
         out += feed(1)
         out += rack_due_block(due_date)
-    # No RUSH ink on garment tags (luxury restraint). App UI may still badge rush.
 
     out += rule(heavy=True)
 
@@ -306,43 +370,59 @@ def build_garment_tag(*, ticket, garment, qr_url, due_date=None,
     out += feed(1)
     out += ALIGN_CENTER + qr(qr_url, module_size=7) + ALIGN_LEFT
     out += line(gid or short, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
-    out += feed(2)
-    out += CUT
+    out += feed(3)
+    out += CUT_PARTIAL
     return out
 
 
 def build_customer_receipt(*, ticket, customer_name, customer_phone,
                           garments, ticket_total, qr_url, ticket_date=None,
                           due_date=None, promised_date=None, is_rush=False,
-                          location=None, customer_notes=None):
+                          location=None, customer_notes=None, reprint=False,
+                          payment_status=None, delivery_method=None):
     return _master(
         ticket=ticket, customer_name=customer_name,
         customer_phone=customer_phone, garments=garments,
         ticket_total=ticket_total, qr_url=qr_url, ticket_date=ticket_date,
         due_date=due_date, promised_date=promised_date, is_rush=is_rush,
         location=location, notes=customer_notes, office=False,
+        reprint=reprint, payment_status=payment_status,
+        delivery_method=delivery_method,
     )
 
 
 def build_office_receipt(*, ticket, customer_name, customer_phone,
                         garments, ticket_total, qr_url, ticket_date=None,
                         due_date=None, promised_date=None, is_rush=False,
-                        location=None, internal_notes=None):
+                        location=None, internal_notes=None, reprint=False,
+                        payment_status=None, delivery_method=None,
+                        sales_invoice=None, workflow_state=None):
     return _master(
         ticket=ticket, customer_name=customer_name,
         customer_phone=customer_phone, garments=garments,
         ticket_total=ticket_total, qr_url=qr_url, ticket_date=ticket_date,
         due_date=due_date, promised_date=promised_date, is_rush=is_rush,
         location=location, notes=internal_notes, office=True,
+        reprint=reprint, payment_status=payment_status,
+        delivery_method=delivery_method, sales_invoice=sales_invoice,
+        workflow_state=workflow_state,
     )
 
 
 def _master(*, ticket, customer_name, customer_phone, garments, ticket_total,
             qr_url, ticket_date, due_date, promised_date, is_rush, location,
-            notes, office):
+            notes, office, reprint=False, payment_status=None,
+            delivery_method=None, sales_invoice=None, workflow_state=None):
+    _ = is_rush  # no RUSH ink on receipts (C retired rush on print)
     out = INIT + FONT_A
 
-    # Rack header first (like the sample slip)
+    if office:
+        out += line("STORE MASTER", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    else:
+        out += line(BRAND_HOUSE, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    out += _reprint_banner(reprint)
+
+    # Rack header
     short = short_ticket_no(ticket)
     out += line(short, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
 
@@ -351,12 +431,8 @@ def _master(*, ticket, customer_name, customer_phone, garments, ticket_total,
         out += feed(1)
         out += rack_due_block(due_show)
 
-    if is_rush:
-        out += line("*** RUSH ORDER ***", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
-
     out += rule(heavy=True)
 
-    # Customer block
     cname = (customer_name or "").strip()
     if cname:
         display = cname if any(c.islower() for c in cname) else cname.title()
@@ -376,6 +452,12 @@ def _master(*, ticket, customer_name, customer_phone, garments, ticket_total,
         out += _kv("Store", location)
     if ticket_date:
         out += _kv("Date", ticket_date)
+    if office and delivery_method:
+        out += _kv("Exit", str(delivery_method).upper())
+    if office and workflow_state:
+        out += _kv("State", str(workflow_state).upper())
+    if not office and delivery_method:
+        out += _kv("Exit", str(delivery_method).upper())
     out += rule(heavy=True)
 
     out += line("GARMENTS", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
@@ -387,7 +469,12 @@ def _master(*, ticket, customer_name, customer_phone, garments, ticket_total,
         color = g.get("color") or ""
         label = " ".join([p for p in (gtype, color) if p]) or "Garment"
         head = "{}  [{}]".format(label, gid) if gid else label
-        out += two_col(head, _money(g.get("garment_total")), bold=True, size=SIZE_2H)
+        gtot = _garment_line_total(g)
+        # Omit header $ when zero and no lines — never print a false $0.00 next to priced lines
+        if gtot:
+            out += two_col(head, _money(gtot), bold=True, size=SIZE_2H)
+        else:
+            out += line(head, bold=True, size=SIZE_2H)
 
         desc = g.get("garment_description") or ""
         if desc and desc.strip().lower() not in (
@@ -413,6 +500,10 @@ def _master(*, ticket, customer_name, customer_phone, garments, ticket_total,
 
     out += rule(heavy=True)
     out += two_col("TOTAL", _money(ticket_total), bold=True, size=SIZE_2WH)
+    if payment_status:
+        out += _kv("Status", str(payment_status).upper())
+    if office and sales_invoice:
+        out += _kv("Invoice", sales_invoice)
     out += rule(heavy=True)
 
     if notes:
@@ -424,26 +515,36 @@ def _master(*, ticket, customer_name, customer_phone, garments, ticket_total,
 
     out += feed(1)
     out += ALIGN_CENTER + qr(qr_url, module_size=8) + ALIGN_LEFT
-    out += line("Scan to view your order", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    if office:
+        out += line("Scan to open in alts", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+    else:
+        # Pay URL uses /pay/; ticket lookup uses /t/
+        qhint = "Scan to pay" if (qr_url and "/pay/" in str(qr_url)) else "Scan e-ticket"
+        out += line(qhint, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
     out += line(str(ticket), bold=True, align=ALIGN_CENTER, size=SIZE_2H)
     out += feed(1)
 
     if not office:
-        out += line("Thank you for choosing L&S.", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+        out += _pickup_terms_block()
+        out += feed(1)
+        out += line("WITH OUR THANKS", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
+        out += line(BRAND_HOUSE, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
         out += line(PHONE + "  |  " + WEB, align=ALIGN_CENTER, size=SIZE_2H)
-    out += feed(2)
-    out += CUT
+
+    out += feed(4)
+    out += CUT_FULL
     return out
 
 
 def build_payment_receipt(*, invoice, customer_name, amount_paid, total,
                           outstanding, payment_ref=None, method="Card",
-                          paid_on=None, qr_url=None, ticket=None):
+                          paid_on=None, qr_url=None, ticket=None, reprint=False):
     out = INIT + FONT_A
     out += line(BRAND, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
     out += line(SUB, bold=True, align=ALIGN_CENTER, size=SIZE_2H)
     out += feed(1)
     out += line("PAYMENT RECEIPT", bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+    out += _reprint_banner(reprint)
     out += rule(heavy=True)
     out += _kv("Invoice", invoice)
     if ticket:
@@ -468,16 +569,17 @@ def build_payment_receipt(*, invoice, customer_name, amount_paid, total,
                 bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
     out += line("Thank you for choosing L&S.", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
     out += line(PHONE + "  |  " + WEB, align=ALIGN_CENTER, size=SIZE_2H)
-    out += feed(2)
-    out += CUT
+    out += feed(4)
+    out += CUT_FULL
     return out
 
 
-def build_pay_qr(*, invoice, customer_name, amount, url, ticket=None):
+def build_pay_qr(*, invoice, customer_name, amount, url, ticket=None, reprint=False):
     out = INIT + FONT_A
     out += line(BRAND, bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
     out += feed(1)
     out += line("SCAN TO PAY", bold=True, align=ALIGN_CENTER, size=SIZE_2WH)
+    out += _reprint_banner(reprint)
     out += rule(heavy=True)
     out += _kv("Invoice", invoice)
     if ticket:
@@ -490,8 +592,8 @@ def build_pay_qr(*, invoice, customer_name, amount, url, ticket=None):
     out += feed(1)
     out += line("Scan with your phone camera", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
     out += line("to pay securely via Square.", align=ALIGN_CENTER, size=SIZE_2H)
-    out += feed(2)
-    out += CUT
+    out += feed(4)
+    out += CUT_FULL
     return out
 
 
