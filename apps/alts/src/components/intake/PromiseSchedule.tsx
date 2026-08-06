@@ -78,6 +78,8 @@ function fmtTime(t?: string | null) {
 /**
  * Last intake step — promised due date + time with day load (airline-style).
  * Stage 1: count-based capacity. Later: minutes × tailor hours.
+ *
+ * Mobile: scroll body + sticky finish CTA (was clipped by overflow-hidden).
  */
 export default function PromiseSchedule({
   origin,
@@ -102,222 +104,228 @@ export default function PromiseSchedule({
   const canConfirm = !!selectedDate && !!selectedTime;
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 max-w-3xl mx-auto w-full">
-      <div className="shrink-0 mb-4">
-        <button
-          type="button"
-          onClick={onBack}
-          className="text-[11px] font-bold tracking-widest uppercase text-brass-light mb-2"
-        >
-          ← Back to review
-        </button>
-        <h2 className="display text-[32px] md:text-[36px] leading-none italic">
-          When is it promised?
-        </h2>
-        <p className="text-[12.5px] text-cream-dim mt-2 leading-relaxed max-w-xl">
-          Last step before the ticket. Pick due date and time
-          {clientLabel ? ` for ${clientLabel.split(" ")[0]}` : ""}. Bars show how full{" "}
-          {origin} already is that day — like a flight load chart.
-        </p>
-      </div>
-
-      {/* Airline-style day strip */}
-      <div className="shrink-0 mb-4">
-        <div className="text-[9px] font-bold tracking-[0.16em] uppercase text-brass-light mb-2">
-          Next 14 shop days · {origin}
-        </div>
-        {loading ? (
-          <div className="h-28 rounded-2xl border border-brass/20 bg-black/25 animate-pulse" />
-        ) : (
-          <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 snap-x">
-            {days.map((d) => {
-              const level = loadLevel(d.count);
-              const lab = fmtDayLabel(d.date);
-              const sel = selectedDate === d.date;
-              const barH = Math.min(100, 12 + d.count * 14);
-              return (
-                <button
-                  key={d.date}
-                  type="button"
-                  onClick={() => onSelectDate(d.date)}
-                  className={cn(
-                    "snap-start flex-none w-[72px] rounded-2xl border px-1.5 pt-2 pb-2 transition-all",
-                    "flex flex-col items-center min-h-[112px]",
-                    sel
-                      ? "border-brass bg-brass/18 shadow-[0_0_0_1px_rgba(176,141,87,0.35)]"
-                      : "border-brass/20 bg-black/25 hover:border-brass/45",
-                  )}
-                >
-                  <span className="text-[9px] font-bold tracking-wider uppercase text-cream-dim">
-                    {lab.weekday}
-                  </span>
-                  <span className="display text-[22px] leading-none mt-0.5">{lab.day}</span>
-                  <span className="text-[9px] text-cream-dim">{lab.month}</span>
-                  <div className="flex-1 w-full flex items-end justify-center mt-2 mb-1 px-2">
-                    <i
-                      className={cn(
-                        "block w-full max-w-[28px] rounded-t-md",
-                        level === "open" && "bg-[var(--em,#4FBF8E)]/80",
-                        level === "busy" && "bg-[var(--am,#E8A85C)]/85",
-                        level === "full" && "bg-[var(--ro,#D97B6C)]/90",
-                      )}
-                      style={{ height: `${barH}%`, minHeight: 8 }}
-                      aria-hidden
-                    />
-                  </div>
-                  <span
-                    className={cn(
-                      "text-[10px] font-bold tabular-nums",
-                      level === "open" && "text-[var(--em,#4FBF8E)]",
-                      level === "busy" && "text-[var(--am,#E8A85C)]",
-                      level === "full" && "text-[var(--ro,#D97B6C)]",
-                    )}
-                  >
-                    {d.count}
-                    {d.rush ? ` · ${d.rush}★` : ""}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-        <div className="flex gap-3 mt-1 text-[10px] text-cream-dim">
-          <span className="inline-flex items-center gap-1">
-            <i className="w-2.5 h-2.5 rounded-sm bg-[var(--em,#4FBF8E)]" /> Open (0–2)
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <i className="w-2.5 h-2.5 rounded-sm bg-[var(--am,#E8A85C)]" /> Busy (3–5)
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <i className="w-2.5 h-2.5 rounded-sm bg-[var(--ro,#D97B6C)]" /> Heavy (6+)
-          </span>
-        </div>
-      </div>
-
-      {/* Day detail + time */}
-      <div className="flex-1 min-h-0 grid md:grid-cols-2 gap-3 overflow-hidden">
-        <div className="rounded-2xl border border-brass/20 bg-black/25 flex flex-col min-h-0 overflow-hidden">
-          <div className="px-3.5 py-2.5 border-b border-brass/15 shrink-0">
-            <div className="text-[9px] font-bold tracking-[0.14em] uppercase text-brass-light">
-              Already on this day
-            </div>
-            <div className="display text-xl italic mt-0.5">
-              {selectedDate
-                ? `${fmtDayLabel(selectedDate).weekday} ${fmtDayLabel(selectedDate).month} ${fmtDayLabel(selectedDate).day}`
-                : "Pick a day"}
-            </div>
-          </div>
-          <div className="flex-1 min-h-0 overflow-y-auto p-2.5 space-y-1.5">
-            {!selectedDate && (
-              <p className="text-sm text-cream-dim px-2 py-6 text-center">
-                Tap a day above to see the load.
-              </p>
-            )}
-            {selectedDate && selected && selected.tickets.length === 0 && (
-              <p className="text-sm text-cream-dim px-2 py-6 text-center">
-                Nothing due yet — open sky.
-              </p>
-            )}
-            {selected?.tickets.map((t) => (
-              <div
-                key={t.name}
-                className="rounded-xl border border-brass/15 bg-white/[0.03] px-3 py-2.5 flex items-center gap-2"
-              >
-                <span className="text-[11px] font-mono text-brass-light tabular-nums w-14 shrink-0">
-                  {fmtTime(t.due_time)}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-semibold truncate">
-                    {t.customer_name || t.name}
-                  </span>
-                  <span className="block text-[10px] text-cream-dim truncate">
-                    {t.name}
-                    {t.workflow_state ? ` · ${t.workflow_state}` : ""}
-                    {t.is_rush ? " · rush" : ""}
-                  </span>
-                </span>
-              </div>
-            ))}
-            {(selected?.appointments || []).map((a) => (
-              <div
-                key={a.id}
-                className="rounded-xl border border-[rgba(155,139,196,0.35)] bg-[rgba(155,139,196,0.08)] px-3 py-2.5 flex items-center gap-2"
-              >
-                <span className="text-[11px] font-mono text-[var(--vi,#9B8BC4)] tabular-nums w-14 shrink-0">
-                  {a.start ? fmtTime(String(a.start).slice(11, 16)) : "Appt"}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-semibold truncate">{a.title}</span>
-                  <span className="block text-[10px] text-cream-dim">Appointment</span>
-                </span>
-              </div>
-            ))}
-          </div>
+    <div className="flex flex-col flex-1 min-h-0 max-w-3xl mx-auto w-full relative">
+      {/* Scrollable body — never clip the finish CTA */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-28">
+        <div className="shrink-0 mb-4">
+          <button
+            type="button"
+            onClick={onBack}
+            className="text-[11px] font-bold tracking-widest uppercase text-brass-light mb-2"
+          >
+            ← Back to review
+          </button>
+          <h2 className="display text-[32px] md:text-[36px] leading-none italic">
+            When is it promised?
+          </h2>
+          <p className="text-[12.5px] text-cream-dim mt-2 leading-relaxed max-w-xl">
+            Last step before the ticket. Pick due date and time
+            {clientLabel ? ` for ${clientLabel.split(" ")[0]}` : ""}. Bars show how full{" "}
+            {origin} already is that day — like a flight load chart.
+          </p>
         </div>
 
-        <div className="rounded-2xl border border-brass/20 bg-black/25 flex flex-col min-h-0 overflow-hidden">
-          <div className="px-3.5 py-2.5 border-b border-brass/15 shrink-0">
-            <div className="text-[9px] font-bold tracking-[0.14em] uppercase text-brass-light">
-              Promise time
-            </div>
-            <div className="display text-xl italic mt-0.5">
-              {selectedTime ? fmtTime(selectedTime) : "Choose a slot"}
-            </div>
+        {/* Airline-style day strip */}
+        <div className="mb-4">
+          <div className="text-[9px] font-bold tracking-[0.16em] uppercase text-brass-light mb-2">
+            Next 14 shop days · {origin}
           </div>
-          <div className="flex-1 min-h-0 overflow-y-auto p-3">
-            <div className="grid grid-cols-3 gap-2">
-              {PROMISE_SLOTS.map((s) => {
-                const sel = selectedTime === s.value;
+          {loading ? (
+            <div className="h-28 rounded-2xl border border-brass/20 bg-black/25 animate-pulse" />
+          ) : (
+            <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 snap-x">
+              {days.map((d) => {
+                const level = loadLevel(d.count);
+                const lab = fmtDayLabel(d.date);
+                const sel = selectedDate === d.date;
+                const barH = Math.min(100, 12 + d.count * 14);
                 return (
                   <button
-                    key={s.value}
+                    key={d.date}
                     type="button"
-                    disabled={!selectedDate}
-                    onClick={() => onSelectTime(s.value)}
+                    onClick={() => onSelectDate(d.date)}
                     className={cn(
-                      "h-12 rounded-xl border text-[12px] font-bold tracking-wide",
+                      "snap-start flex-none w-[72px] rounded-2xl border px-1.5 pt-2 pb-2 transition-all",
+                      "flex flex-col items-center min-h-[112px]",
                       sel
-                        ? "border-brass bg-brass text-forest-deep"
-                        : "border-brass/25 bg-black/30 text-cream hover:border-brass/50",
-                      !selectedDate && "opacity-40",
+                        ? "border-brass bg-brass/18 shadow-[0_0_0_1px_rgba(176,141,87,0.35)]"
+                        : "border-brass/20 bg-black/25 hover:border-brass/45",
                     )}
                   >
-                    {s.label}
+                    <span className="text-[9px] font-bold tracking-wider uppercase text-cream-dim">
+                      {lab.weekday}
+                    </span>
+                    <span className="display text-[22px] leading-none mt-0.5">{lab.day}</span>
+                    <span className="text-[9px] text-cream-dim">{lab.month}</span>
+                    <div className="flex-1 w-full flex items-end justify-center mt-2 mb-1 px-2">
+                      <i
+                        className={cn(
+                          "block w-full max-w-[28px] rounded-t-md",
+                          level === "open" && "bg-[var(--em,#4FBF8E)]/80",
+                          level === "busy" && "bg-[var(--am,#E8A85C)]/85",
+                          level === "full" && "bg-[var(--ro,#D97B6C)]/90",
+                        )}
+                        style={{ height: `${barH}%`, minHeight: 8 }}
+                        aria-hidden
+                      />
+                    </div>
+                    <span
+                      className={cn(
+                        "text-[10px] font-bold tabular-nums",
+                        level === "open" && "text-[var(--em,#4FBF8E)]",
+                        level === "busy" && "text-[var(--am,#E8A85C)]",
+                        level === "full" && "text-[var(--ro,#D97B6C)]",
+                      )}
+                    >
+                      {d.count}
+                      {d.rush ? ` · ${d.rush}★` : ""}
+                    </span>
                   </button>
                 );
               })}
             </div>
+          )}
+          <div className="flex gap-3 mt-1 text-[10px] text-cream-dim">
+            <span className="inline-flex items-center gap-1">
+              <i className="w-2.5 h-2.5 rounded-sm bg-[var(--em,#4FBF8E)]" /> Open (0–2)
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <i className="w-2.5 h-2.5 rounded-sm bg-[var(--am,#E8A85C)]" /> Busy (3–5)
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <i className="w-2.5 h-2.5 rounded-sm bg-[var(--ro,#D97B6C)]" /> Heavy (6+)
+            </span>
+          </div>
+        </div>
 
-            <label className="mt-4 flex items-center gap-3 min-h-12 px-1 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isRush}
-                onChange={(e) => onRush(e.target.checked)}
-                className="w-5 h-5 accent-[var(--am,#E8A85C)]"
-              />
-              <span>
-                <span className="block text-[13px] font-semibold">Rush</span>
-                <span className="block text-[11px] text-cream-dim">
-                  Marks the ticket · still pick a real due slot
+        {/* Day detail + time — auto height on mobile so nothing is clipped */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-2">
+          <div className="rounded-2xl border border-brass/20 bg-black/25 flex flex-col max-h-[280px] md:max-h-none md:min-h-[280px] overflow-hidden">
+            <div className="px-3.5 py-2.5 border-b border-brass/15 shrink-0">
+              <div className="text-[9px] font-bold tracking-[0.14em] uppercase text-brass-light">
+                Already on this day
+              </div>
+              <div className="display text-xl italic mt-0.5">
+                {selectedDate
+                  ? `${fmtDayLabel(selectedDate).weekday} ${fmtDayLabel(selectedDate).month} ${fmtDayLabel(selectedDate).day}`
+                  : "Pick a day"}
+              </div>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-2.5 space-y-1.5">
+              {!selectedDate && (
+                <p className="text-sm text-cream-dim px-2 py-6 text-center">
+                  Tap a day above to see the load.
+                </p>
+              )}
+              {selectedDate && selected && selected.tickets.length === 0 && (
+                <p className="text-sm text-cream-dim px-2 py-6 text-center">
+                  Nothing due yet — open sky.
+                </p>
+              )}
+              {selected?.tickets.map((t) => (
+                <div
+                  key={t.name}
+                  className="rounded-xl border border-brass/15 bg-white/[0.03] px-3 py-2.5 flex items-center gap-2"
+                >
+                  <span className="text-[11px] font-mono text-brass-light tabular-nums w-14 shrink-0">
+                    {fmtTime(t.due_time)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13px] font-semibold truncate">
+                      {t.customer_name || t.name}
+                    </span>
+                    <span className="block text-[10px] text-cream-dim truncate">
+                      {t.name}
+                      {t.workflow_state ? ` · ${t.workflow_state}` : ""}
+                      {t.is_rush ? " · rush" : ""}
+                    </span>
+                  </span>
+                </div>
+              ))}
+              {(selected?.appointments || []).map((a) => (
+                <div
+                  key={a.id}
+                  className="rounded-xl border border-[rgba(155,139,196,0.35)] bg-[rgba(155,139,196,0.08)] px-3 py-2.5 flex items-center gap-2"
+                >
+                  <span className="text-[11px] font-mono text-[var(--vi,#9B8BC4)] tabular-nums w-14 shrink-0">
+                    {a.start ? fmtTime(String(a.start).slice(11, 16)) : "Appt"}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13px] font-semibold truncate">{a.title}</span>
+                    <span className="block text-[10px] text-cream-dim">Appointment</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-brass/20 bg-black/25 flex flex-col overflow-hidden">
+            <div className="px-3.5 py-2.5 border-b border-brass/15 shrink-0">
+              <div className="text-[9px] font-bold tracking-[0.14em] uppercase text-brass-light">
+                Promise time
+              </div>
+              <div className="display text-xl italic mt-0.5">
+                {selectedTime ? fmtTime(selectedTime) : "Choose a slot"}
+              </div>
+            </div>
+            <div className="p-3">
+              <div className="grid grid-cols-3 gap-2">
+                {PROMISE_SLOTS.map((s) => {
+                  const sel = selectedTime === s.value;
+                  return (
+                    <button
+                      key={s.value}
+                      type="button"
+                      disabled={!selectedDate}
+                      onClick={() => onSelectTime(s.value)}
+                      className={cn(
+                        "h-12 rounded-xl border text-[12px] font-bold tracking-wide",
+                        sel
+                          ? "border-brass bg-brass text-forest-deep"
+                          : "border-brass/25 bg-black/30 text-cream hover:border-brass/50",
+                        !selectedDate && "opacity-40",
+                      )}
+                    >
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <label className="mt-4 flex items-center gap-3 min-h-12 px-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isRush}
+                  onChange={(e) => onRush(e.target.checked)}
+                  className="w-5 h-5 accent-[var(--am,#E8A85C)]"
+                />
+                <span>
+                  <span className="block text-[13px] font-semibold">Rush</span>
+                  <span className="block text-[11px] text-cream-dim">
+                    Marks the ticket · still pick a real due slot
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+            </div>
           </div>
+        </div>
+      </div>
 
-          <div className="shrink-0 p-3 border-t border-brass/15">
-            <button
-              type="button"
-              disabled={!canConfirm || confirming}
-              onClick={onConfirm}
-              className="btn-brass w-full h-14 text-[12px] disabled:opacity-40"
-            >
-              {confirming
-                ? "Writing ticket…"
-                : canConfirm
-                  ? `Promise ${fmtDayLabel(selectedDate!).month} ${fmtDayLabel(selectedDate!).day} · ${fmtTime(selectedTime)} →`
-                  : "Pick date & time"}
-            </button>
-          </div>
+      {/* Sticky finish CTA — always visible on phone (was buried under overflow) */}
+      <div className="absolute bottom-0 inset-x-0 z-20 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-forest-deep via-forest-deep/95 to-transparent pointer-events-none">
+        <div className="pointer-events-auto px-0">
+          <button
+            type="button"
+            disabled={!canConfirm || confirming}
+            onClick={onConfirm}
+            className="btn-brass w-full h-14 text-[12px] disabled:opacity-40 shadow-[0_12px_34px_rgba(176,141,87,0.28)]"
+          >
+            {confirming
+              ? "Writing ticket…"
+              : canConfirm
+                ? `Finish · ${fmtDayLabel(selectedDate!).month} ${fmtDayLabel(selectedDate!).day} · ${fmtTime(selectedTime)} →`
+                : "Pick date & time to finish"}
+          </button>
         </div>
       </div>
     </div>

@@ -1428,7 +1428,11 @@ export default function IntakeStepped() {
       <div
         className={cn(
           "flex-1 min-h-0 flex flex-col",
-          step === 1 ? "overflow-hidden px-5 py-6" : "overflow-y-auto px-5 py-6 pb-40",
+          // step 1 catalog + step 3 promise each own their scroll/sticky CTA —
+          // outer overflow-y-auto was clipping the finish button on phone
+          step === 1 || step === 3
+            ? "overflow-hidden px-5 py-6"
+            : "overflow-y-auto px-5 py-6 pb-40",
         )}
       >
         {/* ── Customer ── */}
@@ -2032,7 +2036,7 @@ export default function IntakeStepped() {
 
         {/* ── Schedule (SPEC 058) — last step before write ── */}
         {step === 3 && (
-          <div className="flex-1 min-h-0 flex flex-col pb-4">
+          <div className="flex-1 min-h-0 flex flex-col">
             <PromiseSchedule
               origin={origin}
               days={scheduleLoad.data?.days ?? []}
