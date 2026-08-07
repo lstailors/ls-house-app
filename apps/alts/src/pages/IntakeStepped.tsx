@@ -28,6 +28,10 @@ import SellItemCatalog, {
 } from "@alts/components/intake/SellItemCatalog";
 import SellItemDrawer from "@alts/components/intake/SellItemDrawer";
 import PromiseSchedule, { type DayLoad } from "@alts/components/intake/PromiseSchedule";
+import DeliveryBlock, {
+  emptyDelivery,
+  type DeliverySelection,
+} from "@alts/components/intake/DeliveryBlock";
 import IntakeConfirm, {
   type IntakeConfirmResult,
 } from "@alts/components/intake/IntakeConfirm";
@@ -296,6 +300,7 @@ export default function IntakeStepped() {
   const [promiseDate, setPromiseDate] = useState<string | null>(null);
   const [promiseTime, setPromiseTime] = useState<string | null>("18:00");
   const [isRush, setIsRush] = useState(false);
+  const [delivery, setDelivery] = useState<DeliverySelection>(() => emptyDelivery());
   const [billing, setBilling] = useState<"billable" | "on_order" | "redo">(initialBilling);
   const [linkedSo, setLinkedSo] = useState<string | null>(soParam);
   const [linkedSoLabel, setLinkedSoLabel] = useState<string | null>(null);
@@ -1130,6 +1135,29 @@ export default function IntakeStepped() {
       included_in_custom: billing === "on_order" ? 1 : 0,
       linked_sales_order: billing === "on_order" ? linkedSo || undefined : undefined,
     };
+    // Delivery (3 options)
+    body.delivery_method = delivery.delivery_method;
+    if (delivery.delivery_method !== "Pickup") {
+      body.delivery_scheduled = 1;
+      if (delivery.delivery_requested_date) body.delivery_requested_date = delivery.delivery_requested_date;
+      else if (promiseDate) body.delivery_requested_date = promiseDate;
+      if (delivery.delivery_time_window) body.delivery_time_window = delivery.delivery_time_window;
+      if (delivery.delivery_address) body.delivery_address = delivery.delivery_address;
+      if (delivery.delivery_apt) body.delivery_apt = delivery.delivery_apt;
+      body.delivery_city = delivery.delivery_city || "New York";
+      body.delivery_state = delivery.delivery_state || "NY";
+      if (delivery.delivery_zip) body.delivery_zip = delivery.delivery_zip;
+      if (delivery.delivery_notes) body.delivery_notes = delivery.delivery_notes;
+      if (delivery.delivery_fee_override) {
+        body.delivery_fee_override = 1;
+        body.delivery_fee = delivery.delivery_fee ?? 0;
+        if (delivery.delivery_fee_override_reason) {
+          body.delivery_fee_override_reason = delivery.delivery_fee_override_reason;
+        }
+      } else if (delivery.delivery_method === "Ship (FedEx)" && delivery.delivery_fee != null) {
+        body.delivery_fee = delivery.delivery_fee;
+      }
+    }
     if (ticketNote.trim()) {
       if (ticketNoteKind === "customer") body.customer_notes = ticketNote.trim();
       else body.internal_notes = ticketNote.trim();
@@ -2096,7 +2124,14 @@ export default function IntakeStepped() {
 
         {/* ── Schedule (SPEC 058) — last step before write ── */}
         {step === 3 && !confirmResult && (
-          <div className="flex-1 min-h-0 flex flex-col">
+          <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto">
+            <DeliveryBlock
+              value={delivery}
+              onChange={setDelivery}
+              dueDate={promiseDate || undefined}
+              freeCustom={billing === "on_order"}
+              canOverrideFee={false}
+            />
             <PromiseSchedule
               origin={origin}
               days={scheduleLoad.data?.days ?? []}
@@ -2108,6 +2143,9 @@ export default function IntakeStepped() {
               onSelectDate={(d) => {
                 setPromiseDate(d);
                 if (!promiseTime) setPromiseTime("18:00");
+                if (delivery.delivery_method !== "Pickup" && !delivery.delivery_requested_date) {
+                  setDelivery((prev) => ({ ...prev, delivery_requested_date: d }));
+                }
               }}
               onSelectTime={setPromiseTime}
               onRush={setIsRush}
@@ -2117,6 +2155,23 @@ export default function IntakeStepped() {
                 if (!promiseDate || !promiseTime) {
                   toast.error("Pick a promised date and time");
                   return;
+                }
+                if (delivery.delivery_method === "Hand Delivery") {
+                  const z = (delivery.delivery_zip || "").replace(/\D/g, "");
+                  if (z.length !== 5) {
+                    toast.error("Hand delivery needs a 5-digit ZIP");
+                    return;
+                  }
+                  if (!delivery.delivery_address?.trim()) {
+                    toast.error("Enter delivery street address");
+                    return;
+                  }
+                }
+                if (delivery.delivery_method === "Ship (FedEx)" && billing === "billable") {
+                  if (delivery.delivery_fee == null || Number(delivery.delivery_fee) < 0) {
+                    toast.error("Enter FedEx fee (or 0 if complimentary)");
+                    return;
+                  }
                 }
                 create.mutate();
               }}

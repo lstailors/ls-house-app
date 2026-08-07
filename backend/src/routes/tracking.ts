@@ -11,11 +11,7 @@ import { Hono } from "hono";
 import { erpList, erpGet, erpUpdate, erpCreate } from "../lib/erp";
 import { uploadFile, erpFileAbsoluteUrl } from "../lib/erpnext/files";
 import { sendSms } from "../lib/twilio";
-
-function erpDatetime(d?: Date | string | null): string {
-  const dt = d ? new Date(d) : new Date();
-  return dt.toISOString().replace("T", " ").slice(0, 19);
-}
+import { erpDatetime, sanitizeGps, hasPod } from "../lib/delivery";
 
 /** Fire-and-forget customer SMS — mirrors deliveries.ts notifyCustomer. */
 async function notifyCustomer(

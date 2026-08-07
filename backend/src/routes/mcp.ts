@@ -219,9 +219,10 @@ mcpRouter.get("/summary", async (c) => {
 
 // ── Deliveries (MCP) ──────────────────────────────────────────────────────────
 
+import { erpDatetime, sanitizeGps, hasPod } from "../lib/delivery";
+
 function erpDatetimeMcp(d?: Date | string | null): string {
-  const dt = d ? new Date(d) : new Date();
-  return dt.toISOString().replace("T", " ").slice(0, 19);
+  return erpDatetime(d);
 }
 
 function buildDeliveryTimelineEntry(status: string, actor: string) {

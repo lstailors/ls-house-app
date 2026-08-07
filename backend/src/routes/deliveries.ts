@@ -11,31 +11,25 @@ import {
 } from "../lib/ai";
 import type { MessageType } from "../lib/ai";
 
-// Web Crypto API — works in both Edge and Node runtimes
-function generateToken(): string {
-  const bytes = new Uint8Array(12);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-// ERPNext MySQL requires "YYYY-MM-DD HH:MM:SS" — no milliseconds, no Z
-function erpDatetime(d?: Date | string | null): string {
-  const dt = d ? new Date(d) : new Date();
-  return dt.toISOString().replace("T", " ").slice(0, 19);
-}
-
-// ERPNext returns "YYYY-MM-DD HH:MM:SS" without timezone — treat as UTC by appending Z
-function erpToIso(s: string | null | undefined): string | null {
-  if (!s) return null;
-  // Already has timezone indicator
-  if (s.includes("Z") || s.includes("+")) return s;
-  // Space-separated ERPNext format → ISO UTC
-  return s.replace(" ", "T") + "Z";
-}
 import { getAuthedUser, resolveLocationCode, canCreateDelivery } from "../lib/scope";
 import { uploadFile, erpFileAbsoluteUrl } from "../lib/erpnext/files";
 import { sendSms } from "../lib/twilio";
 import { createCustomer } from "../lib/erpnext/customers";
+import {
+  erpDatetime,
+  erpToIso,
+  sanitizeGps,
+  hasPod,
+  needsBackdateNote,
+  normalizeZip,
+} from "../lib/delivery";
+
+// Web Crypto API — works in both Edge and Node runtimes
+function generateToken(): string {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 type CustomerAddressParts = {
   line1: string | null;
@@ -664,7 +658,36 @@ deliveriesRouter.post("/", async (c) => {
     };
     const method = methodMap[methodRaw] || "Hand Delivery";
 
-    // Date-only → noon Eastern-ish ISO for Datetime field
+    // Part 1.4 — standalone create requires garment count ≥ 1 when no ticket
+    const ticketLink = body.alterationTicket ?? body.alteration_ticket ?? null;
+    let garmentCount = body.garmentCount ?? body.garment_count ?? null;
+    let garmentSummary = body.garmentSummary ?? body.garment_summary ?? null;
+    if (ticketLink) {
+      try {
+        const t = await erpGet<any>("Alteration Ticket", ticketLink);
+        if (t) {
+          const gcount = Array.isArray(t.garments) ? t.garments.length : Number(t.garment_count || 0);
+          if (!garmentCount && gcount) garmentCount = gcount;
+          if (!garmentSummary && Array.isArray(t.garments)) {
+            garmentSummary = t.garments
+              .map((g: any) => g.garment_type || g.description || g.garment_label)
+              .filter(Boolean)
+              .join(" · ")
+              .slice(0, 140);
+          }
+        }
+      } catch {
+        /* best-effort */
+      }
+    }
+    if (!ticketLink && (!garmentCount || Number(garmentCount) < 1)) {
+      return c.json({ error: { message: "garmentCount ≥ 1 required for standalone deliveries" } }, 400);
+    }
+    if (!ticketLink && !String(garmentSummary || "").trim()) {
+      return c.json({ error: { message: "garmentSummary required for standalone deliveries" } }, 400);
+    }
+
+    // Date-only → noon Eastern for Datetime field
     let scheduledAt = body.scheduledAt ?? null;
     if (scheduledAt && /^\d{4}-\d{2}-\d{2}$/.test(String(scheduledAt))) {
       scheduledAt = `${scheduledAt} 12:00:00`;
@@ -687,12 +710,12 @@ deliveriesRouter.post("/", async (c) => {
       lsh_notify_phone: body.notifyPhone ?? phone ?? null,
       lsh_qr_token: token,
       lsh_queued_at: erpDatetime(),
-      lsh_garment_summary: body.garmentSummary ?? null,
-      lsh_garment_count: body.garmentCount ?? null,
+      lsh_garment_summary: garmentSummary,
+      lsh_garment_count: garmentCount,
       lsh_courier_name: body.courierName ?? body.driverName ?? null,
       lsh_delivery_notes: body.notes ?? null,
       lsh_sales_order: body.orderRef ?? body.sales_order ?? null,
-      lsh_alteration_ticket: body.alterationTicket ?? body.alteration_ticket ?? null,
+      lsh_alteration_ticket: ticketLink,
       customer_name: body.customer_name ?? body.customerName ?? null,
       lsh_timeline: [buildTimelineEntry("Queued", user.name ?? user.email ?? "Staff")],
     });
@@ -898,10 +921,44 @@ deliveriesRouter.patch("/:id", async (c) => {
       : (body.status === "ready_for_pickup" || body.status === "ready") ? "Ready for Pickup"
       : body.status;
     updates.lsh_status = erpSt;
-    if (["delivered", "Delivered"].includes(body.status))
-      updates.lsh_delivered_at = erpDatetime();
-    if (["out_for_delivery", "Out for Delivery", "In Flight"].includes(body.status))
+    if (["delivered", "Delivered"].includes(body.status)) {
+      // Part 1.5 — POD required to mark Delivered via status patch
+      const probe = {
+        ...existing,
+        lsh_pod_method: body.podMethod ?? existing.lsh_pod_method,
+        lsh_signature_name: body.receivedBy ?? body.signatureName ?? existing.lsh_signature_name,
+        lsh_signature_image_url: body.signatureImageUrl ?? existing.lsh_signature_image_url,
+        lsh_photos: existing.lsh_photos,
+      };
+      if (!hasPod(probe)) {
+        return c.json({
+          error: {
+            message:
+              "Proof of delivery required: set POD method and add a photo and/or signature before marking Delivered.",
+          },
+        }, 400);
+      }
+      const deliveredAt = body.deliveredAt ? erpDatetime(body.deliveredAt) : erpDatetime();
+      if (needsBackdateNote(deliveredAt, body.attemptNotes ?? body.lsh_attempt_notes ?? existing.lsh_attempt_notes)) {
+        return c.json({
+          error: {
+            message:
+              "Delivered time is more than 6 hours ago — add attempt notes explaining the backdate.",
+          },
+        }, 400);
+      }
+      updates.lsh_delivered_at = deliveredAt;
+      if (body.attemptNotes) updates.lsh_attempt_notes = body.attemptNotes;
+      if (body.podMethod) updates.lsh_pod_method = body.podMethod;
+    }
+    if (["out_for_delivery", "Out for Delivery", "In Flight"].includes(body.status)) {
+      if (!body.courierName && !body.driverName && !existing.lsh_courier_name) {
+        return c.json({ error: { message: "Courier / driver name required to dispatch" } }, 400);
+      }
       updates.lsh_dispatched_at = erpDatetime();
+      if (body.courierName) updates.lsh_courier_name = body.courierName;
+      if (body.driverName) updates.lsh_courier_name = body.driverName;
+    }
     const actor = user.name ?? user.email ?? "Staff";
     updates.lsh_timeline = withTimeline(existing, buildTimelineEntry(erpSt, actor));
   }
@@ -997,9 +1054,24 @@ deliveriesRouter.patch("/:id/pod", async (c) => {
   if (receivedBy !== undefined) updates.lsh_signature_name = receivedBy;
   if (body.signatureImageUrl !== undefined)
     updates.lsh_signature_image_url = body.signatureImageUrl;
-  if (body.gpsLat !== undefined) updates.lsh_gps_lat = body.gpsLat;
-  if (body.gpsLng !== undefined) updates.lsh_gps_lng = body.gpsLng;
-  if (body.gpsAccuracy !== undefined) updates.lsh_gps_accuracy = body.gpsAccuracy;
+  if (body.gpsLat !== undefined || body.gpsLng !== undefined) {
+    const gps = sanitizeGps({
+      lat: body.gpsLat,
+      lng: body.gpsLng,
+      accuracy: body.gpsAccuracy,
+      origin: existing.lsh_origin_location === "HOU" ? "HOU" : "NYC",
+    });
+    if (gps.ok) {
+      updates.lsh_gps_lat = gps.lat;
+      updates.lsh_gps_lng = gps.lng;
+      if (gps.accuracy != null) updates.lsh_gps_accuracy = gps.accuracy;
+    } else {
+      // Never store 0.0 or stale junk — leave null
+      updates.lsh_gps_lat = null;
+      updates.lsh_gps_lng = null;
+      if (body.gpsAccuracy !== undefined) updates.lsh_gps_accuracy = body.gpsAccuracy ?? null;
+    }
+  }
 
   // Collect photo URLs — accepts either pre-uploaded public URLs or base64
   const incomingUrls: string[] = [];
@@ -1094,13 +1166,50 @@ deliveriesRouter.patch("/:id/status", async (c) => {
   const erpStatus = ALLOWED_STATUSES[body.status];
   if (!erpStatus) return c.json({ error: { message: `Invalid status. Allowed: queued, out_for_delivery, delivered, failed, cancelled` } }, 400);
 
+  const existing = await erpGet<any>("LSH Delivery", id);
+  if (!existing) return c.json({ error: { message: "Not found" } }, 404);
+
   const updates: Record<string, unknown> = { lsh_status: erpStatus };
 
-  if (erpStatus === "Delivered") updates.lsh_delivered_at = erpDatetime();
-  if (erpStatus === "Out for Delivery") updates.lsh_dispatched_at = erpDatetime();
+  if (erpStatus === "Delivered") {
+    const probe = {
+      ...existing,
+      lsh_pod_method: body.podMethod ?? existing.lsh_pod_method,
+      lsh_signature_name: body.receivedBy ?? body.signatureName ?? existing.lsh_signature_name,
+      lsh_signature_image_url: body.signatureImageUrl ?? existing.lsh_signature_image_url,
+    };
+    if (!hasPod(probe)) {
+      return c.json({
+        error: {
+          message:
+            "Proof of delivery required: set POD method and add a photo and/or signature before marking Delivered.",
+        },
+      }, 400);
+    }
+    const deliveredAt = body.deliveredAt ? erpDatetime(body.deliveredAt) : erpDatetime();
+    if (needsBackdateNote(deliveredAt, body.attemptNotes ?? existing.lsh_attempt_notes)) {
+      return c.json({
+        error: { message: "Delivered time is more than 6 hours ago — add attempt notes explaining the backdate." },
+      }, 400);
+    }
+    updates.lsh_delivered_at = deliveredAt;
+    if (body.attemptNotes) updates.lsh_attempt_notes = body.attemptNotes;
+  }
+  if (erpStatus === "Out for Delivery") {
+    if (!body.courierName && !body.driverName && !existing.lsh_courier_name) {
+      return c.json({ error: { message: "Courier / driver name required to dispatch" } }, 400);
+    }
+    updates.lsh_dispatched_at = erpDatetime();
+    if (body.courierName) updates.lsh_courier_name = body.courierName;
+    if (body.driverName) updates.lsh_courier_name = body.driverName;
+  }
+  if (erpStatus === "Failed" && !body.failureReason && !existing.lsh_failure_reason) {
+    return c.json({ error: { message: "failure reason required" } }, 400);
+  }
+  if (body.failureReason) updates.lsh_failure_reason = body.failureReason;
+  if (erpStatus === "Cancelled") updates.lsh_cancelled_at = erpDatetime();
 
   try {
-    const existing = await erpGet<any>("LSH Delivery", id);
     const actor = user.name ?? user.email ?? "Staff";
     updates.lsh_timeline = withTimeline(existing, buildTimelineEntry(erpStatus, actor));
 

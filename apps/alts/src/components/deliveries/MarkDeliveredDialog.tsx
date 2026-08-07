@@ -104,11 +104,16 @@ export function MarkDeliveredDialog({ delivery, onClose }: Props) {
     setGpsStatus("fetching");
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        if (pos.coords.accuracy > 100) {
+          setGps(null);
+          setGpsStatus("denied");
+          return;
+        }
         setGps({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy });
         setGpsStatus("ok");
       },
       () => setGpsStatus("denied"),
-      { timeout: 8000, enableHighAccuracy: true },
+      { timeout: 15000, enableHighAccuracy: true, maximumAge: 0 },
     );
   }, [delivery?.id]);
 

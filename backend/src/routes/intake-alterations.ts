@@ -4,6 +4,8 @@ import { uploadFile, erpFileAbsoluteUrl } from '../lib/erpnext/files';
 import { erpList, erpGet as erpGetDoc, erpUpdate, erpPdf, erpRunMethod, erpCreate, erpSubmit } from '../lib/erp';
 import { sendSms } from '../lib/twilio';
 import { eTicketKey, eTicketKeyValid, eTicketPublicUrl } from '../lib/eticket-token';
+import { planDeliveryFee } from './delivery-zones';
+import { erpDatetime } from '../lib/delivery';
 
 // ---------------------------------------------------------------------------
 // ERPNext config
@@ -765,6 +767,20 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
   const includedInCustom =
     billingStatus === 'Included in Custom Order' || body.included_in_custom === 1 || body.included_in_custom === true ? 1 : 0;
 
+  // Delivery block (SPEC delivery-scheduling-zones) — 3 methods only
+  const deliveryMethodRaw = String(body.delivery_method || body.deliveryMethod || 'Pickup');
+  const deliveryMethod =
+    deliveryMethodRaw === 'Ship (FedEx)' || deliveryMethodRaw === 'Ship' || deliveryMethodRaw === 'FedEx'
+      ? 'Ship (FedEx)'
+      : deliveryMethodRaw === 'Hand Delivery' || deliveryMethodRaw === 'Courier'
+        ? 'Hand Delivery'
+        : 'Pickup';
+  const deliveryScheduled =
+    body.delivery_scheduled === 1 ||
+    body.delivery_scheduled === true ||
+    body.deliveryScheduled === true ||
+    (deliveryMethod !== 'Pickup' && Boolean(body.delivery_zip || body.deliveryZip || body.delivery_address));
+
   const payload: Record<string, any> = {
     // Alts FOH is NYC-only — coerce any HOU claim
     origin_location: 'NYC',
@@ -812,6 +828,34 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
     // Real idempotency key (client UUID). Double-submit on flaky wifi returns same ticket.
     const idempotencyKey = (body.idempotency_key || body.idempotencyKey || '').toString().trim();
     if (idempotencyKey) payload.idempotency_key = idempotencyKey;
+    payload.delivery_method = deliveryMethod;
+    if (deliveryScheduled && deliveryMethod !== 'Pickup') {
+      payload.delivery_scheduled = 1;
+      if (body.delivery_requested_date || body.deliveryRequestedDate) {
+        payload.delivery_requested_date = body.delivery_requested_date || body.deliveryRequestedDate;
+      }
+      if (body.delivery_time_window || body.deliveryTimeWindow) {
+        payload.delivery_time_window = body.delivery_time_window || body.deliveryTimeWindow;
+      }
+      if (body.delivery_address || body.deliveryAddress) {
+        payload.delivery_address = body.delivery_address || body.deliveryAddress;
+      }
+      if (body.delivery_apt || body.deliveryApt) payload.delivery_apt = body.delivery_apt || body.deliveryApt;
+      if (body.delivery_city || body.deliveryCity) payload.delivery_city = body.delivery_city || body.deliveryCity || 'New York';
+      if (body.delivery_state || body.deliveryState) payload.delivery_state = body.delivery_state || body.deliveryState || 'NY';
+      if (body.delivery_zip || body.deliveryZip) payload.delivery_zip = body.delivery_zip || body.deliveryZip;
+      if (body.delivery_lat != null) payload.delivery_lat = body.delivery_lat;
+      if (body.delivery_lng != null) payload.delivery_lng = body.delivery_lng;
+      if (body.delivery_notes || body.deliveryNotes) payload.delivery_notes = body.delivery_notes || body.deliveryNotes;
+      if (body.delivery_fee_override || body.deliveryFeeOverride) {
+        payload.delivery_fee_override = 1;
+        payload.delivery_fee = Number(body.delivery_fee ?? body.deliveryFee) || 0;
+        if (body.delivery_fee_override_reason || body.deliveryFeeOverrideReason) {
+          payload.delivery_fee_override_reason =
+            body.delivery_fee_override_reason || body.deliveryFeeOverrideReason;
+        }
+      }
+    }
 
   if (customer) {
     payload.customer = customer.id ?? customer.name;
@@ -946,6 +990,188 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
       }
     }
 
+    // Delivery schedule + zone fee (Parts 4–10)
+    let deliveryMeta: Record<string, unknown> | null = null;
+    if (deliveryMethod !== 'Pickup' && deliveryScheduled) {
+      try {
+        const plan = await planDeliveryFee({
+          delivery_method: deliveryMethod,
+          delivery_scheduled: true,
+          delivery_zip: body.delivery_zip || body.deliveryZip,
+          delivery_fee_override: body.delivery_fee_override || body.deliveryFeeOverride,
+          delivery_fee: body.delivery_fee ?? body.deliveryFee,
+          included_in_custom: includedInCustom,
+          billing_status: billingStatus,
+          linked_sales_order: linkedSo,
+          origin_location: 'NYC',
+        });
+
+        const feePatch: Record<string, unknown> = {
+          delivery_method: plan.method === 'Ship (FedEx)' ? 'Ship (FedEx)' : deliveryMethod,
+          delivery_scheduled: 1,
+          delivery_zone: plan.zone,
+          delivery_fee: plan.fee,
+        };
+        if (body.delivery_requested_date || body.deliveryRequestedDate) {
+          feePatch.delivery_requested_date = body.delivery_requested_date || body.deliveryRequestedDate;
+        }
+        if (body.delivery_time_window || body.deliveryTimeWindow) {
+          feePatch.delivery_time_window = body.delivery_time_window || body.deliveryTimeWindow;
+        }
+        if (body.delivery_address || body.deliveryAddress) {
+          feePatch.delivery_address = body.delivery_address || body.deliveryAddress;
+        }
+        if (body.delivery_apt || body.deliveryApt) feePatch.delivery_apt = body.delivery_apt || body.deliveryApt;
+        if (body.delivery_city || body.deliveryCity) {
+          feePatch.delivery_city = body.delivery_city || body.deliveryCity || 'New York';
+        }
+        if (body.delivery_state || body.deliveryState) {
+          feePatch.delivery_state = body.delivery_state || body.deliveryState || 'NY';
+        }
+        if (body.delivery_zip || body.deliveryZip) {
+          feePatch.delivery_zip = body.delivery_zip || body.deliveryZip;
+        }
+        if (body.delivery_notes || body.deliveryNotes) {
+          feePatch.delivery_notes = body.delivery_notes || body.deliveryNotes;
+        }
+
+        // ticket_total = alter lines + fee
+        const tNow = await erpGetDoc<any>('Alteration Ticket', ticketName).catch(() => null);
+        const linesSum = Array.isArray(tNow?.lines)
+          ? tNow.lines.reduce((s: number, l: any) => s + (Number(l.price) || 0), 0)
+          : Number(tNow?.ticket_total) || 0;
+        feePatch.ticket_total = linesSum + (plan.fee || 0);
+        await erpUpdate('Alteration Ticket', ticketName, feePatch).catch((e: any) => {
+          console.warn('[intake] delivery feePatch', e?.message);
+        });
+
+        // Create or update LSH Delivery (idempotent on ticket link)
+        const existingDel = await erpList<any>('LSH Delivery', {
+          filters: [['lsh_alteration_ticket', '=', ticketName]],
+          fields: ['name'],
+          limit: 1,
+        }).catch(() => []);
+        const windowStart: Record<string, string> = {
+          'Morning (9–12)': '09:00:00',
+          'Afternoon (12–4)': '12:00:00',
+          'Evening (4–7)': '16:00:00',
+          Anytime: '12:00:00',
+        };
+        const tw = String(body.delivery_time_window || body.deliveryTimeWindow || 'Anytime');
+        const reqDate = String(body.delivery_requested_date || body.deliveryRequestedDate || tNow?.due_date || '');
+        const scheduledAt = reqDate ? `${reqDate} ${windowStart[tw] || '12:00:00'}` : null;
+        const gcount = Array.isArray(tNow?.garments) ? tNow.garments.length : garmentsIn.length;
+        const gsum = Array.isArray(tNow?.garments)
+          ? tNow.garments.map((g: any) => g.garment_type || g.garment_description).filter(Boolean).join(' · ')
+          : '';
+
+        const delDoc: Record<string, unknown> = {
+          lsh_status: 'Queued',
+          lsh_delivery_method: plan.method === 'Ship (FedEx)' ? 'Ship Direct' : 'Hand Delivery',
+          lsh_origin_location: 'NYC',
+          lsh_alteration_ticket: ticketName,
+          customer: tNow?.customer || payload.customer,
+          customer_name: tNow?.customer_name || null,
+          customer_phone: tNow?.customer_phone || null,
+          lsh_delivery_address: feePatch.delivery_address || null,
+          lsh_delivery_apt: feePatch.delivery_apt || null,
+          lsh_delivery_city: feePatch.delivery_city || 'New York',
+          lsh_delivery_state: feePatch.delivery_state || 'NY',
+          lsh_delivery_zip: feePatch.delivery_zip || null,
+          lsh_scheduled_at: scheduledAt,
+          lsh_queued_at: erpDatetime(),
+          lsh_garment_count: gcount,
+          lsh_garment_summary: gsum || null,
+          lsh_notify_phone: tNow?.customer_phone || null,
+          lsh_delivery_notes: feePatch.delivery_notes || null,
+          lsh_carrier: plan.method === 'Ship (FedEx)' ? 'FedEx' : null,
+        };
+
+        let deliveryName: string | null = null;
+        if (existingDel?.[0]?.name) {
+          deliveryName = existingDel[0].name;
+          await erpUpdate('LSH Delivery', deliveryName, delDoc);
+        } else {
+          const created = await erpCreate<any>('LSH Delivery', {
+            naming_series: 'DN-NYC-.YYYY.-',
+            ...delDoc,
+            lsh_timeline: [
+              {
+                doctype: 'LSH Delivery Timeline',
+                event_type: 'Queued',
+                event_at: erpDatetime(),
+                actor_label: user.name || user.email || 'Staff',
+                message: `Booked with ticket ${ticketName}`,
+              },
+            ],
+          });
+          deliveryName = created?.name || null;
+        }
+        if (deliveryName) {
+          await erpUpdate('Alteration Ticket', ticketName, { linked_delivery: deliveryName }).catch(() => {});
+        }
+
+        // Append fee Item line on SI when billable
+        if (billingStatus === 'Billable' && plan.item_code) {
+          let invName = salesInvoice;
+          if (!invName) {
+            const t2 = await erpGetDoc<any>('Alteration Ticket', ticketName).catch(() => null);
+            invName = t2?.sales_invoice ? String(t2.sales_invoice) : null;
+          }
+          if (invName) {
+            const inv = await erpGetDoc<any>('Sales Invoice', invName).catch(() => null);
+            if (inv && Number(inv.docstatus) === 0) {
+              const items = (inv.items || []).map((it: any) => ({
+                item_code: it.item_code,
+                item_name: it.item_name,
+                description: it.description,
+                qty: it.qty,
+                rate: it.rate,
+                uom: it.uom || 'Nos',
+              }));
+              const already = items.some((it: any) => String(it.item_code || '').startsWith('DEL-'));
+              if (!already) {
+                items.push({
+                  item_code: plan.item_code,
+                  item_name: plan.free_custom
+                    ? 'Delivery — Included'
+                    : plan.zone_name
+                      ? `Hand Delivery — ${plan.zone_name}`
+                      : plan.method === 'Ship (FedEx)'
+                        ? 'Shipping — FedEx'
+                        : 'Delivery',
+                  description: plan.free_custom
+                    ? 'Custom-order delivery included'
+                    : plan.zone
+                      ? `Zone ${plan.zone}`
+                      : 'Delivery fee',
+                  qty: 1,
+                  rate: plan.fee,
+                  uom: 'Nos',
+                });
+                await erpUpdate('Sales Invoice', invName, { items });
+                const refreshed = await erpGetDoc<any>('Sales Invoice', invName).catch(() => null);
+                if (refreshed?.grand_total != null) invoiceTotal = Number(refreshed.grand_total);
+              }
+            }
+          }
+        }
+
+        deliveryMeta = {
+          method: plan.method,
+          zone: plan.zone,
+          zone_name: plan.zone_name,
+          fee: plan.fee,
+          item_code: plan.item_code,
+          free_custom: plan.free_custom,
+          delivery_name: deliveryName,
+        };
+      } catch (e: any) {
+        console.error('[intake-alterations] delivery schedule failed:', e?.message);
+        sellWarnings.push(`delivery: ${e?.message || e}`);
+      }
+    }
+
     return c.json({
       data: {
         ticketName,
@@ -954,6 +1180,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
         appPayUrl,
         invoiceTotal: invoiceTotal ?? undefined,
         sellWarnings: sellWarnings.length ? sellWarnings : undefined,
+        delivery: deliveryMeta ?? undefined,
       },
     });
   } catch (e: any) {
