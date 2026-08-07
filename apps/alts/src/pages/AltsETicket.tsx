@@ -217,10 +217,26 @@ export default function ETicket() {
           </div>
         ) : null}
 
-        {/* ── Footer ── */}
-        <div className="text-center pt-4 pb-6 space-y-1">
-          <p className="text-cream-dim/30 text-xs">Thank you for choosing L&S Tailors.</p>
-          <p className="text-cream-dim/20 text-[10px]">Questions? Contact us at your nearest location.</p>
+        {/* ── Footer + Sofia concierge ── */}
+        <div className="text-center pt-4 pb-8 space-y-3">
+          <p className="text-cream-dim/40 text-xs">Thank you for choosing L&S Tailors.</p>
+          <a
+            href={`sms:+12123084431&body=${encodeURIComponent(
+              `Hi Sofia — question about my ticket ${ticket.name}.`,
+            )}`}
+            className="block mx-auto max-w-[280px] rounded-2xl border border-brass/40 bg-brass/10 px-4 py-3.5 active:scale-[0.98] transition-transform"
+          >
+            <p className="text-[9px] font-bold tracking-[0.16em] uppercase text-brass-light">
+              Text Sofia · Concierge
+            </p>
+            <p className="text-cream text-[17px] font-semibold mt-0.5 tracking-wide">
+              (212) 308-4431
+            </p>
+            <p className="text-cream-dim/55 text-[11px] mt-0.5">Tap to send a message</p>
+          </a>
+          <p className="text-cream-dim/25 text-[10px]">
+            138 E 61st St, Suite 201 · New York
+          </p>
         </div>
 
       </div>
