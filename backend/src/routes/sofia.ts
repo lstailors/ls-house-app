@@ -1,5 +1,6 @@
 import { Hono } from "hono";
-import { erpList, erpRunMethod } from "../lib/erp";
+import { erpList, erpRunMethod, erpCreate, erpGet } from "../lib/erp";
+import { eTicketPublicUrl } from "../lib/eticket-token";
 import { DT } from "../lib/erpnext/doctypes";
 import { storeInsert, storeList, storeFindOne, storeSearch, storeUpdate, storeUpsert } from "../lib/erpnext/store";
 import {
@@ -502,6 +503,8 @@ async function getAlterationTicketsForPhone(phone: string) {
       "grand_total",
       "modified",
       "creation",
+      "sales_invoice",
+      "origin_location",
     ],
     order_by: "modified desc",
     limit: 25,
@@ -525,6 +528,8 @@ async function getAlterationTicketByName(ticketName: string) {
       "grand_total",
       "modified",
       "creation",
+      "sales_invoice",
+      "origin_location",
     ],
     limit: 1,
   });
@@ -666,6 +671,9 @@ const TOOLS = [
   { type: "function", function: { name: "list_my_tasks", description: "List the caller's open ToDos from ERPNext. Use when staff asks 'what are my tasks', 'my todo list', 'what do I need to do', etc.", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "complete_task", description: "Mark an ERPNext ToDo as complete. Use when staff says they finished a task, 'done with X', 'mark X complete', 'checked off X'. Match by todo_id.", parameters: { type: "object", properties: { todo_id: { type: "string", description: "ERPNext ToDo name/id from list_my_tasks" } }, required: ["todo_id"] } } },
   { type: "function", function: { name: "get_client_tasks", description: "Get open tasks and todos related to a specific customer. Use proactively when a known client contacts you to surface any pending follow-ups Carl or the team needs to handle.", parameters: { type: "object", properties: { customer_name: { type: "string", description: "Customer full name to search todos for" } }, required: ["customer_name"] } } },
+  { type: "function", function: { name: "send_payment_link", description: "Send a Square payment link to the customer via SMS for an alteration ticket. Looks up the sales invoice linked to the ticket and generates/retrieves the Square payment link, then texts it to the customer. Use when a client asks how to pay, requests a payment link, or wants to pay online.", parameters: { type: "object", properties: { ticket_name: { type: "string", description: "Full alteration ticket name, e.g. ALT-NYC-2026-00042" }, phone: { type: "string", description: "Customer phone to send the link to (E.164). Defaults to caller's phone." } }, required: ["ticket_name"] } } },
+  { type: "function", function: { name: "request_delivery", description: "Create a delivery request in ERP for an alteration ticket. Use when a customer asks for their garments to be delivered. Requires a ticket name and delivery address. Creates an LSH Delivery record linked to the ticket and notifies Carl.", parameters: { type: "object", properties: { ticket_name: { type: "string", description: "Full alteration ticket name, e.g. ALT-NYC-2026-00042" }, address: { type: "string", description: "Full delivery street address" }, city: { type: "string", description: "City (default: New York)" }, state: { type: "string", description: "State abbreviation (default: NY)" }, zip: { type: "string" }, apt: { type: "string", description: "Apt/unit number if applicable" }, notes: { type: "string", description: "Any special delivery instructions" } }, required: ["ticket_name", "address"] } } },
+  { type: "function", function: { name: "send_ticket_link", description: "Send the customer a link to view their alteration e-ticket on alts.lstailors.com. The link shows ticket status, garment details, and payment. Use when a customer wants to see their ticket online or track their order.", parameters: { type: "object", properties: { ticket_name: { type: "string", description: "Full alteration ticket name, e.g. ALT-NYC-2026-00042" }, phone: { type: "string", description: "Customer phone to send the link to (E.164). Defaults to caller's phone." } }, required: ["ticket_name"] } } },
 ];
 
 const STAFF_TASK_TOOL_NAMES = new Set(["create_task", "create_todo", "list_my_tasks", "complete_task", "get_client_tasks"]);
@@ -1286,6 +1294,118 @@ async function executeTool(
         return JSON.stringify({ count: todos.length, todos });
       }
 
+      case "send_payment_link": {
+        const ticketName = String(args.ticket_name ?? "").trim();
+        if (!ticketName) return JSON.stringify({ error: "ticket_name required" });
+        const targetPhone = args.phone ? normalizePhone(String(args.phone)) : from;
+        if (!targetPhone) return JSON.stringify({ error: "phone required" });
+
+        // Fetch ticket to get linked sales_invoice
+        const ticket = await getAlterationTicketByName(ticketName);
+        if (!ticket) return JSON.stringify({ error: `Ticket ${ticketName} not found` });
+
+        let squareUrl: string | null = null;
+
+        // Step 1: check if SI already has a Square link
+        const invoiceName = ticket.sales_invoice ? String(ticket.sales_invoice) : null;
+        if (invoiceName) {
+          try {
+            const inv = await erpGet<any>("Sales Invoice", invoiceName);
+            if (inv?.lsh_square_payment_link) squareUrl = String(inv.lsh_square_payment_link);
+          } catch { /* continue */ }
+        }
+
+        // Step 2: generate one via ls_alterations if not yet available
+        if (!squareUrl && invoiceName) {
+          try {
+            const linkRes = (await erpRunMethod("ls_alterations.ls_square.pos.create_payment_link", {
+              invoice: invoiceName,
+            }).catch(() => null)) as any;
+            const lm = linkRes?.message ?? linkRes;
+            if (lm?.url) squareUrl = String(lm.url);
+          } catch { /* fall through to app pay */ }
+        }
+
+        // Step 3: always build an app pay fallback URL
+        const ALTS_URL = process.env.ALTS_URL ?? "https://alts.lstailors.com";
+        const appPayUrl = invoiceName ? `${ALTS_URL}/pay/${encodeURIComponent(invoiceName)}` : null;
+
+        const payUrl = squareUrl ?? appPayUrl;
+        if (!payUrl) return JSON.stringify({ error: "No invoice linked to ticket yet — payment link unavailable" });
+
+        const totalStr = ticket.grand_total ? `$${Number(ticket.grand_total).toFixed(2)}` : "your balance";
+        const msg = `Hi, here is your secure payment link for ${ticketName} (${totalStr}) — ${payUrl}\n\nL&S Custom Tailors`;
+        const smsResult = await twilioSend(targetPhone, msg);
+        if (!smsResult.ok) return JSON.stringify({ error: `SMS failed: ${smsResult.error}`, pay_url: payUrl });
+        return JSON.stringify({ ok: true, twilio_sid: smsResult.sid, pay_url: payUrl, invoice: invoiceName });
+      }
+
+      case "request_delivery": {
+        const ticketName = String(args.ticket_name ?? "").trim();
+        const address = String(args.address ?? "").trim();
+        if (!ticketName) return JSON.stringify({ error: "ticket_name required" });
+        if (!address) return JSON.stringify({ error: "address required" });
+
+        const ticket = await getAlterationTicketByName(ticketName);
+        if (!ticket) return JSON.stringify({ error: `Ticket ${ticketName} not found` });
+
+        const city  = String(args.city  ?? "New York");
+        const state = String(args.state ?? "NY");
+        const zip   = args.zip ? String(args.zip) : null;
+        const apt   = args.apt ? String(args.apt) : null;
+        const notes = args.notes ? String(args.notes) : null;
+        const customerPhone = ticket.customer_phone ? normalizePhone(String(ticket.customer_phone)) : from;
+        const location = ticket.origin_location ? String(ticket.origin_location) : "NYC";
+
+        const now = new Date();
+        const erpDatetime = now.toISOString().replace("T", " ").slice(0, 19);
+
+        const doc = await erpCreate<any>("LSH Delivery", {
+          naming_series: location === "HOU" ? "DN-HOU-.YYYY.-" : "DN-NYC-.YYYY.-",
+          customer: ticket.customer ? String(ticket.customer) : null,
+          customer_name: ticket.customer_name ? String(ticket.customer_name) : null,
+          customer_phone: customerPhone,
+          lsh_status: "Queued",
+          lsh_delivery_method: "Hand Delivery",
+          lsh_origin_location: location,
+          lsh_delivery_address: address,
+          lsh_delivery_apt: apt,
+          lsh_delivery_city: city,
+          lsh_delivery_state: state,
+          lsh_delivery_zip: zip,
+          lsh_notify_phone: customerPhone,
+          lsh_garment_summary: `Alteration ticket ${ticketName}`,
+          lsh_delivery_notes: notes,
+          lsh_alteration_ticket: ticketName,
+          lsh_queued_at: erpDatetime,
+        });
+
+        if (!doc?.name) return JSON.stringify({ error: "Failed to create delivery record" });
+
+        // Notify via Raven
+        const custLabel = ticket.customer_name ? String(ticket.customer_name) : from;
+        await postToRaven(`🚚 *Delivery Request* — ${custLabel}\nTicket: *${ticketName}*\nAddress: ${address}${apt ? `, ${apt}` : ""}, ${city}, ${state}${zip ? ` ${zip}` : ""}\nDelivery: \`${doc.name}\`${notes ? `\nNotes: ${notes}` : ""}`);
+
+        return JSON.stringify({ ok: true, delivery_name: doc.name, ticket: ticketName, address });
+      }
+
+      case "send_ticket_link": {
+        const ticketName = String(args.ticket_name ?? "").trim();
+        if (!ticketName) return JSON.stringify({ error: "ticket_name required" });
+        const targetPhone = args.phone ? normalizePhone(String(args.phone)) : from;
+        if (!targetPhone) return JSON.stringify({ error: "phone required" });
+
+        const ticket = await getAlterationTicketByName(ticketName);
+        if (!ticket) return JSON.stringify({ error: `Ticket ${ticketName} not found` });
+
+        const ticketUrl = eTicketPublicUrl(ticketName);
+        const statusStr = ticket.workflow_state ? ` — currently *${ticket.workflow_state}*` : "";
+        const msg = `Your L&S alteration ticket${statusStr}:\n${ticketUrl}\n\nL&S Custom Tailors`;
+        const smsResult = await twilioSend(targetPhone, msg);
+        if (!smsResult.ok) return JSON.stringify({ error: `SMS failed: ${smsResult.error}`, ticket_url: ticketUrl });
+        return JSON.stringify({ ok: true, twilio_sid: smsResult.sid, ticket_url: ticketUrl });
+      }
+
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
@@ -1549,6 +1669,14 @@ RESCHEDULE/CANCEL POLICY: To reschedule or cancel, call get_fitting_history firs
 - If get_fitting_history returns no appointments at all: do NOT pretend one exists. Ask if they want to book fresh.
 
 ORDER POLICY: When a client asks about their order status, due date, or garments — call lookup_orders first. For delivery requests, change requests, pickup scheduling, or questions you cannot resolve from the data, use submit_order_request to alert Carl's team — then tell the client: "I've passed your request to the team and they'll be in touch shortly."
+
+ALTERATION POLICY: When a client asks about their alterations, tailoring, or garments:
+1. Call get_customer_tickets to retrieve their tickets by phone.
+2. For status: summarize the ticket state naturally (e.g. "Your jacket is Ready for pickup").
+3. For payment: call send_payment_link — this texts them the link directly. No need to tell them to visit a website.
+4. For delivery: collect their address, then call request_delivery — this creates a real delivery order in the system and notifies the team. Confirm to the client once created.
+5. To share their ticket page: call send_ticket_link — texts a signed link to alts.lstailors.com where they can see full details.
+Always be proactive: if a client's ticket is Ready and they haven't paid, offer the payment link. If they're asking about pickup, offer delivery as an option.
 
 IMPORTANT: get_fitting_history auto-searches by the caller's inbound phone as fallback, so even Apple Calendar appointments (which may not have a customer_id link) will surface - always check before saying no appointment exists.`;
 
