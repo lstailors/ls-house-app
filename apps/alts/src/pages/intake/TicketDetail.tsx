@@ -54,11 +54,15 @@ interface AlterationTicketDoc {
   due_date: string
   is_rush: 0 | 1
   ticket_total: number
+  /** SI grand total when sell items push bill above ticket_total */
+  display_total?: number
+  invoice_grand_total?: number | null
   payment_status: string
   sales_invoice?: string | null
   assigned_tailor?: string
   assigned_tailor_name?: string
   notes?: string
+  internal_notes?: string
   customer_mobile?: string
   customer_email?: string
   notified_ready_at?: string
@@ -81,6 +85,26 @@ interface AlterationTicketDoc {
     estimated_minutes?: number
     preset?: string | null
     client_line_key?: string | null
+  }>
+  /** Non-alteration SI rows (Walk-in Sell) */
+  sell_items?: Array<{
+    item_code: string
+    item_name: string
+    description?: string
+    qty: number
+    rate: number
+    amount: number
+    item_group?: string
+  }>
+  invoice_items?: Array<{
+    item_code: string
+    item_name: string
+    description?: string
+    qty: number
+    rate: number
+    amount: number
+    item_group?: string
+    is_alteration?: boolean
   }>
 }
 
@@ -110,6 +134,15 @@ function formatDate(dateStr: string) {
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
+}
+
+/** Prefer SI grand total when Walk-in sell lines inflated the bill past alts-only ticket_total */
+function ticketBillTotal(ticket: Pick<AlterationTicketDoc, 'ticket_total' | 'display_total' | 'invoice_grand_total'>) {
+  const base = Number(ticket.ticket_total) || 0
+  const inv = Number(ticket.invoice_grand_total ?? ticket.display_total) || 0
+  if (inv > base) return inv
+  if (ticket.display_total != null && Number(ticket.display_total) > 0) return Number(ticket.display_total)
+  return base
 }
 
 function stepIndex(state: string) {
@@ -363,7 +396,7 @@ function CustomerCard({
 
   const firstName = ticket.customer_name?.split(' ')[0] ?? ticket.customer_name
   const dueFormatted = formatDate(ticket.due_date)
-  const totalFormatted = formatCurrency(ticket.ticket_total ?? 0)
+  const totalFormatted = formatCurrency(ticketBillTotal(ticket))
 
   const eTicketUrl = `${window.location.origin}/e-ticket/${ticket.name}`
   const defaultSmsMsg = `Hi ${firstName}, your alteration at L&S is ${ticket.workflow_state}. Total: ${totalFormatted}. Due: ${dueFormatted}. View your e-ticket: ${eTicketUrl}`
@@ -994,7 +1027,7 @@ export default function TicketDetail() {
       if (status === 'Ready' && autoNotify && ticket?.customer_mobile) {
         const firstName = ticket.customer_name?.split(' ')[0] ?? 'there'
         const eTicketUrl = `${window.location.origin}/e-ticket/${ticketName}`
-        const msg = `Hi ${firstName}, your alteration at L&S Tailors is ready for pickup! Total: ${formatCurrency(ticket.ticket_total ?? 0)}. View your e-ticket & bring it in: ${eTicketUrl}`
+        const msg = `Hi ${firstName}, your alteration at L&S Tailors is ready for pickup! Total: ${formatCurrency(ticketBillTotal(ticket))}. View your e-ticket & bring it in: ${eTicketUrl}`
         try {
           await api.post(`/api/intake-alterations/tickets/${ticketName}/notify-ready`, {
             phone: ticket.customer_mobile,
@@ -1332,12 +1365,48 @@ export default function TicketDetail() {
             </div>
           )}
 
-          {/* Ticket total */}
+          {/* Walk-in sell / retail items (on SI, not alteration garment table) */}
+          {(ticket.sell_items?.length ?? 0) > 0 ? (
+            <div className="mt-3 glass-panel rounded-lg p-4 space-y-3 border border-brass/25">
+              <div className="flex items-center gap-2">
+                <ShoppingCart size={14} className="text-brass-light" />
+                <h3 className="ui-label text-brass-light text-xs tracking-widest uppercase">
+                  Retail / sell items ({ticket.sell_items!.length})
+                </h3>
+              </div>
+              <div className="space-y-2">
+                {ticket.sell_items!.map((it, i) => (
+                  <div
+                    key={`${it.item_code}-${i}`}
+                    className="flex items-start justify-between gap-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-cream text-sm font-medium leading-snug">
+                        {it.item_name || it.item_code}
+                      </p>
+                      {it.description && it.description !== it.item_name ? (
+                        <p className="text-cream-dim text-xs mt-0.5 leading-snug">{it.description}</p>
+                      ) : null}
+                      <p className="text-cream-dim/70 text-[10px] font-mono mt-0.5">
+                        {it.item_code}
+                        {it.qty !== 1 ? ` · ×${it.qty}` : ''}
+                      </p>
+                    </div>
+                    <span className="text-brass-light text-sm font-semibold shrink-0 tabular-nums">
+                      {formatCurrency(it.amount ?? it.rate * it.qty)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Ticket total — prefer SI grand when sell items present */}
           <div className="mt-4 flex justify-end">
             <div className="glass-panel rounded-lg px-5 py-3 flex items-center gap-4">
               <span className="text-cream-dim text-sm ui-label">Ticket Total</span>
               <span className="text-brass-shimmer text-xl font-bold">
-                {formatCurrency(ticket.ticket_total ?? 0)}
+                {formatCurrency(ticketBillTotal(ticket))}
               </span>
               <span
                 className={cn(
@@ -1368,7 +1437,7 @@ export default function TicketDetail() {
                 Print Receipt
               </Button>
             </div>
-          ) : ticket.payment_status !== 'Paid' && (ticket.ticket_total ?? 0) > 0 ? (
+          ) : ticket.payment_status !== 'Paid' && ticketBillTotal(ticket) > 0 ? (
             <div className="mt-3 flex flex-col items-stretch gap-2">
               <p className="text-xs text-cream-dim text-right">
                 Pickup allowed unpaid — client gets balance SMS on release.
@@ -1376,8 +1445,8 @@ export default function TicketDetail() {
               <div className="flex flex-wrap items-center gap-3 justify-end">
               <ChargeTerminalButton
                 invoiceId={ticket.sales_invoice || ticket.name}
-                amountCents={Math.round((ticket.ticket_total ?? 0) * 100)}
-                amountDisplay={formatCurrency(ticket.ticket_total ?? 0)}
+                amountCents={Math.round(ticketBillTotal(ticket) * 100)}
+                amountDisplay={formatCurrency(ticketBillTotal(ticket))}
                 ticketId={ticket.name}
                 onSuccess={() => {
                   toast.success('Payment captured — refreshing…')
@@ -1387,7 +1456,7 @@ export default function TicketDetail() {
               />
               <ChargeCardOnFileButton
                 ticketId={ticket.name}
-                amountDisplay={formatCurrency(ticket.ticket_total ?? 0)}
+                amountDisplay={formatCurrency(ticketBillTotal(ticket))}
                 customerLabel={ticket.customer_name}
                 onSuccess={() => {
                   toast.success('Card on file charged — refreshing…')

@@ -370,7 +370,7 @@ intakeAlterationsRouter.get('/tickets', async (c) => {
   }
 });
 
-// 5. GET /tickets/:name — enriched with customer contact info
+// 5. GET /tickets/:name — enriched with customer contact + SI retail lines (SPEC 057)
 intakeAlterationsRouter.get('/tickets/:name', async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
@@ -386,6 +386,37 @@ intakeAlterationsRouter.get('/tickets/:name', async (c) => {
         customerEmail = cust.email_id ?? '';
       }
     } catch { /* non-fatal */ }
+
+    // Pull SI lines so Walk-in sell items (jeans etc.) show on ticket even though
+    // they live on the invoice, not the Alteration Ticket child tables.
+    let invoice_items: any[] = [];
+    let invoice_grand_total: number | null = null;
+    let invoice_name: string | null = doc.sales_invoice ? String(doc.sales_invoice) : null;
+    if (invoice_name) {
+      try {
+        const inv = await mcpGet<any>('Sales Invoice', invoice_name);
+        invoice_grand_total = Number(inv.grand_total) || null;
+        invoice_items = (inv.items || []).map((it: any) => ({
+          item_code: it.item_code,
+          item_name: it.item_name,
+          description: it.description,
+          qty: Number(it.qty) || 1,
+          rate: Number(it.rate) || 0,
+          amount: Number(it.amount) || 0,
+          item_group: it.item_group || '',
+          is_alteration:
+            String(it.item_group || '').toLowerCase().includes('alteration') ||
+            String(it.item_code || '').startsWith('ALT-'),
+        }));
+      } catch { /* non-fatal */ }
+    }
+    const sell_items = invoice_items.filter((it) => !it.is_alteration);
+    // Prefer SI total when sell lines inflated the bill past ticket_total
+    const display_total =
+      invoice_grand_total != null && invoice_grand_total > (Number(doc.ticket_total) || 0)
+        ? invoice_grand_total
+        : Number(doc.ticket_total) || 0;
+
     return c.json({
       data: {
         ...doc,
@@ -393,6 +424,10 @@ intakeAlterationsRouter.get('/tickets/:name', async (c) => {
         customer_email: customerEmail,
         e_ticket_key: eTicketKey(ticketName),
         e_ticket_url: eTicketPublicUrl(ticketName),
+        invoice_items,
+        sell_items,
+        invoice_grand_total,
+        display_total,
       },
     });
   } catch (e: any) {
@@ -460,10 +495,50 @@ async function appendSellItemsToTicketInvoice(opts: {
   origin: string;
   sellItems: SellLineIn[];
   existingInvoice: string | null;
-}): Promise<{ salesInvoice: string | null; squarePaymentLink: string | null; appPayUrl: string | null; warnings: string[] }> {
+}): Promise<{ salesInvoice: string | null; squarePaymentLink: string | null; appPayUrl: string | null; warnings: string[]; invoiceTotal: number | null }> {
   const warnings: string[] = [];
   const warehouse =
     process.env.ALTS_SELL_WAREHOUSE || "NYC Showroom - LSTNY";
+
+  const sellNote = opts.sellItems.map((s) => sellLineDescription(s)).join("; ");
+
+  async function stampTicket(invName: string | null) {
+    try {
+      const tdoc = await erpGetDoc<any>("Alteration Ticket", opts.ticketName).catch(() => null);
+      let grand: number | null = null;
+      if (invName) {
+        const inv = await erpGetDoc<any>("Sales Invoice", invName).catch(() => null);
+        if (inv) grand = Number(inv.grand_total) || null;
+      }
+      const notes = [
+        tdoc?.internal_notes,
+        sellNote ? `Sell items: ${sellNote}` : null,
+        warnings.length ? warnings.join(" · ") : null,
+      ]
+        .filter(Boolean)
+        .join("\n");
+      // de-dupe if sell stamp already present
+      const cleanNotes = notes
+        .split("\n")
+        .filter((line, i, arr) => {
+          const s = line.trim();
+          if (!s) return false;
+          if (s.startsWith("Sell items:") && arr.findIndex((x) => x.trim().startsWith("Sell items:")) !== i)
+            return false;
+          return true;
+        })
+        .join("\n");
+      const patch: Record<string, unknown> = { internal_notes: cleanNotes || null };
+      if (invName) patch.sales_invoice = invName;
+      // ticket_total is usually recalculated from alter lines in ERP — do not fight it.
+      // FOH display_total comes from SI grand_total via GET /tickets/:name.
+      await erpUpdate("Alteration Ticket", opts.ticketName, patch);
+      return grand;
+    } catch (e: any) {
+      warnings.push(`Ticket stamp after sell failed: ${e?.message || e}`);
+      return null;
+    }
+  }
 
   const sellRows: any[] = [];
   for (const s of opts.sellItems) {
@@ -489,7 +564,7 @@ async function appendSellItemsToTicketInvoice(opts: {
     sellRows.push(row);
   }
   if (!sellRows.length) {
-    return { salesInvoice: opts.existingInvoice, squarePaymentLink: null, appPayUrl: null, warnings };
+    return { salesInvoice: opts.existingInvoice, squarePaymentLink: null, appPayUrl: null, warnings, invoiceTotal: null };
   }
 
   let baseItems: any[] = [];
@@ -511,24 +586,43 @@ async function appendSellItemsToTicketInvoice(opts: {
         income_account: it.income_account || undefined,
         cost_center: it.cost_center || undefined,
       }));
+      // Already has this sell SKU? Don't double-merge
+      const existingCodes = new Set(baseItems.map((b) => String(b.item_code)));
+      const freshSell = sellRows.filter((r) => !existingCodes.has(String(r.item_code)));
+      if (!freshSell.length) {
+        const grand = await stampTicket(oldName);
+        return {
+          salesInvoice: oldName,
+          squarePaymentLink: inv.lsh_square_payment_link || null,
+          appPayUrl: `${ALTS_URL}/pay/${encodeURIComponent(oldName)}`,
+          warnings,
+          invoiceTotal: grand ?? (Number(inv.grand_total) || null),
+        };
+      }
+      // use only missing sell rows for merge
+      sellRows.length = 0;
+      sellRows.push(...freshSell);
+
       if (Number(inv.docstatus) === 1) {
         // Cancel unpaid SI so we can rebuild with sell lines
-        const outstanding = Number(inv.outstanding_amount ?? inv.grand_total ?? 0);
         const paid = Number(inv.paid_amount || 0);
         if (paid > 0.01) {
           warnings.push(`SI ${oldName} already has payment — sell lines not merged; create separate invoice manually`);
+          await stampTicket(oldName);
           return {
             salesInvoice: oldName,
             squarePaymentLink: inv.lsh_square_payment_link || null,
             appPayUrl: `${ALTS_URL}/pay/${encodeURIComponent(oldName)}`,
             warnings,
+            invoiceTotal: Number(inv.grand_total) || null,
           };
         }
         try {
           await erpRunMethod("frappe.client.cancel", { doctype: "Sales Invoice", name: oldName });
         } catch (e: any) {
           warnings.push(`Could not cancel ${oldName} to add sell lines: ${e?.message || e}`);
-          return { salesInvoice: oldName, squarePaymentLink: null, appPayUrl: null, warnings };
+          await stampTicket(oldName);
+          return { salesInvoice: oldName, squarePaymentLink: null, appPayUrl: null, warnings, invoiceTotal: null };
         }
       } else if (Number(inv.docstatus) === 0) {
         // Draft: update in place
@@ -539,7 +633,7 @@ async function appendSellItemsToTicketInvoice(opts: {
         } catch (e: any) {
           warnings.push(`Submit draft SI failed: ${e?.message || e}`);
         }
-        await erpUpdate("Alteration Ticket", opts.ticketName, { sales_invoice: oldName }).catch(() => {});
+        const grand = await stampTicket(oldName);
         let squarePaymentLink: string | null = null;
         try {
           const linkRes = (await erpRunMethod("ls_alterations.ls_square.pos.create_payment_link", {
@@ -553,6 +647,7 @@ async function appendSellItemsToTicketInvoice(opts: {
           squarePaymentLink,
           appPayUrl: `${ALTS_URL}/pay/${encodeURIComponent(oldName)}`,
           warnings,
+          invoiceTotal: grand,
         };
       }
     }
@@ -575,19 +670,21 @@ async function appendSellItemsToTicketInvoice(opts: {
     });
   } catch (e: any) {
     warnings.push(`Create SI with sell lines failed: ${e?.message || e}`);
-    return { salesInvoice: oldName, squarePaymentLink: null, appPayUrl: null, warnings };
+    await stampTicket(oldName);
+    return { salesInvoice: oldName, squarePaymentLink: null, appPayUrl: null, warnings, invoiceTotal: null };
   }
   const newName = newInv?.name;
   if (!newName) {
     warnings.push("SI create returned no name");
-    return { salesInvoice: oldName, squarePaymentLink: null, appPayUrl: null, warnings };
+    await stampTicket(oldName);
+    return { salesInvoice: oldName, squarePaymentLink: null, appPayUrl: null, warnings, invoiceTotal: null };
   }
   try {
     await erpSubmit("Sales Invoice", newName);
   } catch (e: any) {
     warnings.push(`Submit new SI failed: ${e?.message || e}`);
   }
-  await erpUpdate("Alteration Ticket", opts.ticketName, { sales_invoice: newName }).catch(() => {});
+  const grand = await stampTicket(newName);
   let squarePaymentLink: string | null = null;
   try {
     const linkRes = (await erpRunMethod("ls_alterations.ls_square.pos.create_payment_link", {
@@ -601,6 +698,7 @@ async function appendSellItemsToTicketInvoice(opts: {
     squarePaymentLink,
     appPayUrl: `${ALTS_URL}/pay/${encodeURIComponent(newName)}`,
     warnings,
+    invoiceTotal: grand,
   };
 }
 
@@ -823,6 +921,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
 
     // SPEC 057 — attach sell stock/item rows onto SI (Walk-in mixed cart)
     let sellWarnings: string[] = [];
+    let invoiceTotal: number | null = null;
     if (billingStatus === 'Billable' && sellItemsIn.length > 0) {
       try {
         const tdoc = await erpGetDoc<any>('Alteration Ticket', ticketName).catch(() => null);
@@ -839,13 +938,8 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
         if (merged.salesInvoice) salesInvoice = merged.salesInvoice;
         if (merged.squarePaymentLink) squarePaymentLink = merged.squarePaymentLink;
         if (merged.appPayUrl) appPayUrl = merged.appPayUrl;
+        if (merged.invoiceTotal != null) invoiceTotal = merged.invoiceTotal;
         sellWarnings = merged.warnings || [];
-        if (sellWarnings.length) {
-          const note = `Sell lines: ${sellItemsIn.map((s) => sellLineDescription(s)).join('; ')}`;
-          await erpUpdate('Alteration Ticket', ticketName, {
-            internal_notes: [tdoc?.internal_notes, note, sellWarnings.join(' · ')].filter(Boolean).join('\n'),
-          }).catch(() => {});
-        }
       } catch (e: any) {
         console.error('[intake-alterations] sell items merge failed:', e?.message);
         sellWarnings.push(String(e?.message || e));
@@ -858,6 +952,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
         salesInvoice,
         squarePaymentLink,
         appPayUrl,
+        invoiceTotal: invoiceTotal ?? undefined,
         sellWarnings: sellWarnings.length ? sellWarnings : undefined,
       },
     });

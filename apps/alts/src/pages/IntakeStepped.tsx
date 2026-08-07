@@ -1150,6 +1150,8 @@ export default function IntakeStepped() {
         salesInvoice?: string | null;
         squarePaymentLink?: string | null;
         appPayUrl?: string | null;
+        invoiceTotal?: number;
+        sellWarnings?: string[];
       }>("/api/intake-alterations/tickets", body);
       const ticketName = res.ticketName;
       // Upload garment + line photos after ticket exists (Lucia 023 / 030)
@@ -1218,11 +1220,18 @@ export default function IntakeStepped() {
           ? crypto.randomUUID()
           : `idemp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const inv = res.salesInvoice ? ` · ${res.salesInvoice}` : "";
+      const tot =
+        res.invoiceTotal != null && res.invoiceTotal > 0
+          ? ` · $${Number(res.invoiceTotal).toFixed(2)}`
+          : "";
       toast.success(
         res.squarePaymentLink || res.appPayUrl
-          ? `Ticket ${res.ticketName} created${inv} — pay link ready`
-          : `Ticket ${res.ticketName} created${inv}`,
+          ? `Ticket ${res.ticketName} created${inv}${tot} — pay link ready`
+          : `Ticket ${res.ticketName} created${inv}${tot}`,
       );
+      if (res.sellWarnings?.length) {
+        toast.warning(res.sellWarnings.join(" · "));
+      }
       if (res.squarePaymentLink) {
         navigator.clipboard?.writeText(res.squarePaymentLink).catch(() => undefined);
       }
