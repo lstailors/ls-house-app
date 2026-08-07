@@ -138,7 +138,6 @@ export default function PromiseSchedule({
                 const level = loadLevel(d.count);
                 const lab = fmtDayLabel(d.date);
                 const sel = selectedDate === d.date;
-                const barH = Math.min(100, 12 + d.count * 14);
                 return (
                   <button
                     key={d.date}
@@ -157,17 +156,23 @@ export default function PromiseSchedule({
                     </span>
                     <span className="display text-[22px] leading-none mt-0.5">{lab.day}</span>
                     <span className="text-[9px] text-cream-dim">{lab.month}</span>
-                    <div className="flex-1 w-full flex items-end justify-center mt-2 mb-1 px-2">
-                      <i
-                        className={cn(
-                          "block w-full max-w-[28px] rounded-t-md",
-                          level === "open" && "bg-[var(--em,#4FBF8E)]/80",
-                          level === "busy" && "bg-[var(--am,#E8A85C)]/85",
-                          level === "full" && "bg-[var(--ro,#D97B6C)]/90",
-                        )}
-                        style={{ height: `${barH}%`, minHeight: 8 }}
-                        aria-hidden
-                      />
+                    {/* redesign v2 — 6-cap load segments */}
+                    <div className="flex gap-[2.5px] justify-center mt-2 mb-1 px-1 w-full">
+                      {Array.from({ length: 6 }).map((_, i) => (
+                        <span
+                          key={i}
+                          className={cn(
+                            "h-[5px] flex-1 max-w-[8px] rounded-full",
+                            i < Math.min(d.count, 6)
+                              ? level === "open"
+                                ? "bg-[var(--em,#4FBF8E)]"
+                                : level === "busy"
+                                  ? "bg-[var(--am,#E8A85C)]"
+                                  : "bg-[var(--ro,#D97B6C)]"
+                              : "bg-cream/15",
+                          )}
+                        />
+                      ))}
                     </div>
                     <span
                       className={cn(
@@ -177,7 +182,7 @@ export default function PromiseSchedule({
                         level === "full" && "text-[var(--ro,#D97B6C)]",
                       )}
                     >
-                      {d.count}
+                      {d.count} due
                       {d.rush ? ` · ${d.rush}★` : ""}
                     </span>
                   </button>
