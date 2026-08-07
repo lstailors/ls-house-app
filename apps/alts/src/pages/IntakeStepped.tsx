@@ -28,6 +28,9 @@ import SellItemCatalog, {
 } from "@alts/components/intake/SellItemCatalog";
 import SellItemDrawer from "@alts/components/intake/SellItemDrawer";
 import PromiseSchedule, { type DayLoad } from "@alts/components/intake/PromiseSchedule";
+import IntakeConfirm, {
+  type IntakeConfirmResult,
+} from "@alts/components/intake/IntakeConfirm";
 
 const GARMENT_TYPES = [
   "Jacket",
@@ -319,6 +322,8 @@ export default function IntakeStepped() {
       ? crypto.randomUUID()
       : `idemp-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
+  /** Post-submit confirmation (comms / print / checkout) — not a draft step. */
+  const [confirmResult, setConfirmResult] = useState<IntakeConfirmResult | null>(null);
 
   const search = useQuery({
     queryKey: ["cust-search", q],
@@ -1237,7 +1242,16 @@ export default function IntakeStepped() {
       }
       qc.invalidateQueries({ queryKey: ["alts-home-stats"] });
       qc.invalidateQueries({ queryKey: ["parked-carts"] });
-      nav(`/orders/alterations/${res.ticketName}`);
+      // Stay on confirmation — SMS / email / print / checkout — not bare ticket hop
+      setConfirmResult({
+        ticketName: res.ticketName,
+        salesInvoice: res.salesInvoice ?? null,
+        squarePaymentLink: res.squarePaymentLink ?? null,
+        appPayUrl: res.appPayUrl ?? null,
+        invoiceTotal: res.invoiceTotal ?? null,
+        sellWarnings: res.sellWarnings,
+      });
+      setStep(4);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -1333,8 +1347,28 @@ export default function IntakeStepped() {
     setParkOpen(true);
   };
 
-  const steps = ["Customer", allowSellMode ? "Cart" : "Garments", "Review", "Schedule"] as const;
+  const steps = confirmResult
+    ? (["Customer", allowSellMode ? "Cart" : "Garments", "Review", "Schedule", "Done"] as const)
+    : (["Customer", allowSellMode ? "Cart" : "Garments", "Review", "Schedule"] as const);
   const displayName = customer?.name || newName || "";
+
+  const promiseLabel = useMemo(() => {
+    if (!promiseDate) return null;
+    try {
+      const [y, m, d] = promiseDate.split("-").map(Number);
+      const dt = new Date(y, m - 1, d);
+      const day = dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+      if (!promiseTime) return day;
+      const [hh, mm] = promiseTime.split(":").map(Number);
+      const ampm = hh >= 12 ? "PM" : "AM";
+      const h12 = ((hh + 11) % 12) + 1;
+      const t =
+        promiseTime === "18:00" ? "EOD" : `${h12}${mm ? `:${String(mm).padStart(2, "0")}` : ""} ${ampm}`;
+      return `${day} · ${t}`;
+    } catch {
+      return promiseDate;
+    }
+  }, [promiseDate, promiseTime]);
 
   const catalogModeSwitch = allowSellMode ? (
     <div className="flex w-full md:w-auto md:inline-flex p-0.5 rounded-full border border-brass/30 bg-black/35 mb-3 shrink-0">
@@ -1373,9 +1407,14 @@ export default function IntakeStepped() {
           <div>
             <div className="display text-lg">Alteration Intake</div>
             <div className="caps">
-              {billing === "billable" ? "Client billable" : billing === "on_order" ? "On custom · valued · no SI" : REDO_DISPLAY.intakeStrip}
-              {" · "}
-              draft
+              {confirmResult
+                ? `Ticket ${confirmResult.ticketName}`
+                : billing === "billable"
+                  ? "Client billable"
+                  : billing === "on_order"
+                    ? "On custom · valued · no SI"
+                    : REDO_DISPLAY.intakeStrip}
+              {!confirmResult && " · draft"}
             </div>
           </div>
           <div className="flex-1" />
@@ -1407,6 +1446,7 @@ export default function IntakeStepped() {
               key={label}
               type="button"
               onClick={() => {
+                if (confirmResult) return; // locked after submit
                 if (i >= 2 && garments.length + sellItems.length < 1) {
                   toast.error(allowSellMode ? "Add a garment or item first" : "Add at least one garment first");
                   return;
@@ -1420,11 +1460,13 @@ export default function IntakeStepped() {
                 setCartOpen(false);
                 setStep(i);
               }}
+              disabled={!!confirmResult && i < 4}
               className={cn(
                 "flex-1 flex items-center justify-center gap-2 px-2 py-3.5 border-b-2 text-xs font-semibold tracking-widest uppercase transition-colors",
                 i === step && "border-brass text-cream",
                 i < step && "border-brass/35 text-cream-muted",
                 i > step && "border-transparent text-cream-dim",
+                confirmResult && i < 4 && "opacity-50",
               )}
             >
               <span
@@ -1448,7 +1490,7 @@ export default function IntakeStepped() {
           "flex-1 min-h-0 flex flex-col",
           // step 1 catalog + step 3 promise each own their scroll/sticky CTA —
           // outer overflow-y-auto was clipping the finish button on phone
-          step === 1 || step === 3
+          step === 1 || step === 3 || step === 4
             ? "overflow-hidden px-5 py-6"
             : "overflow-y-auto px-5 py-6 pb-40",
         )}
@@ -2053,7 +2095,7 @@ export default function IntakeStepped() {
         )}
 
         {/* ── Schedule (SPEC 058) — last step before write ── */}
-        {step === 3 && (
+        {step === 3 && !confirmResult && (
           <div className="flex-1 min-h-0 flex flex-col">
             <PromiseSchedule
               origin={origin}
@@ -2081,10 +2123,26 @@ export default function IntakeStepped() {
             />
           </div>
         )}
+
+        {/* ── Confirmation — SMS / email / print / checkout ── */}
+        {step === 4 && confirmResult && (
+          <div className="flex-1 min-h-0 flex flex-col -mx-5 -my-6">
+            <IntakeConfirm
+              result={confirmResult}
+              clientName={displayName || "Client"}
+              clientPhone={customer?.phone || newPhone || null}
+              clientEmail={customer?.email || newEmail || null}
+              pieceCount={garments.length}
+              totalLabel={money(total)}
+              billing={billing}
+              promiseLabel={promiseLabel}
+            />
+          </div>
+        )}
       </div>
 
-      {/* sticky bar — cart uses rail/dock; schedule has its own CTA */}
-      {step !== 1 && step !== 3 && (
+      {/* sticky bar — cart uses rail/dock; schedule + confirm have own CTAs */}
+      {step !== 1 && step !== 3 && step !== 4 && (
       <div className="fixed bottom-0 inset-x-0 z-40 px-5 py-4 border-t border-brass/25 bg-gradient-to-b from-forest-deep/55 to-forest-deep/97 backdrop-blur-xl flex items-center gap-4">
         <button
           type="button"
