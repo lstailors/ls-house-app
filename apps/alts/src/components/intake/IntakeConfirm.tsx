@@ -232,18 +232,26 @@ export default function IntakeConfirm({
 
   const checkout = useMutation({
     mutationFn: async () => {
+      // Prefer links already returned at create
+      if (result.squarePaymentLink?.startsWith("http")) {
+        return { url: result.squarePaymentLink };
+      }
       const inv = result.salesInvoice;
       if (!inv) throw new Error("No invoice yet — open ticket to charge");
-      // Prefer existing Square link; else mint
-      if (result.squarePaymentLink) return { url: result.squarePaymentLink };
       const res = await api.raw("/api/payments/link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ invoice: inv }),
       });
-      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: { message?: string } };
-      if (!res.ok || !data.url) throw new Error(data.error?.message || "Could not open checkout");
-      return data;
+      const data = (await res.json().catch(() => ({}))) as {
+        url?: string;
+        ok?: boolean;
+        error?: { message?: string };
+      };
+      if (res.ok && data.url) return data;
+      // last resort: house pay page
+      if (result.appPayUrl?.startsWith("http")) return { url: result.appPayUrl };
+      throw new Error(data.error?.message || "Could not open checkout");
     },
     onSuccess: (data) => {
       if (data.url) {
