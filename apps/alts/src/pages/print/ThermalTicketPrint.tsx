@@ -30,6 +30,13 @@ interface TicketDoc {
   ticket_total?: number;
   payment_status?: string;
   delivery_method?: string;
+  delivery_zone?: string;
+  delivery_fee?: number;
+  delivery_address?: string;
+  delivery_apt?: string;
+  delivery_city?: string;
+  delivery_state?: string;
+  delivery_zip?: string;
   customer_notes?: string;
   internal_notes?: string;
   sales_invoice?: string;
@@ -322,7 +329,33 @@ export default function ThermalTicketPrint() {
   const scanUrl = ticket.sales_invoice ? payUrl(ticket.sales_invoice) : eticket;
   const payStatus = (ticket.payment_status || "Unpaid").toUpperCase();
   const pieces = ticket.garments?.length ?? 0;
-  const exit = (ticket.delivery_method || "Pickup").toUpperCase();
+  const method = (ticket.delivery_method || "Pickup").trim();
+  const exitBits = [
+    method === "Pickup"
+      ? "PICKUP AT SHOP"
+      : method === "Hand Delivery"
+        ? "HAND DELIVERY"
+        : method === "Ship (FedEx)"
+          ? "SHIP FEDEX"
+          : method.toUpperCase(),
+  ];
+  if (ticket.delivery_zone) exitBits.push(String(ticket.delivery_zone).toUpperCase());
+  if (method !== "Pickup" && ticket.delivery_fee != null) {
+    const fee = Number(ticket.delivery_fee);
+    exitBits.push(fee <= 0 ? "INCL" : `$${fee.toFixed(0)}`);
+  }
+  const exit = exitBits.join(" · ");
+  const deliveryTo =
+    method !== "Pickup"
+      ? [
+          [ticket.delivery_address, ticket.delivery_apt].filter(Boolean).join(" "),
+          [ticket.delivery_city, [ticket.delivery_state, ticket.delivery_zip].filter(Boolean).join(" ")]
+            .filter(Boolean)
+            .join(", "),
+        ]
+          .filter(Boolean)
+          .join(", ")
+      : "";
   const takenBy = ticket.owner || "—";
   const short = shortTicketNo(ticket.name);
   const due = fmtDueRack(ticket.promised_date || ticket.due_date);
@@ -415,6 +448,12 @@ export default function ThermalTicketPrint() {
             <span>EXIT</span>
             <b>{exit}</b>
           </div>
+          {deliveryTo ? (
+            <div className="meta">
+              <span>TO</span>
+              <b style={{ textAlign: "right", maxWidth: "62%" }}>{deliveryTo}</b>
+            </div>
+          ) : null}
           <div className="meta">
             <span>STATE</span>
             <b>{(ticket.workflow_state || "—").toUpperCase()}</b>

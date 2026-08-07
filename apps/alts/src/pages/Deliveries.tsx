@@ -1,11 +1,10 @@
 import { useMemo, useState } from "react";
-import { Truck, MapPin, Clock, CheckCircle2, Phone, Camera, QrCode, Plus, Printer, ChevronDown, ChevronUp, Package, BarChart3 } from "lucide-react";
+import { Truck, MapPin, Clock, CheckCircle2, Phone, Camera, Plus, Printer, ChevronDown, ChevronUp, Package, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { SectionHeader } from "@ls/design";
 import { GlassCard } from "@ls/design";
 import { KpiCard } from "@ls/design";
-import { StatusPill } from "@ls/design";
 import { FilterBar } from "@ls/design";
 import { EmptyState } from "@ls/design";
 import { Button } from "@ls/design/ui/button";
@@ -25,12 +24,18 @@ import type { Delivery } from "@ls/types";
 
 const FILTERS = [
   { value: "all", label: "All" },
-  { value: "scheduled", label: "Scheduled" },
-  { value: "ready_for_pickup", label: "Ready for Pickup" },
+  { value: "scheduled", label: "Queued" },
   { value: "out_for_delivery", label: "Out" },
   { value: "delivered", label: "Delivered" },
   { value: "failed", label: "Failed" },
 ];
+
+const BOARD_COLS = [
+  { key: "scheduled", label: "Queued", statuses: ["scheduled"] as const },
+  { key: "out_for_delivery", label: "Out", statuses: ["out_for_delivery"] as const },
+  { key: "delivered", label: "Delivered", statuses: ["delivered"] as const },
+  { key: "failed", label: "Failed", statuses: ["failed", "cancelled"] as const },
+] as const;
 
 export default function Deliveries() {
   const { data: me } = useMe();
@@ -76,45 +81,39 @@ export default function Deliveries() {
     onError: () => toast.error("Could not schedule delivery"),
   });
 
-  const filtered = useMemo(() => {
-    const s = search.toLowerCase();
-    const STATUS_RANK: Record<string, number> = {
-      out_for_delivery: 0,
-      ready_for_pickup: 1,
-      scheduled:        1,
-      failed:           2,
-      delivered:        3,
-    };
-
-    return deliveries
-      .filter((d) => {
-        if (filter !== "all" && d.status !== filter) return false;
-        if (!s) return true;
-        return (
-          (d.customer?.name ?? "").toLowerCase().includes(s) ||
-          (d.addressLine ?? "").toLowerCase().includes(s)
-        );
-      })
-      .sort((a, b) => {
-        // 1. Status priority (out for delivery → scheduled → failed → delivered)
-        const rankDiff = (STATUS_RANK[a.status] ?? 1) - (STATUS_RANK[b.status] ?? 1);
-        if (rankDiff !== 0) return rankDiff;
-        // 2. Scheduled date ascending (soonest first); nulls last
-        const aDate = a.scheduledAt ? new Date(a.scheduledAt).getTime() : Infinity;
-        const bDate = b.scheduledAt ? new Date(b.scheduledAt).getTime() : Infinity;
-        if (aDate !== bDate) return aDate - bDate;
-        // 3. Newest created last as tiebreaker
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      });
-  }, [deliveries, filter, search]);
-
   const counts = useMemo(() => {
     return {
       scheduled: deliveries.filter((d) => d.status === "scheduled").length,
       out: deliveries.filter((d) => d.status === "out_for_delivery").length,
       done: deliveries.filter((d) => d.status === "delivered").length,
+      failed: deliveries.filter((d) => d.status === "failed" || d.status === "cancelled").length,
     };
   }, [deliveries]);
+
+  const boardColumns = useMemo(() => {
+    const s = search.toLowerCase();
+    const matchSearch = (d: Delivery) => {
+      if (!s) return true;
+      const method = String((d as { method?: string }).method ?? "");
+      return (
+        (d.customer?.name ?? "").toLowerCase().includes(s) ||
+        (d.addressLine ?? "").toLowerCase().includes(s) ||
+        method.toLowerCase().includes(s)
+      );
+    };
+    return BOARD_COLS.map((col) => ({
+      ...col,
+      items: deliveries
+        .filter((d) => (col.statuses as readonly string[]).includes(d.status) && matchSearch(d))
+        .filter((d) => filter === "all" || d.status === filter)
+        .sort((a, b) => {
+          const aDate = a.scheduledAt ? new Date(a.scheduledAt).getTime() : Infinity;
+          const bDate = b.scheduledAt ? new Date(b.scheduledAt).getTime() : Infinity;
+          if (aDate !== bDate) return aDate - bDate;
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        }),
+    }));
+  }, [deliveries, filter, search]);
 
   // Drivers see the mobile-first stop list, not the dispatch board.
   if (isDriver) {
@@ -164,10 +163,10 @@ export default function Deliveries() {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
         <KpiCard
-          label="Scheduled"
+          label="Queued"
           value={counts.scheduled}
           icon={<Clock className="h-4 w-4" />}
-          onClick={() => setFilter((f) => f === "scheduled" ? "all" : "scheduled")}
+          onClick={() => setFilter((f) => (f === "scheduled" ? "all" : "scheduled"))}
           active={filter === "scheduled"}
         />
         <KpiCard
@@ -175,7 +174,7 @@ export default function Deliveries() {
           value={counts.out}
           icon={<Truck className="h-4 w-4" />}
           accent="amber"
-          onClick={() => setFilter((f) => f === "out_for_delivery" ? "all" : "out_for_delivery")}
+          onClick={() => setFilter((f) => (f === "out_for_delivery" ? "all" : "out_for_delivery"))}
           active={filter === "out_for_delivery"}
         />
         <KpiCard
@@ -183,16 +182,16 @@ export default function Deliveries() {
           value={counts.done}
           icon={<CheckCircle2 className="h-4 w-4" />}
           accent="emerald"
-          onClick={() => setFilter((f) => f === "delivered" ? "all" : "delivered")}
+          onClick={() => setFilter((f) => (f === "delivered" ? "all" : "delivered"))}
           active={filter === "delivered"}
         />
         <KpiCard
-          label="Ready to Ship"
-          value={candidates.length}
+          label="Failed"
+          value={counts.failed}
           icon={<Package className="h-4 w-4" />}
           accent="amber"
-          onClick={() => setActiveTab((t) => t === "candidates" ? "board" : "candidates")}
-          active={activeTab === "candidates"}
+          onClick={() => setFilter((f) => (f === "failed" ? "all" : "failed"))}
+          active={filter === "failed"}
         />
       </div>
 
@@ -361,125 +360,161 @@ export default function Deliveries() {
 
       {isLoading ? (
         <div className="text-cream-muted text-sm">Loading…</div>
-      ) : filtered.length === 0 ? (
+      ) : boardColumns.every((c) => c.items.length === 0) ? (
         <EmptyState
           icon={Truck}
           title="No deliveries"
-          description="Deliveries appear when commissions are marked ready."
+          description="Queued hand-delivery and FedEx jobs land here after intake confirm."
         />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map((d) => (
-            <GlassCard
-              key={d.id}
-              hover
-              onClick={() => navigate(`/deliveries/${d.id}`)}
-              className={cn(
-                "p-4 transition-transform hover:-translate-y-0.5 cursor-pointer",
-                d.status === "out_for_delivery" && "border-signal-amber/40",
-                d.status === "delivered" && "border-signal-emerald/30",
-                d.status === "failed" && "border-signal-rose/40",
-              )}
+        <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x">
+          {boardColumns.map((col) => (
+            <div
+              key={col.key}
+              className="min-w-[260px] w-[min(100%,300px)] sm:min-w-0 sm:flex-1 snap-start flex flex-col rounded-2xl border border-brass/15 bg-forest-dark/30 max-h-[70vh]"
             >
-              {(() => {
-                const isOverdue = d.status === "scheduled" && d.scheduledAt && new Date(d.scheduledAt) < new Date();
-                return (
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="min-w-0">
-                      <div className="text-cream font-medium truncate">{d.customer?.name ?? "—"}</div>
-                      <div className="text-[11px] text-cream-dim font-mono">
-                        {d.deliveryNo ? d.deliveryNo : `#${d.id.slice(-6).toUpperCase()}`}
-                      </div>
-                      {d.qrToken ? (
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <QrCode className="h-2.5 w-2.5 text-brass-light/60" />
-                          <span className="text-[9px] text-brass-light/60 font-mono">{d.qrToken.slice(0, 8)}</span>
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-3 py-2.5 border-b border-brass/10 bg-forest-deep/90 backdrop-blur rounded-t-2xl">
+                <span className="text-[11px] uppercase tracking-[0.16em] text-cream-dim font-semibold">
+                  {col.label}
+                </span>
+                <span className="text-[11px] font-mono text-brass-light/80 tabular-nums">
+                  {col.items.length}
+                </span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                {col.items.length === 0 ? (
+                  <div className="text-[11px] text-cream-dim/60 px-2 py-6 text-center">Empty</div>
+                ) : (
+                  col.items.map((d) => {
+                    const isOverdue =
+                      d.status === "scheduled" &&
+                      d.scheduledAt &&
+                      new Date(d.scheduledAt) < new Date();
+                    const methodRaw = String((d as { method?: string }).method || "");
+                    const methodLabel =
+                      methodRaw === "Hand Delivery"
+                        ? "HAND"
+                        : methodRaw === "Ship (FedEx)"
+                          ? "FEDEX"
+                          : methodRaw === "Pickup"
+                            ? "PICKUP"
+                            : methodRaw.toUpperCase() || null;
+                    return (
+                      <GlassCard
+                        key={d.id}
+                        hover
+                        onClick={() => navigate(`/deliveries/${d.id}`)}
+                        className={cn(
+                          "p-3 transition-transform hover:-translate-y-0.5 cursor-pointer",
+                          d.status === "out_for_delivery" && "border-signal-amber/40",
+                          d.status === "delivered" && "border-signal-emerald/30",
+                          d.status === "failed" && "border-signal-rose/40",
+                        )}
+                      >
+                        <div className="flex items-start justify-between mb-2 gap-2">
+                          <div className="min-w-0">
+                            <div className="text-cream font-medium truncate text-sm">
+                              {d.customer?.name ?? "—"}
+                            </div>
+                            <div className="text-[10px] text-cream-dim font-mono truncate">
+                              {d.deliveryNo ? d.deliveryNo : `#${d.id.slice(-6).toUpperCase()}`}
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            {methodLabel ? (
+                              <span className="text-[9px] uppercase tracking-wider text-brass-light/80">
+                                {methodLabel}
+                              </span>
+                            ) : null}
+                            {isOverdue ? (
+                              <span className="text-[10px] font-bold text-red-400 uppercase">Overdue</span>
+                            ) : null}
+                          </div>
                         </div>
-                      ) : null}
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <StatusPill status={d.status} />
-                      {isOverdue ? <span className="text-xs font-bold text-red-400 uppercase">Overdue</span> : null}
-                    </div>
-                  </div>
-                );
-              })()}
 
-              {d.addressLine ? (
-                <div className="flex items-start gap-1.5 text-xs text-cream-muted mb-1">
-                  <MapPin className="h-3 w-3 text-brass-light/60 mt-0.5 shrink-0" />
-                  <span className="leading-snug">{d.addressLine}</span>
-                </div>
-              ) : null}
-              {(d as any).orderRef ? (
-                <div className="text-[10px] text-brass-light/50 font-mono mt-0.5 mb-2">{(d as any).orderRef}</div>
-              ) : null}
+                        {d.addressLine ? (
+                          <div className="flex items-start gap-1.5 text-[11px] text-cream-muted mb-1.5">
+                            <MapPin className="h-3 w-3 text-brass-light/60 mt-0.5 shrink-0" />
+                            <span className="leading-snug line-clamp-2">{d.addressLine}</span>
+                          </div>
+                        ) : null}
 
-              <div className="flex items-center gap-1.5 text-xs text-cream-dim mb-3">
-                <Clock className="h-3 w-3" />
-                <span>{formatDateTime(d.scheduledAt)}</span>
+                        <div className="flex items-center gap-1.5 text-[11px] text-cream-dim mb-2">
+                          <Clock className="h-3 w-3" />
+                          <span>{formatDateTime(d.scheduledAt)}</span>
+                        </div>
+
+                        {d.driver ? (
+                          <div className="text-[10px] text-cream-dim mb-2">
+                            Driver · <span className="text-cream-muted">{d.driver.name}</span>
+                          </div>
+                        ) : null}
+
+                        {d.proofOfDeliveryUrl ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setProofTarget(d);
+                            }}
+                            className="flex items-center gap-1.5 text-[10px] text-signal-emerald mb-2 hover:underline"
+                          >
+                            <Camera className="h-3 w-3" /> Proof on file
+                          </button>
+                        ) : null}
+
+                        <div
+                          className="flex items-center gap-1.5 pt-2 border-t border-brass/10"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {d.status === "scheduled" ? (
+                            <Button
+                              size="sm"
+                              onClick={() => handleStart(d.id)}
+                              disabled={update.isPending}
+                              className="btn-brass flex-1 text-[11px] h-7"
+                            >
+                              <Truck className="h-3 w-3 mr-1" /> Start
+                            </Button>
+                          ) : null}
+                          {d.status === "out_for_delivery" ? (
+                            <Button
+                              size="sm"
+                              onClick={() => setDeliverTarget(d)}
+                              disabled={update.isPending}
+                              className="btn-brass flex-1 text-[11px] h-7"
+                            >
+                              <CheckCircle2 className="h-3 w-3 mr-1" /> Delivered
+                            </Button>
+                          ) : null}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => navigate(`/deliveries/${d.id}/label`)}
+                            className="border-brass/20 hover:bg-brass/10 text-cream-muted h-7 px-2"
+                            title="Print label"
+                          >
+                            <Printer className="h-3.5 w-3.5" />
+                          </Button>
+                          {d.customer?.phone ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-brass/20 hover:bg-brass/10 text-cream-muted h-7 px-2"
+                              asChild
+                            >
+                              <a href={`tel:${d.customer.phone}`}>
+                                <Phone className="h-3.5 w-3.5" />
+                              </a>
+                            </Button>
+                          ) : null}
+                        </div>
+                      </GlassCard>
+                    );
+                  })
+                )}
               </div>
-
-              {d.driver ? (
-                <div className="text-[10px] text-cream-dim uppercase tracking-widerer mb-3">
-                  Driver · <span className="text-cream-muted normal-case tracking-normal">{d.driver.name}</span>
-                </div>
-              ) : null}
-
-              {d.proofOfDeliveryUrl ? (
-                <button
-                  type="button"
-                  onClick={() => setProofTarget(d)}
-                  className="flex items-center gap-1.5 text-[10px] text-signal-emerald mb-3 hover:underline"
-                >
-                  <Camera className="h-3 w-3" /> Proof on file
-                </button>
-              ) : null}
-
-              <div className="flex items-center gap-2 pt-3 border-t border-brass/10" onClick={(e) => e.stopPropagation()}>
-                {d.status === "scheduled" ? (
-                  <Button
-                    size="sm"
-                    onClick={() => handleStart(d.id)}
-                    disabled={update.isPending}
-                    className="btn-brass flex-1 text-xs h-8"
-                  >
-                    <Truck className="h-3.5 w-3.5 mr-1.5" /> Start delivery
-                  </Button>
-                ) : null}
-                {d.status === "out_for_delivery" ? (
-                  <Button
-                    size="sm"
-                    onClick={() => setDeliverTarget(d)}
-                    disabled={update.isPending}
-                    className="btn-brass flex-1 text-xs h-8"
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> Mark delivered
-                  </Button>
-                ) : null}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => navigate(`/deliveries/${d.id}/label`)}
-                  className="border-brass/20 hover:bg-brass/10 text-cream-muted h-8 px-2"
-                  title="Print label"
-                >
-                  <Printer className="h-3.5 w-3.5" />
-                </Button>
-                {d.customer?.phone ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-brass/20 hover:bg-brass/10 text-cream-muted h-8 px-2"
-                    asChild
-                  >
-                    <a href={`tel:${d.customer.phone}`}>
-                      <Phone className="h-3.5 w-3.5" />
-                    </a>
-                  </Button>
-                ) : null}
-              </div>
-            </GlassCard>
+            </div>
           ))}
         </div>
       )}

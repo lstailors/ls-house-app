@@ -189,7 +189,14 @@ def print_ticket(ticket, what="all", reprint=0):
             payment_status=doc.payment_status,
             delivery_method=doc.delivery_method,
             sales_invoice=doc.sales_invoice,
-            workflow_state=doc.workflow_state)
+            workflow_state=doc.workflow_state,
+            delivery_zone=getattr(doc, "delivery_zone", None),
+            delivery_fee=getattr(doc, "delivery_fee", None),
+            delivery_address=getattr(doc, "delivery_address", None),
+            delivery_apt=getattr(doc, "delivery_apt", None),
+            delivery_city=getattr(doc, "delivery_city", None),
+            delivery_state=getattr(doc, "delivery_state", None),
+            delivery_zip=getattr(doc, "delivery_zip", None))
         results.append(_send(cfg, doc.name, "office", doc.name, payload))
 
     def customer():
@@ -203,7 +210,14 @@ def print_ticket(ticket, what="all", reprint=0):
             location=doc.origin_location, customer_notes=doc.customer_notes,
             reprint=is_reprint,
             payment_status=doc.payment_status,
-            delivery_method=doc.delivery_method)
+            delivery_method=doc.delivery_method,
+            delivery_zone=getattr(doc, "delivery_zone", None),
+            delivery_fee=getattr(doc, "delivery_fee", None),
+            delivery_address=getattr(doc, "delivery_address", None),
+            delivery_apt=getattr(doc, "delivery_apt", None),
+            delivery_city=getattr(doc, "delivery_city", None),
+            delivery_state=getattr(doc, "delivery_state", None),
+            delivery_zip=getattr(doc, "delivery_zip", None))
         results.append(_send(cfg, doc.name, "customer", doc.name, payload))
 
     def tags():

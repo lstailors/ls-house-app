@@ -55,6 +55,7 @@ import { sofiaBridgeRouter } from "./routes/sofia-bridge";
 import { dispatchRouter } from "./routes/dispatch";
 import { bookingRouter, publicBookingRouter } from "./routes/booking";
 import { deliveryZonesRouter } from "./routes/delivery-zones";
+import { placesRouter } from "./routes/places";
 
 const app = new Hono();
 
@@ -96,6 +97,7 @@ app.route("/api/sales-orders", salesOrdersRouter);
 app.route("/api/invoices", invoicesRouter);
 app.route("/api/deliveries", deliveriesRouter);
 app.route("/api/delivery-zones", deliveryZonesRouter);
+app.route("/api/places", placesRouter);
 app.route("/api/scan", trackingRouter);
 app.route("/api/communications", communicationsRouter);
 app.route("/api/reference", referenceRouter);

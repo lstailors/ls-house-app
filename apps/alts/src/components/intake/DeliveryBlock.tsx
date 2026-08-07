@@ -1,10 +1,11 @@
 /**
  * Intake delivery block — Pickup | Hand delivery | Ship FedEx + zone quote.
- * SPEC delivery-scheduling-zones Part 7 / 9. Manual address (Places later).
+ * SPEC delivery-scheduling-zones Part 7 / 9. Address autocomplete via /api/places.
  */
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
+import AddressAutocomplete from "./AddressAutocomplete";
 
 export type DeliverySelection = {
   delivery_method: "Pickup" | "Hand Delivery" | "Ship (FedEx)";
@@ -171,11 +172,20 @@ export default function DeliveryBlock({
           <div className="grid grid-cols-1 gap-2">
             <label className="block">
               <span className="caps text-[9px] text-cream-dim">Street address</span>
-              <input
-                className="mt-1 w-full rounded-lg bg-black/20 border border-white/10 px-3 py-2 text-sm text-cream"
+              <AddressAutocomplete
                 value={value.delivery_address || ""}
-                onChange={(e) => set({ delivery_address: e.target.value, delivery_scheduled: true })}
-                placeholder="213 E 61st St"
+                onChange={(street) => set({ delivery_address: street, delivery_scheduled: true })}
+                onPick={(addr) =>
+                  set({
+                    delivery_address: addr.street,
+                    delivery_city: addr.city || value.delivery_city || "New York",
+                    delivery_state: addr.state || value.delivery_state || "NY",
+                    delivery_zip: addr.zip
+                      ? addr.zip.replace(/\D/g, "").slice(0, 5)
+                      : value.delivery_zip,
+                    delivery_scheduled: true,
+                  })
+                }
               />
             </label>
             <div className="grid grid-cols-3 gap-2">

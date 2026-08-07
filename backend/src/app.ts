@@ -57,6 +57,8 @@ import { outreachRouter } from "./routes/outreach";
 import { erpnextCustomersRouter } from "./routes/erpnext-customers";
 import { sofiaBridgeRouter } from "./routes/sofia-bridge";
 import { dispatchRouter } from "./routes/dispatch";
+import { deliveryZonesRouter } from "./routes/delivery-zones";
+import { placesRouter } from "./routes/places";
 
 const app = new Hono();
 
@@ -162,5 +164,7 @@ app.route("/api/erpnext-customers", erpnextCustomersRouter);
 app.route("/api/dispatch", dispatchRouter);
 app.route("/api/booking", bookingRouter);
 app.route("/api/public/booking", publicBookingRouter);
+app.route("/api/delivery-zones", deliveryZonesRouter);
+app.route("/api/places", placesRouter);
 
 export default app;

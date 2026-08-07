@@ -35,6 +35,7 @@ import DeliveryBlock, {
 import IntakeConfirm, {
   type IntakeConfirmResult,
 } from "@alts/components/intake/IntakeConfirm";
+import { enqueueIntakeTicket } from "@alts/lib/offlineQueue";
 
 const GARMENT_TYPES = [
   "Jacket",
@@ -1178,6 +1179,11 @@ export default function IntakeStepped() {
         throw new Error("Pick a promised date and time");
       }
       const body = buildTicketBody();
+      // Offline: queue the ticket body and keep draft — flush when online
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        enqueueIntakeTicket(body, displayName || customer?.name || newName || "Walk-in");
+        return { queuedOffline: true as const };
+      }
       const res = await api.post<{
         ticketName: string;
         salesInvoice?: string | null;
@@ -1242,9 +1248,14 @@ export default function IntakeStepped() {
       if (parkedCartId) {
         await api.delete(`/api/carts/${encodeURIComponent(parkedCartId)}`).catch(() => {});
       }
-      return res;
+      return { ...res, queuedOffline: false as const };
     },
     onSuccess: (res) => {
+      if ("queuedOffline" in res && res.queuedOffline) {
+        toast.success("Saved offline — will send when wifi returns");
+        // Keep draft; do not clear idempotency or hop to confirm
+        return;
+      }
       clearIntakeDraft();
       clearSoCart();
       // Rotate key only after a successful create so a future new ticket is distinct.
@@ -1272,7 +1283,7 @@ export default function IntakeStepped() {
       qc.invalidateQueries({ queryKey: ["parked-carts"] });
       // Stay on confirmation — SMS / email / print / checkout — not bare ticket hop
       setConfirmResult({
-        ticketName: res.ticketName,
+        ticketName: res.ticketName!,
         salesInvoice: res.salesInvoice ?? null,
         squarePaymentLink: res.squarePaymentLink ?? null,
         appPayUrl: res.appPayUrl ?? null,
@@ -1281,7 +1292,21 @@ export default function IntakeStepped() {
       });
       setStep(4);
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => {
+      // Network failure while "online" flag lies — queue if body buildable
+      const msg = e.message || "";
+      if (/failed to fetch|network|offline|load failed/i.test(msg)) {
+        try {
+          const body = buildTicketBody();
+          enqueueIntakeTicket(body, displayName || customer?.name || newName || "Walk-in");
+          toast.success("Network drop — ticket queued offline");
+          return;
+        } catch {
+          /* fall through */
+        }
+      }
+      toast.error(e.message);
+    },
   });
 
   const park = useMutation({
@@ -2130,7 +2155,7 @@ export default function IntakeStepped() {
               onChange={setDelivery}
               dueDate={promiseDate || undefined}
               freeCustom={billing === "on_order"}
-              canOverrideFee={false}
+              canOverrideFee={me?.role === "super_admin" || me?.role === "store_manager"}
             />
             <PromiseSchedule
               origin={origin}
@@ -2170,6 +2195,16 @@ export default function IntakeStepped() {
                 if (delivery.delivery_method === "Ship (FedEx)" && billing === "billable") {
                   if (delivery.delivery_fee == null || Number(delivery.delivery_fee) < 0) {
                     toast.error("Enter FedEx fee (or 0 if complimentary)");
+                    return;
+                  }
+                }
+                if (
+                  delivery.delivery_fee_override &&
+                  delivery.delivery_method === "Hand Delivery" &&
+                  billing === "billable"
+                ) {
+                  if (!String(delivery.delivery_fee_override_reason || "").trim()) {
+                    toast.error("Manager override needs a reason");
                     return;
                   }
                 }

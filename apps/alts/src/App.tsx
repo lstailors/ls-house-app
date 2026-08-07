@@ -2,7 +2,7 @@ import { Toaster as Sonner } from "@ls/design/ui/sonner";
 import { TooltipProvider } from "@ls/design/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { lazy, Suspense, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { RoleGuard } from "@ls/auth/RoleGuard";
 import Login from "@ls/auth/Login";
 import HomeTiles from "@alts/pages/HomeTiles";
@@ -23,6 +23,8 @@ import TicketPhotos from "@alts/pages/TicketPhotos";
 import Dispatch from "@alts/pages/Dispatch";
 import QuoteComposer from "@alts/pages/QuoteComposer";
 import TicketDetail from "@alts/pages/intake/TicketDetail";
+import { startOfflineQueueWatcher } from "@alts/lib/offlineQueue";
+import { toast } from "sonner";
 
 const AlterationTags = lazy(() => import("@alts/pages/print/GarmentTagPrint"));
 const AlterationReceipt = lazy(() => import("@alts/pages/intake/AlterationReceipt"));
@@ -67,6 +69,13 @@ function printSurface(node: ReactNode, feature?: string) {
 }
 
 export default function App() {
+  useEffect(() => {
+    return startOfflineQueueWatcher((r) => {
+      if (r.ok > 0) toast.success(`Sent ${r.ok} offline ticket${r.ok === 1 ? "" : "s"}`);
+      if (r.failed > 0) toast.error(`${r.failed} offline ticket${r.failed === 1 ? "" : "s"} still failing`);
+    });
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

@@ -375,11 +375,58 @@ def build_garment_tag(*, ticket, garment, qr_url, due_date=None,
     return out
 
 
+def _exit_label(delivery_method=None, delivery_zone=None, delivery_fee=None):
+    """Compact EXIT line: HAND DELIVERY · ZONE-1 · $40"""
+    method = (delivery_method or "").strip()
+    if not method:
+        return None
+    label = method.upper()
+    if method == "Pickup":
+        return "PICKUP AT SHOP"
+    if method == "Hand Delivery":
+        label = "HAND DELIVERY"
+    elif method == "Ship (FedEx)":
+        label = "SHIP FEDEX"
+    elif method == "Courier":
+        label = "COURIER"
+    bits = [label]
+    zone = (delivery_zone or "").strip()
+    if zone:
+        bits.append(zone.upper() if not zone.upper().startswith("ZONE") else zone.upper())
+    try:
+        fee = float(delivery_fee) if delivery_fee is not None and delivery_fee != "" else None
+    except (TypeError, ValueError):
+        fee = None
+    if fee is not None and method != "Pickup":
+        if fee <= 0:
+            bits.append("INCL")
+        else:
+            bits.append("${0:.0f}".format(fee))
+    return " · ".join(bits)
+
+
+def _format_delivery_to(address=None, apt=None, city=None, state=None, zip_code=None):
+    street = " ".join(p for p in [(address or "").strip(), (apt or "").strip()] if p)
+    locality = ", ".join(
+        p for p in [
+            (city or "").strip(),
+            " ".join(x for x in [(state or "").strip(), (zip_code or "").strip()] if x),
+        ] if p
+    )
+    if street and locality:
+        return "{}, {}".format(street, locality)
+    return street or locality or None
+
+
 def build_customer_receipt(*, ticket, customer_name, customer_phone,
                           garments, ticket_total, qr_url, ticket_date=None,
                           due_date=None, promised_date=None, is_rush=False,
                           location=None, customer_notes=None, reprint=False,
-                          payment_status=None, delivery_method=None):
+                          payment_status=None, delivery_method=None,
+                          delivery_zone=None, delivery_fee=None,
+                          delivery_address=None, delivery_apt=None,
+                          delivery_city=None, delivery_state=None,
+                          delivery_zip=None):
     return _master(
         ticket=ticket, customer_name=customer_name,
         customer_phone=customer_phone, garments=garments,
@@ -387,7 +434,10 @@ def build_customer_receipt(*, ticket, customer_name, customer_phone,
         due_date=due_date, promised_date=promised_date, is_rush=is_rush,
         location=location, notes=customer_notes, office=False,
         reprint=reprint, payment_status=payment_status,
-        delivery_method=delivery_method,
+        delivery_method=delivery_method, delivery_zone=delivery_zone,
+        delivery_fee=delivery_fee, delivery_address=delivery_address,
+        delivery_apt=delivery_apt, delivery_city=delivery_city,
+        delivery_state=delivery_state, delivery_zip=delivery_zip,
     )
 
 
@@ -396,7 +446,11 @@ def build_office_receipt(*, ticket, customer_name, customer_phone,
                         due_date=None, promised_date=None, is_rush=False,
                         location=None, internal_notes=None, reprint=False,
                         payment_status=None, delivery_method=None,
-                        sales_invoice=None, workflow_state=None):
+                        sales_invoice=None, workflow_state=None,
+                        delivery_zone=None, delivery_fee=None,
+                        delivery_address=None, delivery_apt=None,
+                        delivery_city=None, delivery_state=None,
+                        delivery_zip=None):
     return _master(
         ticket=ticket, customer_name=customer_name,
         customer_phone=customer_phone, garments=garments,
@@ -405,14 +459,20 @@ def build_office_receipt(*, ticket, customer_name, customer_phone,
         location=location, notes=internal_notes, office=True,
         reprint=reprint, payment_status=payment_status,
         delivery_method=delivery_method, sales_invoice=sales_invoice,
-        workflow_state=workflow_state,
+        workflow_state=workflow_state, delivery_zone=delivery_zone,
+        delivery_fee=delivery_fee, delivery_address=delivery_address,
+        delivery_apt=delivery_apt, delivery_city=delivery_city,
+        delivery_state=delivery_state, delivery_zip=delivery_zip,
     )
 
 
 def _master(*, ticket, customer_name, customer_phone, garments, ticket_total,
             qr_url, ticket_date, due_date, promised_date, is_rush, location,
             notes, office, reprint=False, payment_status=None,
-            delivery_method=None, sales_invoice=None, workflow_state=None):
+            delivery_method=None, sales_invoice=None, workflow_state=None,
+            delivery_zone=None, delivery_fee=None, delivery_address=None,
+            delivery_apt=None, delivery_city=None, delivery_state=None,
+            delivery_zip=None):
     _ = is_rush  # no RUSH ink on receipts (C retired rush on print)
     out = INIT + FONT_A
 
@@ -452,12 +512,21 @@ def _master(*, ticket, customer_name, customer_phone, garments, ticket_total,
         out += _kv("Store", location)
     if ticket_date:
         out += _kv("Date", ticket_date)
-    if office and delivery_method:
-        out += _kv("Exit", str(delivery_method).upper())
+    exit_line = _exit_label(delivery_method, delivery_zone, delivery_fee)
+    if exit_line:
+        out += _kv("Exit", exit_line)
     if office and workflow_state:
         out += _kv("State", str(workflow_state).upper())
-    if not office and delivery_method:
-        out += _kv("Exit", str(delivery_method).upper())
+    # Address only on non-pickup (FOH needs street on master; client sees method+fee)
+    to_line = None
+    method = (delivery_method or "").strip()
+    if method and method != "Pickup":
+        to_line = _format_delivery_to(
+            delivery_address, delivery_apt, delivery_city, delivery_state, delivery_zip,
+        )
+    if to_line and office:
+        for i, chunk in enumerate(_wrap(to_line, LINE_WIDTH - 8)):
+            out += _kv("To" if i == 0 else "", chunk)
     out += rule(heavy=True)
 
     out += line("GARMENTS", bold=True, align=ALIGN_CENTER, size=SIZE_2H)
