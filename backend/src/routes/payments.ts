@@ -75,6 +75,8 @@ function refFor(id: string): { ticket: string } | { invoice: string } {
 }
 
 // POST /api/payments/link
+// Prefer ERP ls_square when deployed; fall back to direct Square API so FOH
+// checkout works even when the bench module is missing / workers not reloaded.
 paymentsRouter.post("/link", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
@@ -87,17 +89,160 @@ paymentsRouter.post("/link", async (c) => {
     return c.json({ error: { message: "invoice is required" } }, 400);
   }
 
+  const rawId = body.invoice.trim();
+
+  // 1) Try ERP method when present
   try {
     const result = await callErpMethod("ls_alterations.ls_square.pos.create_payment_link", {
-      ...refFor(body.invoice),
+      ...refFor(rawId),
       ...(body.amount ? { amount: body.amount } : {}),
     });
     return c.json(normalizePaymentLink(result));
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "Could not create payment link";
-    return c.json({ error: { message } }, 502);
+  } catch (erpErr) {
+    const erpMsg = erpErr instanceof Error ? erpErr.message : String(erpErr);
+    // Only fall through for missing-module / method; other ERP errors may be real
+    const missingModule =
+      /No module named ['"]ls_alterations\.ls_square['"]/i.test(erpMsg) ||
+      /has no attribute ['"]create_payment_link['"]/i.test(erpMsg) ||
+      /Failed to get method for command/i.test(erpMsg);
+
+    if (!missingModule) {
+      return c.json({ error: { message: erpMsg || "Could not create payment link" } }, 502);
+    }
+
+    // 2) Hub-side Square mint
+    try {
+      const link = await mintPaymentLinkDirect(rawId, body.amount);
+      return c.json(link);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Could not create payment link";
+      return c.json({ error: { message } }, 502);
+    }
   }
 });
+
+/**
+ * Direct Square Online Checkout payment link.
+ * Resolves ALT ticket → SI, reuses existing link, submits draft SI when needed.
+ */
+async function mintPaymentLinkDirect(
+  rawId: string,
+  amountOverride?: number,
+): Promise<{ ok: true; url: string; payment_link_id: string }> {
+  const token = process.env.SQUARE_ACCESS_TOKEN ?? "";
+  const locationId = process.env.SQUARE_LOCATION_ID ?? "";
+  if (!token) throw new Error("Square not configured (SQUARE_ACCESS_TOKEN)");
+  if (!locationId) throw new Error("Square not configured (SQUARE_LOCATION_ID)");
+
+  let invoiceName = rawId;
+  let customerName = "";
+  let outstanding = 0;
+
+  if (/^ALT/i.test(rawId)) {
+    const t = await erpGet<Record<string, unknown>>("Alteration Ticket", rawId);
+    if (!t) throw new Error(`Ticket ${rawId} not found`);
+    const si = String(t.sales_invoice ?? "").trim();
+    if (!si) throw new Error(`Ticket ${rawId} has no Sales Invoice yet`);
+    invoiceName = si;
+    customerName = String(t.customer_name ?? "");
+    outstanding = Number(t.ticket_total ?? 0) || 0;
+  }
+
+  let inv = await erpGet<Record<string, unknown>>("Sales Invoice", invoiceName);
+  if (!inv) throw new Error(`Sales Invoice ${invoiceName} not found`);
+
+  // Reuse existing Square link on SI
+  const prior = String(inv.lsh_square_payment_link ?? "").trim();
+  if (prior.startsWith("http")) {
+    return { ok: true, url: prior, payment_link_id: "" };
+  }
+
+  let docstatus = Number(inv.docstatus ?? 0);
+  customerName = customerName || String(inv.customer_name ?? inv.customer ?? "");
+  outstanding =
+    amountOverride && amountOverride > 0
+      ? amountOverride
+      : Number(inv.outstanding_amount ?? inv.grand_total ?? outstanding) || 0;
+
+  if (docstatus === 2) throw new Error(`Invoice ${invoiceName} is cancelled`);
+  if (docstatus === 0) {
+    // Submit draft so AR is real; pdf_on_submit can OSError — retry after stripping SI from PDF settings is heavy,
+    // so try submit; if it fails with OSError/pdf, force-save dates and retry once via client.submit.
+    try {
+      await erpSubmit("Sales Invoice", invoiceName);
+      docstatus = 1;
+    } catch (subErr) {
+      const sm = subErr instanceof Error ? subErr.message : String(subErr);
+      // Re-fetch — sometimes submit partially completed
+      inv = (await erpGet<Record<string, unknown>>("Sales Invoice", invoiceName)) || inv;
+      docstatus = Number(inv.docstatus ?? 0);
+      if (docstatus !== 1) {
+        // Last resort: set docstatus via frappe.client.submit after refreshing full doc
+        try {
+          const full = await erpGet<Record<string, unknown>>("Sales Invoice", invoiceName);
+          if (!full) throw new Error(sm);
+          await callErpMethod("frappe.client.submit", { doc: full });
+          docstatus = 1;
+        } catch (e2) {
+          const m2 = e2 instanceof Error ? e2.message : String(e2);
+          throw new Error(`Could not submit draft invoice ${invoiceName}: ${m2 || sm}`);
+        }
+      }
+    }
+    inv = (await erpGet<Record<string, unknown>>("Sales Invoice", invoiceName)) || inv;
+    outstanding =
+      amountOverride && amountOverride > 0
+        ? amountOverride
+        : Number(inv.outstanding_amount ?? inv.grand_total ?? outstanding) || 0;
+  }
+
+  if (outstanding <= 0) throw new Error(`Invoice ${invoiceName} has nothing outstanding`);
+
+  const amountCents = Math.round(outstanding * 100);
+  const idempotencyKey = `lsh-hub-${invoiceName}-${amountCents}`.slice(0, 45);
+
+  const sqRes = await fetch(`${SQUARE_API}/v2/online-checkout/payment-links`, {
+    method: "POST",
+    headers: squareHeaders(token),
+    body: JSON.stringify({
+      idempotency_key: idempotencyKey,
+      quick_pay: {
+        name: `L&S Invoice ${invoiceName}`,
+        price_money: { amount: amountCents, currency: "USD" },
+        location_id: locationId,
+      },
+      payment_note: `${invoiceName} - ${customerName}`.slice(0, 500),
+      description: `L&S Custom Tailors — ${invoiceName}`,
+    }),
+  });
+  const sqData = (await sqRes.json().catch(() => ({}))) as {
+    payment_link?: { id?: string; url?: string; long_url?: string };
+    errors?: Array<{ detail?: string; code?: string }>;
+  };
+  if (!sqRes.ok) {
+    throw new Error(sqData.errors?.[0]?.detail || sqData.errors?.[0]?.code || `Square HTTP ${sqRes.status}`);
+  }
+  const pl = sqData.payment_link ?? {};
+  const url = String(pl.url || pl.long_url || "").trim();
+  if (!url) throw new Error("Square did not return a payment URL");
+
+  // Stamp SI for pay page + email
+  const appPay = `https://app.lstailors.com/pay/${encodeURIComponent(invoiceName)}`;
+  try {
+    await erpUpdate("Sales Invoice", invoiceName, {
+      lsh_square_payment_link: url,
+      lsh_invoice_web_url: appPay,
+    });
+  } catch {
+    /* field stamp best-effort */
+  }
+
+  return {
+    ok: true,
+    url,
+    payment_link_id: String(pl.id ?? ""),
+  };
+}
 
 // POST /api/payments/terminal-checkout
 paymentsRouter.post("/terminal-checkout", async (c) => {
