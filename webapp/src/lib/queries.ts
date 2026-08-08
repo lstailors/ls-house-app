@@ -85,6 +85,41 @@ export function useFinancials() {
   });
 }
 
+export interface TenderVarianceData {
+  period: { from: string; to: string; days: number };
+  square: {
+    btGross: number;
+    payoutTotal: number;
+    feeTotal: number;
+    unreconciledCount: number;
+    unreconciledAmt: number;
+    totalBtCount: number;
+  };
+  erp: {
+    squareTotal: number;
+    receiveTotal: number;
+  };
+  variance: {
+    amount: number;
+    pct: number;
+    status: "clear" | "minor" | "investigate";
+  };
+  tenderMix: Array<{ mode: string; amount: number; pct: number }>;
+  spark: Array<{ date: string; square: number }>;
+}
+
+export function useTenderVariance(days: number = 30) {
+  const { activeLocationId } = useActiveLocation();
+  return useQuery({
+    queryKey: ["tender-variance", activeLocationId, days],
+    queryFn: () =>
+      api.get<TenderVarianceData>(
+        `/api/dashboard/tender-variance?days=${days}${activeLocationId ? `&locationId=${activeLocationId}` : ""}`,
+      ),
+    staleTime: 120_000,
+  });
+}
+
 export function useOwnerDashboard(range: string = "30d") {
   return useQuery({
     queryKey: ["owner-dashboard", range],
@@ -1380,5 +1415,46 @@ export function useHermesCronUpdate() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["mission-control", "hermes", "cron"] });
     },
+  });
+}
+
+// ─── Logistics (Marco TileOS) ─────────────────────────────────────────────────
+
+export interface LogisticsCycleTimes {
+  weeks: string[];
+  nyc: (number | null)[];
+  hou: (number | null)[];
+  summary: {
+    nyc_avg: number | null;
+    hou_avg: number | null;
+    nyc_trend: number;
+    hou_trend: number;
+    total_shipments: number;
+    has_hou_data: boolean;
+  };
+}
+
+export interface LogisticsSummary {
+  total_open: number;
+  in_transit: number;
+  exceptions: number;
+  in_customs: number;
+}
+
+export function useLogisticsCycleTimes() {
+  return useQuery({
+    queryKey: ["logistics", "cycle-times"],
+    queryFn: () => api.get<LogisticsCycleTimes>("/api/logistics/cycle-times"),
+    staleTime: 5 * 60_000,
+    refetchInterval: 10 * 60_000,
+  });
+}
+
+export function useLogisticsSummary() {
+  return useQuery({
+    queryKey: ["logistics", "summary"],
+    queryFn: () => api.get<LogisticsSummary>("/api/logistics/summary"),
+    staleTime: 60_000,
+    refetchInterval: 3 * 60_000,
   });
 }

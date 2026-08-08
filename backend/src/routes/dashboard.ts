@@ -524,6 +524,146 @@ dashboardRouter.get("/financials", async (c) => {
   });
 });
 
+// ── Cash & Tender Variance (Melena / TileOS) ──────────────────────────────────
+// GET /api/dashboard/tender-variance
+// Compares Square Plaid BT deposits vs ERPNext-booked Payment Entries.
+// Returns per-tender breakdown and variance signals for the Financials page.
+
+dashboardRouter.get("/tender-variance", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!canSeeFinancials(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+
+  const locCode = resolveLocationCode(user, c.req.query("locationId"));
+  const daysBack = Math.min(Math.max(Number(c.req.query("days") ?? 30), 7), 90);
+
+  const now = new Date();
+  const fromDate = new Date(now);
+  fromDate.setDate(fromDate.getDate() - daysBack);
+  const fromStr = fromDate.toISOString().slice(0, 10);
+
+  // company filter for PEs
+  const companyFilter: string =
+    locCode === "HOU" ? "%TX%" : locCode === "NYC" ? "%NY%" : "";
+
+  const btFilters: unknown[] = [
+    ["bank_account", "=", "Square Merchant Account - Square"],
+    ["docstatus", "=", 1],
+    ["date", ">=", fromStr],
+  ];
+
+  const peFilters: unknown[] = [
+    ["docstatus", "=", 1],
+    ["payment_type", "=", "Receive"],
+    ["posting_date", ">=", fromStr],
+  ];
+  if (companyFilter) peFilters.push(["company", "like", companyFilter]);
+
+  // Run in parallel: Square BTs + all receive PEs by mode
+  const [squareBts, receivePes] = await Promise.all([
+    erpList<{ name: string; date: string; deposit: number; withdrawal: number; status: string; description: string }>(
+      "Bank Transaction",
+      {
+        filters: btFilters,
+        fields: ["name", "date", "deposit", "withdrawal", "status", "description"],
+        limit: 2000,
+        order_by: "date desc",
+      },
+    ).catch(() => [] as any[]),
+    erpList<{ name: string; mode_of_payment: string; paid_amount: number; posting_date: string; company: string }>(
+      "Payment Entry",
+      {
+        filters: peFilters,
+        fields: ["name", "mode_of_payment", "paid_amount", "posting_date", "company"],
+        limit: 2000,
+        order_by: "posting_date desc",
+      },
+    ).catch(() => [] as any[]),
+  ]);
+
+  // ── Square BT totals ──────────────────────────────────────────────────────
+  const squareSales = squareBts.filter((bt: any) => bt.deposit > 0);
+  const squarePayouts = squareBts.filter((bt: any) => bt.withdrawal > 0 && /Chase/i.test(bt.description ?? ""));
+  const squareFees = squareBts.filter((bt: any) => bt.withdrawal > 0 && !/Chase/i.test(bt.description ?? ""));
+
+  const squareBtGross = squareSales.reduce((s: number, bt: any) => s + Number(bt.deposit), 0);
+  const squarePayoutTotal = squarePayouts.reduce((s: number, bt: any) => s + Number(bt.withdrawal), 0);
+  const squareFeeTotal = squareFees.reduce((s: number, bt: any) => s + Number(bt.withdrawal), 0);
+
+  // Unreconciled BTs by count and $ — these are the gap
+  const squareUnreconciled = squareSales.filter((bt: any) => bt.status === "Unreconciled");
+  const squareUnreconciledAmt = squareUnreconciled.reduce((s: number, bt: any) => s + Number(bt.deposit), 0);
+
+  // ── ERP PE totals by mode_of_payment ─────────────────────────────────────
+  const tenderMap = new Map<string, number>();
+  for (const pe of receivePes) {
+    const mode = (pe.mode_of_payment as string || "Other").trim() || "Other";
+    tenderMap.set(mode, (tenderMap.get(mode) ?? 0) + Number(pe.paid_amount ?? 0));
+  }
+  const erpSquareTotal = tenderMap.get("Square") ?? 0;
+  const erpTotal = [...tenderMap.values()].reduce((s, v) => s + v, 0);
+
+  // Variance: Square BT gross vs ERP booked Square PEs
+  // Positive variance = more cash collected in Square than booked in ERP
+  const squareVariance = squareBtGross - erpSquareTotal;
+  const squareVariancePct = erpSquareTotal > 0
+    ? Math.round((squareVariance / erpSquareTotal) * 100)
+    : 0;
+
+  // Tender mix sorted by amount desc
+  const tenderMix = [...tenderMap.entries()]
+    .map(([mode, amount]) => ({
+      mode,
+      amount: Math.round(amount * 100) / 100,
+      pct: erpTotal > 0 ? Math.round((amount / erpTotal) * 100) : 0,
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  // Daily cash flow over period (Square BT deposits grouped by date)
+  const cashByDay = new Map<string, number>();
+  for (const bt of squareSales) {
+    cashByDay.set(bt.date, (cashByDay.get(bt.date) ?? 0) + Number(bt.deposit));
+  }
+  // 14-day window for sparkline
+  const sparkDays = 14;
+  const spark: Array<{ date: string; square: number }> = [];
+  for (let i = sparkDays - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    spark.push({ date: key.slice(5), square: cashByDay.get(key) ?? 0 });
+  }
+
+  return c.json({
+    data: {
+      period: { from: fromStr, to: now.toISOString().slice(0, 10), days: daysBack },
+      square: {
+        btGross: Math.round(squareBtGross * 100) / 100,
+        payoutTotal: Math.round(squarePayoutTotal * 100) / 100,
+        feeTotal: Math.round(squareFeeTotal * 100) / 100,
+        unreconciledCount: squareUnreconciled.length,
+        unreconciledAmt: Math.round(squareUnreconciledAmt * 100) / 100,
+        totalBtCount: squareSales.length,
+      },
+      erp: {
+        squareTotal: Math.round(erpSquareTotal * 100) / 100,
+        receiveTotal: Math.round(erpTotal * 100) / 100,
+      },
+      variance: {
+        amount: Math.round(squareVariance * 100) / 100,
+        pct: squareVariancePct,
+        status: Math.abs(squareVariance) < 1
+          ? "clear"
+          : Math.abs(squareVariancePct) <= 5
+          ? "minor"
+          : "investigate",
+      },
+      tenderMix,
+      spark,
+    },
+  });
+});
+
 // ── Rocco floor brief (alts home) ────────────────────────────────────────────
 // GET  /api/dashboard/floor-brief          → latest cached brief + stats (authed)
 // POST /api/dashboard/floor-brief/refresh  → force regenerate (authed FOH)
@@ -1030,6 +1170,7 @@ dashboardRouter.get("/alts-home", async (c) => {
         notified_ready_at?: string | null;
         modified?: string;
         creation?: string;
+        lsh_delay_reason?: string | null;
       }>("Alteration Ticket", {
         filters: [
           ["workflow_state", "!=", "Cancelled"],
@@ -1045,6 +1186,7 @@ dashboardRouter.get("/alts-home", async (c) => {
           "notified_ready_at",
           "modified",
           "creation",
+          "lsh_delay_reason",
         ],
         limit: 400,
         order_by: "modified desc",
@@ -1123,6 +1265,8 @@ dashboardRouter.get("/alts-home", async (c) => {
     let atHome = 0;
     let readyNotTexted = 0;
     let lateTransferCount = 0;
+    let stalledCount = 0;
+    const stalledReasons: Record<string, number> = {};
     const lateNames: string[] = [];
 
     // Most recent by creation for "New Ticket" live line

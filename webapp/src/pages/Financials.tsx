@@ -7,6 +7,11 @@ import {
   BadgeDollarSign,
   AlertCircle,
   BarChart3,
+  ShieldCheck,
+  ShieldAlert,
+  AlertTriangle,
+  CreditCard,
+  Activity,
 } from "lucide-react";
 import {
   AreaChart,
@@ -23,7 +28,7 @@ import { SectionHeader } from "@ls/design";
 import { GlassCard } from "@ls/design";
 import { KpiCard } from "@ls/design";
 import { useState } from "react";
-import { useFinancials } from "@/lib/queries";
+import { useFinancials, useTenderVariance, type TenderVarianceData } from "@/lib/queries";
 import { useMe } from "@ls/auth";
 import { formatUSD } from "@ls/design/format";
 import { cn } from "@ls/design/utils";
@@ -165,6 +170,229 @@ function GarmentRow({
   );
 }
 
+// ─── Tender Variance Section ──────────────────────────────────────────────────
+
+const TENDER_COLORS: Record<string, string> = {
+  Square: "bg-signal-emerald",
+  Cash: "bg-brass/70",
+  "Credit Card": "bg-signal-amber",
+  Check: "bg-cream-dim/60",
+  Wire: "bg-brass-light/60",
+  Other: "bg-cream-dim/30",
+};
+
+const VARIANCE_CONFIG = {
+  clear: { icon: ShieldCheck, color: "text-signal-emerald", label: "Clear", bg: "bg-signal-emerald/10 border-signal-emerald/25" },
+  minor: { icon: AlertTriangle, color: "text-signal-amber", label: "Minor gap", bg: "bg-signal-amber/10 border-signal-amber/25" },
+  investigate: { icon: ShieldAlert, color: "text-signal-rose", label: "Investigate", bg: "bg-signal-rose/10 border-signal-rose/25" },
+};
+
+function TenderBar({ mode, amount, pct }: { mode: string; amount: number; pct: number }) {
+  const bar = TENDER_COLORS[mode] ?? "bg-cream-dim/30";
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className={cn("h-2 w-2 rounded-sm flex-shrink-0", bar)} />
+          <span className="text-sm text-cream-muted">{mode}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-cream-dim font-mono tabular-nums">{pct}%</span>
+          <span className="font-mono text-sm text-cream tabular-nums w-20 text-right">{formatUSD(amount, { compact: true })}</span>
+        </div>
+      </div>
+      <div className="h-1 rounded-full bg-forest-raised/60 overflow-hidden">
+        <div className={cn("h-full rounded-full transition-all duration-500", bar)} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function TenderVarianceSection({
+  tv,
+  loading,
+  days,
+  onDaysChange,
+}: {
+  tv: TenderVarianceData | undefined;
+  loading: boolean;
+  days: number;
+  onDaysChange: (d: number) => void;
+}) {
+  if (loading || !tv) {
+    return (
+      <GlassCard variant="strong" className="p-5 md:p-6">
+        <div className="ui-label mb-2 flex items-center gap-2">
+          <Activity className="h-3.5 w-3.5 text-brass-light" /> Cash & Tender Variance
+        </div>
+        <div className="text-cream-muted text-sm py-8 text-center">Loading cash reconciliation…</div>
+      </GlassCard>
+    );
+  }
+
+  const vConf = VARIANCE_CONFIG[tv.variance.status];
+  const VIcon = vConf.icon;
+  const varAbs = Math.abs(tv.variance.amount);
+  const varPos = tv.variance.amount >= 0;
+
+  return (
+    <div className="space-y-4">
+      {/* Header row */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Activity className="h-4 w-4 text-brass-light" />
+          <span className="ui-label">Cash &amp; Tender Variance</span>
+          <span className="text-xs text-cream-dim">Square vs ERP</span>
+        </div>
+        <div className="flex gap-1.5">
+          {[7, 30, 60, 90].map((d) => (
+            <button
+              key={d}
+              onClick={() => onDaysChange(d)}
+              className={cn(
+                "px-2.5 py-1 rounded text-xs ui-label transition-colors",
+                d === days
+                  ? "bg-brass/20 text-brass-shimmer border border-brass/30"
+                  : "text-cream-dim hover:text-cream-muted border border-transparent hover:border-brass/20",
+              )}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Top KPI row — 4 tiles */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {/* Square BT Gross */}
+        <GlassCard variant="strong" className="p-4 relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-signal-emerald/8 via-transparent to-transparent pointer-events-none" />
+          <div className="relative">
+            <div className="ui-label mb-1.5 flex items-center gap-1.5">
+              <CreditCard className="h-3 w-3 text-signal-emerald" /> Square Collected
+            </div>
+            <div className="font-display italic text-3xl text-signal-emerald leading-none">
+              {formatUSD(tv.square.btGross, { compact: true })}
+            </div>
+            <div className="text-xs text-cream-dim mt-1.5">{tv.square.totalBtCount} settlements · {tv.period.days}d</div>
+          </div>
+        </GlassCard>
+
+        {/* ERP Booked Square */}
+        <GlassCard variant="strong" className="p-4 relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-brass/8 via-transparent to-transparent pointer-events-none" />
+          <div className="relative">
+            <div className="ui-label mb-1.5 flex items-center gap-1.5">
+              <Receipt className="h-3 w-3 text-brass-light" /> ERP Booked
+            </div>
+            <div className="font-display italic text-3xl text-cream leading-none">
+              {formatUSD(tv.erp.squareTotal, { compact: true })}
+            </div>
+            <div className="text-xs text-cream-dim mt-1.5">Square PEs in ERPNext</div>
+          </div>
+        </GlassCard>
+
+        {/* Variance */}
+        <GlassCard variant="strong" className={cn("p-4 relative overflow-hidden border", vConf.bg)}>
+          <div className="relative">
+            <div className={cn("ui-label mb-1.5 flex items-center gap-1.5", vConf.color)}>
+              <VIcon className="h-3 w-3" /> Variance
+            </div>
+            <div className={cn("font-display italic text-3xl leading-none", vConf.color)}>
+              {varPos ? "+" : "-"}{formatUSD(varAbs, { compact: true })}
+            </div>
+            <div className="text-xs text-cream-dim mt-1.5">{vConf.label} · {varPos ? "+" : "-"}{Math.abs(tv.variance.pct)}%</div>
+          </div>
+        </GlassCard>
+
+        {/* Unreconciled */}
+        <GlassCard variant="strong" className={cn("p-4 relative overflow-hidden", tv.square.unreconciledCount > 0 ? "border border-signal-amber/25 bg-signal-amber/5" : "")}>
+          <div className="relative">
+            <div className="ui-label mb-1.5 flex items-center gap-1.5">
+              <AlertCircle className={cn("h-3 w-3", tv.square.unreconciledCount > 0 ? "text-signal-amber" : "text-cream-dim")} />
+              Unreconciled BTs
+            </div>
+            <div className={cn("font-display italic text-3xl leading-none", tv.square.unreconciledCount > 0 ? "text-signal-amber" : "text-cream-dim")}>
+              {tv.square.unreconciledCount}
+            </div>
+            <div className="text-xs text-cream-dim mt-1.5">{formatUSD(tv.square.unreconciledAmt, { compact: true })} unmatched</div>
+          </div>
+        </GlassCard>
+      </div>
+
+      {/* Bottom row: tender mix + sparkline */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Tender mix */}
+        <GlassCard variant="strong" className="p-5">
+          <div className="ui-label mb-4">Tender Mix (ERP · last {tv.period.days}d)</div>
+          {tv.tenderMix.length === 0 ? (
+            <div className="text-cream-dim text-sm py-4">No receive payments in period.</div>
+          ) : (
+            <div className="space-y-3.5">
+              {tv.tenderMix.map((t) => (
+                <TenderBar key={t.mode} mode={t.mode} amount={t.amount} pct={t.pct} />
+              ))}
+            </div>
+          )}
+          <div className="mt-4 pt-3 border-t border-brass/10 flex justify-between text-xs text-cream-dim">
+            <span>Total received</span>
+            <span className="font-mono text-cream tabular-nums">{formatUSD(tv.erp.receiveTotal, { compact: true })}</span>
+          </div>
+        </GlassCard>
+
+        {/* Square daily sparkline */}
+        <GlassCard variant="strong" className="p-5">
+          <div className="flex items-baseline justify-between mb-4">
+            <div>
+              <div className="ui-label">Square Daily Collections</div>
+              <div className="text-xs text-cream-dim mt-0.5">last 14 days</div>
+            </div>
+            <div className="text-xs font-mono text-cream-dim">
+              {formatUSD(tv.square.payoutTotal, { compact: true })} paid out
+            </div>
+          </div>
+          <div className="h-40">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={tv.spark} margin={{ top: 0, right: 0, bottom: 0, left: 0 }} barSize={10}>
+                <CartesianGrid strokeDasharray="2 2" stroke="rgba(176,141,87,0.06)" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 9, fill: "#8A7A5C" }}
+                  axisLine={false}
+                  tickLine={false}
+                  interval={1}
+                />
+                <YAxis
+                  tick={{ fontSize: 9, fill: "#8A7A5C" }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v) => formatUSD(v, { compact: true })}
+                  width={48}
+                />
+                <Tooltip
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null;
+                    return (
+                      <div className="glass-panel px-2.5 py-1.5 text-xs border border-brass/20">
+                        <div className="text-cream-dim">{label}</div>
+                        <div className="text-signal-emerald font-mono">{formatUSD(Number(payload[0]?.value ?? 0))}</div>
+                      </div>
+                    );
+                  }}
+                />
+                <Bar dataKey="square" fill="#4ADE80" radius={[2, 2, 0, 0]} opacity={0.7} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-3 pt-3 border-t border-brass/10 text-[11px] text-cream-dim italic">
+            Square BT deposits from Plaid feed. Variance = BT gross minus ERP Payment Entries.
+          </div>
+        </GlassCard>
+      </div>
+    </div>
+  );
+}
+
 // ─── PIN gate ─────────────────────────────────────────────────────────────────
 
 function FinancialsGate({ onUnlock }: { onUnlock: () => void }) {
@@ -237,8 +465,10 @@ export default function Financials() {
   const { data: me } = useMe();
   const canSee = me?.role === "super_admin" || me?.role === "store_manager";
   const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem("fin_unlocked") === "1");
+  const [tenderDays, setTenderDays] = useState(30);
 
   const { data: rawFin, isLoading } = useFinancials();
+  const { data: tenderRaw, isLoading: tenderLoading } = useTenderVariance(tenderDays);
 
   if (!canSee && !unlocked) return <FinancialsGate onUnlock={() => setUnlocked(true)} />;
   const fin = rawFin as unknown as FinData | undefined;
@@ -564,6 +794,13 @@ export default function Financials() {
               Figures are real-time from operations data. Authoritative books sync from ERPNext nightly.
             </div>
           </GlassCard>
+          {/* SECTION 5: Cash & Tender Variance (TileOS) */}
+          <TenderVarianceSection
+            tv={tenderRaw as unknown as TenderVarianceData | undefined}
+            loading={tenderLoading}
+            days={tenderDays}
+            onDaysChange={setTenderDays}
+          />
         </>
       )}
     </div>
