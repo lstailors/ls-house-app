@@ -955,6 +955,59 @@ export function useSmsThread(phone: string | null) {
   });
 }
 
+/** Phase 1 — unified customer timeline (SMS + calls + Plaud). */
+export type CommsEvent = {
+  id: string;
+  source_type: "sms" | "call" | "plaud";
+  occurred_at: string;
+  erpnext_customer_id: string | null;
+  customer_name?: string | null;
+  phone?: string | null;
+  direction?: string | null;
+  summary: string;
+  body?: string | null;
+  status?: string | null;
+  duration_sec?: number | null;
+  has_recording?: boolean;
+};
+
+export type CommsEventsData = {
+  customer: { id: string; name: string; mobile_no?: string | null } | null;
+  events: CommsEvent[];
+  counts: { sms: number; call: number; plaud: number; all: number };
+  sources: string[];
+  sensitive_redacted: boolean;
+  generatedAt?: string;
+};
+
+export function useCommsEvents(opts: {
+  customer?: string | null;
+  phone?: string | null;
+  source?: string;
+  limit?: number;
+  enabled?: boolean;
+}) {
+  const customer = opts.customer || null;
+  const phone = opts.phone || null;
+  const source = opts.source || "all";
+  const limit = opts.limit ?? 50;
+  const enabled = opts.enabled !== false && !!(customer || phone);
+
+  return useQuery({
+    queryKey: ["comms-events", customer, phone, source, limit],
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (customer) qs.set("customer", customer);
+      if (phone) qs.set("phone", phone);
+      qs.set("source", source);
+      qs.set("limit", String(limit));
+      return api.get<CommsEventsData>(`/api/comms/events?${qs.toString()}`);
+    },
+    enabled,
+    staleTime: 20_000,
+  });
+}
+
 export function useTaskCount() {
   return useQuery({
     queryKey: ["tasks", "open-count"],

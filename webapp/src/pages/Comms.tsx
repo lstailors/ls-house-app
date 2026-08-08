@@ -20,7 +20,7 @@ import {
 import { api } from "@ls/api-client";
 import { GlassCard } from "@ls/design";
 import { cn } from "@ls/design/utils";
-import { useComms, useSmsThread } from "@/lib/queries";
+import { useComms, useSmsThread, useCommsEvents, type CommsEvent } from "@/lib/queries";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -245,7 +245,104 @@ function CallPanel({ item, onBrief }: { item: any; onBrief: (phone: string) => v
           </audio>
         </GlassCard>
       )}
+
+      {/* Phase 1 unified timeline */}
+      {phone && (
+        <CustomerTimeline phone={phone} customerId={item.customer || null} />
+      )}
     </div>
+  );
+}
+
+// ── Unified customer timeline (Phase 1 /api/comms/events) ─────────────────
+
+function sourceAccent(t: string) {
+  if (t === "sms") return "border-l-signal-emerald bg-emerald-900/10";
+  if (t === "call") return "border-l-brass bg-brass/10";
+  if (t === "plaud") return "border-l-signal-amber bg-signal-amber/10";
+  return "border-l-cream-dim";
+}
+
+function sourceLabel(t: string) {
+  if (t === "sms") return "SMS";
+  if (t === "call") return "Call";
+  if (t === "plaud") return "Plaud";
+  return t;
+}
+
+function CustomerTimeline({
+  phone,
+  customerId,
+}: {
+  phone?: string | null;
+  customerId?: string | null;
+}) {
+  const { data, isLoading, isError, error } = useCommsEvents({
+    phone: phone || null,
+    customer: customerId || null,
+    limit: 40,
+  });
+
+  if (!phone && !customerId) return null;
+
+  return (
+    <GlassCard className="p-4 border border-brass/20">
+      <div className="flex items-center justify-between mb-3">
+        <div className="ui-label text-brass flex items-center gap-1.5">
+          <MessageSquare className="w-3 h-3" />
+          Full history · SMS + Calls + Plaud
+        </div>
+        {data?.counts && (
+          <span className="text-[10px] text-cream-dim">
+            {data.counts.call}c · {data.counts.sms}s · {data.counts.plaud}p
+            {data.sensitive_redacted ? " · limited" : ""}
+          </span>
+        )}
+      </div>
+      {data?.customer && (
+        <div className="text-xs text-signal-emerald mb-2 flex items-center gap-1">
+          <User className="w-3 h-3" />
+          {data.customer.name}
+          <span className="text-cream-dim">· {data.customer.id}</span>
+        </div>
+      )}
+      {isLoading && <div className="text-cream-dim text-xs py-4 text-center">Loading timeline…</div>}
+      {isError && (
+        <div className="text-red-400/90 text-xs py-2">
+          Timeline unavailable{(error as Error)?.message ? `: ${(error as Error).message}` : ""}
+        </div>
+      )}
+      {!isLoading && !isError && (data?.events?.length ?? 0) === 0 && (
+        <div className="text-cream-dim text-xs py-3 text-center">No linked events yet</div>
+      )}
+      <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+        {(data?.events ?? []).map((ev: CommsEvent) => (
+          <div
+            key={ev.id}
+            className={cn("border-l-2 pl-3 py-2 rounded-r-lg", sourceAccent(ev.source_type))}
+          >
+            <div className="flex items-center justify-between gap-2 mb-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-cream-muted font-medium">
+                {sourceLabel(ev.source_type)}
+                {ev.direction ? ` · ${ev.direction}` : ""}
+                {ev.status ? ` · ${ev.status}` : ""}
+              </span>
+              <span className="text-[10px] text-cream-dim whitespace-nowrap">
+                {ev.occurred_at
+                  ? new Date(ev.occurred_at).toLocaleString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })
+                  : "—"}
+              </span>
+            </div>
+            <p className="text-cream text-sm leading-snug line-clamp-3">{ev.summary || "—"}</p>
+          </div>
+        ))}
+      </div>
+    </GlassCard>
   );
 }
 
@@ -291,7 +388,7 @@ function SmsThreadPanel({ thread, onBrief }: { thread: any; onBrief: (phone: str
           const isOutbound = msg.direction === "outbound";
           const content = msg.content || msg.body || "";
           return (
-            <div key={msg.id} className={cn("flex", isOutbound ? "justify-end" : "justify-start")}>
+            <div key={msg.id || msg.name} className={cn("flex", isOutbound ? "justify-end" : "justify-start")}>
               <div
                 className={cn(
                   "max-w-[75%] px-4 py-2.5 rounded-2xl",
@@ -308,6 +405,11 @@ function SmsThreadPanel({ thread, onBrief }: { thread: any; onBrief: (phone: str
             </div>
           );
         })}
+
+        {/* Phase 1 unified timeline under SMS thread */}
+        <div className="mt-4">
+          <CustomerTimeline phone={phone} customerId={customer?.id} />
+        </div>
       </div>
     </div>
   );
