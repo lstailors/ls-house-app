@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { MessageSquare, Search, Mic, Eye, UserCheck, Star } from "lucide-react";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { MessageSquare, Search, Mic, Eye, UserCheck, Star, Send, Sparkles, CheckCircle2, XCircle } from "lucide-react";
 import { SectionHeader } from "@ls/design";
 import { GlassCard } from "@ls/design";
 import { EmptyState } from "@ls/design";
@@ -11,6 +11,8 @@ import {
   useSofiaThread,
   useSofiaHandoff,
   useSofiaVoiceApprovals,
+  useSofiaChat,
+  type SofiaChatAction,
 } from "@/lib/queries";
 import { formatDateTime } from "@ls/design/format";
 import type { Communication, Customer } from "@ls/types";
@@ -18,7 +20,7 @@ import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
 
 // ─── Tab types ───────────────────────────────────────────────────────────────
-type Tab = "sofia" | "voice" | "all";
+type Tab = "sofia" | "ask" | "voice" | "all";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function formatRelative(iso: string): string {
@@ -203,6 +205,155 @@ function SofiaTab() {
         </GlassCard>
       )}
     </div>
+  );
+}
+
+// ─── Ask Sofia (staff AI chat) Tab ─────────────────────────────────────────────
+type AskChatMsg = {
+  id: string;
+  role: "staff" | "sofia";
+  text: string;
+  actions?: SofiaChatAction[];
+  error?: boolean;
+};
+
+function ActionReceipt({ action }: { action: SofiaChatAction }) {
+  const label = action.tool === "send_mms_card" ? "MMS" : "SMS";
+  return (
+    <div
+      className={cn(
+        "mt-2 rounded-md border px-3 py-2 text-xs",
+        action.ok ? "border-signal-emerald/30 bg-signal-emerald/5" : "border-signal-crimson/30 bg-signal-crimson/5",
+      )}
+    >
+      <div className="flex items-center gap-1.5 font-medium">
+        {action.ok ? (
+          <CheckCircle2 className="h-3.5 w-3.5 text-signal-emerald shrink-0" />
+        ) : (
+          <XCircle className="h-3.5 w-3.5 text-signal-crimson shrink-0" />
+        )}
+        <span className="text-cream">
+          {label} {action.ok ? "sent" : "failed"}
+          {action.recipient_name ? ` to ${action.recipient_name}` : action.sent_to ? ` to ${action.sent_to}` : ""}
+        </span>
+      </div>
+      {action.message ? (
+        <div className="mt-1 text-cream-muted italic">"{action.message}"</div>
+      ) : null}
+      <div className="mt-1 flex flex-wrap gap-x-3 text-[10px] text-cream-dim">
+        {action.sent_to ? <span>To: {action.sent_to}</span> : null}
+        {action.twilio_sid ? <span>SID: {action.twilio_sid}</span> : null}
+        {action.error ? <span className="text-signal-crimson">{action.error}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+function AskSofiaTab() {
+  const [messages, setMessages] = useState<AskChatMsg[]>([]);
+  const [input, setInput] = useState("");
+  const chat = useSofiaChat();
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, chat.isPending]);
+
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || chat.isPending) return;
+    const staffMsg: AskChatMsg = { id: `${Date.now()}-staff`, role: "staff", text };
+    setMessages((prev) => [...prev, staffMsg]);
+    setInput("");
+    try {
+      const res = await chat.mutateAsync(text);
+      setMessages((prev) => [
+        ...prev,
+        { id: `${Date.now()}-sofia`, role: "sofia", text: res.reply, actions: res.actions },
+      ]);
+    } catch (e: any) {
+      const msg = e?.message ?? "Sofia is briefly unavailable.";
+      setMessages((prev) => [...prev, { id: `${Date.now()}-err`, role: "sofia", text: msg, error: true }]);
+      toast.error("Ask Sofia failed");
+    }
+  };
+
+  return (
+    <GlassCard variant="strong" className="p-0 overflow-hidden flex flex-col">
+      <div className="p-4 border-b border-brass/10 flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-brass-light" />
+        <div>
+          <div className="text-cream font-medium text-sm">Ask Sofia</div>
+          <div className="text-[10px] text-cream-dim">
+            Same brain, tools, and no-draft/never-lie rules as Carl's SMS assistant mode. Type an instruction — Sofia
+            acts immediately (real SMS sends).
+          </div>
+        </div>
+      </div>
+
+      <div ref={scrollRef} className="p-4 space-y-3 max-h-[calc(100dvh-26rem)] min-h-[16rem] overflow-y-auto">
+        {messages.length === 0 ? (
+          <div className="text-cream-dim text-xs text-center py-10">
+            e.g. "text Sal that his suit is ready" or "who do we have on the schedule today"
+          </div>
+        ) : (
+          messages.map((m) => (
+            <div key={m.id} className={cn("flex", m.role === "staff" ? "justify-end" : "justify-start")}>
+              <div
+                className={cn(
+                  "max-w-[85%] rounded-lg p-3 border",
+                  m.role === "staff"
+                    ? "bg-brass/15 border-brass/30"
+                    : m.error
+                      ? "border-signal-crimson/30 bg-signal-crimson/5"
+                      : "bg-forest-raised/60 border-brass/15",
+                )}
+              >
+                <div className="ui-label text-[9px] mb-1 text-brass-light">
+                  {m.role === "staff" ? "You" : "Sofia"}
+                </div>
+                <div className="text-base sm:text-sm text-cream leading-relaxed whitespace-pre-wrap">{m.text}</div>
+                {m.actions && m.actions.length > 0
+                  ? m.actions.map((a, i) => <ActionReceipt key={i} action={a} />)
+                  : null}
+              </div>
+            </div>
+          ))
+        )}
+        {chat.isPending ? (
+          <div className="flex justify-start">
+            <div className="rounded-lg p-3 border border-brass/15 bg-forest-raised/60 text-xs text-cream-dim">
+              Sofia is working…
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="p-3 border-t border-brass/10 flex items-center gap-2">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleSend();
+            }
+          }}
+          placeholder="Tell Sofia what to do…"
+          disabled={chat.isPending}
+          className="flex-1 px-3 py-2 bg-forest-raised/50 border border-brass/15 rounded-md text-base sm:text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40 disabled:opacity-50"
+        />
+        <Button
+          size="sm"
+          onClick={handleSend}
+          disabled={chat.isPending || !input.trim()}
+          className="h-9 px-3 bg-brass/20 border border-brass/30 text-cream hover:bg-brass/30"
+        >
+          <Send className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </GlassCard>
   );
 }
 
@@ -420,6 +571,7 @@ export default function Communications() {
         {(
           [
             { key: "sofia", label: "Sofia SMS", count: threads.length },
+            { key: "ask", label: "Ask Sofia", count: null },
             { key: "voice", label: "Voice Approvals", count: voiceItems.length },
             { key: "all", label: "All Comms", count: null },
           ] as { key: Tab; label: string; count: number | null }[]
@@ -444,6 +596,7 @@ export default function Communications() {
       </div>
 
       {tab === "sofia" && <SofiaTab />}
+      {tab === "ask" && <AskSofiaTab />}
       {tab === "voice" && <VoiceTab />}
       {tab === "all" && <AllCommsTab />}
     </div>

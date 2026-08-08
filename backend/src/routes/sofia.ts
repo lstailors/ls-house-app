@@ -1414,7 +1414,247 @@ async function executeTool(
   }
 }
 
-// ── Full Sofia processMessage brain ──
+// ── Reusable Sofia agent core (LLM call + tool loop) ──
+// Extracted from processMessage so both the Twilio inbound path AND the
+// staff-facing POST /api/sofia/chat endpoint can share the exact same
+// brain/tools/guardrails. This function does NOT touch Twilio, SMS logging,
+// or the Carl draft-command shortcuts -- those stay Twilio-specific in
+// processMessage. It only does: load history -> build system prompt (with
+// mode-specific preamble) -> run the Grok tool-calling loop -> return text +
+// structured tool-call records.
+type SofiaToolCallRecord = { name: string; args: Record<string, unknown>; result: unknown };
+
+async function runSofiaAgent(
+  from: string,
+  body: string,
+  isAssistant: boolean,
+  isStaff: boolean,
+  mode: string,
+  customer: Record<string, unknown> | null,
+  fromDigits: string
+): Promise<{ finalText: string; toolCalls: SofiaToolCallRecord[] }> {
+  const messages: { role: string; content: string }[] = [];
+  try {
+    const hist = await listSmsMessagesFiltered({ phone: from, limit: 10 });
+    hist.reverse().forEach((h: any) => messages.push({ role: h.direction === "inbound" ? "user" : "assistant", content: String(h.content) }));
+  } catch (_) {}
+
+  let systemPrompt =
+    "You are Sofia, the AI concierge for L&S Custom Tailors, 138 E 61st St, New York. You are powered by Grok 4.20 by xAI. Be warm, brief, professional. Never invent prices. Booking link is lstailors.com/book.";
+  try {
+    const sp = await listBrainEntriesFiltered({ agentSlug: "sofia", entryTypes: ["system_prompt"], limit: 1 });
+    if (sp?.length) {
+      const detail = String(sp[0].detail ?? "");
+      if (detail && !detail.startsWith("<<PLACEHOLDER") && !detail.startsWith("<<ARCHIVED")) systemPrompt = detail;
+    }
+  } catch (_) {}
+
+  let kbContext = "";
+  try {
+    const kb = (await listBrainEntriesFiltered({ agentSlug: "sofia", limit: 20 }))
+      .filter((e) => e.entry_type !== "system_prompt")
+      .slice(0, 8);
+    if (kb?.length) {
+      kbContext = kb
+        .map((k: any) => `[${k.entry_type}] ${k.summary}: ${String(k.detail ?? "").substring(0, 300)}`)
+        .join("\n");
+    }
+  } catch (_) {}
+
+  const now = new Date();
+  const nycParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(now);
+  const nycMap: Record<string, string> = {};
+  for (const p of nycParts) nycMap[p.type] = p.value;
+  const nycTime = `${nycMap.weekday}, ${nycMap.month} ${nycMap.day}, ${nycMap.year} - ${nycMap.hour}:${nycMap.minute} ${nycMap.dayPeriod} ET`;
+  const tmrw = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const tmrwWeekday = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "long" }).format(tmrw);
+  const timeBlock = `\n\n=== CURRENT DATE/TIME (authoritative - trust this over any prior knowledge) ===\nToday is ${nycTime}.\nTomorrow is ${tmrwWeekday}.\nUse THIS day/date when answering anything time-related. Never assume a different day.\n=== END DATE/TIME ===`;
+
+  const antiHallucination = `
+
+=== ANTI-HALLUCINATION RULES (ABSOLUTE - violation = critical failure) ===
+1. NEVER invent, imply, or reference an appointment that does not exist. If there is no successful book_fitting tool result in this conversation OR a real fitting from get_fitting_history, NO appointment exists.
+2. NEVER use closing phrases like "see you tomorrow", "see you at X", "your fitting is at X", "you are booked for X", "your appointment is X", "confirmed for X", "see you then" UNLESS you have either: (a) a successful book_fitting/reschedule_booking tool result in THIS turn, or (b) a real upcoming fitting from get_fitting_history showing customer_id matches.
+3. NEVER say "done", "booked", "confirmed", "rescheduled", "moved", "cancelled", or "all set" without a successful corresponding tool call result in the same turn.
+4. If the user references an appointment you have no tool-confirmed record of, do NOT play along. Say: "I want to make sure I get this right - I do not see a booking on file. Want me to set one up?"
+5. Informational topics (wine stains, fabric care, hours, prices) NEVER end with an appointment reference. End with a question or simple signoff only.
+6. If asked to send "email confirmation" or "booking confirmation" of an appointment, you MUST have a real booking_uid from a successful book_fitting result.
+7. The booking confirmation email is automatically sent by our Cal.com pipeline immediately after a successful book_fitting.
+=== END ANTI-HALLUCINATION ===`;
+
+  const assistantSendRules = `
+
+=== ASSISTANT SEND RULES (ABSOLUTE) ===
+When Carl tells you to text/message/SMS/notify a client, you are an ACTION layer, not a draft layer.
+
+1. NO-DRAFT RULE: NEVER respond with "draft ready, reply YES to send", "confirm with YES", "should I send this?", "want me to send?", or any variant. If Carl said send, SEND. The only acceptable behavior is to immediately call send_sms_to_client (or send_mms_card) and then report what you sent.
+
+2. NEVER-LIE RULE: NEVER say "Sent.", "Message sent", or any confirmation UNLESS the SAME turn contains a successful send_sms_to_client OR send_mms_card tool call returning ok:true with a twilio_sid.
+
+3. RECIPIENT RESOLUTION: If Carl gives a name only - lookup_customer first, then send_sms_to_client with customer_id. If Carl gives a phone - send_sms_to_client with to_phone directly. If Carl gives both - prefer customer_id.
+
+4. ONE clarifying question is allowed only when (a) recipient is genuinely ambiguous (multiple matches) or (b) the message is fundamentally incomplete.
+
+5. AFTER SENDING: report in one short sentence what you actually sent and to whom.
+
+6. ACTING ON BEHALF OF A CLIENT: Carl is the OPERATOR, not the client. If Carl says "book Sal a fitting Tuesday 2pm" or "text Sal that his suit is ready", the SUBJECT is Sal, not Carl. You MUST: (a) call lookup_customer with the client name FIRST, (b) pass that client id/name/email/phone to send_sms_to_client / send_mms_card / book_fitting. NEVER use Carl name, email, or phone as the attendee or recipient. If lookup_customer returns multiple matches, ask Carl which one. If not found, ask Carl for the phone/email - do not fall back to Carl own contact info.
+
+7. PREFER MMS CARD for branded moments. When the message is a known event with a matching template_key in sofia_mms_active, use send_mms_card instead of send_sms_to_client.
+=== END ASSISTANT SEND RULES ===`;
+
+  const staffPreamble = `\n\n[STAFF MODE - ${STAFF_PHONES_MAP[fromDigits] ?? "Staff"}]
+You are Sofia, L&S internal assistant. ${STAFF_PHONES_MAP[fromDigits] ?? "A staff member"} is texting you.
+
+You handle two types of requests -- pick the right tool immediately without asking:
+
+BUSINESS TODOS -> create_todo (DEFAULT for most requests)
+Use create_todo for ANYTHING involving: calling/contacting someone, following up, checking on an order, reminders, client-related actions, scheduling, invoices, appointments, or any business action.
+- "call X", "follow up with Y", "remind me to Z", "check on order", "contact client" -> create_todo
+- Include date/time in the description if mentioned (e.g. "Call Alex E - Tuesday June 9 10am")
+
+OPERATIONAL TASKS -> create_task (ONLY for physical in-person tasks)
+- Items to buy/order -> task_type: "shopping"
+- Go somewhere physically -> task_type: "errand"
+- Collect something in person -> task_type: "pickup"
+- Bring/deliver physically -> task_type: "dropoff"
+- When in doubt, use create_todo
+
+TASK QUERIES -> list_my_tasks
+- "what are my tasks", "my todo list", "what do I have today"
+
+MARK DONE -> complete_task (use todo id from list_my_tasks)
+- "done with X", "mark X complete", "finished Y"
+
+Reply with ONE short confirmation only. Examples:
+- create_task -> "check Added: [title]"
+- create_todo -> "check Todo: [description]"
+- list_my_tasks -> list them cleanly, one per line with due date if set
+- complete_task -> "check Done: [task]"`;
+
+  const modePreamble = isStaff
+    ? staffPreamble
+    : isAssistant
+    ? "\n\n[ASSISTANT MODE - Carl. All tools enabled. Be direct, brief. When Carl says send/text/message a client, IMMEDIATELY call send_sms_to_client or send_mms_card - never draft and ask. When Carl asks what's on the schedule, who do we have today/tomorrow/this week, or any schedule query - IMMEDIATELY call list_appointments (no args = today). Never say you cannot see the calendar.]" +
+      assistantSendRules
+    : `
+
+[CONCIERGE MODE - client interaction. Restricted tools. Never invent pricing, fitting times, appointment dates, or order status. If you do not have data from a tool, say you will check with Carl. Use add_dossier_observation silently. Also use create_todo silently whenever a client interaction reveals a follow-up action needed (e.g. client mentions a complaint, requests a callback, has an open invoice question, needs a rush order, or any situation requiring staff follow-up). Always include the client name and context in the todo description. When a known client contacts you, silently call get_client_tasks with their name to check for any pending follow-ups -- mention relevant ones naturally if appropriate.]
+
+BOOKING POLICY: When a client wants to book/reschedule/cancel an appointment, ALWAYS offer two options: (1) "I can book it for you right now - just need your name and email" or (2) "I can text you our booking link: lstailors.com/book". Honor whichever they pick. If they choose option 1: call get_available_slots first, present 2-3 nearby options in plain English, then call book_fitting once they confirm and you have name + email. Never book without an explicit yes AND name + email. Default event_type is fitting unless they say consultation, alterations, pickup, or exchange.
+
+RESCHEDULE/CANCEL POLICY: To reschedule or cancel, call get_fitting_history first (always pass the customer's customer_id AND/OR their phone). Then:
+- If booking_uid is present (source=cal.com): call reschedule_booking or cancel_booking.
+- If booking_uid is null (source=apple-calendar): you CANNOT reschedule via API. Instead - (1) acknowledge the appointment by name and date, (2) ask the client what time works for them, (3) when they reply, call take_message with their request (urgency=normal), (4) tell the client: "I've passed your request to Carl - he will confirm the new time with you shortly." NEVER attempt reschedule_booking with a null uid.
+- If get_fitting_history returns no appointments at all: do NOT pretend one exists. Ask if they want to book fresh.
+
+ORDER POLICY: When a client asks about their order status, due date, or garments -- call lookup_orders first. For delivery requests, change requests, pickup scheduling, or questions you cannot resolve from the data, use submit_order_request to alert Carl's team -- then tell the client: "I've passed your request to the team and they'll be in touch shortly."
+
+ALTERATION POLICY: When a client asks about their alterations, tailoring, or garments:
+1. Call get_customer_tickets to retrieve their tickets by phone.
+2. For status: summarize the ticket state naturally (e.g. "Your jacket is Ready for pickup").
+3. For payment: call send_payment_link -- this texts them the link directly. No need to tell them to visit a website.
+4. For delivery: collect their address, then call request_delivery -- this creates a real delivery order in the system and notifies the team. Confirm to the client once created.
+5. To share their ticket page: call send_ticket_link -- texts a signed link to alts.lstailors.com where they can see full details.
+Always be proactive: if a client's ticket is Ready and they haven't paid, offer the payment link. If they're asking about pickup, offer delivery as an option.
+
+IMPORTANT: get_fitting_history auto-searches by the caller's inbound phone as fallback, so even Apple Calendar appointments (which may not have a customer_id link) will surface -- always check before saying no appointment exists.`;
+
+  const customerCtx = isStaff
+    ? `\nStaff sender: ${STAFF_PHONES_MAP[fromDigits]} (${fromDigits === "16462087809" ? "Office Manager" : "Messenger & Runner"}). This is an internal staff request, NOT a customer. Do not treat as a booking or customer inquiry.`
+    : isAssistant
+    ? "\nOperator: Carl Viola (owner). The sender of this SMS is Carl, NOT a client. Carl is your boss, not a customer to book. When Carl asks you to act on a CLIENT (book, text, message), you MUST first call lookup_customer to find that named client, then pass THEIR id/name/phone to subsequent tools. Never use Carl name, phone, or email as the attendee/recipient when the action is meant for a different person."
+    : customer
+    ? `\nCustomer: ${(customer as any).first_name} ${(customer as any).last_name} | Phone: ${(customer as any).phone} | VIP: ${(customer as any).is_vip ?? false} | ID: ${(customer as any).id}`
+    : `\nContact: ${from} (not in database)`;
+  const ownerCtx = isAssistant ? "\nYou are speaking with Carl Viola. Address him as \"C\". Skip pleasantries." : "";
+
+  const fullSystem =
+    GROK_IDENTITY +
+    timeBlock +
+    antiHallucination +
+    "\n\n" +
+    systemPrompt +
+    modePreamble +
+    customerCtx +
+    ownerCtx +
+    (kbContext ? `\n\nKnowledge Base:\n${kbContext}` : "");
+
+  const XAI_KEY = process.env.XAI_API_KEY ?? "";
+  const currentMessages: { role: string; content: string | unknown[]; tool_calls?: unknown[]; tool_call_id?: string; name?: string }[] = [
+    { role: "system", content: fullSystem },
+    ...messages,
+    { role: "user", content: body },
+  ];
+
+  let finalText = "";
+  const toolCalls: SofiaToolCallRecord[] = [];
+  for (let round = 0; round < 6; round++) {
+    let xaiResp: Record<string, unknown>;
+    try {
+      const r = await fetch("https://api.x.ai/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${XAI_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "grok-4.20-0309-non-reasoning",
+          messages: currentMessages,
+          tools: isStaff ? STAFF_TOOLS : TOOLS,
+          tool_choice: "auto",
+          max_tokens: 500,
+          temperature: 0.3,
+        }),
+      });
+      xaiResp = (await r.json()) as Record<string, unknown>;
+    } catch (_) {
+      finalText = "I am briefly unavailable - someone will be in touch within the hour.";
+      break;
+    }
+    const choice = (xaiResp as { choices?: { finish_reason: string; message: Record<string, unknown> }[] }).choices?.[0];
+    if (!choice) {
+      finalText = "I am briefly unavailable. Please try again in a moment.";
+      break;
+    }
+    const msg = choice.message;
+    currentMessages.push(msg as { role: string; content: string });
+
+    if (choice.finish_reason === "tool_calls" && Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
+      const toolResults: { role: string; tool_call_id: string; name: string; content: string }[] = [];
+      for (const tc of msg.tool_calls as { id: string; function: { name: string; arguments: string } }[]) {
+        let targs: Record<string, unknown> = {};
+        try {
+          targs = JSON.parse(tc.function.arguments);
+        } catch {
+          targs = {};
+        }
+        const resultStr = await executeTool(tc.function.name, targs, from, customer, isAssistant);
+        toolResults.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: resultStr });
+        let parsedResult: unknown = resultStr;
+        try {
+          parsedResult = JSON.parse(resultStr);
+        } catch (_) {}
+        toolCalls.push({ name: tc.function.name, args: targs, result: parsedResult });
+      }
+      currentMessages.push(...(toolResults as { role: string; content: string }[]));
+      continue;
+    }
+    finalText = String(msg.content ?? "").trim();
+    break;
+  }
+  if (!finalText) finalText = "Let me check on that and get right back to you.";
+  finalText = sanitizeIdentity(finalText);
+
+  return { finalText, toolCalls };
+}
+
+// -- Full Sofia processMessage brain --
 async function processMessage(from: string, body: string, messageSid: string = ""): Promise<void> {
 
 
@@ -1541,222 +1781,10 @@ async function processMessage(from: string, body: string, messageSid: string = "
       return;
     }
 
-    // ── Load conversation history ──
-    const messages: { role: string; content: string }[] = [];
-    try {
-      const hist = await listSmsMessagesFiltered({ phone: from, limit: 10 });
-      hist.reverse().forEach((h: any) => messages.push({ role: h.direction === "inbound" ? "user" : "assistant", content: String(h.content) }));
-    } catch (_) {}
-
-    // ── Load system prompt from brain_entries ──
-    let systemPrompt =
-      "You are Sofia, the AI concierge for L&S Custom Tailors, 138 E 61st St, New York. You are powered by Grok 4.20 by xAI. Be warm, brief, professional. Never invent prices. Booking link is lstailors.com/book.";
-    try {
-      const sp = await listBrainEntriesFiltered({ agentSlug: "sofia", entryTypes: ["system_prompt"], limit: 1 });
-      if (sp?.length) {
-        const detail = String(sp[0].detail ?? "");
-        if (detail && !detail.startsWith("<<PLACEHOLDER") && !detail.startsWith("<<ARCHIVED")) systemPrompt = detail;
-      }
-    } catch (_) {}
-
-    // ── Knowledge base context ──
-    let kbContext = "";
-    try {
-      const kb = (await listBrainEntriesFiltered({ agentSlug: "sofia", limit: 20 }))
-        .filter((e) => e.entry_type !== "system_prompt")
-        .slice(0, 8);
-      if (kb?.length) {
-        kbContext = kb
-          .map((k: any) => `[${k.entry_type}] ${k.summary}: ${String(k.detail ?? "").substring(0, 300)}`)
-          .join("\n");
-      }
-    } catch (_) {}
-
-    // ── Current NYC time block ──
-    const now = new Date();
-    const nycParts = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/New_York",
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    }).formatToParts(now);
-    const nycMap: Record<string, string> = {};
-    for (const p of nycParts) nycMap[p.type] = p.value;
-    const nycTime = `${nycMap.weekday}, ${nycMap.month} ${nycMap.day}, ${nycMap.year} - ${nycMap.hour}:${nycMap.minute} ${nycMap.dayPeriod} ET`;
-    const tmrw = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    const tmrwWeekday = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "long" }).format(tmrw);
-    const timeBlock = `\n\n=== CURRENT DATE/TIME (authoritative - trust this over any prior knowledge) ===\nToday is ${nycTime}.\nTomorrow is ${tmrwWeekday}.\nUse THIS day/date when answering anything time-related. Never assume a different day.\n=== END DATE/TIME ===`;
-
-    const antiHallucination = `
-
-=== ANTI-HALLUCINATION RULES (ABSOLUTE - violation = critical failure) ===
-1. NEVER invent, imply, or reference an appointment that does not exist. If there is no successful book_fitting tool result in this conversation OR a real fitting from get_fitting_history, NO appointment exists.
-2. NEVER use closing phrases like "see you tomorrow", "see you at X", "your fitting is at X", "you are booked for X", "your appointment is X", "confirmed for X", "see you then" UNLESS you have either: (a) a successful book_fitting/reschedule_booking tool result in THIS turn, or (b) a real upcoming fitting from get_fitting_history showing customer_id matches.
-3. NEVER say "done", "booked", "confirmed", "rescheduled", "moved", "cancelled", or "all set" without a successful corresponding tool call result in the same turn.
-4. If the user references an appointment you have no tool-confirmed record of, do NOT play along. Say: "I want to make sure I get this right - I do not see a booking on file. Want me to set one up?"
-5. Informational topics (wine stains, fabric care, hours, prices) NEVER end with an appointment reference. End with a question or simple signoff only.
-6. If asked to send "email confirmation" or "booking confirmation" of an appointment, you MUST have a real booking_uid from a successful book_fitting result.
-7. The booking confirmation email is automatically sent by our Cal.com pipeline immediately after a successful book_fitting.
-=== END ANTI-HALLUCINATION ===`;
-
-    const assistantSendRules = `
-
-=== ASSISTANT SEND RULES (ABSOLUTE) ===
-When Carl tells you to text/message/SMS/notify a client, you are an ACTION layer, not a draft layer.
-
-1. NO-DRAFT RULE: NEVER respond with "draft ready, reply YES to send", "confirm with YES", "should I send this?", "want me to send?", or any variant. If Carl said send, SEND. The only acceptable behavior is to immediately call send_sms_to_client (or send_mms_card) and then report what you sent.
-
-2. NEVER-LIE RULE: NEVER say "Sent.", "Message sent", or any confirmation UNLESS the SAME turn contains a successful send_sms_to_client OR send_mms_card tool call returning ok:true with a twilio_sid.
-
-3. RECIPIENT RESOLUTION: If Carl gives a name only - lookup_customer first, then send_sms_to_client with customer_id. If Carl gives a phone - send_sms_to_client with to_phone directly. If Carl gives both - prefer customer_id.
-
-4. ONE clarifying question is allowed only when (a) recipient is genuinely ambiguous (multiple matches) or (b) the message is fundamentally incomplete.
-
-5. AFTER SENDING: report in one short sentence what you actually sent and to whom.
-
-6. ACTING ON BEHALF OF A CLIENT: Carl is the OPERATOR, not the client. If Carl says "book Sal a fitting Tuesday 2pm" or "text Sal that his suit is ready", the SUBJECT is Sal, not Carl. You MUST: (a) call lookup_customer with the client name FIRST, (b) pass that client id/name/email/phone to send_sms_to_client / send_mms_card / book_fitting. NEVER use Carl name, email, or phone as the attendee or recipient. If lookup_customer returns multiple matches, ask Carl which one. If not found, ask Carl for the phone/email - do not fall back to Carl own contact info.
-
-7. PREFER MMS CARD for branded moments. When the message is a known event with a matching template_key in sofia_mms_active, use send_mms_card instead of send_sms_to_client.
-=== END ASSISTANT SEND RULES ===`;
-
-    const staffPreamble = `\n\n[STAFF MODE - ${STAFF_PHONES_MAP[fromDigits] ?? "Staff"}]
-You are Sofia, L&S internal assistant. ${STAFF_PHONES_MAP[fromDigits] ?? "A staff member"} is texting you.
-
-You handle two types of requests — pick the right tool immediately without asking:
-
-BUSINESS TODOS → create_todo (DEFAULT for most requests)
-Use create_todo for ANYTHING involving: calling/contacting someone, following up, checking on an order, reminders, client-related actions, scheduling, invoices, appointments, or any business action.
-- "call X", "follow up with Y", "remind me to Z", "check on order", "contact client" → create_todo
-- Include date/time in the description if mentioned (e.g. "Call Alex E - Tuesday June 9 10am")
-
-OPERATIONAL TASKS → create_task (ONLY for physical in-person tasks)
-- Items to buy/order → task_type: "shopping"
-- Go somewhere physically → task_type: "errand"
-- Collect something in person → task_type: "pickup"
-- Bring/deliver physically → task_type: "dropoff"
-- When in doubt, use create_todo
-
-TASK QUERIES → list_my_tasks
-- "what are my tasks", "my todo list", "what do I have today"
-
-MARK DONE → complete_task (use todo id from list_my_tasks)
-- "done with X", "mark X complete", "finished Y"
-
-Reply with ONE short confirmation only. Examples:
-- create_task → "✓ Added: [title]"
-- create_todo → "✓ Todo: [description]"
-- list_my_tasks → list them cleanly, one per line with due date if set
-- complete_task → "✓ Done: [task]"`;
-
-    const modePreamble = isStaff
-      ? staffPreamble
-      : isAssistant
-      ? '\n\n[ASSISTANT MODE - Carl. All tools enabled. Be direct, brief. When Carl says send/text/message a client, IMMEDIATELY call send_sms_to_client or send_mms_card - never draft and ask. When Carl asks "what\'s on the schedule", "who do we have today/tomorrow/this week", or any schedule query - IMMEDIATELY call list_appointments (no args = today). Never say you cannot see the calendar.]' +
-        assistantSendRules
-      : `
-
-[CONCIERGE MODE - client interaction. Restricted tools. Never invent pricing, fitting times, appointment dates, or order status. If you do not have data from a tool, say you will check with Carl. Use add_dossier_observation silently. Also use create_todo silently whenever a client interaction reveals a follow-up action needed (e.g. client mentions a complaint, requests a callback, has an open invoice question, needs a rush order, or any situation requiring staff follow-up). Always include the client name and context in the todo description. When a known client contacts you, silently call get_client_tasks with their name to check for any pending follow-ups — mention relevant ones naturally if appropriate.]
-
-BOOKING POLICY: When a client wants to book/reschedule/cancel an appointment, ALWAYS offer two options: (1) "I can book it for you right now - just need your name and email" or (2) "I can text you our booking link: lstailors.com/book". Honor whichever they pick. If they choose option 1: call get_available_slots first, present 2-3 nearby options in plain English, then call book_fitting once they confirm and you have name + email. Never book without an explicit yes AND name + email. Default event_type is fitting unless they say consultation, alterations, pickup, or exchange.
-
-RESCHEDULE/CANCEL POLICY: To reschedule or cancel, call get_fitting_history first (always pass the customer's customer_id AND/OR their phone). Then:
-- If booking_uid is present (source=cal.com): call reschedule_booking or cancel_booking.
-- If booking_uid is null (source=apple-calendar): you CANNOT reschedule via API. Instead - (1) acknowledge the appointment by name and date, (2) ask the client what time works for them, (3) when they reply, call take_message with their request (urgency=normal), (4) tell the client: "I've passed your request to Carl - he will confirm the new time with you shortly." NEVER attempt reschedule_booking with a null uid.
-- If get_fitting_history returns no appointments at all: do NOT pretend one exists. Ask if they want to book fresh.
-
-ORDER POLICY: When a client asks about their order status, due date, or garments — call lookup_orders first. For delivery requests, change requests, pickup scheduling, or questions you cannot resolve from the data, use submit_order_request to alert Carl's team — then tell the client: "I've passed your request to the team and they'll be in touch shortly."
-
-ALTERATION POLICY: When a client asks about their alterations, tailoring, or garments:
-1. Call get_customer_tickets to retrieve their tickets by phone.
-2. For status: summarize the ticket state naturally (e.g. "Your jacket is Ready for pickup").
-3. For payment: call send_payment_link — this texts them the link directly. No need to tell them to visit a website.
-4. For delivery: collect their address, then call request_delivery — this creates a real delivery order in the system and notifies the team. Confirm to the client once created.
-5. To share their ticket page: call send_ticket_link — texts a signed link to alts.lstailors.com where they can see full details.
-Always be proactive: if a client's ticket is Ready and they haven't paid, offer the payment link. If they're asking about pickup, offer delivery as an option.
-
-IMPORTANT: get_fitting_history auto-searches by the caller's inbound phone as fallback, so even Apple Calendar appointments (which may not have a customer_id link) will surface - always check before saying no appointment exists.`;
-
-    const customerCtx = isStaff
-      ? `\nStaff sender: ${STAFF_PHONES_MAP[fromDigits]} (${fromDigits === "16462087809" ? "Office Manager" : "Messenger & Runner"}). This is an internal staff request, NOT a customer. Do not treat as a booking or customer inquiry.`
-      : isAssistant
-      ? "\nOperator: Carl Viola (owner). The sender of this SMS is Carl, NOT a client. Carl is your boss, not a customer to book. When Carl asks you to act on a CLIENT (book, text, message), you MUST first call lookup_customer to find that named client, then pass THEIR id/name/phone to subsequent tools. Never use Carl name, phone, or email as the attendee/recipient when the action is meant for a different person."
-      : customer
-      ? `\nCustomer: ${(customer as any).first_name} ${(customer as any).last_name} | Phone: ${(customer as any).phone} | VIP: ${(customer as any).is_vip ?? false} | ID: ${(customer as any).id}`
-      : `\nContact: ${from} (not in database)`;
-    const ownerCtx = isAssistant ? "\nYou are speaking with Carl Viola. Address him as \"C\". Skip pleasantries." : "";
-
-    const fullSystem =
-      GROK_IDENTITY +
-      timeBlock +
-      antiHallucination +
-      "\n\n" +
-      systemPrompt +
-      modePreamble +
-      customerCtx +
-      ownerCtx +
-      (kbContext ? `\n\nKnowledge Base:\n${kbContext}` : "");
-
-    const XAI_KEY = process.env.XAI_API_KEY ?? "";
-    const currentMessages: { role: string; content: string | unknown[]; tool_calls?: unknown[]; tool_call_id?: string; name?: string }[] = [
-      { role: "system", content: fullSystem },
-      ...messages,
-      { role: "user", content: body },
-    ];
-
-    let finalText = "";
-    for (let round = 0; round < 6; round++) {
-      let xaiResp: Record<string, unknown>;
-      try {
-        const r = await fetch("https://api.x.ai/v1/chat/completions", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${XAI_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: "grok-4.20-0309-non-reasoning",
-            messages: currentMessages,
-            tools: isStaff ? STAFF_TOOLS : TOOLS,
-            tool_choice: "auto",
-            max_tokens: 500,
-            temperature: 0.3,
-          }),
-        });
-        xaiResp = (await r.json()) as Record<string, unknown>;
-      } catch (_) {
-        finalText = "I am briefly unavailable - someone will be in touch within the hour.";
-        break;
-      }
-      const choice = (xaiResp as { choices?: { finish_reason: string; message: Record<string, unknown> }[] }).choices?.[0];
-      if (!choice) {
-        finalText = "I am briefly unavailable. Please try again in a moment.";
-        break;
-      }
-      const msg = choice.message;
-      currentMessages.push(msg as { role: string; content: string });
-
-      if (choice.finish_reason === "tool_calls" && Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
-        const toolResults: { role: string; tool_call_id: string; name: string; content: string }[] = [];
-        for (const tc of msg.tool_calls as { id: string; function: { name: string; arguments: string } }[]) {
-          let targs: Record<string, unknown> = {};
-          try {
-            targs = JSON.parse(tc.function.arguments);
-          } catch {
-            targs = {};
-          }
-          const result = await executeTool(tc.function.name, targs, from, customer, isAssistant);
-          toolResults.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: result });
-        }
-        currentMessages.push(...(toolResults as { role: string; content: string }[]));
-        continue;
-      }
-      finalText = String(msg.content ?? "").trim();
-      break;
-    }
-    if (!finalText) finalText = "Let me check on that and get right back to you.";
-
-    finalText = sanitizeIdentity(finalText);
+    // ── Run the shared Sofia agent core (LLM call + tool loop) ──
+    const agentResult = await runSofiaAgent(from, body, isAssistant, isStaff, mode, customer, fromDigits);
+    let finalText = agentResult.finalText;
+    const toolCallCount = agentResult.toolCalls.length;
 
     // Trim to 320 chars for non-assistant clients
     if (!isAssistant && finalText.length > 320) {
@@ -1801,7 +1829,7 @@ IMPORTANT: get_fitting_history auto-searches by the caller's inbound phone as fa
           client_id: customer ? String((customer as any).id) : null,
           direction: "outbound",
           content: finalText,
-          metadata: { mode, rounds: currentMessages.length },
+          metadata: { mode, rounds: toolCallCount },
         });
       } catch (_) {}
     }
@@ -2005,6 +2033,83 @@ sofiaRouter.post("/send", async (c) => {
   if (!result.ok) return c.json({ error: { message: result.error ?? "ERPNext SMS send failed" } }, 502);
 
   return c.json({ data: { ok: true, sid: result.sid, message_name: result.message_name } });
+});
+
+// ── POST /api/sofia/chat ── staff "Ask Sofia" panel
+// Reuses the exact same brain/tools as the Twilio ASSISTANT MODE path (the
+// mode Carl gets via SMS), but reached over authenticated HTTP from the web
+// app instead of texting Sofia's Twilio number. Forces ASSISTANT MODE for
+// every call -- NO-DRAFT / NEVER-LIE rules always on, no weakening for this
+// surface. Restricted to super_admin / store_manager (NOT salesperson/driver).
+sofiaRouter.post("/chat", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (user.role !== "super_admin" && user.role !== "store_manager") {
+    return c.json({ error: { message: "Forbidden — Ask Sofia is limited to managers/admins" } }, 403);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const message = String(body?.message ?? "").trim();
+  if (!message) return c.json({ error: { message: "message required" } }, 400);
+
+  // Identify as Carl's assistant identity so the brain runs the EXACT same
+  // system-prompt branch (isAssistant=true) as Carl's SMS path -- same
+  // no-draft/never-lie guardrails, same tool access. `from` here is used
+  // only to key conversation-history lookup and by tools that need a
+  // "sender" phone -- it does NOT trigger any outbound Twilio send to
+  // this number (that only happens in the Twilio-specific processMessage
+  // path, which this endpoint does not call).
+  const from = C_MOBILE;
+  const fromDigits = from.replace(/\D/g, "");
+  const isAssistant = true;
+  const isStaff = false;
+  const mode = "STAFF_WEB_CHAT";
+
+  let customer: Record<string, unknown> | null = null;
+
+  let agentResult: { finalText: string; toolCalls: { name: string; args: Record<string, unknown>; result: unknown }[] };
+  try {
+    agentResult = await runSofiaAgent(from, message, isAssistant, isStaff, mode, customer, fromDigits);
+  } catch (e) {
+    console.error("[sofia/chat] runSofiaAgent error:", e);
+    return c.json({ error: { message: "Sofia is briefly unavailable. Try again in a moment." } }, 502);
+  }
+
+  // Build a structured "what Sofia did" receipt list from the tool calls
+  // that actually take action (SMS/MMS sends), so the UI can show a clear
+  // confirmation rather than just a chat bubble.
+  const actions = agentResult.toolCalls
+    .filter((tc) => tc.name === "send_sms_to_client" || tc.name === "send_mms_card")
+    .map((tc) => {
+      const r = (tc.result ?? {}) as Record<string, unknown>;
+      return {
+        tool: tc.name,
+        ok: Boolean(r.ok),
+        sent_to: (r.sent_to as string) ?? (tc.args.to_phone as string) ?? null,
+        recipient_name: (r.recipient_name as string) ?? null,
+        message: (tc.args.body as string) ?? (tc.args.template_key as string) ?? null,
+        twilio_sid: (r.twilio_sid as string) ?? null,
+        message_name: (r.message_name as string) ?? null,
+        error: (r.error as string) ?? null,
+      };
+    });
+
+  const lookups = agentResult.toolCalls
+    .filter((tc) => tc.name === "lookup_customer")
+    .map((tc) => ({ tool: tc.name, query: tc.args.query ?? null, result: tc.result }));
+
+  try {
+    await postToRaven(`*[Ask Sofia — ${user.email ?? user.role}]* _${message}_\nSofia: ${agentResult.finalText}`);
+  } catch (_) {}
+
+  return c.json({
+    data: {
+      reply: agentResult.finalText,
+      tool_calls: agentResult.toolCalls,
+      actions,
+      lookups,
+    },
+  });
 });
 
 // ── GET /api/sofia/voice-approvals ──

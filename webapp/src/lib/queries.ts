@@ -601,6 +601,36 @@ export function useSofiaVoiceApprovals() {
   });
 }
 
+// "Ask Sofia" staff chat panel — forces Sofia's ASSISTANT MODE brain (same
+// no-draft/never-lie guardrails Carl gets via SMS) over authenticated HTTP.
+// Returns Sofia's reply text plus a structured list of tool calls/actions
+// (e.g. which customer was resolved, what SMS was sent, twilio_sid) so the
+// UI can render a "what Sofia did" receipt, not just a chat bubble.
+export type SofiaChatAction = {
+  tool: string;
+  ok: boolean;
+  sent_to: string | null;
+  recipient_name: string | null;
+  message: string | null;
+  twilio_sid: string | null;
+  message_name: string | null;
+  error: string | null;
+};
+
+export type SofiaChatResponse = {
+  reply: string;
+  tool_calls: { name: string; args: Record<string, unknown>; result: unknown }[];
+  actions: SofiaChatAction[];
+  lookups: { tool: string; query: unknown; result: unknown }[];
+};
+
+export function useSofiaChat() {
+  return useMutation({
+    mutationFn: (message: string) => api.post<SofiaChatResponse>("/api/sofia/chat", { message }),
+  });
+}
+
+
 export function useMaestroApprovalCount() {
   return useQuery({
     queryKey: ["maestro", "approvals", "count"],
