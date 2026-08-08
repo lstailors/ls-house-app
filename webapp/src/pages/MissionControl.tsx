@@ -24,6 +24,7 @@ import { formatRelative } from "@ls/design/format";
 import { BoardPanel, FleetCronsPanel, HistoryPanel } from "@/pages/mission-control/McPanels";
 import { AlertsBell } from "@/pages/mission-control/AlertsBell";
 import { HermesMirrorPanel } from "@/pages/mission-control/HermesMirrorPanel";
+import { CycleTimeMiniChart } from "@/components/logistics/CycleTimeMiniChart";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -253,6 +254,9 @@ function AgentStatusCard({ agent, costToday, onClick }: {
           </span>
         )}
       </div>
+
+      {/* Marco cycle-time mini-chart */}
+      {agent.slug === "marco" && <CycleTimeMiniChart />}
     </div>
   );
 }
