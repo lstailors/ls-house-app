@@ -9,6 +9,7 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
 import { erpList } from "../lib/erp";
+import { grokChat } from "../lib/grok";
 
 export const altsRouter = new Hono();
 
@@ -702,6 +703,256 @@ altsRouter.get("/schedule-load", async (c) => {
       from: rangeStart,
       to: rangeEnd,
       days: nyDates.map((iso) => byDate[iso]),
+    },
+  });
+});
+
+/**
+ * GET /api/alts/capacity-alert?origin=NYC&days=14&lookback=90
+ *
+ * TileOS capacity-AI overbooking alert.
+ * Compares upcoming booked minutes (sum of line est_minutes by due_date) vs
+ * historical daily throughput (completed tickets last `lookback` days).
+ * Returns per-day load status + Grok-generated alert summary.
+ *
+ * Heat states match SPEC 065a §2.2:
+ *   empty  pct == 0
+ *   low    0 < pct <= 0.33
+ *   med    0.33 < pct <= 0.66
+ *   high   0.66 < pct < 1.0
+ *   over   pct >= 1.0  ← overbooking alert triggers here
+ */
+altsRouter.get("/capacity-alert", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const origin = (c.req.query("origin") ?? "NYC").toUpperCase();
+  const nDays = Math.min(28, Math.max(7, Number(c.req.query("days") || 14) || 14));
+  const lookbackDays = Math.min(180, Math.max(30, Number(c.req.query("lookback") || 90) || 90));
+
+  // ------------------------------------------------------------------
+  // 1. Build forward date range (NYC timezone, skip Sundays)
+  // ------------------------------------------------------------------
+  const todayNy = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const nyDates: string[] = [];
+  {
+    const base = new Date(`${todayNy}T12:00:00-04:00`);
+    for (let i = 0; i < nDays + 4; i++) {
+      const d = new Date(base.getTime() + i * 86400000);
+      const iso = d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+      const wd = new Date(`${iso}T12:00:00`).getDay();
+      if (wd === 0) continue; // skip Sunday
+      if (!nyDates.includes(iso)) nyDates.push(iso);
+      if (nyDates.length >= nDays) break;
+    }
+  }
+  const fwdStart = nyDates[0];
+  const fwdEnd = nyDates[nyDates.length - 1];
+
+  // ------------------------------------------------------------------
+  // 2. Historical lookback: tickets picked up in the last `lookbackDays` days
+  // ------------------------------------------------------------------
+  const histEndDt = new Date(`${todayNy}T23:59:59-04:00`);
+  const histStartDt = new Date(histEndDt.getTime() - lookbackDays * 86400000);
+  const histStart = histStartDt.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const histEnd = todayNy;
+
+  const histTickets = await erpList<any>("Alteration Ticket", {
+    filters: [
+      ["workflow_state", "=", "Picked Up"],
+      ["origin_location", "=", origin],
+      ["picked_up_at", ">=", `${histStart} 00:00:00`],
+      ["picked_up_at", "<=", `${histEnd} 23:59:59`],
+    ],
+    fields: ["name", "picked_up_at", "ticket_total"],
+    limit: 2000,
+    order_by: "picked_up_at asc",
+  }).catch(() => [] as any[]);
+
+  // Fetch lines for historical tickets to get est_minutes
+  const histNames = histTickets.map((t: any) => t.name);
+  let histLines: any[] = [];
+  if (histNames.length > 0) {
+    // Batch in chunks of 100 to avoid huge IN clauses
+    for (let i = 0; i < histNames.length; i += 100) {
+      const chunk = histNames.slice(i, i + 100);
+      const rows = await erpList<any>("Alteration Ticket Line", {
+        parent: "Alteration Ticket",
+        filters: [["parent", "in", chunk]],
+        fields: ["parent", "est_minutes", "estimated_minutes"],
+        limit: 5000,
+      }).catch(() => [] as any[]);
+      histLines = histLines.concat(rows);
+    }
+  }
+
+  // Build map: ticket → total est_minutes
+  const histLinesByTicket = new Map<string, number>();
+  for (const l of histLines) {
+    const mins = Number(l.est_minutes ?? l.estimated_minutes ?? 15) || 15;
+    histLinesByTicket.set(l.parent, (histLinesByTicket.get(l.parent) ?? 0) + mins);
+  }
+
+  // Bucket by pickup date → daily total minutes completed
+  const histByDate = new Map<string, number>();
+  for (const t of histTickets) {
+    const d = String(t.picked_up_at ?? "").slice(0, 10);
+    if (!d) continue;
+    const mins = histLinesByTicket.get(t.name) ?? 30; // fallback 30m if no lines
+    histByDate.set(d, (histByDate.get(d) ?? 0) + mins);
+  }
+
+  // Daily throughput array (only days with at least one completed ticket = shop was open)
+  const dailyThroughputVals = Array.from(histByDate.values()).filter((v) => v > 0);
+  dailyThroughputVals.sort((a, b) => a - b);
+
+  const avgThroughput =
+    dailyThroughputVals.length > 0
+      ? dailyThroughputVals.reduce((s, v) => s + v, 0) / dailyThroughputVals.length
+      : 240; // default 4h if no history
+
+  // p75 = capacity ceiling before "over" alert
+  const p75Idx = Math.floor(dailyThroughputVals.length * 0.75);
+  const p75Throughput =
+    dailyThroughputVals.length > 0 ? dailyThroughputVals[p75Idx] ?? avgThroughput : avgThroughput;
+
+  // ------------------------------------------------------------------
+  // 3. Forward load: open tickets in the date range, by due_date
+  // ------------------------------------------------------------------
+  const fwdTickets = await erpList<any>("Alteration Ticket", {
+    filters: [
+      ["due_date", ">=", fwdStart],
+      ["due_date", "<=", fwdEnd],
+      ["origin_location", "=", origin],
+      ["workflow_state", "not in", ["Picked Up", "Cancelled"]],
+    ],
+    fields: ["name", "due_date", "is_rush", "workflow_state"],
+    limit: 1000,
+    order_by: "due_date asc",
+  }).catch(() => [] as any[]);
+
+  const fwdNames = fwdTickets.map((t: any) => t.name);
+  let fwdLines: any[] = [];
+  if (fwdNames.length > 0) {
+    for (let i = 0; i < fwdNames.length; i += 100) {
+      const chunk = fwdNames.slice(i, i + 100);
+      const rows = await erpList<any>("Alteration Ticket Line", {
+        parent: "Alteration Ticket",
+        filters: [["parent", "in", chunk]],
+        fields: ["parent", "est_minutes", "estimated_minutes"],
+        limit: 5000,
+      }).catch(() => [] as any[]);
+      fwdLines = fwdLines.concat(rows);
+    }
+  }
+
+  const fwdLinesByTicket = new Map<string, number>();
+  for (const l of fwdLines) {
+    const mins = Number(l.est_minutes ?? l.estimated_minutes ?? 15) || 15;
+    fwdLinesByTicket.set(l.parent, (fwdLinesByTicket.get(l.parent) ?? 0) + mins);
+  }
+
+  // Per-day forward load
+  function heatState(pct: number): string {
+    if (pct === 0) return "empty";
+    if (pct <= 0.33) return "low";
+    if (pct <= 0.66) return "med";
+    if (pct < 1.0) return "high";
+    return "over";
+  }
+
+  type DayLoad = {
+    date: string;
+    booked_minutes: number;
+    capacity_minutes: number;
+    pct: number;
+    heat: string;
+    ticket_count: number;
+    rush_count: number;
+    overbooking_delta_minutes: number; // > 0 = over by this many minutes
+  };
+
+  const dayLoads: DayLoad[] = nyDates.map((iso) => {
+    const dayTickets = fwdTickets.filter((t: any) => String(t.due_date || "").slice(0, 10) === iso);
+    let bookedMin = 0;
+    let rushCount = 0;
+    for (const t of dayTickets) {
+      bookedMin += fwdLinesByTicket.get(t.name) ?? 15;
+      if (t.is_rush) rushCount++;
+    }
+    const pct = p75Throughput > 0 ? bookedMin / p75Throughput : 0;
+    return {
+      date: iso,
+      booked_minutes: bookedMin,
+      capacity_minutes: Math.round(p75Throughput),
+      pct: Math.round(pct * 100) / 100,
+      heat: heatState(pct),
+      ticket_count: dayTickets.length,
+      rush_count: rushCount,
+      overbooking_delta_minutes: Math.max(0, Math.round(bookedMin - p75Throughput)),
+    };
+  });
+
+  const overDays = dayLoads.filter((d) => d.heat === "over");
+  const hasAlert = overDays.length > 0;
+
+  // ------------------------------------------------------------------
+  // 4. Grok AI summary
+  // ------------------------------------------------------------------
+  const aiSummary = await grokChat(
+    [
+      {
+        role: "system",
+        content:
+          "You are Rocco, the production manager at L&S Custom Tailors NYC. " +
+          "Give a concise, direct overbooking alert (3-5 sentences max). " +
+          "Flag specific dates that are over capacity. Suggest one concrete action per overbooked day " +
+          "(e.g. spread tickets, call ahead, add tailor time). Tone: direct, no fluff.",
+      },
+      {
+        role: "user",
+        content:
+          `Historical daily throughput baseline: avg ${Math.round(avgThroughput)}m, p75 capacity ceiling ${Math.round(p75Throughput)}m (lookback ${lookbackDays} days, ${histTickets.length} completed tickets). ` +
+          `Forward load next ${nDays} working days: ` +
+          dayLoads
+            .filter((d) => d.heat !== "empty")
+            .map(
+              (d) =>
+                `${d.date}: ${d.booked_minutes}m booked (${d.ticket_count} tickets, ${d.rush_count} rush) — ${d.heat}${d.overbooking_delta_minutes > 0 ? ` over by ${d.overbooking_delta_minutes}m` : ""}`,
+            )
+            .join("; ") +
+          `. ${overDays.length} day(s) over capacity. Provide your alert now.`,
+      },
+    ],
+    { maxTokens: 250, temperature: 0.3 },
+  );
+
+  // ------------------------------------------------------------------
+  // 5. Response
+  // ------------------------------------------------------------------
+  return c.json({
+    data: {
+      origin,
+      generated_at: new Date().toISOString(),
+      lookback_days: lookbackDays,
+      historical: {
+        tickets_completed: histTickets.length,
+        days_with_data: dailyThroughputVals.length,
+        avg_daily_minutes: Math.round(avgThroughput),
+        p75_daily_minutes: Math.round(p75Throughput),
+        capacity_ceiling_minutes: Math.round(p75Throughput),
+      },
+      forward_days: nDays,
+      alert: hasAlert,
+      over_days: overDays.map((d) => ({
+        date: d.date,
+        booked_minutes: d.booked_minutes,
+        over_by_minutes: d.overbooking_delta_minutes,
+        ticket_count: d.ticket_count,
+        rush_count: d.rush_count,
+      })),
+      days: dayLoads,
+      ai_summary: aiSummary || null,
     },
   });
 });
