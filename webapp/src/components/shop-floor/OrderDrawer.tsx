@@ -1,6 +1,9 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ExternalLink, Copy, Flame, Truck, Check, ChevronUp, ChevronDown, Ruler,
+  ScanLine, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { YZOrder } from "@ls/types";
@@ -11,9 +14,10 @@ import { Button } from "@ls/design/ui/button";
 import { StatusBadge } from "./StatusBadge";
 import { GarmentBreakdown } from "./GarmentIcons";
 import {
-  formatFullDate, shipTone, shipToneClass, isRush, trackingLink,
+  formatFullDate, shipTone, shipToneClass, isRush, trackingLink, ALL_STATUSES,
 } from "@/lib/shopFloor";
 import { cn } from "@ls/design/utils";
+import { api } from "@ls/api-client";
 
 const ERP_MTMPRO_BASE = "https://erp.lstailors.com/app/mtmpro-order";
 
@@ -70,6 +74,10 @@ function CheckFlag({ label, on }: { label: string; on: boolean }) {
 // ── Drawer ───────────────────────────────────────────────────────────────────
 
 export function OrderDrawer({ orders, order, onClose, onNavigate }: Props) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [advancing, setAdvancing] = useState<string | null>(null);
+
   const index = order ? orders.findIndex((o) => o.name === order.name) : -1;
   const prev = index > 0 ? orders[index - 1] : null;
   const next = index >= 0 && index < orders.length - 1 ? orders[index + 1] : null;
@@ -101,6 +109,38 @@ export function OrderDrawer({ orders, order, onClose, onNavigate }: Props) {
       toast.error("Couldn't copy");
     }
   };
+
+  // Quick-advance: call the backend directly without opening the scanner.
+  const advanceStatus = useCallback(
+    async (toStatus: string) => {
+      if (!order || advancing) return;
+      setAdvancing(toStatus);
+      try {
+        const res = await api.post<{ ok: boolean; message?: string }>(
+          "/api/scanner/advance-yz-status",
+          { yz_record_name: order.name, to_status: toStatus },
+        );
+        if (res.ok) {
+          toast.success(`Status → ${toStatus}`);
+          void qc.invalidateQueries({ queryKey: ["yz", "production"] });
+        } else {
+          toast.error(res.message ?? "Advance failed");
+        }
+      } catch {
+        toast.error("Advance failed — please try again");
+      } finally {
+        setAdvancing(null);
+      }
+    },
+    [order, advancing, qc],
+  );
+
+  // Navigate to the scanner pre-seeded with the order's barcode for full scan flow.
+  const openScanner = useCallback(() => {
+    if (!order) return;
+    onClose();
+    navigate(`/scanner?prefill=${encodeURIComponent(order.order_no)}`);
+  }, [order, navigate, onClose]);
 
   const track = order ? trackingLink(order.tracking_no) : null;
   const tone = order ? shipTone(order) : "none";
@@ -264,6 +304,48 @@ export function OrderDrawer({ orders, order, onClose, onNavigate }: Props) {
                 </Section>
               ) : null}
             </div>
+
+            {/* Stage Transition — scan barcode or tap a status button */}
+            <Section title="Stage Transition">
+              <div className="space-y-2">
+                <p className="text-xs text-cream-dim leading-relaxed">
+                  Scan the order barcode to advance stage, or tap a status below.
+                </p>
+                {/* Scan button */}
+                <button
+                  type="button"
+                  onClick={openScanner}
+                  className="flex w-full items-center gap-2 rounded-xl border border-brass/30 bg-brass/10 px-3 py-2.5 text-sm font-medium text-brass-light transition-colors hover:bg-brass/20"
+                >
+                  <ScanLine className="h-4 w-4 shrink-0" />
+                  Scan barcode to advance
+                </button>
+                {/* Quick-status buttons (all valid next states, current excluded) */}
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {ALL_STATUSES.filter(
+                    (s) => s !== order.production_status && s !== "Canceled",
+                  ).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      disabled={!!advancing}
+                      onClick={() => void advanceStatus(s)}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                        advancing === s
+                          ? "border-brass/40 bg-brass/20 text-brass-light"
+                          : "border-brass/15 text-cream-dim hover:border-brass/35 hover:bg-brass/10 hover:text-cream",
+                      )}
+                    >
+                      {advancing === s ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : null}
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </Section>
 
             {/* Footer */}
             <div className="flex items-center gap-2 border-t border-brass/12 px-5 py-3.5">

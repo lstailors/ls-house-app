@@ -3,7 +3,8 @@
 
 import { Hono } from "hono";
 import { canSeeFinancials, getAuthedUser, resolveLocationCode } from "../lib/scope";
-import { erpList } from "../lib/erp";
+import { erpList, erpGet, erpUpdate } from "../lib/erp";
+import { YZProductionStatus } from "../types";
 import {
   listSmsMessagesFiltered,
   insertAgentBrief,
@@ -1292,6 +1293,11 @@ dashboardRouter.get("/alts-home", async (c) => {
           if (cn && !lateNames.includes(cn) && lateNames.length < 3) lateNames.push(cn);
         }
       }
+      if (t.lsh_delay_reason && st !== "Picked Up" && st !== "Cancelled") {
+        stalledCount += 1;
+        const reason = t.lsh_delay_reason as string;
+        stalledReasons[reason] = (stalledReasons[reason] ?? 0) + 1;
+      }
       if (!newest || (t.creation || "") > (newest.creation || "")) {
         newest = t;
       }
@@ -1486,6 +1492,7 @@ dashboardRouter.get("/alts-home", async (c) => {
           openInvoicesAmount,
           oldestUnpaidDays,
           lateTransferCount,
+          stalledCount,
           doubleBookedSlots,
         },
         feeds: {
@@ -1499,6 +1506,7 @@ dashboardRouter.get("/alts-home", async (c) => {
           lastProgress,
           lastTouchedCustomer,
           lateTransferNames: lateNames,
+          stalledReasons,
           conflictDetails,
         },
       },
@@ -1507,4 +1515,171 @@ dashboardRouter.get("/alts-home", async (c) => {
     console.error("[alts-home]", e?.message);
     return c.json({ error: { message: e?.message ?? "alts-home failed" } }, 502);
   }
+});
+
+// ── YZ Stage Advance via Barcode / QR Scan ────────────────────────────────────
+//
+// POST /api/dashboard/advance-yz-status
+//
+// Body:
+//   { scan: string, target_status: YZProductionStatus }
+//
+// scan    — the barcode / QR payload from a shop-floor scan; may be:
+//           • YZ Production Tracker name (e.g. "YZ-001234")
+//           • mtmpro_order ref (e.g. "LST-122470-1")
+//           • order_no (e.g. "M.07.25" style as printed on tags)
+//
+// target_status — the stage to advance to. Must be a valid YZProductionStatus
+//                 value and must respect the allowed-transition matrix.
+//
+// Returns:
+//   200 { data: { name, order_no, customer_name, previous_status, production_status } }
+//   400 { error: { message } }  — bad payload / invalid status / disallowed transition
+//   404 { error: { message } }  — scan token not matched to any YZ record
+//   502 { error: { message } }  — ERP write failed
+
+// Transitions that are permitted from a given status.
+// Keys are current status, values are the set of statuses you may advance to.
+// Only forward / logical transitions are allowed — no skipping across the pipeline.
+const ALLOWED_TRANSITIONS: Record<string, Set<string>> = {
+  "Fabric Not Received": new Set(["In Production", "Rush", "On Pause", "Canceled"]),
+  "In Production":       new Set(["Rush", "Shipped", "On Pause", "Canceled"]),
+  "Rush":                new Set(["In Production", "Shipped", "On Pause", "Canceled"]),
+  "On Pause":            new Set(["In Production", "Rush", "Shipped", "Canceled"]),
+  "Shipped":             new Set(["In Production"]),  // rare: returned for rework
+  "Canceled":            new Set([]),                  // terminal — locked
+};
+
+const FLOOR_ROLES = new Set(["super_admin", "store_manager", "salesperson", "tailor"]);
+
+dashboardRouter.post("/advance-yz-status", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!FLOOR_ROLES.has(user.role)) {
+    return c.json({ error: { message: "Forbidden: floor staff only" } }, 403);
+  }
+
+  // ── Parse + validate body ─────────────────────────────────────────────────
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: { message: "Invalid JSON body" } }, 400);
+  }
+
+  const raw = body as Record<string, unknown>;
+  const scan = typeof raw?.scan === "string" ? raw.scan.trim() : "";
+  const targetStatus = typeof raw?.target_status === "string" ? raw.target_status.trim() : "";
+
+  if (!scan) {
+    return c.json({ error: { message: "scan is required" } }, 400);
+  }
+  if (!targetStatus) {
+    return c.json({ error: { message: "target_status is required" } }, 400);
+  }
+
+  // Validate target is a known status value.
+  const validStatuses = new Set(YZProductionStatus.options as readonly string[]);
+  if (!validStatuses.has(targetStatus)) {
+    return c.json(
+      {
+        error: {
+          message: `Invalid target_status "${targetStatus}". Valid values: ${[...validStatuses].join(", ")}`,
+        },
+      },
+      400,
+    );
+  }
+
+  // ── Resolve the scan token to a YZ Production Tracker record ─────────────
+  // Try three match strategies in order: name exact, mtmpro_order, order_no.
+  interface YZSlim {
+    name: string;
+    order_no: string | null;
+    production_status: string | null;
+    customer_name: string | null;
+  }
+  const YZ_SLIM_FIELDS = ["name", "order_no", "production_status", "customer_name"];
+
+  let yzRecord: YZSlim | null = null;
+
+  // 1. Direct name / record ID match.
+  const byName = await erpGet<YZSlim>("YZ Production Tracker", scan).catch(() => null);
+  if (byName?.name) {
+    yzRecord = byName;
+  }
+
+  // 2. MTMPro order reference (e.g. "LST-122470-1").
+  if (!yzRecord) {
+    const byMtm = await erpList<YZSlim>("YZ Production Tracker", {
+      filters: [["mtmpro_order", "=", scan]],
+      fields: YZ_SLIM_FIELDS,
+      limit: 1,
+    }).catch(() => []);
+    if (byMtm.length > 0) yzRecord = byMtm[0]!;
+  }
+
+  // 3. order_no field (printed on physical tag).
+  if (!yzRecord) {
+    const byOrderNo = await erpList<YZSlim>("YZ Production Tracker", {
+      filters: [["order_no", "=", scan]],
+      fields: YZ_SLIM_FIELDS,
+      limit: 1,
+    }).catch(() => []);
+    if (byOrderNo.length > 0) yzRecord = byOrderNo[0]!;
+  }
+
+  if (!yzRecord) {
+    return c.json(
+      { error: { message: `No YZ Production Tracker record found for scan: "${scan}"` } },
+      404,
+    );
+  }
+
+  // ── Validate the transition ───────────────────────────────────────────────
+  const currentStatus =
+    (yzRecord.production_status ?? "").trim() || "In Production";
+
+  if (currentStatus === targetStatus) {
+    return c.json(
+      { error: { message: `Already at status "${targetStatus}" — no change needed` } },
+      400,
+    );
+  }
+
+  const allowed = ALLOWED_TRANSITIONS[currentStatus] ?? new Set();
+  if (!allowed.has(targetStatus)) {
+    return c.json(
+      {
+        error: {
+          message: `Transition from "${currentStatus}" → "${targetStatus}" is not allowed. Permitted: ${[...allowed].join(", ") || "none (terminal state)"}`,
+        },
+      },
+      400,
+    );
+  }
+
+  // ── Apply the update ──────────────────────────────────────────────────────
+  try {
+    await erpUpdate("YZ Production Tracker", yzRecord.name, {
+      production_status: targetStatus,
+    });
+  } catch (err: any) {
+    console.error("[dashboard:advance-yz-status] ERP update failed:", err?.message);
+    return c.json({ error: { message: "ERP write failed — status not changed" } }, 502);
+  }
+
+  console.log(
+    `[dashboard:advance-yz-status] ${yzRecord.name} ${currentStatus} → ${targetStatus} by ${user.email ?? user.id}`,
+  );
+
+  return c.json({
+    data: {
+      name: yzRecord.name,
+      order_no: yzRecord.order_no ?? yzRecord.name,
+      customer_name: yzRecord.customer_name ?? null,
+      previous_status: currentStatus,
+      production_status: targetStatus,
+    },
+  });
 });

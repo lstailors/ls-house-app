@@ -429,6 +429,7 @@ type AltsHomeFeed = {
     openInvoicesAmount: number;
     oldestUnpaidDays: number | null;
     lateTransferCount: number;
+    stalledCount: number;
     doubleBookedSlots: number;
   };
   feeds: {
@@ -441,6 +442,7 @@ type AltsHomeFeed = {
     } | null;
     lastTouchedCustomer: { name: string; modified: string | null } | null;
     lateTransferNames: string[];
+    stalledReasons: Record<string, number>;
     conflictDetails: Array<{ a: string; b: string; tailor: string; at: string }>;
   };
 };
@@ -660,6 +662,24 @@ export default function HomeTiles() {
   const shopLive = (() => {
     const ip = c?.inProgress ?? 0;
     const ah = c?.atHome ?? 0;
+    const stalled = c?.stalledCount ?? 0;
+    if (stalled > 0) {
+      const reasons = feeds?.stalledReasons ?? {};
+      const topReasons = Object.entries(reasons)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 2)
+        .map(([r]) => r)
+        .join(" / ");
+      return {
+        text: (
+          <>
+            <b>{stalled}</b> stalled{topReasons ? ` · ${topReasons}` : ""}{" "}
+            · <b>{ip}</b> in prog
+          </>
+        ),
+        tone: "ro" as LiveTone,
+      };
+    }
     const tone: LiveTone = ip > 0 || ah > 0 ? "am" : "em";
     return {
       text: (

@@ -11,5 +11,31 @@
     "read_only": 1,
     "in_list_view": 1,
     "module": "LS Alterations"
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Alteration Ticket-lsh_delay_reason",
+    "dt": "Alteration Ticket",
+    "fieldname": "lsh_delay_reason",
+    "label": "Delay Reason",
+    "fieldtype": "Select",
+    "options": "\nCustoms\nVendor\nWeather\nOther",
+    "insert_after": "lsh_received_at",
+    "in_list_view": 0,
+    "in_standard_filter": 1,
+    "allow_on_submit": 0,
+    "permlevel": 0
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Alteration Ticket-lsh_delay_notes",
+    "dt": "Alteration Ticket",
+    "fieldname": "lsh_delay_notes",
+    "label": "Delay Notes",
+    "fieldtype": "Small Text",
+    "insert_after": "lsh_delay_reason",
+    "depends_on": "eval:doc.lsh_delay_reason",
+    "allow_on_submit": 0,
+    "permlevel": 0
   }
 ]

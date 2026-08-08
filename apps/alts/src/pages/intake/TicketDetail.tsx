@@ -66,6 +66,8 @@ interface AlterationTicketDoc {
   customer_mobile?: string
   customer_email?: string
   notified_ready_at?: string
+  lsh_delay_reason?: string | null
+  lsh_delay_notes?: string | null
   garments?: Array<{
     name: string
     garment_id: string
@@ -797,6 +799,113 @@ function NotifySection({
   )
 }
 
+// ── DelayReasonSection ────────────────────────────────────────────────────
+
+const DELAY_REASONS = ["Customs", "Vendor", "Weather", "Other"] as const
+
+function DelayReasonSection({
+  ticket,
+  ticketName,
+}: {
+  ticket: AlterationTicketDoc
+  ticketName: string
+}) {
+  const queryClient = useQueryClient()
+  const [reason, setReason] = useState<string>(ticket.lsh_delay_reason ?? "")
+  const [notes, setNotes] = useState<string>(ticket.lsh_delay_notes ?? "")
+  const [notesOpen, setNotesOpen] = useState(false)
+
+  useEffect(() => {
+    setReason(ticket.lsh_delay_reason ?? "")
+    setNotes(ticket.lsh_delay_notes ?? "")
+  }, [ticket.lsh_delay_reason, ticket.lsh_delay_notes])
+
+  const delayMutation = useMutation({
+    mutationFn: ({ r, n }: { r: string; n: string }) =>
+      api.patch(`/api/intake-alterations/tickets/${ticketName}/delay-reason`, {
+        reason: r,
+        notes: n,
+      }),
+    onSuccess: (_data, vars) => {
+      toast.success(vars.r ? `Delay tagged: ${vars.r}` : "Delay tag cleared")
+      queryClient.invalidateQueries({ queryKey: ["ticket", ticketName] })
+    },
+    onError: () => toast.error("Failed to save delay tag"),
+  })
+
+  function handleReasonChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const val = e.target.value
+    setReason(val)
+    delayMutation.mutate({ r: val, n: notes })
+    if (!val) setNotesOpen(false)
+    else setNotesOpen(true)
+  }
+
+  function handleNotesSave() {
+    if (notes !== (ticket.lsh_delay_notes ?? "")) {
+      delayMutation.mutate({ r: reason, n: notes })
+    }
+  }
+
+  const isStalled = Boolean(reason)
+
+  return (
+    <section
+      className={cn(
+        "glass-panel rounded-lg p-5 space-y-3",
+        isStalled && "border border-red-400/30 bg-red-900/5",
+      )}
+    >
+      <h2 className="ui-label text-cream-dim flex items-center gap-2">
+        <AlertTriangle size={14} className={isStalled ? "text-red-400" : undefined} />
+        Delay Reason
+      </h2>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex-1 min-w-[180px]">
+          <select
+            value={reason}
+            onChange={handleReasonChange}
+            disabled={delayMutation.isPending}
+            className={cn(
+              "w-full bg-forest-raised border rounded-md px-3 py-2",
+              "text-cream text-base sm:text-sm focus:outline-none focus:ring-1 focus:ring-brass-shimmer/50",
+              "disabled:opacity-60",
+              isStalled
+                ? "border-red-400/40 text-red-300"
+                : "border-brass/20",
+            )}
+          >
+            <option value="">— No delay —</option>
+            {DELAY_REASONS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </div>
+        {delayMutation.isPending && (
+          <span className="text-cream-dim text-xs animate-pulse">Saving…</span>
+        )}
+      </div>
+
+      {(notesOpen || notes) && reason ? (
+        <div className="space-y-1.5">
+          <label className="text-cream-dim text-xs ui-label">Notes (optional)</label>
+          <Textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            onBlur={handleNotesSave}
+            placeholder="Add context about the delay…"
+            rows={2}
+            className="bg-forest-raised border-brass/20 text-cream text-sm resize-none"
+          />
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 // ── InlineDueDate ─────────────────────────────────────────────────────────
 
 function InlineDueDate({
@@ -1517,6 +1626,9 @@ export default function TicketDetail() {
 
         {/* ── Tailor Assignment ── */}
         <TailorSection ticket={ticket} tailors={tailors} ticketName={ticketName!} />
+
+        {/* ── Delay Reason ── */}
+        <DelayReasonSection ticket={ticket} ticketName={ticketName!} />
 
         {/* ── Transfer Location ── */}
         <TransferSection ticket={ticket} ticketName={ticketName!} />

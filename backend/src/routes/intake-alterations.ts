@@ -1361,6 +1361,33 @@ intakeAlterationsRouter.patch('/tickets/:name/tailor', async (c) => {
   }
 });
 
+// 7b. PATCH /tickets/:name/delay-reason — set or clear delay tag
+const VALID_DELAY_REASONS = ['Customs', 'Vendor', 'Weather', 'Other', ''];
+intakeAlterationsRouter.patch('/tickets/:name/delay-reason', async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+  const ticketName = c.req.param('name');
+  const body = (await c.req.json()) as { reason?: string; notes?: string };
+  const reason = (body.reason ?? '').trim();
+  const notes = (body.notes ?? '').trim();
+
+  if (!VALID_DELAY_REASONS.includes(reason)) {
+    return c.json({ error: { message: `Invalid delay reason. Must be one of: Customs, Vendor, Weather, Other, or empty to clear.` } }, 422);
+  }
+
+  try {
+    await erpUpdate('Alteration Ticket', ticketName, {
+      lsh_delay_reason: reason || null,
+      lsh_delay_notes: notes || null,
+    });
+    return c.json({ data: { ok: true, reason: reason || null } });
+  } catch (e: any) {
+    console.error('[delay-reason patch] ERP error:', e?.message);
+    return c.json({ error: { message: 'ERPNext update failed: ' + (e?.message || '').slice(0, 150) } }, 502);
+  }
+});
+
 // 8. PATCH /tickets/:name/status — applies Frappe workflow transitions
 intakeAlterationsRouter.patch('/tickets/:name/status', async (c) => {
   const user = await getAuthedUser(c);
