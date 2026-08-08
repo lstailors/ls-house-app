@@ -11,6 +11,7 @@ import {
 } from "../lib/erpnext/agents";
 import { requireCronOrSession } from "../lib/require-secret";
 import { resolveCustomerByPhone } from "../lib/identity-resolve";
+import { getCommsEvents } from "../lib/comms-events";
 
 // ── Log communication to ERPNext Customer timeline ────────────────────────
 export async function logErpCommunication(opts: {
@@ -44,6 +45,50 @@ export async function matchCustomerByPhone(phone: string): Promise<{ name: strin
   if (!hit) return null;
   return { id: hit.id, name: hit.name };
 }
+
+// ── GET /api/comms/events — Phase 1 unified feed (customer-keyed) ─────────
+// Query: customer=ERP_ID | phone=E164 · source=all|sms|call|plaud · limit · since
+commsRouter.get("/events", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const customer = c.req.query("customer") || null;
+  const phone = c.req.query("phone") || null;
+  if (!customer && !phone) {
+    return c.json({ error: { message: "customer or phone required" } }, 400);
+  }
+
+  const data = await getCommsEvents({
+    customer,
+    phone,
+    source: c.req.query("source") || "all",
+    limit: Number(c.req.query("limit") ?? "100"),
+    since: c.req.query("since") || null,
+    role: user.role,
+  });
+
+  return c.json({
+    data: {
+      ...data,
+      generatedAt: new Date().toISOString(),
+    },
+  });
+});
+
+// Alias for timeline UI / Sofia brain
+commsRouter.get("/customer/:customerId/timeline", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  const customerId = decodeURIComponent(c.req.param("customerId"));
+  const data = await getCommsEvents({
+    customer: customerId,
+    source: c.req.query("source") || "all",
+    limit: Number(c.req.query("limit") ?? "100"),
+    since: c.req.query("since") || null,
+    role: user.role,
+  });
+  return c.json({ data: { ...data, generatedAt: new Date().toISOString() } });
+});
 
 // ── GET /api/comms — main feed ─────────────────────────────────────────────
 commsRouter.get("/", async (c) => {

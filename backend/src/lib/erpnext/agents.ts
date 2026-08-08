@@ -320,15 +320,20 @@ export async function upsertCallLog(doc: Record<string, unknown>, keyField = "ex
   return storeUpsert(DT.CALL_LOG, doc, keyField);
 }
 
-export async function listPlaudCaptures(opts: { limit?: number; since?: string } = {}) {
+export async function listPlaudCaptures(opts: {
+  limit?: number;
+  since?: string;
+  customer?: string;
+} = {}) {
   const filters: unknown[] = [];
   if (opts.since) filters.push(["recorded_at", ">=", opts.since]);
+  if (opts.customer) filters.push(["customer", "=", opts.customer]);
   return erpList<any>(DT.PLAUD_CAPTURE, {
     filters,
     fields: [
       "name", "title", "recorded_at", "status", "duration_sec",
       "transcript", "summary", "outline", "extraction_json",
-      "tagged_garment_ids",
+      "tagged_garment_ids", "customer", "external_id",
     ],
     order_by: "recorded_at desc",
     limit: opts.limit ?? 50,
@@ -359,6 +364,7 @@ export async function listBrainEntriesFiltered(opts: {
 
 export async function listSmsMessagesFiltered(opts: {
   phone?: string;
+  customer?: string;
   contentLike?: string;
   twilioSid?: string;
   limit?: number;
@@ -366,6 +372,7 @@ export async function listSmsMessagesFiltered(opts: {
 } = {}) {
   const filters: unknown[] = [];
   if (opts.phone) filters.push(["client_phone", "=", opts.phone]);
+  if (opts.customer) filters.push(["customer", "=", opts.customer]);
   if (opts.contentLike) filters.push(["content", "like", `%${opts.contentLike}%`]);
   if (opts.twilioSid) filters.push(["twilio_sid", "=", opts.twilioSid]);
   return erpList<any>(DT.SMS_MESSAGE, {
