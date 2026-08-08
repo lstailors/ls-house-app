@@ -370,13 +370,23 @@ ownerDashboardRouter.get("/owner", async (c) => {
   const outstandingByCustomer = [...arByCust.values()]
     .sort((a, b) => b.outstanding - a.outstanding)
     .slice(0, 25)
-    .map((c) => ({
-      customer: c.customer,
-      name: c.name,
-      outstanding: Math.round(c.outstanding * 100) / 100,
-      invoices: c.invoices,
-      oldest: c.oldest,
-    }));
+    .map((c) => {
+      const oldestDays = Math.max(
+        0,
+        Math.round(
+          (Date.parse(`${range.end}T12:00:00Z`) - Date.parse(`${c.oldest}T12:00:00Z`)) /
+            86_400_000,
+        ),
+      );
+      return {
+        customer: c.customer,
+        name: c.name,
+        outstanding: Math.round(c.outstanding * 100) / 100,
+        invoices: c.invoices,
+        oldest: c.oldest,
+        oldestDays,
+      };
+    });
 
   // ── Live feed (recent invoices) ─────────────────────────────────────────
   const liveFeed = [...invoices]
@@ -518,6 +528,17 @@ ownerDashboardRouter.get("/owner", async (c) => {
       label: "Unassigned tickets",
       value: String(unassigned),
       href: "/helpdesk",
+    });
+  }
+  const ar31to90 = agingInit["31-60"].amount + agingInit["61-90"].amount;
+  const ar31to90Count = agingInit["31-60"].count + agingInit["61-90"].count;
+  if (ar31to90 > 0) {
+    alerts.push({
+      id: "deposit-ledger-31d",
+      tone: "warning",
+      label: "Deposit ledger >30d",
+      value: `${ar31to90Count} inv · $${Math.round(ar31to90).toLocaleString("en-US")}`,
+      href: "/invoices",
     });
   }
   if (ar90plus > 0) {

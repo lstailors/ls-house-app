@@ -74,6 +74,7 @@ type OwnerPayload = {
     outstanding: number;
     invoices: number;
     oldest: string;
+    oldestDays: number;
   }>;
   liveFeed: Array<{
     name: string;
@@ -611,6 +612,18 @@ export default function OwnerDashboard() {
               <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
                 {data.outstandingByCustomer.map((c) => {
                   const pct = Math.round((c.outstanding / maxOut) * 100);
+                  const ageColor =
+                    c.oldestDays > 90
+                      ? "text-signal-rose"
+                      : c.oldestDays > 30
+                        ? "text-signal-amber"
+                        : "text-cream-dim";
+                  const ageBadge =
+                    c.oldestDays > 90
+                      ? `${c.oldestDays}d ⚠`
+                      : c.oldestDays > 30
+                        ? `${c.oldestDays}d ·`
+                        : null;
                   return (
                     <button
                       key={c.customer + c.name}
@@ -627,8 +640,11 @@ export default function OwnerDashboard() {
                       <div className="h-1 rounded-full bg-forest-highlight/50 overflow-hidden">
                         <div className="h-full rounded-full bg-signal-amber/70" style={{ width: `${pct}%` }} />
                       </div>
-                      <div className="text-[10px] text-cream-dim mt-0.5">
-                        {c.invoices} inv · oldest {c.oldest}
+                      <div className="text-[10px] text-cream-dim mt-0.5 flex items-center gap-1">
+                        <span>{c.invoices} inv · oldest {c.oldest}</span>
+                        {ageBadge && (
+                          <span className={cn("font-semibold", ageColor)}>{ageBadge}</span>
+                        )}
                       </div>
                     </button>
                   );
