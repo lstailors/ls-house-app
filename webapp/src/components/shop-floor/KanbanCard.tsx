@@ -16,6 +16,110 @@ interface Props {
   onClick: () => void;
 }
 
+// ── Shipment status chip ─────────────────────────────────────────────────────
+// Color-coded chip showing the real-time status from LSH Logistics Tracker.
+// Maps each tracker status to a brand-palette tint.
+
+interface ShipmentChipMeta {
+  label: string;
+  bg: string;        // Tailwind/inline bg
+  text: string;      // Tailwind/inline text color
+  border: string;    // Tailwind/inline border
+}
+
+const SHIPMENT_CHIP: Record<string, ShipmentChipMeta> = {
+  "Label Created": {
+    label: "Label",
+    bg: "rgba(241,233,214,0.07)",
+    text: "rgba(241,233,214,0.55)",
+    border: "rgba(241,233,214,0.15)",
+  },
+  "In Transit": {
+    label: "In Transit",
+    bg: "rgba(76,175,80,0.12)",
+    text: "#7FD98A",
+    border: "rgba(76,175,80,0.30)",
+  },
+  "Customs": {
+    label: "Customs",
+    bg: "rgba(255,152,0,0.13)",
+    text: "#FFB74D",
+    border: "rgba(255,152,0,0.32)",
+  },
+  "Out for Delivery": {
+    label: "Out for Delivery",
+    bg: "rgba(76,175,80,0.18)",
+    text: "#5EC98B",
+    border: "rgba(76,175,80,0.40)",
+  },
+  "Delivered": {
+    label: "Delivered",
+    bg: "rgba(93,202,165,0.12)",
+    text: "#7FD4B5",
+    border: "rgba(93,202,165,0.28)",
+  },
+  "Exception": {
+    label: "Exception",
+    bg: "rgba(239,68,68,0.14)",
+    text: "#F87171",
+    border: "rgba(239,68,68,0.35)",
+  },
+  "Lost-Claim": {
+    label: "Lost",
+    bg: "rgba(239,68,68,0.20)",
+    text: "#EF4444",
+    border: "rgba(239,68,68,0.45)",
+  },
+};
+
+function shipmentChipMeta(status: string): ShipmentChipMeta {
+  return (
+    SHIPMENT_CHIP[status] ?? {
+      label: status,
+      bg: "rgba(241,233,214,0.07)",
+      text: "rgba(241,233,214,0.55)",
+      border: "rgba(241,233,214,0.15)",
+    }
+  );
+}
+
+function ShipmentChip({ status, eta }: { status: string; eta?: string | null }) {
+  const meta = shipmentChipMeta(status);
+  const etaLabel =
+    eta && status !== "Delivered"
+      ? " · " +
+        new Date(eta + "T00:00:00").toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        })
+      : "";
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        fontSize: 11,
+        fontWeight: 500,
+        letterSpacing: "0.04em",
+        padding: "2px 8px",
+        borderRadius: 20,
+        background: meta.bg,
+        color: meta.text,
+        border: `0.5px solid ${meta.border}`,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <Truck
+        style={{ width: 10, height: 10, flexShrink: 0, color: meta.text }}
+        aria-hidden
+      />
+      {meta.label}
+      {etaLabel}
+    </span>
+  );
+}
+
 export function KanbanCard({ order, onClick }: Props) {
   const tone = shipTone(order);
   const rush = isRush(order);
@@ -48,9 +152,6 @@ export function KanbanCard({ order, onClick }: Props) {
           {order.embroidery_name ? (
             <Sparkles className="h-3.5 w-3.5 text-brass-light/70" aria-label="Embroidery" />
           ) : null}
-          {order.tracking_no ? (
-            <Truck className="h-3.5 w-3.5 text-signal-emerald/80" aria-label="Tracking" />
-          ) : null}
           {rush ? (
             <span className="flex items-center gap-0.5 rounded-full bg-[#FF5722]/15 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#FF8A65]">
               <Flame className="h-3 w-3" />
@@ -76,6 +177,13 @@ export function KanbanCard({ order, onClick }: Props) {
       {order.fabric_number ? (
         <div className="mt-1 truncate text-xs text-cream-dim">
           Fabric {order.fabric_number}
+        </div>
+      ) : null}
+
+      {/* Shipment status chip — shown when a tracker row is linked */}
+      {order.shipment_status ? (
+        <div className="mt-2">
+          <ShipmentChip status={order.shipment_status} eta={order.shipment_eta} />
         </div>
       ) : null}
 

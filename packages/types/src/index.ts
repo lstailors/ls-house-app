@@ -655,6 +655,10 @@ export const YZOrder = z.object({
   tracking_no: z.string().nullable(),
   customs_flag: z.string().nullable(),
   delivery_manner: z.string().nullable(),
+  /** Shipment status from LSH Logistics Tracker (Factory Inbound lane). Null = no tracker row. */
+  shipment_status: z.string().nullable().optional(),
+  /** Current ETA from LSH Logistics Tracker (YYYY-MM-DD). Null = not set. */
+  shipment_eta: z.string().nullable().optional(),
   solid_fabric: z.boolean(),
   fully_lined: z.boolean(),
   half_canvas: z.boolean(),

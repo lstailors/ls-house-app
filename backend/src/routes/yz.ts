@@ -221,6 +221,37 @@ async function fetchYZOrders(): Promise<YZOrder[]> {
 
   const today = todayStr();
 
+  // ── Logistics enrichment: batch-fetch Factory Inbound tracker rows ──────
+  // LSH Logistics Tracker rows that link to a YZ order via yz_production_tracker.
+  // We only query non-terminal statuses + Delivered so the chip stays accurate.
+  interface ErpLogisticsRow {
+    yz_production_tracker: string | null;
+    status: string | null;
+    eta_current: string | null;
+  }
+  const logisticsRows = await erpList<ErpLogisticsRow>("LSH Logistics Tracker", {
+    filters: [["lane", "=", "Factory Inbound"], ["yz_production_tracker", "!=", ""]],
+    fields: ["yz_production_tracker", "status", "eta_current"],
+    limit: 500,
+  }).catch(() => []);
+
+  // Build lookup: yz_production_tracker name → latest tracker entry
+  // If multiple rows link to the same YZ order (re-shipment), prefer non-Delivered.
+  const shipmentMap = new Map<string, { status: string; eta: string | null }>();
+  for (const lr of logisticsRows) {
+    const key = (lr.yz_production_tracker ?? "").trim();
+    if (!key) continue;
+    const status = (lr.status ?? "").trim() || null;
+    if (!status) continue;
+    const existing = shipmentMap.get(key);
+    // Prefer active/exception rows over delivered ones
+    const isTerminal = (s: string) => /^(Delivered|Lost-Claim)$/i.test(s);
+    if (!existing || (isTerminal(existing.status) && !isTerminal(status))) {
+      shipmentMap.set(key, { status, eta: (lr.eta_current ?? "").trim() || null });
+    }
+  }
+  // ────────────────────────────────────────────────────────────────────────
+
   return rows.map((r) => {
     const production_status = normalizeStatus(r.production_status);
     const ship_date_planned = str(r.ship_date_planned);
@@ -230,6 +261,9 @@ async function fetchYZOrders(): Promise<YZOrder[]> {
       { production_status, ship_date_planned, date_received, rush_days },
       today,
     );
+
+    // Logistics chip data from the tracker lookup
+    const logEntry = shipmentMap.get(r.name) ?? null;
 
     return YZOrder.parse({
       name: r.name,
@@ -267,6 +301,8 @@ async function fetchYZOrders(): Promise<YZOrder[]> {
       remarks: str(r.remarks),
       erpUrl: `${ERP_YZ_BASE}/${encodeURIComponent(r.name)}`,
       attention,
+      shipment_status: logEntry?.status ?? null,
+      shipment_eta: logEntry?.eta ?? null,
     });
   });
 }
