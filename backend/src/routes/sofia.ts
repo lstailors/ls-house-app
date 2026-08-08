@@ -1439,6 +1439,71 @@ async function runSofiaAgent(
     hist.reverse().forEach((h: any) => messages.push({ role: h.direction === "inbound" ? "user" : "assistant", content: String(h.content) }));
   } catch (_) {}
 
+  // Phase 2.1 — unified customer timeline (SMS + calls + Plaud) so Sofia is not blind
+  let commsTimelineBlock = "";
+  let humanTouchedCooldown = false;
+  try {
+    const { getCommsEvents } = await import("../lib/comms-events");
+    const custId =
+      (customer as any)?.id ||
+      (customer as any)?.name ||
+      (customer as any)?.erpnext_customer_id ||
+      null;
+    const feed = await getCommsEvents({
+      customer: custId ? String(custId) : null,
+      phone: from,
+      source: "all",
+      limit: 25,
+      role: "super_admin", // Sofia brain needs full summaries for context
+    });
+    if (feed.events?.length) {
+      const lines = feed.events.slice(0, 20).map((ev) => {
+        const when = ev.occurred_at
+          ? new Date(ev.occurred_at).toLocaleString("en-US", {
+              timeZone: "America/New_York",
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            })
+          : "?";
+        const who = ev.direction ? ` ${ev.direction}` : "";
+        const bit = (ev.summary || "").replace(/\s+/g, " ").slice(0, 140);
+        return `- [${ev.source_type}${who}] ${when}: ${bit}`;
+      });
+      const custLabel = feed.customer
+        ? `${feed.customer.name} (${feed.customer.id})`
+        : custId || from;
+      commsTimelineBlock =
+        `\n\n=== RECENT CLIENT COMMS TIMELINE (authoritative house feed — SMS + phone + Plaud) ===\n` +
+        `Customer: ${custLabel}\n` +
+        `Counts in window: ${feed.counts.call} calls, ${feed.counts.sms} sms, ${feed.counts.plaud} plaud\n` +
+        lines.join("\n") +
+        `\nRules: Do NOT double-message if a human already handled this in the last few messages. ` +
+        `Do NOT invent calls or appointments not listed here. Prefer facts from this feed over memory.\n` +
+        `=== END COMMS TIMELINE ===`;
+
+      // Soft human-touched flag: outbound SMS from house in last 45 min
+      const cutoff = Date.now() - 45 * 60 * 1000;
+      humanTouchedCooldown = feed.events.some(
+        (ev) =>
+          ev.source_type === "sms" &&
+          (ev.direction === "outbound" || ev.direction === "out") &&
+          ev.occurred_at &&
+          new Date(ev.occurred_at).getTime() >= cutoff,
+      );
+      if (humanTouchedCooldown) {
+        commsTimelineBlock +=
+          `\n\n=== HUMAN-TOUCHED COOLDOWN ===\n` +
+          `A staff/outbound SMS to this client appears within the last 45 minutes. ` +
+          `Prefer a brief acknowledgment or ask if they still need help — do NOT re-send the same info or blast a long sales reply unless they ask a new question.\n` +
+          `=== END COOLDOWN ===`;
+      }
+    }
+  } catch (e) {
+    console.warn("[sofia] comms timeline inject failed:", (e as Error).message);
+  }
+
   let systemPrompt =
     "You are Sofia, the AI concierge for L&S Custom Tailors, 138 E 61st St, New York. You are powered by Grok 4.20 by xAI. Be warm, brief, professional. Never invent prices. Booking link is lstailors.com/book.";
   try {
@@ -1586,7 +1651,8 @@ IMPORTANT: get_fitting_history auto-searches by the caller's inbound phone as fa
     modePreamble +
     customerCtx +
     ownerCtx +
-    (kbContext ? `\n\nKnowledge Base:\n${kbContext}` : "");
+    (kbContext ? `\n\nKnowledge Base:\n${kbContext}` : "") +
+    commsTimelineBlock;
 
   const XAI_KEY = process.env.XAI_API_KEY ?? "";
   const currentMessages: { role: string; content: string | unknown[]; tool_calls?: unknown[]; tool_call_id?: string; name?: string }[] = [
