@@ -186,6 +186,24 @@ export async function insertAuditLog(rows: Record<string, unknown>[]) {
 }
 
 export async function insertSmsMessage(doc: Record<string, unknown>) {
+  // Phase 0.5 — always stamp ERP Customer at write when phone present
+  if (!doc.customer && (doc.client_phone || doc.phone)) {
+    try {
+      const { resolveIdentity } = await import("../identity-resolve");
+      const hit = await resolveIdentity({
+        phone: String(doc.client_phone || doc.phone || ""),
+        name: doc.client_name ? String(doc.client_name) : null,
+      });
+      if (hit) {
+        doc = {
+          ...doc,
+          customer: hit.erpnext_customer_id,
+        };
+      }
+    } catch (e) {
+      console.warn("[insertSmsMessage] identity resolve failed", (e as Error).message);
+    }
+  }
   return erpCreate(DT.SMS_MESSAGE, doc);
 }
 
@@ -200,6 +218,30 @@ export async function listSmsMessages(opts: { phone?: string; limit?: number } =
 }
 
 export async function insertCallLog(doc: Record<string, unknown>) {
+  if (!doc.customer) {
+    try {
+      const { resolveIdentity } = await import("../identity-resolve");
+      const phone = String(
+        doc.direction === "out" || doc.direction === "outbound"
+          ? doc.to || doc.from || ""
+          : doc.from || doc.to || "",
+      );
+      const hit = await resolveIdentity({
+        phone,
+        name: doc.from_caller_name ? String(doc.from_caller_name) : null,
+      });
+      if (hit) {
+        doc = {
+          ...doc,
+          customer: hit.erpnext_customer_id,
+          match_method: doc.match_method || hit.match,
+          match_confidence: doc.match_confidence ?? hit.confidence,
+        };
+      }
+    } catch (e) {
+      console.warn("[insertCallLog] identity resolve failed", (e as Error).message);
+    }
+  }
   return erpCreate(DT.CALL_LOG, doc);
 }
 
