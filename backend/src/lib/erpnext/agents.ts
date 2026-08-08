@@ -275,11 +275,13 @@ export async function listCallLogs(opts: {
   limit?: number;
   since?: string;
   phone?: string;
+  customer?: string;
   orderBy?: string;
 } = {}) {
   const filters: unknown[] = [];
   if (opts.since) filters.push(["time", ">=", opts.since]);
   if (opts.phone) filters.push(["from", "=", opts.phone]);
+  if (opts.customer) filters.push(["customer", "=", opts.customer]);
   return erpList<any>(DT.CALL_LOG, {
     filters,
     fields: [
@@ -295,6 +297,9 @@ export async function listCallLogs(opts: {
       "transcript_raw",
       "transcript_whisper",
       "recording",
+      "customer",
+      "match_method",
+      "match_confidence",
       "creation",
     ],
     order_by: opts.orderBy ?? "time desc",

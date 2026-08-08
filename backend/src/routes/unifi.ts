@@ -2,6 +2,7 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
 import { upsertCallLog, listCallLogs } from "../lib/erpnext/agents";
+import { resolveIdentity } from "../lib/identity-resolve";
 import {
   checkUnifiConnection,
   getTalkCallLogs,
@@ -101,20 +102,35 @@ unifiRouter.post("/sync", async (c) => {
     if (!calls.length) return c.json({ data: { synced: 0 } });
 
     let synced = 0;
+    let matched = 0;
     for (const call of calls) {
-      const row = {
-        external_id: call.id ?? call.callId ?? null,
+      const from = call.callerNumber ?? call.from ?? call.caller ?? "unknown";
+      const to = call.calleeNumber ?? call.to ?? call.callee ?? "unknown";
+      const fromName = call.callerName ?? call.caller_name ?? null;
+      const direction = call.direction === "outbound" ? "out" : "in";
+      // Client phone = inbound from, outbound to
+      const clientPhone = direction === "out" ? to : from;
+      const idHit = await resolveIdentity({ phone: clientPhone, name: fromName }).catch(() => null);
+      if (idHit) matched++;
+
+      const row: Record<string, unknown> = {
+        external_id: call.id ?? call.callId ?? call.uuid ?? null,
         time: call.startTime ?? call.start_time ?? call.created ?? new Date().toISOString(),
-        from: call.callerNumber ?? call.from ?? call.caller ?? "unknown",
-        to: call.calleeNumber ?? call.to ?? call.callee ?? "unknown",
-        from_caller_name: call.callerName ?? call.caller_name ?? null,
-        direction: call.direction === "outbound" ? "out" : "in",
+        from,
+        to,
+        from_caller_name: fromName,
+        direction,
         duration: call.duration ?? call.durationSeconds ?? 0,
         status: call.status === "answered" ? "accepted" : call.status ?? "unknown",
         transcript_raw: call.transcript ?? null,
         transcript_whisper: call.summary ?? null,
         recording: call.recordingUrl ?? call.recording_url ?? null,
       };
+      if (idHit) {
+        row.customer = idHit.erpnext_customer_id;
+        row.match_method = idHit.match;
+        row.match_confidence = idHit.confidence;
+      }
 
       try {
         await upsertCallLog(row, "external_id");
@@ -122,7 +138,7 @@ unifiRouter.post("/sync", async (c) => {
       } catch { /* skip duplicate */ }
     }
 
-    return c.json({ data: { synced, total: calls.length } });
+    return c.json({ data: { synced, matched, total: calls.length } });
   } catch (e: any) {
     console.error("[unifi/sync]", e.message);
     return c.json({ error: { message: e.message } }, 502);

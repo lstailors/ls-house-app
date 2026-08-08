@@ -10,6 +10,7 @@ import {
   insertAgentBrief,
 } from "../lib/erpnext/agents";
 import { requireCronOrSession } from "../lib/require-secret";
+import { resolveCustomerByPhone } from "../lib/identity-resolve";
 
 // ── Log communication to ERPNext Customer timeline ────────────────────────
 export async function logErpCommunication(opts: {
@@ -37,17 +38,11 @@ export async function logErpCommunication(opts: {
 
 export const commsRouter = new Hono();
 
-// ── Customer matching helper ──────────────────────────────────────────────
+// ── Customer matching — single house resolver (Phase 0 identity) ──────────
 export async function matchCustomerByPhone(phone: string): Promise<{ name: string; id: string } | null> {
-  if (!phone) return null;
-  const clean = phone.replace(/\D/g, "").slice(-10);
-  const results = await erpList<any>("Customer", {
-    filters: [["mobile_no", "like", `%${clean}`]],
-    fields: ["name", "customer_name"],
-    limit: 1,
-  }).catch(() => []);
-  if (results.length) return { id: results[0].name, name: results[0].customer_name };
-  return null;
+  const hit = await resolveCustomerByPhone(phone);
+  if (!hit) return null;
+  return { id: hit.id, name: hit.name };
 }
 
 // ── GET /api/comms — main feed ─────────────────────────────────────────────
