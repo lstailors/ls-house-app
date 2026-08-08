@@ -1013,7 +1013,13 @@ dashboardRouter.get("/alts-home", async (c) => {
   const today = new Date().toISOString().slice(0, 10);
 
   try {
-    const [tickets, deliveries, invoices, lastGarment, lastCustomer] = await Promise.all([
+    // Double-booking detection window: today + next 7 days
+    const todayStr = today;
+    const window7 = new Date();
+    window7.setDate(window7.getDate() + 7);
+    const window7Str = window7.toISOString().slice(0, 10);
+
+    const [tickets, deliveries, invoices, lastGarment, lastCustomer, appointments] = await Promise.all([
       erpList<{
         name: string;
         customer_name?: string;
@@ -1087,6 +1093,25 @@ dashboardRouter.get("/alts-home", async (c) => {
         fields: ["name", "customer_name", "modified"],
         limit: 1,
         order_by: "modified desc",
+      }).catch(() => []),
+      // Fetch upcoming shop appointments for double-booking detection
+      erpList<{
+        name: string;
+        subject?: string;
+        starts_on?: string;
+        ends_on?: string;
+        status?: string;
+        google_calendar?: string;
+      }>("Event", {
+        filters: [
+          ["google_calendar", "=", "L&S Appointments"],
+          ["status", "!=", "Cancelled"],
+          ["starts_on", ">=", `${todayStr} 00:00:00`],
+          ["starts_on", "<=", `${window7Str} 23:59:59`],
+        ],
+        fields: ["name", "subject", "starts_on", "ends_on", "status", "google_calendar"],
+        limit: 200,
+        order_by: "starts_on asc",
       }).catch(() => []),
     ]);
 
@@ -1199,6 +1224,79 @@ dashboardRouter.get("/alts-home", async (c) => {
         }
       : null;
 
+    // --- Double-booking detection ---
+    // Two appointments conflict if they overlap in time, regardless of tailor.
+    // We extract a tailor tag from the subject prefix (e.g. "Carl: Fitting —") 
+    // and only flag pairs that share the same tailor tag (or both lack one).
+    // Overlap = start1 < end2 AND start2 < end1 (strict interval overlap).
+    type ApptEv = { name: string; subject?: string; starts_on?: string; ends_on?: string; status?: string; google_calendar?: string };
+    function parseTailorTag(subject?: string): string {
+      if (!subject) return "unassigned";
+      const m = subject.match(/^([A-Za-z]+):\s/);
+      if (m && m[1]) return m[1].toLowerCase();
+      if (/^ALL:/i.test(subject)) return "all";
+      return "unassigned";
+    }
+    function parseMs(dt?: string): number {
+      if (!dt) return 0;
+      // Frappe timestamps: "YYYY-MM-DD HH:MM:SS" — no timezone, treat as local
+      return Date.parse(dt.includes("T") ? dt : dt.replace(" ", "T"));
+    }
+
+    let doubleBookedSlots = 0;
+    const conflictDetails: Array<{ a: string; b: string; tailor: string; at: string }> = [];
+    const apptList: ApptEv[] = appointments;
+
+    // Group by tailor tag to reduce n² surface
+    const byTailor: Record<string, ApptEv[]> = {};
+    for (const ev of apptList) {
+      const tag = parseTailorTag(ev.subject);
+      if (!byTailor[tag]) byTailor[tag] = [];
+      byTailor[tag]!.push(ev);
+    }
+    // "all" / whole-shop blocks conflict with everything — check separately
+    const allBlocks: ApptEv[] = byTailor["all"] ?? [];
+
+    for (const [tag, group] of Object.entries(byTailor)) {
+      if (tag === "all") continue;
+      // Check within this tailor's group
+      for (let i = 0; i < group.length; i++) {
+        for (let j = i + 1; j < group.length; j++) {
+          const a = group[i], b = group[j];
+          if (!a || !b) continue;
+          const aStart = parseMs(a.starts_on), aEnd = parseMs(a.ends_on);
+          const bStart = parseMs(b.starts_on), bEnd = parseMs(b.ends_on);
+          if (!aStart || !bStart) continue;
+          // Use start + 30m as fallback end if ends_on missing
+          const aEndEff = aEnd || aStart + 30 * 60_000;
+          const bEndEff = bEnd || bStart + 30 * 60_000;
+          if (aStart < bEndEff && bStart < aEndEff) {
+            doubleBookedSlots += 1;
+            if (conflictDetails.length < 5) {
+              conflictDetails.push({ a: a.name, b: b.name, tailor: tag, at: a.starts_on ?? "" });
+            }
+          }
+        }
+      }
+      // Check each tailor's events against "all" blocks
+      for (const ev of group) {
+        for (const blk of allBlocks) {
+          const aStart = parseMs(ev.starts_on), aEnd = parseMs(ev.ends_on);
+          const bStart = parseMs(blk.starts_on), bEnd = parseMs(blk.ends_on);
+          if (!aStart || !bStart) continue;
+          const aEndEff = aEnd || aStart + 30 * 60_000;
+          const bEndEff = bEnd || bStart + 30 * 60_000;
+          if (aStart < bEndEff && bStart < aEndEff) {
+            doubleBookedSlots += 1;
+            if (conflictDetails.length < 5) {
+              conflictDetails.push({ a: ev.name, b: blk.name, tailor: tag, at: ev.starts_on ?? "" });
+            }
+          }
+        }
+      }
+    }
+    // --- End double-booking detection ---
+
     // Optional: garment count on open tickets (best-effort)
     let openGarments = 0;
     try {
@@ -1244,6 +1342,7 @@ dashboardRouter.get("/alts-home", async (c) => {
           openInvoicesAmount,
           oldestUnpaidDays,
           lateTransferCount,
+          doubleBookedSlots,
         },
         feeds: {
           lastTicket: newest
@@ -1256,6 +1355,7 @@ dashboardRouter.get("/alts-home", async (c) => {
           lastProgress,
           lastTouchedCustomer,
           lateTransferNames: lateNames,
+          conflictDetails,
         },
       },
     });

@@ -429,6 +429,7 @@ type AltsHomeFeed = {
     openInvoicesAmount: number;
     oldestUnpaidDays: number | null;
     lateTransferCount: number;
+    doubleBookedSlots: number;
   };
   feeds: {
     lastTicket: { name: string; customerName: string; createdAt: string | null } | null;
@@ -440,6 +441,7 @@ type AltsHomeFeed = {
     } | null;
     lastTouchedCustomer: { name: string; modified: string | null } | null;
     lateTransferNames: string[];
+    conflictDetails: Array<{ a: string; b: string; tailor: string; at: string }>;
   };
 };
 
@@ -614,6 +616,8 @@ export default function HomeTiles() {
   const c = feed?.counts;
   const strip = feed?.strip;
   const feeds = feed?.feeds;
+  const conflictCount = c?.doubleBookedSlots ?? 0;
+  const firstConflict = feeds?.conflictDetails?.[0];
 
   const syncAge = useMemo(() => {
     const ts = feed?.syncedAt ?? Date.now();
@@ -793,6 +797,21 @@ export default function HomeTiles() {
     };
   })();
 
+  const apptLive = (() => {
+    if (conflictCount > 0) {
+      const tailorLabel = firstConflict?.tailor ? ` · ${firstConflict.tailor}` : "";
+      return {
+        text: (
+          <>
+            <b>{conflictCount}</b> conflict{conflictCount > 1 ? "s" : ""}{tailorLabel}
+          </>
+        ),
+        tone: "ro" as LiveTone,
+      };
+    }
+    return { text: "No conflicts", tone: "em" as LiveTone };
+  })();
+
   const moneyBadge =
     (c?.openInvoices ?? 0) > 0
       ? `${c!.openInvoices} · ${formatCompactMoney(c!.openInvoicesAmount)}`
@@ -941,6 +960,27 @@ export default function HomeTiles() {
           <path d="M12 5h20l8 8v34a2 2 0 0 1-2 2H12a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" />
           <path d="M32 5v8h8" />
           <path d="M16 26h6M16 32h6" strokeWidth="1.4" />
+        </svg>
+      ),
+    },
+    {
+      key: "appointments",
+      href: "https://app.lstailors.com/appointments",
+      title: "Appointments",
+      sub: conflictCount > 0 ? `${conflictCount} conflict${conflictCount > 1 ? "s" : ""} · 7 days` : "Schedule · calendar",
+      badge: conflictCount > 0 ? conflictCount : null,
+      badgeKind: "alert" as const,
+      live: apptLive.text,
+      liveTone: apptLive.tone,
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="6" y="10" width="40" height="36" rx="3" />
+          <path d="M6 20h40" strokeWidth="1.4" />
+          <path d="M17 6v8M35 6v8" />
+          <circle cx="26" cy="33" r="5" strokeWidth="1.4" />
+          {conflictCount > 0 && (
+            <path d="M26 30v4M26 36v1" stroke="#E85050" strokeWidth="1.8" strokeLinecap="round" />
+          )}
         </svg>
       ),
     },
