@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import {
   Phone,
   PhoneIncoming,
@@ -13,6 +14,8 @@ import {
   User,
   ChevronRight,
   Lock,
+  Tag,
+  ExternalLink,
 } from "lucide-react";
 import { api } from "@ls/api-client";
 import { GlassCard } from "@ls/design";
@@ -313,10 +316,19 @@ function SmsThreadPanel({ thread, onBrief }: { thread: any; onBrief: (phone: str
 // ── Recording Panel ─────────────────────────────────────────────────────────
 
 function RecordingPanel({ item }: { item: any }) {
+  const navigate = useNavigate();
   const [showTranscript, setShowTranscript] = useState(false);
   const [brief, setBrief] = useState<string | null>(null);
   const [briefLoading, setBriefLoading] = useState(false);
-  const summary = item.summary_raw || "";
+  const [autoTagLoading, setAutoTagLoading] = useState(false);
+  const [taggedGarments, setTaggedGarments] = useState<Array<{ id: string; doctype: string; title?: string; status?: string }>>(() => {
+    // Pre-load from ERP field if present
+    try {
+      const raw = item.tagged_garment_ids;
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  });
+  const summary = item.summary_raw || item.summary || "";
   const customers = item.detected_customer_names;
 
   const handleBrief = async () => {
@@ -328,6 +340,24 @@ function RecordingPanel({ item }: { item: any }) {
     } catch { setBrief("Unable to generate brief."); }
     finally { setBriefLoading(false); }
   };
+
+  const handleAutoTag = async () => {
+    setAutoTagLoading(true);
+    try {
+      const result = await api.post<{ tagged: Array<{ id: string; doctype: string; title?: string; status?: string }>; count: number }>(
+        `/api/comms/recordings/${item.id}/auto-tag`, {}
+      );
+      setTaggedGarments(result?.tagged ?? []);
+    } catch { /* silent */ }
+    finally { setAutoTagLoading(false); }
+  };
+
+  function navForTag(tag: { id: string; doctype: string }) {
+    if (tag.doctype === "Alteration Ticket") return `/orders/alterations/${encodeURIComponent(tag.id)}`;
+    if (tag.doctype === "MTMPro Order") return null; // no in-app route yet
+    if (tag.doctype === "Sales Order") return null;
+    return null;
+  }
 
   // Split summary into sections by ### headers
   const sections = summary.split(/\n(?=###\s)/);
@@ -359,12 +389,60 @@ function RecordingPanel({ item }: { item: any }) {
           <Sparkles className="w-4 h-4" />
           {briefLoading ? "Generating brief…" : "⚡ Sofia Brief"}
         </button>
+        <button
+          onClick={handleAutoTag}
+          disabled={autoTagLoading}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-forest-raised/60 border border-brass/20 text-cream-muted text-sm hover:bg-forest-raised hover:text-cream transition-all disabled:opacity-50"
+          title="Scan transcript for order/ticket IDs and link them"
+        >
+          <Tag className="w-4 h-4" />
+          {autoTagLoading ? "Scanning…" : "Auto-Tag Orders"}
+        </button>
         {brief && (
           <button onClick={() => setBrief(null)} className="text-xs text-cream-dim hover:text-cream">
             <X className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
+
+      {/* Tagged garments */}
+      {taggedGarments.length > 0 && (
+        <GlassCard className="p-4">
+          <div className="ui-label text-cream-muted mb-2">Tagged Orders / Tickets</div>
+          <div className="flex flex-col gap-2">
+            {taggedGarments.map((tag) => {
+              const path = navForTag(tag);
+              return (
+                <div
+                  key={tag.id}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded-xl border border-brass/15 bg-forest-raised/40",
+                    path ? "cursor-pointer hover:bg-forest-raised/70 hover:border-brass/30 transition-colors" : ""
+                  )}
+                  onClick={() => path && navigate(path)}
+                >
+                  <Tag className="w-3.5 h-3.5 text-brass flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-cream text-sm font-medium">{tag.id}</div>
+                    {tag.title && tag.title !== tag.id && (
+                      <div className="text-cream-muted text-xs truncate">{tag.title}</div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {tag.status && (
+                      <span className="text-[10px] text-cream-dim bg-forest-raised px-1.5 py-0.5 rounded-full">
+                        {tag.status}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-cream-dim">{tag.doctype}</span>
+                    {path && <ExternalLink className="w-3 h-3 text-brass/50" />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </GlassCard>
+      )}
 
       {/* Brief result */}
       {brief && (

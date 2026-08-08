@@ -245,11 +245,12 @@ commsRouter.post("/brief/recording/:id", async (c) => {
   const apiKey = process.env.XAI_API_KEY;
   if (!apiKey) return c.json({ data: { brief: "AI not configured" } });
 
-  const transcript = rec.transcript_raw || rec.transcript_whisper || "";
-  const summary = rec.summary_raw || "";
-  const duration = Math.round((rec.duration_seconds || 0) / 60);
+  const transcript = rec.transcript || rec.transcript_raw || rec.transcript_whisper || "";
+  const summary = rec.summary || rec.summary_raw || "";
+  const duration = Math.round((rec.duration_sec || rec.duration_seconds || 0) / 60);
   const date = rec.recorded_at ? new Date(rec.recorded_at).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }) : "unknown date";
-  const customers = Array.isArray(rec.detected_customer_names) ? rec.detected_customer_names.join(", ") : (rec.detected_customer_names || "unknown");
+  // detected_customer_names comes from lsh-plaud adjudication extraction_json; fall back to title
+  const customers = Array.isArray(rec.detected_customer_names) ? rec.detected_customer_names.join(", ") : (rec.detected_customer_names || rec.title || "unknown");
   const existingActions = rec.extracted_action_items || rec.detected_action_items;
 
   const prompt = `You are Sofia, the intelligence assistant for L&S Custom Tailors — a luxury bespoke house in NYC.
@@ -341,7 +342,7 @@ commsRouter.get("/daily-brief/trigger", async (c) => {
     : "  No SMS today";
 
   const recSummary = recordings.length
-    ? recordings.map(r => `  ${r.capture_type || "Recording"} • ${Math.round((r.duration_seconds||0)/60)}m${r.detected_customer_names ? ` • ${r.detected_customer_names}` : ""}\n  ${r.summary_raw?.slice(0,200) || ""}`).join("\n")
+    ? recordings.map(r => `  ${r.capture_type || "Recording"} • ${Math.round((r.duration_sec || r.duration_seconds || 0)/60)}m${r.detected_customer_names ? ` • ${r.detected_customer_names}` : r.title ? ` • ${r.title}` : ""}\n  ${(r.summary || r.summary_raw)?.slice(0,200) || ""}`).join("\n")
     : "  No recordings today";
 
   const prompt = `You are Sofia, the intelligence system for L&S Custom Tailors.
@@ -416,4 +417,60 @@ Be specific — use names, amounts, dates. Extract every commitment and action i
   }
 
   return c.json({ data: { brief, date: todayStr, stats: { calls: calls.length, sms: smsToday.length, recordings: recordings.length } } });
+});
+
+// ── POST /api/comms/recordings/:id/auto-tag — extract garment IDs from transcript ─
+// Scans transcript for LST-*, ALT-*, LSTNY-SO-* IDs, validates each in ERP,
+// writes back to tagged_garment_ids field. Safe to re-run (idempotent).
+commsRouter.post("/recordings/:id/auto-tag", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const rec = await getPlaudCapture(c.req.param("id"));
+  if (!rec) return c.json({ error: { message: "Recording not found" } }, 404);
+
+  const transcript = rec.transcript || rec.transcript_raw || rec.transcript_whisper || "";
+  const summary = rec.summary || rec.summary_raw || "";
+  const haystack = `${transcript} ${summary}`;
+
+  // Extract ID candidates from text
+  const patterns = [
+    /\bLST-\d{6,}-\d+\b/gi,      // MTMPro: LST-122413-3
+    /\bALT-[A-Z]+-\d{4}-\d+\b/gi, // Alteration ticket: ALT-NYC-2026-00061
+    /\bLSTNY-SO-\d{4}-\d+\b/gi,   // Sales order: LSTNY-SO-2026-00001
+  ];
+
+  const candidates = new Set<string>();
+  for (const re of patterns) {
+    const matches = haystack.match(re) ?? [];
+    for (const m of matches) candidates.add(m.toUpperCase());
+  }
+
+  // Validate each candidate against ERP
+  const tagged: Array<{ id: string; doctype: string; title?: string; status?: string }> = [];
+
+  for (const id of candidates) {
+    try {
+      if (/^LST-\d+-\d+$/.test(id)) {
+        const doc = await import("../lib/erp").then(m => m.erpGet<any>("MTMPro Order", id).catch(() => null));
+        if (doc) tagged.push({ id, doctype: "MTMPro Order", title: doc.customer_name || id, status: doc.production_status || doc.status });
+      } else if (/^ALT-/.test(id)) {
+        const doc = await import("../lib/erp").then(m => m.erpGet<any>("Alteration Ticket", id).catch(() => null));
+        if (doc) tagged.push({ id, doctype: "Alteration Ticket", title: doc.customer_name || id, status: doc.workflow_state });
+      } else if (/^LSTNY-SO-/.test(id)) {
+        const doc = await import("../lib/erp").then(m => m.erpGet<any>("Sales Order", id).catch(() => null));
+        if (doc) tagged.push({ id, doctype: "Sales Order", title: doc.customer_name || id, status: doc.status });
+      }
+    } catch {
+      // ERP miss — not a real record, skip
+    }
+  }
+
+  // Persist to LSH Plaud Capture
+  const { erpUpdate } = await import("../lib/erp");
+  await erpUpdate("LSH Plaud Capture", rec.name, {
+    tagged_garment_ids: JSON.stringify(tagged),
+  });
+
+  return c.json({ data: { tagged, count: tagged.length } });
 });

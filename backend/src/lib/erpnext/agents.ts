@@ -320,6 +320,11 @@ export async function listPlaudCaptures(opts: { limit?: number; since?: string }
   if (opts.since) filters.push(["recorded_at", ">=", opts.since]);
   return erpList<any>(DT.PLAUD_CAPTURE, {
     filters,
+    fields: [
+      "name", "title", "recorded_at", "status", "duration_sec",
+      "transcript", "summary", "outline", "extraction_json",
+      "tagged_garment_ids",
+    ],
     order_by: "recorded_at desc",
     limit: opts.limit ?? 50,
   });
