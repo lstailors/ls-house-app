@@ -16,6 +16,7 @@ import {
   Lock,
   Tag,
   ExternalLink,
+  FileText,
 } from "lucide-react";
 import { api } from "@ls/api-client";
 import { GlassCard } from "@ls/design";
@@ -95,7 +96,15 @@ function CallListItem({ item, active, onClick }: { item: any; active: boolean; o
       </div>
       {/* Info — 2 column */}
       <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto] gap-x-2 gap-y-0.5">
-        <span className="text-cream text-sm font-medium truncate">{name}</span>
+        <span className="text-cream text-sm font-medium truncate flex items-center gap-1.5">
+          {name}
+          {/* SPEC_077 #2 — badge calls that actually have a transcript so staff
+              can tell at a glance which rows are worth opening, without
+              needing to filter or tap in first (fixes landing on empty rows). */}
+          {item.transcript_raw && (
+            <FileText className="w-3 h-3 text-signal-emerald flex-shrink-0" aria-label="Has transcript" />
+          )}
+        </span>
         <span className="text-cream-dim text-[10px] text-right">{timeAgo(item.time)}</span>
         <span className="text-cream-muted text-xs truncate">{fmtDuration(item.duration)}</span>
         <span className="text-cream-dim text-[10px] text-right">{item.time ? new Date(item.time).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",hour12:true}) : date}</span>
@@ -130,8 +139,9 @@ function SmsListItem({ item, active, onClick }: { item: any; active: boolean; on
 }
 
 function RecordingListItem({ item, active, onClick }: { item: any; active: boolean; onClick: () => void }) {
-  const title = item.summary_raw?.split("\n")[0]?.replace(/^#+\s*/, "").slice(0, 45) || "Recording";
-  const customers = Array.isArray(item.detected_customer_names) ? item.detected_customer_names[0] : item.detected_customer_names;
+  // ERPNext `LSH Plaud Capture` has a real `title` field — no need to parse it
+  // out of summary_raw (which also isn't the real field name; see summary below).
+  const title = item.title || item.summary_raw?.split("\n")[0]?.replace(/^#+\s*/, "").slice(0, 45) || "Recording";
   const date = item.recorded_at ? new Date(item.recorded_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
 
   return (
@@ -145,7 +155,7 @@ function RecordingListItem({ item, active, onClick }: { item: any; active: boole
       <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto] gap-x-2 gap-y-0.5">
         <span className="text-cream text-sm font-medium truncate">{title}</span>
         <span className="text-cream-dim text-[10px] text-right">{timeAgo(item.recorded_at)}</span>
-        <span className="text-cream-dim text-xs truncate">{customers || fmtDuration(item.duration_seconds)}</span>
+        <span className="text-cream-dim text-xs truncate">{fmtDuration(item.duration_sec ?? item.duration_seconds)}</span>
         <span className="text-cream-dim text-[10px] text-right">{item.recorded_at ? new Date(item.recorded_at).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",hour12:true}) : date}</span>
       </div>
     </button>
@@ -431,7 +441,25 @@ function RecordingPanel({ item }: { item: any }) {
     } catch { return []; }
   });
   const summary = item.summary_raw || item.summary || "";
-  const customers = item.detected_customer_names;
+  // ERPNext `LSH Plaud Capture` has no detected_customer_names column — the real
+  // per-person data lives in extraction_json.people[]. Derive display names from
+  // there, falling back to detected_customer_names only if some future sync adds it.
+  const customers: string[] = (() => {
+    if (item.detected_customer_names) {
+      return Array.isArray(item.detected_customer_names)
+        ? item.detected_customer_names
+        : [item.detected_customer_names];
+    }
+    try {
+      const people = JSON.parse(item.extraction_json || "{}")?.people;
+      if (Array.isArray(people)) {
+        return people
+          .filter((p: any) => p?.name_known && p?.name)
+          .map((p: any) => p.name);
+      }
+    } catch { /* not JSON or missing — no customers to show */ }
+    return [];
+  })();
 
   const handleBrief = async () => {
     setBriefLoading(true);
@@ -461,8 +489,14 @@ function RecordingPanel({ item }: { item: any }) {
     return null;
   }
 
-  // Split summary into sections by ### headers
-  const sections = summary.split(/\n(?=###\s)/);
+  // ERPNext Plaud summaries use "## Header" (not "###") and "------------" line
+  // separators, plus an optional leading Plaud poster image markdown line —
+  // strip that image line, then split on real section headers.
+  const cleanedSummary = summary.replace(/^!\[PLAUD NOTE\]\([^)]*\)\s*\n*/, "");
+  const sections = cleanedSummary
+    .split(/\n-{4,}\n|\n(?=##\s)/)
+    .map((s: string) => s.trim())
+    .filter(Boolean);
 
   return (
     <div className="flex flex-col h-full overflow-y-auto p-6 gap-6">
@@ -472,7 +506,8 @@ function RecordingPanel({ item }: { item: any }) {
         <div className="text-cream-muted text-sm mt-1">
           {item.recorded_at ? new Date(item.recorded_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "—"}
           {" · "}
-          {fmtDuration(item.duration_seconds)}
+          {/* ERPNext field is `duration_sec`, not `duration_seconds` */}
+          {fmtDuration(item.duration_sec ?? item.duration_seconds)}
         </div>
         {item.detected_type && (
           <span className="inline-block mt-2 px-2 py-0.5 bg-signal-amber/20 text-signal-amber text-xs rounded-full">
@@ -581,7 +616,7 @@ function RecordingPanel({ item }: { item: any }) {
           <div className="text-cream text-sm leading-relaxed space-y-4">
             {sections.map((section: string, i: number) => {
               const lines = section.split("\n").filter(Boolean);
-              const heading = lines[0]?.startsWith("###") ? lines[0].replace(/^###\s*/, "") : null;
+              const heading = lines[0]?.startsWith("#") ? lines[0].replace(/^#{2,3}\s*/, "") : null;
               const body = heading ? lines.slice(1) : lines;
               return (
                 <div key={i}>
@@ -598,8 +633,9 @@ function RecordingPanel({ item }: { item: any }) {
         </GlassCard>
       )}
 
-      {/* Full transcript toggle */}
-      {item.transcript_raw && (
+      {/* Full transcript toggle — ERPNext LSH Plaud Capture field is `transcript`,
+          not `transcript_raw` (that's the UniFi call log field name). */}
+      {(item.transcript || item.transcript_raw) && (
         <div>
           <button
             onClick={() => setShowTranscript(v => !v)}
@@ -610,7 +646,7 @@ function RecordingPanel({ item }: { item: any }) {
           {showTranscript && (
             <GlassCard className="p-4 mt-3">
               <div className="text-cream-muted text-xs leading-relaxed whitespace-pre-wrap font-mono">
-                {item.transcript_raw}
+                {item.transcript || item.transcript_raw}
               </div>
             </GlassCard>
           )}
