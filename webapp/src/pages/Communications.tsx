@@ -1,5 +1,18 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { MessageSquare, Search, Mic, Eye, UserCheck, Star, Send, Sparkles, CheckCircle2, XCircle } from "lucide-react";
+import {
+  MessageSquare,
+  Search,
+  Mic,
+  Eye,
+  UserCheck,
+  Star,
+  Send,
+  Sparkles,
+  CheckCircle2,
+  XCircle,
+  PanelRightOpen,
+  X,
+} from "lucide-react";
 import { SectionHeader } from "@ls/design";
 import { GlassCard } from "@ls/design";
 import { EmptyState } from "@ls/design";
@@ -12,15 +25,17 @@ import {
   useSofiaHandoff,
   useSofiaVoiceApprovals,
   useSofiaChat,
+  useCommsEvents,
   type SofiaChatAction,
+  type CommsEvent,
 } from "@/lib/queries";
 import { formatDateTime } from "@ls/design/format";
 import type { Communication, Customer } from "@ls/types";
 import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
 
-// ─── Tab types ───────────────────────────────────────────────────────────────
-type Tab = "sofia" | "ask" | "voice" | "all";
+// ─── Tab types (Ask Sofia is a right drawer — not a center tab) ─────────────
+type Tab = "sofia" | "voice" | "all";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function formatRelative(iso: string): string {
@@ -41,15 +56,80 @@ function previewBody(msg: any): string {
   return msg?.body ?? "(no preview)";
 }
 
+// ─── Unified Full History (Plan A Phase 1 events) ────────────────────────────
+function CustomerFullHistory({ phone }: { phone: string | null }) {
+  const { data, isLoading, isError } = useCommsEvents({ phone, limit: 40, enabled: !!phone });
+  if (!phone) return null;
+  const accent = (t: string) =>
+    t === "sms"
+      ? "border-l-signal-emerald bg-emerald-900/10"
+      : t === "call"
+        ? "border-l-brass bg-brass/10"
+        : t === "plaud"
+          ? "border-l-amber-400/80 bg-amber-900/10"
+          : "border-l-cream-dim";
+  return (
+    <div className="border-t border-brass/10 p-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="ui-label text-[10px] text-brass">Full history · SMS + Calls + Plaud</div>
+        {data?.counts ? (
+          <span className="text-[10px] text-cream-dim">
+            {data.counts.call}c · {data.counts.sms}s · {data.counts.plaud}p
+          </span>
+        ) : null}
+      </div>
+      {isLoading ? <div className="text-cream-dim text-xs py-3">Loading timeline…</div> : null}
+      {isError ? <div className="text-signal-crimson text-xs py-2">Timeline unavailable</div> : null}
+      {!isLoading && !isError && (data?.events?.length ?? 0) === 0 ? (
+        <div className="text-cream-dim text-xs py-2">No linked events yet</div>
+      ) : null}
+      <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+        {(data?.events ?? []).map((ev: CommsEvent) => (
+          <div key={ev.id} className={cn("border-l-2 pl-3 py-1.5 rounded-r-md", accent(ev.source_type))}>
+            <div className="flex justify-between gap-2 text-[10px] text-cream-dim">
+              <span className="uppercase tracking-wide text-cream-muted">
+                {ev.source_type}
+                {ev.direction ? ` · ${ev.direction}` : ""}
+              </span>
+              <span className="shrink-0">
+                {ev.occurred_at
+                  ? new Date(ev.occurred_at).toLocaleString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })
+                  : ""}
+              </span>
+            </div>
+            <p className="text-cream text-xs leading-snug line-clamp-2">{ev.summary || "—"}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Sofia SMS Tab ───────────────────────────────────────────────────────────
-function SofiaTab() {
+function SofiaTab({
+  externalPhone,
+  onPhoneChange,
+}: {
+  externalPhone?: string | null;
+  onPhoneChange?: (phone: string | null) => void;
+}) {
   const { data: threads = [], isLoading } = useSofiaConversations();
   const [activePhone, setActivePhone] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [handedOff, setHandedOff] = useState<Set<string>>(new Set());
   const handoff = useSofiaHandoff();
 
-  const resolvedPhone = activePhone ?? (threads[0]?.phone ?? null);
+  const pickPhone = (p: string) => {
+    setActivePhone(p);
+    onPhoneChange?.(p);
+  };
+
+  const resolvedPhone = externalPhone ?? activePhone ?? (threads[0]?.phone ?? null);
   const { data: messages = [], isLoading: msgLoading } = useSofiaThread(resolvedPhone);
 
   const filtered = useMemo(() => {
@@ -103,7 +183,7 @@ function SofiaTab() {
                 <button
                   key={t.phone}
                   type="button"
-                  onClick={() => setActivePhone(t.phone)}
+                  onClick={() => pickPhone(t.phone)}
                   className={cn(
                     "w-full text-left p-3 border-b border-brass/10 transition-colors",
                     isActive ? "bg-brass/10 border-l-2 border-l-brass" : "hover:bg-brass/5",
@@ -193,6 +273,8 @@ function SofiaTab() {
               })
             )}
           </div>
+          {/* Plan A: full multi-channel history under the SMS thread */}
+          <CustomerFullHistory phone={resolvedPhone} />
           {/* NO send/compose input — Sofia handles outbound; shadow_review has no send path */}
         </GlassCard>
       ) : (
@@ -200,7 +282,7 @@ function SofiaTab() {
           <EmptyState
             icon={MessageSquare}
             title="Select a conversation"
-            description="Pick a client on the left to view their Sofia SMS thread."
+            description="Pick a client from Attention or the thread list."
           />
         </GlassCard>
       )}
@@ -249,7 +331,16 @@ function ActionReceipt({ action }: { action: SofiaChatAction }) {
   );
 }
 
-function AskSofiaTab() {
+/** Plan A Phase 3.4 — Ask Sofia as collapsible right drawer (not a 5th tab). */
+function AskSofiaDrawer({
+  open,
+  onClose,
+  contextPhone,
+}: {
+  open: boolean;
+  onClose: () => void;
+  contextPhone?: string | null;
+}) {
   const [messages, setMessages] = useState<AskChatMsg[]>([]);
   const [input, setInput] = useState("");
   const chat = useSofiaChat();
@@ -278,80 +369,176 @@ function AskSofiaTab() {
     }
   };
 
-  return (
-    <GlassCard variant="strong" className="p-0 overflow-hidden flex flex-col">
-      <div className="p-4 border-b border-brass/10 flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-brass-light" />
-        <div>
-          <div className="text-cream font-medium text-sm">Ask Sofia</div>
-          <div className="text-[10px] text-cream-dim">
-            Same brain, tools, and no-draft/never-lie rules as Carl's SMS assistant mode. Type an instruction — Sofia
-            acts immediately (real SMS sends).
-          </div>
-        </div>
-      </div>
+  if (!open) return null;
 
-      <div ref={scrollRef} className="p-4 space-y-3 max-h-[calc(100dvh-26rem)] min-h-[16rem] overflow-y-auto">
-        {messages.length === 0 ? (
-          <div className="text-cream-dim text-xs text-center py-10">
-            e.g. "text Sal that his suit is ready" or "who do we have on the schedule today"
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="Close Ask Sofia"
+        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
+        onClick={onClose}
+      />
+      <aside
+        className="fixed top-0 right-0 z-50 h-full w-full max-w-md border-l border-brass/20 bg-forest shadow-2xl flex flex-col animate-fade-up"
+        role="dialog"
+        aria-label="Ask Sofia"
+      >
+        <div className="p-4 border-b border-brass/10 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2 min-w-0">
+            <Sparkles className="h-4 w-4 text-brass-light shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <div className="text-cream font-medium text-sm">Ask Sofia</div>
+              <div className="text-[10px] text-cream-dim leading-snug">
+                Same brain + tools as SMS assistant mode. Real sends when she texts a client.
+              </div>
+              {contextPhone ? (
+                <div className="text-[10px] text-brass mt-1 truncate">Context phone · {contextPhone}</div>
+              ) : null}
+            </div>
           </div>
-        ) : (
-          messages.map((m) => (
-            <div key={m.id} className={cn("flex", m.role === "staff" ? "justify-end" : "justify-start")}>
-              <div
-                className={cn(
-                  "max-w-[85%] rounded-lg p-3 border",
-                  m.role === "staff"
-                    ? "bg-brass/15 border-brass/30"
-                    : m.error
-                      ? "border-signal-crimson/30 bg-signal-crimson/5"
-                      : "bg-forest-raised/60 border-brass/15",
-                )}
-              >
-                <div className="ui-label text-[9px] mb-1 text-brass-light">
-                  {m.role === "staff" ? "You" : "Sofia"}
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-md border border-brass/20 text-cream-muted hover:text-cream hover:bg-brass/10"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div ref={scrollRef} className="flex-1 p-4 space-y-3 overflow-y-auto min-h-0">
+          {messages.length === 0 ? (
+            <div className="text-cream-dim text-xs text-center py-10 px-4">
+              e.g. &quot;text Sal that his suit is ready&quot; or &quot;who&apos;s on the schedule today&quot;
+            </div>
+          ) : (
+            messages.map((m) => (
+              <div key={m.id} className={cn("flex", m.role === "staff" ? "justify-end" : "justify-start")}>
+                <div
+                  className={cn(
+                    "max-w-[90%] rounded-lg p-3 border",
+                    m.role === "staff"
+                      ? "bg-brass/15 border-brass/30"
+                      : m.error
+                        ? "border-signal-crimson/30 bg-signal-crimson/5"
+                        : "bg-forest-raised/60 border-brass/15",
+                  )}
+                >
+                  <div className="ui-label text-[9px] mb-1 text-brass-light">
+                    {m.role === "staff" ? "You" : "Sofia"}
+                  </div>
+                  <div className="text-sm text-cream leading-relaxed whitespace-pre-wrap">{m.text}</div>
+                  {m.actions && m.actions.length > 0
+                    ? m.actions.map((a, i) => <ActionReceipt key={i} action={a} />)
+                    : null}
                 </div>
-                <div className="text-base sm:text-sm text-cream leading-relaxed whitespace-pre-wrap">{m.text}</div>
-                {m.actions && m.actions.length > 0
-                  ? m.actions.map((a, i) => <ActionReceipt key={i} action={a} />)
-                  : null}
+              </div>
+            ))
+          )}
+          {chat.isPending ? (
+            <div className="flex justify-start">
+              <div className="rounded-lg p-3 border border-brass/15 bg-forest-raised/60 text-xs text-cream-dim">
+                Sofia is working…
               </div>
             </div>
-          ))
-        )}
-        {chat.isPending ? (
-          <div className="flex justify-start">
-            <div className="rounded-lg p-3 border border-brass/15 bg-forest-raised/60 text-xs text-cream-dim">
-              Sofia is working…
-            </div>
-          </div>
-        ) : null}
-      </div>
+          ) : null}
+        </div>
 
-      <div className="p-3 border-t border-brass/10 flex items-center gap-2">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-          placeholder="Tell Sofia what to do…"
-          disabled={chat.isPending}
-          className="flex-1 px-3 py-2 bg-forest-raised/50 border border-brass/15 rounded-md text-base sm:text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40 disabled:opacity-50"
-        />
-        <Button
-          size="sm"
-          onClick={handleSend}
-          disabled={chat.isPending || !input.trim()}
-          className="h-9 px-3 bg-brass/20 border border-brass/30 text-cream hover:bg-brass/30"
-        >
-          <Send className="h-3.5 w-3.5" />
-        </Button>
+        <div className="p-3 border-t border-brass/10 flex items-center gap-2">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder="Tell Sofia what to do…"
+            disabled={chat.isPending}
+            className="flex-1 px-3 py-2 bg-forest-raised/50 border border-brass/15 rounded-md text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40 disabled:opacity-50"
+          />
+          <Button
+            size="sm"
+            onClick={handleSend}
+            disabled={chat.isPending || !input.trim()}
+            className="h-9 px-3 bg-brass/20 border border-brass/30 text-cream hover:bg-brass/30"
+          >
+            <Send className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+// ─── Attention Queue (Plan A Phase 3.1) ─────────────────────────────────────
+type AttentionItem = {
+  id: string;
+  phone?: string;
+  title: string;
+  preview: string;
+  tone: "brass" | "forest" | "gray";
+  rel: string;
+  kind: "sms" | "voice";
+};
+
+function AttentionQueue({
+  items,
+  activePhone,
+  onSelect,
+}: {
+  items: AttentionItem[];
+  activePhone: string | null;
+  onSelect: (item: AttentionItem) => void;
+}) {
+  return (
+    <GlassCard className="p-0 overflow-hidden h-full">
+      <div className="p-3 border-b border-brass/10 flex items-center justify-between">
+        <div>
+          <div className="ui-label text-[10px] text-brass">Attention</div>
+          <div className="text-cream text-sm font-medium">Needs eyes</div>
+        </div>
+        <span className="text-[10px] text-cream-dim border border-brass/20 rounded-full px-2 py-0.5">
+          {items.length}
+        </span>
+      </div>
+      <div className="max-h-[calc(100dvh-18rem)] overflow-y-auto">
+        {items.length === 0 ? (
+          <div className="p-6 text-center text-cream-dim text-xs">Queue clear.</div>
+        ) : (
+          items.map((it) => {
+            const active = it.phone && activePhone === it.phone;
+            const dot =
+              it.tone === "brass"
+                ? "bg-brass"
+                : it.tone === "forest"
+                  ? "bg-signal-emerald"
+                  : "bg-cream-dim/50";
+            return (
+              <button
+                key={it.id}
+                type="button"
+                onClick={() => onSelect(it)}
+                className={cn(
+                  "w-full text-left p-3 border-b border-brass/10 transition-colors",
+                  active ? "bg-brass/10 border-l-2 border-l-brass" : "hover:bg-brass/5",
+                )}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={cn("h-2 w-2 rounded-full shrink-0", dot)} />
+                  <span className="text-cream text-sm font-medium truncate flex-1">{it.title}</span>
+                  <span className="text-[10px] text-cream-dim shrink-0">{it.rel}</span>
+                </div>
+                <div className="text-[11px] text-cream-muted truncate pl-4">{it.preview}</div>
+                <div className="text-[9px] text-cream-dim pl-4 mt-0.5 uppercase tracking-wide">
+                  {it.kind === "voice" ? "Voice" : "SMS"}
+                </div>
+              </button>
+            );
+          })
+        )}
       </div>
     </GlassCard>
   );
@@ -548,32 +735,81 @@ function AllCommsTab() {
   );
 }
 
-// ─── Main page ───────────────────────────────────────────────────────────────
+// ─── Main page — Plan A Phase 3 shell ────────────────────────────────────────
 export default function Communications() {
   const [tab, setTab] = useState<Tab>("sofia");
+  const [askOpen, setAskOpen] = useState(false);
+  const [focusPhone, setFocusPhone] = useState<string | null>(null);
   const { data: voiceItems = [] } = useSofiaVoiceApprovals();
   const { data: threads = [] } = useSofiaConversations();
 
-  return (
-    <div className="space-y-6 animate-fade-up">
-      <SectionHeader
-        eyebrow="Sofia · Communications"
-        title={
-          <>
-            The <span className="text-brass-shimmer">conversation</span> centre.
-          </>
-        }
-        description="SMS threads via Sofia, voice escalations, and the full house communication ledger."
-      />
+  const attentionItems = useMemo((): AttentionItem[] => {
+    const sms: AttentionItem[] = (threads as any[]).map((t) => {
+      const dir = t.lastMessage?.direction;
+      const inbound = dir === "inbound" || dir === "in";
+      return {
+        id: `sms-${t.phone}`,
+        phone: t.phone,
+        title: t.phone,
+        preview: previewBody(t.lastMessage),
+        tone: inbound ? "brass" : "forest",
+        rel: t.lastMessage?.created_at ? formatRelative(t.lastMessage.created_at) : "",
+        kind: "sms" as const,
+      };
+    });
+    // Brass (needs reply) first, then forest (FYI outbound), then by time
+    sms.sort((a, b) => {
+      const rank = (t: string) => (t === "brass" ? 0 : t === "forest" ? 1 : 2);
+      const d = rank(a.tone) - rank(b.tone);
+      if (d !== 0) return d;
+      return 0;
+    });
+    const voice: AttentionItem[] = (voiceItems as any[]).slice(0, 12).map((v, i) => ({
+      id: `voice-${v.id ?? i}`,
+      title: v.client_name || v.client_phone || "Voice approval",
+      preview: String(v.summary || v.status || "Needs review"),
+      tone: "brass" as const,
+      rel: v.created_at ? formatRelative(v.created_at) : "",
+      kind: "voice" as const,
+      phone: v.client_phone || undefined,
+    }));
+    return [...voice, ...sms].slice(0, 40);
+  }, [threads, voiceItems]);
 
-      {/* Tab switcher */}
+  const brassCount = attentionItems.filter((i) => i.tone === "brass").length;
+
+  return (
+    <div className="space-y-5 animate-fade-up">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <SectionHeader
+          eyebrow="Plan A · Communications"
+          title={
+            <>
+              The <span className="text-brass-shimmer">conversation</span> centre.
+            </>
+          }
+          description="Attention queue · unified timeline · Ask Sofia drawer. SMS + calls + Plaud on one customer."
+        />
+        <Button
+          size="sm"
+          onClick={() => setAskOpen(true)}
+          className="h-9 gap-1.5 bg-brass/20 border border-brass/40 text-cream hover:bg-brass/30 shrink-0"
+        >
+          <PanelRightOpen className="h-3.5 w-3.5" />
+          Ask Sofia
+          {brassCount > 0 ? (
+            <span className="ml-1 text-[10px] text-brass-light">· {brassCount}</span>
+          ) : null}
+        </Button>
+      </div>
+
+      {/* Center filter chips (power users) — not Ask Sofia */}
       <div className="flex items-center gap-1 p-1 glass-panel rounded-lg w-fit">
         {(
           [
-            { key: "sofia", label: "Sofia SMS", count: threads.length },
-            { key: "ask", label: "Ask Sofia", count: null },
-            { key: "voice", label: "Voice Approvals", count: voiceItems.length },
-            { key: "all", label: "All Comms", count: null },
+            { key: "sofia" as const, label: "Sofia SMS", count: threads.length },
+            { key: "voice" as const, label: "Voice", count: voiceItems.length },
+            { key: "all" as const, label: "All Comms", count: null },
           ] as { key: Tab; label: string; count: number | null }[]
         ).map(({ key, label, count }) => (
           <button
@@ -595,10 +831,32 @@ export default function Communications() {
         ))}
       </div>
 
-      {tab === "sofia" && <SofiaTab />}
-      {tab === "ask" && <AskSofiaTab />}
-      {tab === "voice" && <VoiceTab />}
-      {tab === "all" && <AllCommsTab />}
+      {/* Plan A layout: Attention | Center */}
+      <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-4 items-start">
+        <AttentionQueue
+          items={attentionItems}
+          activePhone={focusPhone}
+          onSelect={(it) => {
+            if (it.kind === "voice") {
+              setTab("voice");
+              if (it.phone) setFocusPhone(it.phone);
+              return;
+            }
+            setTab("sofia");
+            setFocusPhone(it.phone ?? null);
+          }}
+        />
+        <div className="min-w-0">
+          {tab === "sofia" && (
+            <SofiaTab externalPhone={focusPhone} onPhoneChange={setFocusPhone} />
+          )}
+          {tab === "voice" && <VoiceTab />}
+          {tab === "all" && <AllCommsTab />}
+        </div>
+      </div>
+
+      <AskSofiaDrawer open={askOpen} onClose={() => setAskOpen(false)} contextPhone={focusPhone} />
     </div>
   );
 }
+
