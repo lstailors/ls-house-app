@@ -56,6 +56,7 @@ export type IntakeDraftSellItem = {
   availability: "in" | "order" | "out";
   eta?: string;
   source?: "erp" | "seed";
+  kind?: "mtm" | "rtw";
 };
 
 export type IntakeDraftPayload = {
@@ -154,6 +155,7 @@ function stripSellItemsForDraft(
     availability: s.availability || "in",
     eta: s.eta,
     source: s.source,
+    kind: s.kind,
   }));
 }
 

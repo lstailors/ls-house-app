@@ -16,6 +16,7 @@ export type SellDrawerLine = {
   rate: number;
   availability: "in" | "order" | "out";
   eta?: string;
+  kind?: "mtm" | "rtw";
 };
 
 type Props = {
@@ -189,7 +190,11 @@ function SellBody({
           </h3>
           <p className="text-[11.5px] text-cream-dim mt-1 leading-snug">
             {line.ref} · {line.item_code}
-            {line.availability === "order" ? " · special order" : ""}
+            {line.kind === "mtm"
+              ? " · MTM"
+              : line.availability === "order"
+                ? " · special order"
+                : ""}
           </p>
         </div>
         <button
@@ -305,7 +310,7 @@ function SellBody({
             <input
               value={line.eta || ""}
               onChange={(e) => onEta(e.target.value)}
-              placeholder="10–14 days"
+              placeholder={line.kind === "mtm" ? "Made to measure" : "10–14 days"}
               className="w-full h-12 rounded-xl bg-black/40 border border-brass/30 px-3.5 text-sm text-cream outline-none focus:border-brass placeholder:text-cream-dim !bg-black/40"
             />
           </label>

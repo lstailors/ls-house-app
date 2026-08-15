@@ -2,7 +2,8 @@
  * SPEC 057 — Walk-in sellable items catalog.
  * GET /api/alts/sellable-items
  *
- * Source: ERP Item (allow-list groups) + Item Price + Bin.
+ * Source: ERP Item (MTM garment groups + RTW/stock/Tramarossa) + Item Price + Bin.
+ * MTM SKUs sort first so FOH can invoice made-to-measure on the fly.
  * When RTW/Stock Garments catalog is empty, returns seeded demo SKUs
  * (source: "seed") so FOH UI matches mock 038 until ops stocks ERP.
  */
@@ -10,120 +11,30 @@ import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
 import { erpList } from "../lib/erp";
 import { grokChat } from "../lib/grok";
+import {
+  applySellableFilters,
+  availabilityFrom,
+  dedupeByItemCode,
+  envAllowGroups,
+  isDeniedGroup,
+  isMtmSellGroup,
+  isPreferredGroup,
+  MTM_SELL_GROUPS,
+  RTW_SELL_GROUPS,
+  sellableKind,
+  sortSellableItems,
+  uiGroupFrom,
+  type SellableAvailability,
+  type SellableKind,
+} from "../lib/sellable-catalog";
 
 export const altsRouter = new Hono();
-
-/** Deny-list: never show service/fabric/ops groups on the Sell grid. */
-const DENY_GROUPS = new Set(
-  [
-    "Alteration Services",
-    "Alterations",
-    "Alterations - Legacy",
-    "Factory Surcharges",
-    "Fabric",
-    "Suiting",
-    "Shirting",
-    "Jacketing",
-    "Lining",
-    "Coating",
-    "Specialty",
-    "Trouser-Only",
-    "Trims",
-    "Buttons",
-    "Canvas & Interlining",
-    "Labels & Monograms",
-    "Other Trims",
-    "Thread",
-    "Zippers",
-    "CMT - Factory",
-    "Consultations",
-    "Business Expenses",
-    "Equipment",
-    "Services",
-    "Repairs",
-    "Rush",
-    "Pickup & Delivery",
-    "Embroidery",
-    "Casa L&S",
-    "Casa Add-On",
-    "Membership - Atelier",
-    "Membership - Founder",
-    "Membership - Heritage",
-    "Membership - Signature",
-    "Wholesale - MTM Program",
-    "MTM Program - Jacket",
-    "MTM Program - Sample Kit",
-    "MTM Program - Setup Fee",
-    "MTM Program - Shirt",
-    "MTM Program - Suit",
-    "MTM Program - Trouser",
-    "Wholesale - RTW",
-    "RTW Wholesale - Accessory",
-    "RTW Wholesale - Jacket",
-    "RTW Wholesale - Shirt",
-    "RTW Wholesale - Suit",
-    "RTW Wholesale - Trouser",
-    "Bespoke",
-    "Bespoke Jacket",
-    "Bespoke Other",
-    "Bespoke Overcoat",
-    "Bespoke Shirt",
-    "Bespoke Suit",
-    "Bespoke Trouser",
-    "Bespoke Vest",
-    "MTM",
-    "MTM Jacket",
-    "MTM Other",
-    "MTM Overcoat",
-    "MTM Shirt",
-    "MTM Suit",
-    "MTM Trouser",
-    "MTM Vest",
-    "Custom Made",
-  ].map((s) => s.toLowerCase()),
-);
-
-/** Prefer these groups when present (C-curated RTW / stock / Tramarossa). */
-const PREFER_GROUPS = new Set(
-  [
-    "Stock Garments",
-    "RTW",
-    "RTW Shirt",
-    "RTW Trouser",
-    "RTW Jacket",
-    "RTW Suit",
-    "RTW Accessory",
-    "Tramarossa",
-    "Tramarossa Jeans",
-    "Tramarossa Jeans Colored",
-    "Tramarossa Pants",
-    "Tramarossa Bermuda",
-  ].map((s) => s.toLowerCase()),
-);
-
-/** Always query these groups from ERP (plus env allow-list). */
-const QUERY_GROUPS = [
-  "Stock Garments",
-  "RTW",
-  "RTW Shirt",
-  "RTW Trouser",
-  "RTW Jacket",
-  "RTW Suit",
-  "RTW Accessory",
-  "Tramarossa",
-  "Tramarossa Jeans",
-  "Tramarossa Jeans Colored",
-  "Tramarossa Pants",
-  "Tramarossa Bermuda",
-];
 
 const NYC_WAREHOUSES = [
   "NYC Showroom - LSTNY",
   "Finished Goods - LSTNY",
   "Stores - LSTNY",
 ];
-
-export type SellableAvailability = "in" | "order" | "out";
 
 export type SellableItemDto = {
   item_code: string;
@@ -140,6 +51,7 @@ export type SellableItemDto = {
   color_label?: string | null;
   source: "erp" | "seed";
   eta?: string | null;
+  kind?: SellableKind;
 };
 
 /** Demo catalog when ERP has no Stock Garments / RTW rows yet (SPEC 057). */
@@ -301,47 +213,6 @@ const SEED_CATALOG: SellableItemDto[] = [
   },
 ];
 
-function uiGroupFrom(itemGroup: string, name: string): SellableItemDto["ui_group"] {
-  const g = `${itemGroup} ${name}`.toLowerCase();
-  if (/tramarossa/.test(g)) return "bottoms"; // brand line is bottoms-only for now
-  if (/trouser|jean|chino|pant|bottom|skirt|bermuda/.test(g)) return "bottoms";
-  if (/shirt|polo|tee|top|jacket|coat|overshirt|vest/.test(g)) return "tops";
-  if (/accessor|belt|sock|cap|tie|scarf/.test(g)) return "accessories";
-  if (/rtw trouser/.test(itemGroup.toLowerCase())) return "bottoms";
-  if (/rtw shirt|rtw jacket/.test(itemGroup.toLowerCase())) return "tops";
-  if (/rtw accessor/.test(itemGroup.toLowerCase())) return "accessories";
-  return "other";
-}
-
-function envAllowGroups(): string[] {
-  const raw = process.env.ALTS_SELLABLE_ITEM_GROUPS || "";
-  return raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function isDeniedGroup(group: string): boolean {
-  return DENY_GROUPS.has((group || "").toLowerCase());
-}
-
-function isPreferredGroup(group: string): boolean {
-  const g = (group || "").toLowerCase();
-  if (PREFER_GROUPS.has(g)) return true;
-  if (g.startsWith("rtw") && !g.includes("wholesale")) return true;
-  if (g.startsWith("tramarossa")) return true; // any future Tramarossa-* group
-  if (g === "stock garments") return true;
-  return envAllowGroups().some((a) => a.toLowerCase() === g);
-}
-
-function availabilityFrom(isStock: boolean, qty: number | null): SellableAvailability {
-  if (!isStock) return "order";
-  if (qty == null) return "order";
-  if (qty > 0) return "in";
-  // Stock item at 0 — special-orderable (not hard out) until ops loads bins.
-  return "order";
-}
-
 /** Pull a color token from Italian/English product names for tile subline. */
 function guessColorLabel(name: string): string | null {
   const n = (name || "").toUpperCase();
@@ -365,6 +236,12 @@ function guessColorLabel(name: string): string | null {
 
 /** Default size chips when ERP has no variant attributes yet. */
 function defaultAttributesFor(itemGroup: string, name: string): { Size?: string[]; Color?: string[] } | undefined {
+  if (isMtmSellGroup(itemGroup)) {
+    const blob = `${itemGroup} ${name}`.toLowerCase();
+    if (/trouser|pant/.test(blob)) return { Size: ["28", "30", "32", "34", "36", "38"] };
+    if (/shirt/.test(blob)) return { Size: ["14.5", "15", "15.5", "16", "16.5", "17"] };
+    return { Size: ["36", "38", "40", "42", "44", "46"] };
+  }
   const ug = uiGroupFrom(itemGroup, name);
   if (ug === "bottoms") {
     return { Size: ["28", "30", "32", "34", "36", "38"] };
@@ -375,73 +252,87 @@ function defaultAttributesFor(itemGroup: string, name: string): { Size?: string[
   return { Size: ["One"] };
 }
 
+const SELLABLE_ITEM_FIELDS = [
+  "name",
+  "item_code",
+  "item_name",
+  "item_group",
+  "is_stock_item",
+  "has_variants",
+  "standard_rate",
+  "image",
+  "disabled",
+  "is_sales_item",
+] as const;
+
+type ErpSellableRow = {
+  name: string;
+  item_code: string;
+  item_name: string;
+  item_group: string;
+  is_stock_item: number;
+  has_variants: number;
+  standard_rate: number;
+  image: string | null;
+  disabled: number;
+  is_sales_item: number;
+};
+
+async function listSalesItemsByGroups(groups: string[], limit: number): Promise<ErpSellableRow[]> {
+  const cleaned = [...new Set(groups.map((g) => g.trim()).filter(Boolean))];
+  if (!cleaned.length) return [];
+  return erpList<ErpSellableRow>("Item", {
+    fields: [...SELLABLE_ITEM_FIELDS],
+    filters: [
+      ["disabled", "=", 0],
+      ["is_sales_item", "=", 1],
+      ["item_group", "in", cleaned],
+    ],
+    limit,
+    order_by: "item_name asc",
+  });
+}
+
 altsRouter.get("/sellable-items", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: "Unauthorized" }, 401);
 
   const q = (c.req.query("q") || "").trim().toLowerCase();
-  const filter = (c.req.query("filter") || "all").toLowerCase(); // all|in|order|tops|bottoms
-  const limit = Math.min(Math.max(Number(c.req.query("limit") || 60) || 60, 1), 120);
+  const filter = (c.req.query("filter") || "all").toLowerCase(); // all|mtm|in|order|tops|bottoms
+  const limit = Math.min(Math.max(Number(c.req.query("limit") || 80) || 80, 1), 150);
   const origin = "NYC";
   const warehouse =
     c.req.query("warehouse") ||
     process.env.ALTS_SELL_WAREHOUSE ||
     NYC_WAREHOUSES[0];
+  const extraGroups = envAllowGroups();
+  const extraMtm = extraGroups.filter((g) => isMtmSellGroup(g));
+  const extraRtw = extraGroups.filter((g) => !isMtmSellGroup(g));
 
   try {
-    // 1) Prefer allow-listed groups
-    let rows = await erpList<{
-      name: string;
-      item_code: string;
-      item_name: string;
-      item_group: string;
-      is_stock_item: number;
-      has_variants: number;
-      standard_rate: number;
-      image: string | null;
-      disabled: number;
-      is_sales_item: number;
-    }>("Item", {
-      fields: [
-        "name",
-        "item_code",
-        "item_name",
-        "item_group",
-        "is_stock_item",
-        "has_variants",
-        "standard_rate",
-        "image",
-        "disabled",
-        "is_sales_item",
-      ],
-      filters: [
-        ["disabled", "=", 0],
-        ["is_sales_item", "=", 1],
-        [
-          "item_group",
-          "in",
-          [...QUERY_GROUPS, ...envAllowGroups()],
+    // Fetch MTM separately so the RTW/Tramarossa 300-row cap cannot hide them.
+    const [mtmRows, mtmLike, rtwRows] = await Promise.all([
+      listSalesItemsByGroups([...MTM_SELL_GROUPS, ...extraMtm], 200),
+      erpList<ErpSellableRow>("Item", {
+        fields: [...SELLABLE_ITEM_FIELDS],
+        filters: [
+          ["disabled", "=", 0],
+          ["is_sales_item", "=", 1],
+          ["item_group", "like", "MTM%"],
         ],
-      ],
-      limit: 300,
-      order_by: "item_name asc",
-    });
+        limit: 200,
+        order_by: "item_name asc",
+      }),
+      listSalesItemsByGroups([...RTW_SELL_GROUPS, ...extraRtw], 300),
+    ]);
+    let rows = dedupeByItemCode([...mtmRows, ...mtmLike, ...rtwRows]).filter(
+      (r) => !isDeniedGroup(r.item_group),
+    );
 
-    // 2) If empty, fall back to all sales items and filter client-side
+    // If empty, fall back to Tramarossa brand sales items
     if (!rows.length) {
-      const broad = await erpList<typeof rows[0]>("Item", {
-        fields: [
-          "name",
-          "item_code",
-          "item_name",
-          "item_group",
-          "is_stock_item",
-          "has_variants",
-          "standard_rate",
-          "image",
-          "disabled",
-          "is_sales_item",
-        ],
+      const broad = await erpList<ErpSellableRow>("Item", {
+        fields: [...SELLABLE_ITEM_FIELDS],
         filters: [
           ["disabled", "=", 0],
           ["is_sales_item", "=", 1],
@@ -450,9 +341,9 @@ altsRouter.get("/sellable-items", async (c) => {
         limit: 300,
         order_by: "item_name asc",
       });
-      rows = broad.filter((r) => isPreferredGroup(r.item_group) && !isDeniedGroup(r.item_group));
-    } else {
-      rows = rows.filter((r) => !isDeniedGroup(r.item_group));
+      rows = broad.filter(
+        (r) => isPreferredGroup(r.item_group, extraGroups) && !isDeniedGroup(r.item_group),
+      );
     }
 
     let dto: SellableItemDto[] = [];
@@ -501,6 +392,7 @@ altsRouter.get("/sellable-items", async (c) => {
         const stockQty = isStock ? qtyByCode.get(r.item_code) ?? 0 : null;
         const rate = rateByCode.get(r.item_code) || Number(r.standard_rate) || 0;
         const avail = availabilityFrom(isStock, stockQty);
+        const kind = sellableKind(r.item_group || "");
         const name = r.item_name || r.item_code;
         return {
           item_code: r.item_code,
@@ -513,9 +405,10 @@ altsRouter.get("/sellable-items", async (c) => {
           has_variants: !!r.has_variants,
           image: r.image || null,
           ui_group: uiGroupFrom(r.item_group || "", name),
-          color_label: guessColorLabel(name),
+          color_label: kind === "mtm" ? null : guessColorLabel(name),
           source: "erp" as const,
-          eta: avail === "order" ? "Special order" : null,
+          eta: kind === "mtm" ? "Made to measure" : avail === "order" ? "Special order" : null,
+          kind,
           attributes: defaultAttributesFor(r.item_group || "", name),
         };
       });
@@ -523,22 +416,10 @@ altsRouter.get("/sellable-items", async (c) => {
 
     // Seed until RTW catalog exists
     if (!dto.length) {
-      dto = SEED_CATALOG.map((s) => ({ ...s }));
+      dto = SEED_CATALOG.map((s) => ({ ...s, kind: sellableKind(s.item_group) }));
     }
 
-    // Filters
-    if (q) {
-      dto = dto.filter((d) => {
-        const hay = `${d.item_name} ${d.item_code} ${d.color_label || ""} ${d.item_group}`.toLowerCase();
-        return hay.includes(q);
-      });
-    }
-    if (filter === "in") dto = dto.filter((d) => d.availability === "in");
-    else if (filter === "order") dto = dto.filter((d) => d.availability === "order");
-    else if (filter === "tops") dto = dto.filter((d) => d.ui_group === "tops");
-    else if (filter === "bottoms") dto = dto.filter((d) => d.ui_group === "bottoms");
-
-    dto = dto.slice(0, limit);
+    dto = sortSellableItems(applySellableFilters(dto, { q, filter })).slice(0, limit);
 
     return c.json({
       data: dto,
@@ -552,14 +433,10 @@ altsRouter.get("/sellable-items", async (c) => {
   } catch (e: any) {
     console.error("[alts/sellable-items]", e?.message || e);
     // Soft-fail to seed so FOH still works
-    let dto = SEED_CATALOG.map((s) => ({ ...s }));
-    if (q) {
-      dto = dto.filter((d) =>
-        `${d.item_name} ${d.color_label || ""}`.toLowerCase().includes(q),
-      );
-    }
+    let dto = SEED_CATALOG.map((s) => ({ ...s, kind: sellableKind(s.item_group) }));
+    dto = sortSellableItems(applySellableFilters(dto, { q, filter })).slice(0, limit);
     return c.json({
-      data: dto.slice(0, limit),
+      data: dto,
       meta: { warehouse, origin, seeded: true, error: String(e?.message || e) },
     });
   }

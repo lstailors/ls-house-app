@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { cn } from "@ls/design/utils";
 
-export type SellFilterId = "all" | "in" | "order" | "tops" | "bottoms";
+export type SellFilterId = "all" | "mtm" | "in" | "order" | "tops" | "bottoms";
 
 export type SellableItem = {
   item_code: string;
@@ -18,6 +18,7 @@ export type SellableItem = {
   color_label?: string | null;
   source: "erp" | "seed";
   eta?: string | null;
+  kind?: "mtm" | "rtw";
 };
 
 function money(n: number) {
@@ -26,6 +27,7 @@ function money(n: number) {
 
 const FILTERS: { id: SellFilterId; label: string }[] = [
   { id: "all", label: "All" },
+  { id: "mtm", label: "MTM" },
   { id: "in", label: "In stock" },
   { id: "order", label: "Special order" },
   { id: "tops", label: "Tops" },
@@ -67,7 +69,7 @@ export default function SellItemCatalog({
             What are we selling {firstName}?
           </h2>
           <p className="text-[11.5px] text-cream-dim mt-1.5 leading-snug max-w-md">
-            Stock and special-order pieces on the same Walk-in ticket.
+            Stock, MTM, and special-order pieces on the same Walk-in ticket.
             {seeded ? " · Demo catalog until RTW is stocked in ERP." : ""}
           </p>
         </div>
@@ -94,7 +96,7 @@ export default function SellItemCatalog({
         <input
           value={query}
           onChange={(e) => onQuery(e.target.value)}
-          placeholder="Polo, jeans, white…"
+          placeholder="Suit, polo, jeans…"
           className="w-full md:w-auto md:ml-auto h-11 md:h-[34px] min-w-0 md:min-w-[160px] px-3 rounded-full border border-brass/28 bg-black/35 text-[12px] text-cream outline-none focus:border-brass placeholder:text-cream-dim !bg-black/35"
         />
       </div>
@@ -109,6 +111,7 @@ export default function SellItemCatalog({
             {items.map((it) => {
               const count = cartCounts[it.item_code] || 0;
               const out = it.availability === "out";
+              const mtm = it.kind === "mtm" || /^mtm(\s|$)/i.test(it.item_group);
               return (
                 <button
                   key={it.item_code}
@@ -126,19 +129,25 @@ export default function SellItemCatalog({
                   <span
                     className={cn(
                       "absolute top-2.5 left-2.5 text-[9px] font-bold tracking-[0.08em] uppercase px-1.5 py-0.5 rounded-md border",
-                      it.availability === "in" &&
+                      mtm && "bg-[rgba(176,141,87,0.16)] text-brass-light border-brass/45",
+                      !mtm &&
+                        it.availability === "in" &&
                         "bg-[rgba(79,191,142,0.14)] text-[var(--em,#4FBF8E)] border-[rgba(79,191,142,0.35)]",
-                      it.availability === "order" &&
+                      !mtm &&
+                        it.availability === "order" &&
                         "bg-[rgba(232,168,92,0.12)] text-[var(--am,#E8A85C)] border-[rgba(232,168,92,0.4)]",
-                      it.availability === "out" &&
+                      !mtm &&
+                        it.availability === "out" &&
                         "bg-[rgba(217,123,108,0.12)] text-[var(--ro,#D97B6C)] border-[rgba(217,123,108,0.35)]",
                     )}
                   >
-                    {it.availability === "in"
-                      ? `In · ${it.stock_qty ?? "—"}`
-                      : it.availability === "order"
-                        ? "Order"
-                        : "Out"}
+                    {mtm
+                      ? "MTM"
+                      : it.availability === "in"
+                        ? `In · ${it.stock_qty ?? "—"}`
+                        : it.availability === "order"
+                          ? "Order"
+                          : "Out"}
                   </span>
                   {count > 0 && (
                     <span className="absolute top-2.5 right-2.5 min-w-6 h-6 px-1.5 rounded-full bg-brass text-forest-deep text-[11px] font-bold grid place-items-center shadow-[0_4px_12px_rgba(176,141,87,0.35)]">

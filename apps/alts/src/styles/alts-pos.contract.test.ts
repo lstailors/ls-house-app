@@ -139,4 +139,13 @@ describe("iPhone scale contract", () => {
     expect(css).toContain("@media (min-width: 1200px) and (min-height: 700px) and (max-height: 900px)");
     expect(css).not.toMatch(/@media \(min-width:\s*900px\) and \(max-height:\s*900px\)/);
   });
+
+  test("sell catalog puts MTM on the floor for walk-in invoices", () => {
+    const catalog = readFileSync(
+      new URL("../components/intake/SellItemCatalog.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(catalog).toContain('{ id: "mtm", label: "MTM" }');
+    expect(catalog).toContain("Stock, MTM, and special-order");
+  });
 });

@@ -94,6 +94,7 @@ type SellItem = {
   availability: "in" | "order" | "out";
   eta?: string;
   source?: "erp" | "seed";
+  kind?: "mtm" | "rtw";
   /** attribute options from catalog at add-time */
   sizeOptions?: string[];
   colorOptions?: string[];
@@ -363,7 +364,7 @@ export default function IntakeStepped() {
       const qs = new URLSearchParams({
         origin,
         filter: sellFilter,
-        limit: "60",
+        limit: "100",
       });
       if (sellQuery.trim()) qs.set("q", sellQuery.trim());
       const res = await api.raw(`/api/alts/sellable-items?${qs.toString()}`);
@@ -738,8 +739,9 @@ export default function IntakeStepped() {
       qty: 1,
       rate: Number(item.rate) || 0,
       availability: item.availability,
-      eta: item.eta || (item.availability === "order" ? "Special order" : undefined),
+      eta: item.eta || (item.kind === "mtm" ? "Made to measure" : item.availability === "order" ? "Special order" : undefined),
       source: item.source,
+      kind: item.kind,
       sizeOptions: sizes,
       colorOptions: colors,
     };
@@ -1822,7 +1824,7 @@ export default function IntakeStepped() {
                 }
                 lede={
                   allowSellMode
-                    ? "Alter client garments, or switch to Sell for stock / special-order."
+                    ? "Alter client garments, or switch to Sell for MTM / stock / special-order."
                     : undefined
                 }
                 modeSwitch={catalogModeSwitch}
