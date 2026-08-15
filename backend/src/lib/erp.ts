@@ -83,6 +83,29 @@ export function isAltsOrigin(origin?: string | null): boolean {
   return v === 'NYC' || v === 'NY' || v === 'NEW YORK' || v === 'NEW YORK CITY'
 }
 
+/** Remember Frappe-rejected fields so every shop-floor refresh does not pay another 417. */
+const droppedFields = new Map<string, Set<string>>()
+
+export function resetDroppedFields(): void {
+  droppedFields.clear()
+}
+
+function withoutDropped(doctype: string, fields?: string[]): string[] | undefined {
+  if (!fields) return fields
+  const drop = droppedFields.get(doctype)
+  if (!drop?.size) return fields
+  return fields.filter((f) => !drop.has(f))
+}
+
+function rememberDropped(doctype: string, field: string): void {
+  let set = droppedFields.get(doctype)
+  if (!set) {
+    set = new Set()
+    droppedFields.set(doctype, set)
+  }
+  set.add(field)
+}
+
 export async function erpList<T = unknown>(
   doctype: string,
   opts: {
@@ -108,7 +131,7 @@ export async function erpList<T = unknown>(
     return []
   }
 
-  let fields = opts.fields ? [...opts.fields] : undefined
+  let fields = withoutDropped(doctype, opts.fields ? [...opts.fields] : undefined)
 
   for (let attempt = 0; attempt < 8; attempt++) {
     const url = new URL(`${base}/api/resource/${encodeURIComponent(doctype)}`)
@@ -130,6 +153,7 @@ export async function erpList<T = unknown>(
     const badField = extractFieldNotPermitted(body)
     if (badField && fields?.includes(badField) && fields.length > 1) {
       console.warn(`erpList ${doctype}: dropping unknown field "${badField}" and retrying`)
+      rememberDropped(doctype, badField)
       fields = fields.filter((f) => f !== badField)
       continue
     }
@@ -177,7 +201,18 @@ export async function erpPing(): Promise<ErpPing> {
         error: `ERPNext ping failed: ${res.status}${body ? ` ${body.slice(0, 120)}` : ''}`,
       }
     }
-    return { configured: true, reachable: true, latencyMs, error: null }
+    // Auth can succeed while ticket lists still 417 — prove the shop data path.
+    try {
+      await erpList('Alteration Ticket', { fields: ['name'], limit: 1, throwOnError: true })
+    } catch (e: any) {
+      return {
+        configured: true,
+        reachable: false,
+        latencyMs: Date.now() - started,
+        error: e?.message || 'Alteration Ticket list failed',
+      }
+    }
+    return { configured: true, reachable: true, latencyMs: Date.now() - started, error: null }
   } catch (e: any) {
     return {
       configured: true,

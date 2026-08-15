@@ -35,7 +35,7 @@ export default function QuoteComposer() {
 
   const open = useQuery({
     queryKey: ["quote-open-tickets"],
-    queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=80"),
+    queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=500"),
   });
 
   const detail = useQuery({
