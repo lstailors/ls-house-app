@@ -468,6 +468,7 @@ export default function TaskSubitemPicker({
                           p={p}
                           on={selected.has(p.id)}
                           starred
+                          compact
                           onClick={() => onTile(p)}
                           onStar={() => onStar(p)}
                           editMode={editMode}
@@ -617,6 +618,7 @@ function WorkTile({
   onStar,
   hint,
   editMode,
+  compact,
 }: {
   p: HierarchyPreset;
   on: boolean;
@@ -625,6 +627,7 @@ function WorkTile({
   onStar: () => void;
   hint?: string;
   editMode?: boolean;
+  compact?: boolean;
 }) {
   return (
     <div className="relative min-w-0">
@@ -632,36 +635,52 @@ function WorkTile({
         type="button"
         onClick={onClick}
         className={cn(
-          "flex flex-col justify-between text-left w-full min-h-[148px] min-w-0 rounded-[15px] border px-3 pt-3 pb-3 pr-12 transition-colors",
+          "flex flex-col justify-between text-left w-full min-w-0 border pr-12 transition-colors",
+          compact
+            ? "min-h-[64px] rounded-[13px] px-3 py-2.5"
+            : "min-h-[148px] rounded-[15px] px-3 pt-3 pb-3",
           on
-            ? "border-brass bg-gradient-to-b from-[#D3AE72] to-[#B08D57] shadow-[0_6px_18px_rgba(176,141,87,0.30)]"
+            ? compact
+              ? "border-brass bg-brass/20"
+              : "border-brass bg-gradient-to-b from-[#D3AE72] to-[#B08D57] shadow-[0_6px_18px_rgba(176,141,87,0.30)]"
             : "border-brass/35 bg-white/[0.03] hover:border-brass/60",
         )}
       >
         <div
           className={cn(
-            "text-[14px] font-semibold leading-snug break-words",
-            on ? "text-[#0C1810]" : "text-cream",
+            "font-medium leading-snug break-words",
+            compact ? "text-[13px]" : "text-[14px] font-semibold",
+            on && !compact ? "text-[#0C1810]" : "text-cream",
           )}
         >
           {labelOf(p)}
         </div>
-        <div className="mt-auto pt-2">
-          <div
-            className={cn(
-              "text-[10.5px] truncate",
-              on ? "text-[#0C1810]/70" : "text-cream-dim",
-            )}
-          >
-            {hint || (p.est_minutes ? `${p.est_minutes} min` : "\u00A0")}
-          </div>
-          <div
-            className={cn(
-              "text-[18px] tabular-nums font-semibold",
-              on ? "text-[#0C1810]" : "text-brass-light",
-            )}
-          >
-            {priceText(p, false)}
+        <div className={cn("mt-auto", compact ? "pt-1" : "pt-2")}>
+          {!compact && (
+            <div
+              className={cn(
+                "text-[10.5px] truncate",
+                on ? "text-[#0C1810]/70" : "text-cream-dim",
+              )}
+            >
+              {hint || (p.est_minutes ? `${p.est_minutes} min` : "\u00A0")}
+            </div>
+          )}
+          <div className="flex justify-between items-baseline gap-1">
+            {compact ? (
+              <span className="text-[10.5px] text-cream-dim truncate">
+                {p.est_minutes ? `${p.est_minutes} min` : "\u00A0"}
+              </span>
+            ) : null}
+            <div
+              className={cn(
+                "tabular-nums font-semibold shrink-0",
+                compact ? "text-[17px] ml-auto" : "text-[18px]",
+                on && !compact ? "text-[#0C1810]" : "text-brass-light",
+              )}
+            >
+              {priceText(p, false)}
+            </div>
           </div>
         </div>
       </button>
