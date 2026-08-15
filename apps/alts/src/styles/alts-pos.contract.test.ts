@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
+import { existsSync } from "node:fs";
+
 const css = readFileSync(new URL("./alts-pos.css", import.meta.url), "utf8");
 const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+const pub = new URL("../../public/", import.meta.url);
 
 describe("Alts touch target contract", () => {
   test("the shared login is inside the Alts interaction-floor scope", () => {
@@ -45,6 +48,17 @@ describe("iPhone scale contract", () => {
   test("the document asks Safari to fit the device width", () => {
     expect(html).toContain('width=device-width');
     expect(html).toContain("viewport-fit=cover");
+  });
+
+  test("the L&S seal is the tab icon and the iPhone home-screen icon", () => {
+    expect(html).toContain('href="/favicon.ico"');
+    expect(html).toContain('href="/apple-touch-icon.png"');
+    expect(html).toContain('apple-mobile-web-app-capable');
+    expect(html).toContain('apple-mobile-web-app-title');
+    expect(existsSync(new URL("apple-touch-icon.png", pub))).toBe(true);
+    expect(existsSync(new URL("favicon.ico", pub))).toBe(true);
+    expect(existsSync(new URL("icon-512.png", pub))).toBe(true);
+    expect(existsSync(new URL("ls-logo-crest.png", pub))).toBe(true);
   });
 
   test("the page does not leak sideways or inflate text", () => {

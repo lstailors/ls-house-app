@@ -54,11 +54,13 @@ export default defineConfig({
       injectRegister: "auto",
       includeAssets: [
         "favicon.ico",
+        "favicon-32.png",
         "apple-touch-icon.png",
         "icon-192.png",
         "icon-512.png",
         "ls-icon.svg",
         "ls-logo-seal.png",
+        "ls-logo-crest.png",
       ],
       manifest: {
         name: "L&S Alterations",
