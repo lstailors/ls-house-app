@@ -65,6 +65,7 @@ describe("iPhone scale contract", () => {
       "utf8",
     );
     expect(garment).toContain('entered ? "is-in" : "is-out pointer-events-none"');
+    expect(garment).toContain("right-[340px] w-[min(720px,calc(100vw-360px))]");
     expect(garment).not.toContain("translate-x-full");
     expect(sell).toContain('entered ? "is-in" : "is-out pointer-events-none"');
     expect(sell).not.toContain("translate-x-full");

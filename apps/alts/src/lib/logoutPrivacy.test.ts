@@ -42,6 +42,7 @@ test("logout removes private Alts state without deleting device preferences", ()
   session.setItem(ALTS_SO_CART_KEY, JSON.stringify({ customerName: "Prior Client" }));
   local.setItem("alts.espresso.open", "1");
   local.setItem("lsh.activeLocationId", "NYC");
+  local.setItem("alts-intake-favorites:v1:Trouser", JSON.stringify({ ids: ["hem-shorten"] }));
 
   clearAltsPrivateStorage();
 
@@ -51,6 +52,9 @@ test("logout removes private Alts state without deleting device preferences", ()
   expect(local.getItem("lst_token")).toBeNull();
   expect(local.getItem("alts.espresso.open")).toBe("1");
   expect(local.getItem("lsh.activeLocationId")).toBe("NYC");
+  expect(local.getItem("alts-intake-favorites:v1:Trouser")).toBe(
+    JSON.stringify({ ids: ["hem-shorten"] }),
+  );
 });
 
 test("intake drafts expire after one day", () => {
