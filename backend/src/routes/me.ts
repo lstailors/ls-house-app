@@ -4,6 +4,7 @@ import { erpGet, erpUpdate } from "../lib/erp";
 import { verifyToken } from "../lib/jwt";
 import { readSessionToken } from "../lib/session-cookie";
 import { maybeSlideSession } from "./auth";
+import { opsMode } from "../lib/ops-mode";
 
 export const meRouter = new Hono();
 
@@ -39,6 +40,7 @@ meRouter.get("/", async (c) => {
       location: user.locationCode ? { id: user.locationCode, name: user.locationCode } : null,
       image,
       isActive: true,
+      opsMode: opsMode(),
     },
   });
 });

@@ -22,6 +22,7 @@ import {
 } from "../lib/qc";
 import { createQcSignatureSubmission, docusealEnabled } from "../lib/docuseal";
 import { loadDocusealSettings, maskKey, saveDocusealSettings } from "../lib/qc-settings";
+import { canShowTestData, filterTestRows } from "../lib/ops-mode";
 
 export const qcRouter = new Hono();
 
@@ -480,7 +481,15 @@ qcRouter.get("/orders", async (c) => {
   const status = (c.req.query("status") || "").trim();
   try {
     const rows = await listMtmPipeline(status || undefined);
-    return c.json({ data: rows, meta: { statuses: MTM_STATUSES, status: status || null } });
+    const showTest = canShowTestData({
+      role: gate.user?.role,
+      showTest: c.req.query("showTest") === "1",
+    });
+    const visible = filterTestRows(rows, (r) => [r.name, r.orderName, r.customerName], {
+      role: gate.user?.role,
+      showTest,
+    });
+    return c.json({ data: visible, meta: { statuses: MTM_STATUSES, status: status || null } });
   } catch (e: any) {
     console.error("GET /api/qc/orders", e);
     return c.json({ error: { message: e?.message || "Could not load MTM orders" } }, 502);

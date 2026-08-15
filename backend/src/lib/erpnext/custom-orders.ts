@@ -119,6 +119,8 @@ async function listCustomOrdersFromSalesOrders(opts: {
       "name",
       "customer",
       "customer_name",
+      "title",
+      "po_no",
       "status",
       "grand_total",
       "advance_paid",
@@ -180,6 +182,7 @@ async function listCustomOrdersFromSalesOrders(opts: {
       depositAmount: Number(o.advance_paid ?? 0),
       status: soToAppStatus(o.status ?? ""),
       notes: null,
+      title: o.title || o.po_no || null,
       spec: {
         yzOrderNumber: null,
         garments: lineItems.map((g: any) => ({

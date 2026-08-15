@@ -37,7 +37,7 @@ outreachRouter.post("/order-ready", async (c) => {
   const firstName = customerName.split(" ")[0];
   const message = `Hi ${firstName}, great news — your order from L&S Custom Tailors is ready. Please contact us to schedule your pickup or delivery. We look forward to seeing you!`;
 
-  await sendSms(phone, message);
+  await sendSms(phone, message, undefined, "outreach.orderReady");
 
   return c.json({ data: { sent: true, to: phone, order: orderName } });
 });

@@ -10,6 +10,7 @@ import StatusBadge from "@alts/components/StatusBadge";
 import MtmStatusRail from "@alts/components/MtmStatusRail";
 import { MTM_STATUSES, type MtmStatusKey } from "@alts/lib/mtmStatus";
 import { clientInitials, syncLabel } from "@alts/lib/ticketDisplay";
+import { withShowTest } from "@alts/lib/showTestData";
 import "@alts/styles/alts-pos.css";
 
 type Tab = "waiting" | "open" | "passed" | "failed";
@@ -61,8 +62,8 @@ export default function QcGlass() {
     queryKey: ["alts-qc", tab, pipeline],
     queryFn: () =>
       pipeline
-        ? api.get<QcRow[]>(`/api/qc/orders?status=${encodeURIComponent(pipeline)}`)
-        : api.get<QcRow[]>(`/api/qc?tab=${tab}`),
+        ? api.get<QcRow[]>(withShowTest(`/api/qc/orders?status=${encodeURIComponent(pipeline)}`))
+        : api.get<QcRow[]>(withShowTest(`/api/qc?tab=${tab}`)),
     refetchInterval: 45_000,
   });
 

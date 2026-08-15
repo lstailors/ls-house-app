@@ -7,6 +7,7 @@ import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
 import { syncLabel } from "@alts/lib/ticketDisplay";
+import { withShowTest } from "@alts/lib/showTestData";
 import "@alts/styles/alts-pos.css";
 
 type Todo = {
@@ -19,9 +20,11 @@ type Todo = {
   assigned_by_full_name: string | null;
   reference_type: string | null;
   reference_name: string | null;
+  auto?: boolean;
 };
 
 type Tab = "open" | "overdue" | "done";
+type Source = "all" | "auto" | "human";
 
 function stripHtml(html: string) {
   return (html ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
@@ -57,17 +60,27 @@ function who(email?: string | null) {
   return local.charAt(0).toUpperCase() + local.slice(1);
 }
 
+function groupKey(t: Todo) {
+  return t.reference_name || t.name;
+}
+
 export default function TasksGlass() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("open");
+  const [source, setSource] = useState<Source>("all");
   const [picked, setPicked] = useState<Todo | null>(null);
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
 
   const list = useQuery({
-    queryKey: ["alts-tasks", tab === "done" ? "closed" : "open"],
+    queryKey: ["alts-tasks", tab === "done" ? "closed" : "open", source],
     queryFn: () =>
-      api.get<Todo[]>(`/api/tasks?status=${tab === "done" ? "closed" : "open"}&limit=200`),
+      api.get<Todo[]>(
+        withShowTest(
+          `/api/tasks?status=${tab === "done" ? "closed" : "open"}&limit=500&scope=house&source=${source}`,
+        ),
+      ),
     refetchInterval: 60_000,
   });
 
@@ -76,6 +89,17 @@ export default function TasksGlass() {
     onSuccess: () => {
       toast.success("Done");
       setPicked(null);
+      qc.invalidateQueries({ queryKey: ["alts-tasks"] });
+      qc.invalidateQueries({ queryKey: ["alts-tasks-count"] });
+    },
+    onError: (e: Error) => toast.error(e.message || "Could not close"),
+  });
+
+  const bulkClose = useMutation({
+    mutationFn: (names: string[]) => api.post<{ closed: number }>("/api/tasks/bulk-close", { names }),
+    onSuccess: (data) => {
+      toast.success(`Closed ${data?.closed ?? selected.length}`);
+      setSelected([]);
       qc.invalidateQueries({ queryKey: ["alts-tasks"] });
       qc.invalidateQueries({ queryKey: ["alts-tasks-count"] });
     },
@@ -100,14 +124,46 @@ export default function TasksGlass() {
   const shown = tab === "done" ? rows : tab === "overdue" ? overdueRows : openRows;
   const live = syncLabel(list.dataUpdatedAt, list.isFetching);
 
+  const groups = useMemo(() => {
+    const map = new Map<string, Todo[]>();
+    for (const t of shown) {
+      const key = groupKey(t);
+      const list = map.get(key) ?? [];
+      list.push(t);
+      map.set(key, list);
+    }
+    return [...map.entries()].map(([key, items]) => ({
+      key,
+      label: items[0]?.reference_name
+        ? `${items[0].reference_type || "Ticket"} · ${items[0].reference_name}`
+        : "Standalone",
+      items,
+    }));
+  }, [shown]);
+
   const counts = useMemo(
     () => ({
-      open: tab === "done" ? openRows.length : openRows.length,
+      open: openRows.length,
       overdue: overdueRows.length,
       done: tab === "done" ? rows.length : 0,
     }),
     [openRows.length, overdueRows.length, rows.length, tab],
   );
+
+  const toggle = (name: string) => {
+    setSelected((cur) => (cur.includes(name) ? cur.filter((x) => x !== name) : [...cur, name]));
+  };
+
+  const selectGroup = (items: Todo[]) => {
+    const names = items.filter((t) => t.status === "Open").map((t) => t.name);
+    setSelected((cur) => {
+      const set = new Set(cur);
+      const allOn = names.every((n) => set.has(n));
+      if (allOn) names.forEach((n) => set.delete(n));
+      else names.forEach((n) => set.add(n));
+      return [...set];
+    });
+  };
 
   return (
     <div className="alts-root min-h-dvh flex flex-col overflow-x-hidden">
@@ -115,7 +171,7 @@ export default function TasksGlass() {
         <BrandSeal />
         <div className="min-w-0">
           <div className="display text-[28px] leading-none">Tasks</div>
-          <div className="caps mt-1">House list · tap to close</div>
+          <div className="caps mt-1">House list · grouped by ticket</div>
         </div>
         <div className="flex-1" />
         <div className={cn("sf-live", list.isFetching && "is-sync", list.isError && "is-down")}>
@@ -154,7 +210,33 @@ export default function TasksGlass() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-2 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))]">
+      <div className="px-4 sm:px-5 pt-2 flex flex-wrap gap-2">
+        {(["all", "human", "auto"] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setSource(k)}
+            className={cn(
+              "px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border",
+              source === k ? "bg-brass/20 border-brass text-cream" : "border-brass/20 text-cream-dim",
+            )}
+          >
+            {k === "all" ? "All sources" : k === "auto" ? "Auto-assigned" : "Human"}
+          </button>
+        ))}
+        {selected.length > 0 && tab !== "done" && (
+          <button
+            type="button"
+            disabled={bulkClose.isPending}
+            onClick={() => bulkClose.mutate(selected)}
+            className="ml-auto px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border border-brass/45 bg-brass/15 text-cream"
+          >
+            {bulkClose.isPending ? "Closing…" : `Close ${selected.length}`}
+          </button>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-4 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))]">
         {list.isError && (
           <QueryErrorPanel
             title="Could not load tasks"
@@ -162,39 +244,73 @@ export default function TasksGlass() {
             onRetry={() => list.refetch()}
           />
         )}
-        {shown.map((t) => {
-          const late = t.status === "Open" && isOverdue(t.date);
-          return (
-            <button
-              key={t.name}
-              type="button"
-              onClick={() => setPicked(t)}
-              className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-start gap-3"
-            >
-              <span
-                className={cn(
-                  "mt-1 h-2.5 w-2.5 rounded-full shrink-0",
-                  t.priority === "High" || late ? "bg-[var(--ro)]" : t.priority === "Low" ? "bg-[var(--cd)]" : "bg-[var(--bl)]",
-                )}
-                aria-hidden
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={cn("chip", late && "text-[var(--ro)]")}>{dueLabel(t.date)}</span>
-                  <span className="text-[11px] text-cream-dim">{t.priority}</span>
-                  <span className="text-[11px] text-cream-dim">{who(t.allocated_to)}</span>
+        {groups.map((g) => (
+          <div key={g.key} className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="caps text-brass-light truncate">{g.label}</div>
+              {g.items.length > 1 && (
+                <span className="text-[10px] text-cream-dim">{g.items.length}</span>
+              )}
+              {tab !== "done" && g.items.some((t) => t.status === "Open") && (
+                <button
+                  type="button"
+                  onClick={() => selectGroup(g.items)}
+                  className="ml-auto text-[10px] uppercase tracking-wide text-brass-light"
+                >
+                  Select group
+                </button>
+              )}
+            </div>
+            {g.items.map((t) => {
+              const late = t.status === "Open" && isOverdue(t.date);
+              const on = selected.includes(t.name);
+              return (
+                <div key={t.name} className="flex items-stretch gap-2">
+                  {tab !== "done" && (
+                    <button
+                      type="button"
+                      onClick={() => toggle(t.name)}
+                      className={cn(
+                        "w-10 rounded-xl border flex items-center justify-center text-xs font-bold",
+                        on ? "border-brass bg-brass/20 text-cream" : "border-brass/20 text-cream-dim",
+                      )}
+                      aria-label="Select task"
+                    >
+                      {on ? "✓" : ""}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setPicked(t)}
+                    className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-start gap-3"
+                  >
+                    <span
+                      className={cn(
+                        "mt-1 h-2.5 w-2.5 rounded-full shrink-0",
+                        t.priority === "High" || late ? "bg-[var(--ro)]" : t.priority === "Low" ? "bg-[var(--cd)]" : "bg-[var(--bl)]",
+                      )}
+                      aria-hidden
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={cn("chip", late && "text-[var(--ro)]")}>{dueLabel(t.date)}</span>
+                        <span className="text-[11px] text-cream-dim">{t.priority}</span>
+                        <span className="text-[11px] text-cream-dim">{who(t.allocated_to)}</span>
+                        {t.auto && (
+                          <span className="text-[9px] uppercase tracking-widest border border-brass/30 text-brass-light rounded px-1.5 py-0.5">
+                            Auto
+                          </span>
+                        )}
+                      </div>
+                      <div className="display text-[22px] leading-tight mt-1">{stripHtml(t.description) || "Untitled"}</div>
+                    </div>
+                    <div className="text-cream-dim">→</div>
+                  </button>
                 </div>
-                <div className="display text-[22px] leading-tight mt-1">{stripHtml(t.description) || "Untitled"}</div>
-                {t.reference_name && (
-                  <div className="text-xs text-cream-dim mt-1 truncate">
-                    {t.reference_type} · {t.reference_name}
-                  </div>
-                )}
-              </div>
-              <div className="text-cream-dim">→</div>
-            </button>
-          );
-        })}
+              );
+            })}
+          </div>
+        ))}
         {!list.isLoading && !shown.length && !list.isError && (
           <div className="sf-empty">{tab === "overdue" ? "Nothing late." : tab === "done" ? "Nothing closed yet." : "The list is clear."}</div>
         )}
@@ -212,7 +328,7 @@ export default function TasksGlass() {
             <div className="caps text-brass-light">{dueLabel(picked.date)}</div>
             <h2 className="display text-[28px] leading-tight mt-1">{stripHtml(picked.description) || "Untitled"}</h2>
             <p className="text-sm text-cream-dim mt-2">
-              {[picked.priority, who(picked.allocated_to), picked.assigned_by_full_name ? `from ${picked.assigned_by_full_name}` : ""]
+              {[picked.priority, who(picked.allocated_to), picked.assigned_by_full_name ? `from ${picked.assigned_by_full_name}` : "", picked.auto ? "auto-assigned" : ""]
                 .filter(Boolean)
                 .join(" · ")}
             </p>

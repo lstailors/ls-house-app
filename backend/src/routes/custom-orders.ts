@@ -29,7 +29,13 @@ customOrdersRouter.get("/", async (c) => {
       salesRepId: user.role === "salesperson" ? user.email : undefined,
       limit,
     });
-    return c.json({ data });
+    const { filterTestRows, canShowTestData } = await import("../lib/ops-mode");
+    const showTest = canShowTestData({ role: user.role, showTest: c.req.query("showTest") === "1" });
+    const visible = filterTestRows(data, (r: any) => [r.erpName, r.id, r.notes, r.title, r.customer?.name], {
+      role: user.role,
+      showTest,
+    });
+    return c.json({ data: visible });
   } catch (e: any) {
     return c.json({ error: { message: e.message ?? "Failed to list orders" } }, 500);
   }

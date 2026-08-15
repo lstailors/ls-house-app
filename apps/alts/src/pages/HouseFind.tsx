@@ -8,6 +8,7 @@ import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
 import StatusBadge from "@alts/components/StatusBadge";
 import { clientInitials, syncLabel } from "@alts/lib/ticketDisplay";
+import { withShowTest } from "@alts/lib/showTestData";
 import "@alts/styles/alts-pos.css";
 
 type Tab = "rtw" | "alts" | "mtm";
@@ -99,7 +100,7 @@ export default function HouseFind() {
 
   const custom = useQuery({
     queryKey: ["alts-custom-orders"],
-    queryFn: () => api.get<CustomOrder[]>("/api/custom-orders?limit=200"),
+    queryFn: () => api.get<CustomOrder[]>(withShowTest("/api/custom-orders?limit=200")),
     refetchInterval: 90_000,
   });
 
@@ -107,14 +108,14 @@ export default function HouseFind() {
     queryKey: ["alts-so-browse", go],
     queryFn: () =>
       api.get<SalesOrder[]>(
-        `/api/intake-alterations/sales-orders/search?q=${encodeURIComponent(go)}&limit=80`,
+        withShowTest(`/api/intake-alterations/sales-orders/search?q=${encodeURIComponent(go)}&limit=80`),
       ),
     refetchInterval: 90_000,
   });
 
   const tickets = useQuery({
     queryKey: ["alts-house-tickets"],
-    queryFn: () => api.get<AltTicket[]>("/api/intake-alterations/tickets?limit=500&origin=ALL"),
+    queryFn: () => api.get<AltTicket[]>(withShowTest("/api/intake-alterations/tickets?limit=500&origin=ALL")),
     refetchInterval: 90_000,
   });
 

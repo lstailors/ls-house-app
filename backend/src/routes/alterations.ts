@@ -764,7 +764,7 @@ alterationsRouter.post("/erp-webhook/ready", async (c) => {
   const store = "New York";
   const message = `Hi ${body.customer_name || "there"}, your alteration${body.garment_count !== 1 ? "s are" : " is"} ready for pickup at our ${store} location! Reply or call us with any questions. — L&S Custom Tailors`;
 
-  await sendSms(body.customer_phone, message);
+  await sendSms(body.customer_phone, message, undefined, "alterations.readyPickup");
 
   return c.json({ data: { sent: true, ticket: body.ticket } });
 });

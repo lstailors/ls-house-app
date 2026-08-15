@@ -1,5 +1,7 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
+import { canShowTestData, isTestSmsBody } from "../lib/ops-mode";
+import { canReadVoiceNote, isHouseVisibleVoice } from "../lib/voice-privacy";
 import { erpList, erpCreate } from "../lib/erp";
 import {
   listCallLogs,
@@ -98,16 +100,27 @@ commsRouter.get("/", async (c) => {
   const limit = Number(c.req.query("limit") ?? "100");
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  const [calls, recordings, sms] = await Promise.all([
+  const [calls, recordingsRaw, sms] = await Promise.all([
     listCallLogs({ limit }),
     listPlaudCaptures({ limit: 50 }),
     listSmsMessagesFiltered({ limit }),
   ]);
 
+  const showTest = canShowTestData({
+    role: user.role,
+    showTest: c.req.query("showTest") === "1",
+  });
+  const recordings = recordingsRaw.filter(isHouseVisibleVoice);
+  const smsVisible = sms.filter((m) => {
+    if (showTest) return true;
+    if (isTestSmsBody(m.content || m.body)) return false;
+    return true;
+  });
+
   // Group SMS by phone number (threads)
   type SmsThread = { phone: string; messages: any[]; lastMessage: any; unread: number };
   const threadMap = new Map<string, SmsThread>();
-  for (const msg of sms) {
+  for (const msg of smsVisible) {
     const phone = msg.client_phone ?? "unknown";
     const thread: SmsThread = threadMap.get(phone) ?? { phone, messages: [] as any[], lastMessage: msg, unread: 0 };
     thread.messages.push(msg);
@@ -209,7 +222,10 @@ commsRouter.get("/recordings/:id", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   const data = await getPlaudCapture(c.req.param("id"));
-  return c.json({ data: data ? { ...data, id: data.name } : null });
+  if (!data || !canReadVoiceNote(user, data)) {
+    return c.json({ error: { message: "Not found" } }, 404);
+  }
+  return c.json({ data: { ...data, id: data.name } });
 });
 
 // ── POST /api/comms/brief/:phone — Grok brief for customer ─────────────────
@@ -280,7 +296,7 @@ commsRouter.post("/brief/recording/:id", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
   const rec = await getPlaudCapture(c.req.param("id"));
-  if (!rec) return c.json({ error: { message: "Recording not found" } }, 404);
+  if (!rec || !canReadVoiceNote(user, rec)) return c.json({ error: { message: "Recording not found" } }, 404);
 
   const apiKey = process.env.XAI_API_KEY;
   if (!apiKey) return c.json({ data: { brief: "AI not configured" } });
@@ -467,7 +483,7 @@ commsRouter.post("/recordings/:id/auto-tag", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
   const rec = await getPlaudCapture(c.req.param("id"));
-  if (!rec) return c.json({ error: { message: "Recording not found" } }, 404);
+  if (!rec || !canReadVoiceNote(user, rec)) return c.json({ error: { message: "Recording not found" } }, 404);
 
   const transcript = rec.transcript || rec.transcript_raw || rec.transcript_whisper || "";
   const summary = rec.summary || rec.summary_raw || "";
@@ -510,6 +526,7 @@ commsRouter.post("/recordings/:id/auto-tag", async (c) => {
   const { erpUpdate } = await import("../lib/erp");
   await erpUpdate("LSH Plaud Capture", rec.name, {
     tagged_garment_ids: JSON.stringify(tagged),
+    visibility: tagged.length ? "house" : "private",
   });
 
   return c.json({ data: { tagged, count: tagged.length } });

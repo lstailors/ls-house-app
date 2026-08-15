@@ -3,6 +3,9 @@ import { getAuthedUser } from '../lib/scope';
 import { uploadFile, erpFileAbsoluteUrl } from '../lib/erpnext/files';
 import { erpList, erpGet as erpGetDoc, erpUpdate, erpPdf, erpRunMethod, erpCreate, erpSubmit, isAltsOrigin } from '../lib/erp';
 import { sendSms } from '../lib/twilio';
+import { dispatchEmail } from '../lib/outbound';
+import { assertNoPanInCustomerFields, PciFieldRejected } from '../lib/pci-guard';
+import { canShowTestData, filterTestRows } from '../lib/ops-mode';
 import { eTicketKey, eTicketKeyValid, eTicketPublicUrl } from '../lib/eticket-token';
 import { planDeliveryFee } from './delivery-zones';
 import { erpDatetime } from '../lib/delivery';
@@ -368,7 +371,12 @@ intakeAlterationsRouter.get('/tickets', async (c) => {
       ['name','customer_name','customer_phone','customer','origin_location','workflow_state','ticket_date','due_date','due_time','is_rush','ticket_total','payment_status','billing_status','assigned_tailor','linked_sales_order','included_in_custom','sales_invoice','delivery_method','notified_ready_at','modified','creation'],
       filters, limit, 'modified desc', true);
     const scoped = origin ? rows.filter((r) => isAltsOrigin(r?.origin_location)) : rows;
-    return c.json({ data: scoped });
+    const showTest = canShowTestData({
+      role: user.role,
+      showTest: c.req.query("showTest") === "1" || c.req.query("show_test") === "1",
+    });
+    const visible = filterTestRows(scoped, (r) => [r.name, r.customer_name], { role: user.role, showTest });
+    return c.json({ data: visible });
   } catch (e: any) {
     console.error('[intake-alterations] tickets list failed:', e?.message);
     return c.json({ error: { message: e?.message || 'ERPNext ticket list failed' } }, 502);
@@ -1202,7 +1210,7 @@ intakeAlterationsRouter.get('/sales-orders/search', async (c) => {
 
   try {
     const fields = [
-      'name', 'customer', 'customer_name', 'status', 'make_type',
+      'name', 'customer', 'customer_name', 'title', 'po_no', 'status', 'make_type',
       'grand_total', 'transaction_date', 'delivery_date', 'delivery_status',
     ];
 
@@ -1243,12 +1251,19 @@ intakeAlterationsRouter.get('/sales-orders/search', async (c) => {
       );
     }
 
+    const showTest = canShowTestData({
+      role: user.role,
+      showTest: c.req.query("showTest") === "1" || c.req.query("show_test") === "1",
+    });
+    const visible = filterTestRows(rows, (r) => [r.name, r.customer_name, r.title, r.po_no], { role: user.role, showTest });
+
     return c.json({
-      data: rows.map((r) => ({
+      data: visible.map((r) => ({
         name: r.name,
         id: r.name,
         customer: r.customer,
         customer_name: r.customer_name,
+        title: r.title ?? null,
         status: r.status,
         make_type: r.make_type,
         grand_total: r.grand_total,
@@ -1514,15 +1529,15 @@ async function notifyUnpaidRelease(
   const b1 = `Hi ${first}, your alterations were released from L&S Custom Tailors. Balance due ${amt} — pay anytime when convenient.`;
   const sids: string[] = [];
 
-  const sid1 = await sendSms(phone, b1);
+  const sid1 = await sendSms(phone, b1, undefined, "intake.notifyUnpaidRelease");
   if (!sid1) return { sent: false, reason: "twilio_failed" };
   sids.push(sid1);
 
-  const sid2 = await sendSms(phone, payUrl);
+  const sid2 = await sendSms(phone, payUrl, undefined, "intake.notifyUnpaidRelease");
   if (sid2) sids.push(sid2);
 
   if (squareLink) {
-    const sid3 = await sendSms(phone, squareLink);
+    const sid3 = await sendSms(phone, squareLink, undefined, "intake.notifyUnpaidRelease");
     if (sid3) sids.push(sid3);
   }
 
@@ -1653,7 +1668,7 @@ intakeAlterationsRouter.post('/tickets/:name/sms', async (c) => {
   if (!message) return c.json({ error: { message: 'message required' } }, 400);
 
   const mediaUrl = includeQr ? eTicketQrUrl(ticketName) : undefined;
-  const sid = await sendSms(phone, message, mediaUrl);
+  const sid = await sendSms(phone, message, mediaUrl, "intake.ticketSms");
   if (!sid) return c.json({ error: { message: 'SMS send failed — check Twilio credentials' } }, 502);
 
   return c.json({ data: { ok: true, sid } });
@@ -1675,7 +1690,7 @@ intakeAlterationsRouter.post('/tickets/:name/notify-ready', async (c) => {
   if (!phone) return c.json({ error: { message: 'No phone on this ticket — add one, then text.' } }, 422);
 
   // Always attach QR code image — iOS auto-scans it from the Messages app
-  const sid = await sendSms(phone, message, eTicketQrUrl(ticketName));
+  const sid = await sendSms(phone, message, eTicketQrUrl(ticketName), "intake.notifyReady");
   if (!sid) return c.json({ error: { message: 'SMS send failed — check Twilio credentials' } }, 502);
 
   // Stamp notified_ready_at in ERPNext (non-fatal)
@@ -1703,23 +1718,30 @@ intakeAlterationsRouter.post('/tickets/:name/email', async (c) => {
   const ERP_BASE_URL = process.env.ERPNEXT_BASE_URL ?? 'https://erp.lstailors.com';
 
   try {
-    const res = await fetch(`${ERP_BASE_URL}/api/method/frappe.core.doctype.communication.email.make`, {
-      method: 'POST',
-      headers: { Authorization: `token ${key}:${sec}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        recipients: to_email,
-        subject: subject ?? `Update on your alteration ticket ${ticketName}`,
-        content: message,
-        doctype: 'Alteration Ticket',
-        name: ticketName,
-        send_email: 1,
-      }),
+    const held = await dispatchEmail({
+      to: to_email,
+      subject: subject ?? `Update on your alteration ticket ${ticketName}`,
+      source: "intake.ticketEmail",
+      send: async () => {
+        const res = await fetch(`${ERP_BASE_URL}/api/method/frappe.core.doctype.communication.email.make`, {
+          method: 'POST',
+          headers: { Authorization: `token ${key}:${sec}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipients: to_email,
+            subject: subject ?? `Update on your alteration ticket ${ticketName}`,
+            content: message,
+            doctype: 'Alteration Ticket',
+            name: ticketName,
+            send_email: 1,
+          }),
+        });
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(`ERPNext email failed: ${t.slice(0, 200)}`);
+        }
+      },
     });
-    if (!res.ok) {
-      const t = await res.text();
-      return c.json({ error: { message: `ERPNext email failed: ${t.slice(0, 200)}` } }, 502);
-    }
-    return c.json({ data: { ok: true } });
+    return c.json({ data: { ok: true, held: held.held } });
   } catch (e: any) {
     return c.json({ error: { message: e.message } }, 502);
   }
@@ -2105,6 +2127,18 @@ intakeAlterationsRouter.patch('/customers/:id', async (c) => {
       _delete?: boolean;
     }>;
   };
+
+  try {
+    assertNoPanInCustomerFields({
+      notes: body.notes,
+      people: body.people,
+    } as Record<string, unknown>);
+  } catch (e: any) {
+    if (e instanceof PciFieldRejected) {
+      return c.json({ error: { message: e.message, code: "pci_rejected" } }, 422);
+    }
+    throw e;
+  }
 
   const linkFilter = JSON.stringify([
     ['Dynamic Link', 'link_doctype', '=', 'Customer'],

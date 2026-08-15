@@ -9,6 +9,7 @@ import {
   listSmsMessagesFiltered,
 } from "./erpnext/agents";
 import { normalizePhoneDigits } from "./identity-resolve";
+import { isHouseVisibleVoice } from "./voice-privacy";
 
 export type CommsSourceType = "sms" | "call" | "plaud";
 
@@ -211,7 +212,7 @@ export async function getCommsEvents(opts: {
         const rows = customerId
           ? await listPlaudCaptures({ customer: customerId, limit: per, since: opts.since || undefined })
           : [];
-        return rows.map((r): CommsEvent => {
+        return rows.filter(isHouseVisibleVoice).map((r): CommsEvent => {
           const body = r.summary || r.transcript || null;
           return {
             id: `plaud:${r.name}`,

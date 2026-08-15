@@ -11,6 +11,8 @@ import {
   archiveCustomer,
   setCustomerImage,
 } from "../lib/erpnext/customers";
+import { PciFieldRejected } from "../lib/pci-guard";
+import { collectQualityReport, mergeCustomers, invalidateQualityCache } from "../lib/customer-hygiene";
 import { uploadFile, erpFileAbsoluteUrl, attachFileUrl } from "../lib/erpnext/files";
 
 export const customersRouter = new Hono();
@@ -28,6 +30,33 @@ customersRouter.get("/search", async (c) => {
     return c.json({ data, total: data.length });
   } catch {
     return c.json({ data: [], total: 0 });
+  }
+});
+
+customersRouter.get("/data-quality", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  try {
+    const force = c.req.query("refresh") === "1";
+    const report = await collectQualityReport(force);
+    return c.json({ data: report });
+  } catch (e: any) {
+    return c.json({ error: { message: e.message ?? "Data-quality scan failed" } }, 500);
+  }
+});
+
+customersRouter.post("/merge", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (user.role !== "super_admin" && user.role !== "store_manager") {
+    return c.json({ error: { message: "Forbidden" } }, 403);
+  }
+  const body = (await c.req.json().catch(() => ({}))) as { primaryId?: string; duplicateId?: string };
+  try {
+    const data = await mergeCustomers(String(body.primaryId || ""), String(body.duplicateId || ""));
+    return c.json({ data });
+  } catch (e: any) {
+    return c.json({ error: { message: e.message ?? "Merge failed" } }, 400);
   }
 });
 
@@ -135,8 +164,12 @@ customersRouter.post("/", async (c) => {
 
   try {
     const data = await createCustomer(body, { division: user.locationCode ?? "NYC" });
+    invalidateQualityCache();
     return c.json({ data }, 201);
   } catch (e: any) {
+    if (e instanceof PciFieldRejected) {
+      return c.json({ error: { message: e.message, code: "pci_rejected", field: e.field } }, 422);
+    }
     return c.json({ error: { message: e.message ?? "Failed to create customer" } }, 500);
   }
 });
@@ -210,8 +243,12 @@ customersRouter.patch("/:id", async (c) => {
 
   try {
     const data = await updateCustomer(id, update);
+    invalidateQualityCache();
     return c.json({ data });
   } catch (e: any) {
+    if (e instanceof PciFieldRejected) {
+      return c.json({ error: { message: e.message, code: "pci_rejected", field: e.field } }, 422);
+    }
     return c.json({ error: { message: e.message ?? "Failed to update customer" } }, 500);
   }
 });
@@ -278,6 +315,7 @@ customersRouter.delete("/:id", async (c) => {
 
   try {
     await archiveCustomer(c.req.param("id"));
+    invalidateQualityCache();
     return c.json({ data: { ok: true } });
   } catch (e: any) {
     return c.json({ error: { message: e.message ?? "Failed to archive customer" } }, 500);

@@ -26,7 +26,7 @@ async function notifyCustomer(
       ? `Hi ${first}, your order from L&S Custom Tailors is on its way. Your driver is en route — we'll see you shortly!`
       : `Hi ${first}, your garments from L&S Custom Tailors have been delivered. Thank you — enjoy!`;
   try {
-    const sid = await sendSms(phone, msg);
+    const sid = await sendSms(phone, msg, undefined, "tracking.notifyCustomer");
     if (sid && doc.name) {
       await erpCreate("LSH Notification Log", {
         lsh_delivery: doc.name,

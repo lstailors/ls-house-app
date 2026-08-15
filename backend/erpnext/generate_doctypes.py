@@ -377,6 +377,8 @@ SCHEMAS: dict[str, dict] = {
         f("title", "Data", "Title"),
         f("transcript", "Long Text", "Transcript"),
         f("summary", "Text", "Summary"),
+        f("visibility", "Select", "Visibility", options="private\nhouse", default="private"),
+        f("customer", "Link", "Customer", options="Customer"),
     ]),
 
     "LSH Voice Approval Request": doctype("LSH Voice Approval Request", [

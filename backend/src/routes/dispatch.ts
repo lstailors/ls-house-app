@@ -3,6 +3,8 @@ import { getAuthedUser } from "../lib/scope";
 import { erpList, erpGet, erpUpdate } from "../lib/erp";
 import { DT } from "../lib/erpnext/doctypes";
 import { DispatchSendRequest, DispatchComposeRequest, DispatchPhoneRequest } from "../types";
+import { isLive, isSmsAllowlisted, opsMode } from "../lib/ops-mode";
+import { maskTrack } from "../lib/pci-guard";
 
 // Sofia Dispatch — UI glue over the WF-DISPATCH-10/11 n8n workflows.
 // Sends go through n8n (which owns opt-out check, Twilio send, and the
@@ -253,6 +255,29 @@ dispatchRouter.post("/send", async (c) => {
     mode === "template" && template ? `dispatch:template:${template}` :
     "dispatch:C";
   const contextTag = batch ? "sofia-dispatch:batch" : mode === "sofia" ? "sofia-dispatch:instructed" : "sofia-dispatch";
+
+  if (!isLive() && !isSmsAllowlisted(phone)) {
+    console.info(
+      JSON.stringify({
+        kind: "outbound_sms",
+        mode: opsMode(),
+        source: sender,
+        toLast4: String(phone).replace(/\D/g, "").slice(-4),
+        held: true,
+        reason: "test_mode_not_allowlisted",
+        preview: maskTrack(body).slice(0, 180),
+      }),
+    );
+    return c.json({
+      data: {
+        ok: true,
+        messageId: null,
+        twilioSid: `held_${Date.now()}`,
+        status: "held",
+        error: null,
+      },
+    });
+  }
 
   try {
     const result = await callDispatchWebhook("dispatch-send", {

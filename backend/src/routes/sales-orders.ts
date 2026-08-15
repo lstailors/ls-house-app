@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { getAuthedUser, canSeeFinancials } from "../lib/scope";
 import { erpList, erpGet } from "../lib/erp";
+import { canShowTestData, filterTestRows } from "../lib/ops-mode";
 
 export const salesOrdersRouter = new Hono();
 
@@ -47,7 +48,7 @@ salesOrdersRouter.get("/", async (c) => {
     const rows = await erpList<any>("Sales Order", {
       filters,
       fields: [
-        "name", "customer", "customer_name", "status", "make_type",
+        "name", "customer", "customer_name", "title", "po_no", "status", "make_type",
         "grand_total", "total", "advance_paid", "transaction_date",
         "delivery_date", "creation", "contact_mobile",
         "billing_status", "delivery_status", "per_billed", "per_delivered",
@@ -63,8 +64,17 @@ salesOrdersRouter.get("/", async (c) => {
       limit: 5000,
     });
 
+    const showTest = canShowTestData({
+      role: user.role,
+      showTest: c.req.query("showTest") === "1",
+    });
+    const visible = filterTestRows(rows, (r: any) => [r.name, r.customer_name, r.title, r.po_no], {
+      role: user.role,
+      showTest,
+    });
+
     return c.json({
-      data: rows.map(serializeSalesOrder),
+      data: visible.map(serializeSalesOrder),
       total: allRows.length,
       page,
       limit,
