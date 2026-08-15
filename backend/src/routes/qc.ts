@@ -80,10 +80,12 @@ const QC_FIELDS = [
 
 function unknownField(msg: string): string | null {
   const m =
+    msg.match(/Unknown column ['"`]?([A-Za-z0-9_]+)/i) ||
     msg.match(/fieldname[:\s]+['"`]?([A-Za-z0-9_]+)/i) ||
     msg.match(/Unknown field[:\s]+['"`]?([A-Za-z0-9_]+)/i) ||
     msg.match(/invalid field[:\s]+['"`]?([A-Za-z0-9_]+)/i) ||
-    msg.match(/no field ['"`]?([A-Za-z0-9_]+)/i);
+    msg.match(/no field ['"`]?([A-Za-z0-9_]+)/i) ||
+    msg.match(/Field ['"`]([A-Za-z0-9_]+)['"`] cannot be updated/i);
   return m?.[1] || null;
 }
 
@@ -256,26 +258,18 @@ async function waitingRows() {
 
 async function resolveInspection(id: string) {
   const direct = await erpGet<any>(DT_QC, id).catch(() => null);
-  if (direct) return direct;
+  if (direct?.name) return direct;
 
-  const bySo = await erpList<any>(DT_QC, {
-    filters: [["sales_order", "=", id]],
-    fields: QC_FIELDS,
-    limit: 5,
-    order_by: "modified desc",
-  }).catch(() => [] as any[]);
-  if (bySo[0]?.name) {
-    return (await erpGet<any>(DT_QC, bySo[0].name).catch(() => null)) || bySo[0];
-  }
-
-  const byCo = await erpList<any>(DT_QC, {
-    filters: [["custom_order", "=", id]],
-    fields: QC_FIELDS,
-    limit: 5,
-    order_by: "modified desc",
-  }).catch(() => [] as any[]);
-  if (byCo[0]?.name) {
-    return (await erpGet<any>(DT_QC, byCo[0].name).catch(() => null)) || byCo[0];
+  for (const field of ["sales_order", "custom_order", "mtmpro_order"]) {
+    const rows = await erpList<any>(DT_QC, {
+      filters: [[field, "=", id]],
+      fields: ["name"],
+      limit: 5,
+      order_by: "modified desc",
+    }).catch(() => [] as any[]);
+    if (rows[0]?.name) {
+      return (await erpGet<any>(DT_QC, rows[0].name).catch(() => null)) || rows[0];
+    }
   }
 
   return null;
@@ -301,12 +295,18 @@ export async function markQcSignedBySubmission(submissionId: string, signedUrl?:
 qcRouter.get("/catalog", async (c) => {
   const gate = await requireQc(c);
   if (gate.res) return gate.res;
+  let docuseal = false;
+  try {
+    docuseal = await docusealEnabled();
+  } catch {
+    /* optional */
+  }
   return c.json({
     data: {
       statuses: MTM_STATUSES,
       queueStatuses: QC_QUEUE_STATUSES,
       checks: QC_CHECK_CATALOG,
-      docuseal: await docusealEnabled(),
+      docuseal,
     },
   });
 });
@@ -451,7 +451,36 @@ qcRouter.get("/:id", async (c) => {
 
   try {
     const insp = await resolveInspection(id);
-    if (!insp?.name) return c.json({ error: { message: "Not found" } }, 404);
+    if (!insp?.name) {
+      const co = await erpGet<any>(DT_CUSTOM, id).catch(() => null);
+      const so = await erpGet<any>("Sales Order", id).catch(() => null);
+      if (!co && !so) return c.json({ error: { message: "Not found" } }, 404);
+      return c.json({
+        data: {
+          id: null,
+          name: null,
+          salesOrder: so?.name || co?.erp_sales_order || co?.sales_order || null,
+          customOrder: co?.name || null,
+          mtmproOrder: co?.name || null,
+          customer: co?.customer || so?.customer || null,
+          customerName: co?.customer_name || so?.customer_name || "Client",
+          qcResult: "Pending",
+          result: "Pending",
+          notes: "",
+          checks: blankChecks(),
+          summary: checksSummary(blankChecks()),
+          photos: [],
+          docuseal: false,
+          orderStatus: co?.order_status || co?.status || so?.status || null,
+          garmentSummary: co?.garment_summary || co?.garment_type || null,
+          links: {
+            customer: co?.customer || so?.customer || null,
+            salesOrder: so?.name || co?.erp_sales_order || null,
+            customOrder: co?.name || null,
+          },
+        },
+      });
+    }
 
     const files = await erpList<any>(DT.FILE, {
       filters: [
@@ -480,10 +509,17 @@ qcRouter.get("/:id", async (c) => {
       garmentSummary = co?.garment_summary || co?.garment_type || null;
     }
 
+    let docuseal = false;
+    try {
+      docuseal = await docusealEnabled();
+    } catch {
+      /* DocuSeal is optional — never block the inspection page */
+    }
+
     return c.json({
       data: serializeInspection(insp, {
         photos,
-        docuseal: await docusealEnabled(),
+        docuseal,
         orderStatus,
         garmentSummary,
         links: {
@@ -525,6 +561,7 @@ qcRouter.post("/", async (c) => {
       customer_name: co?.customer_name || so?.customer_name,
       inspector: gate.user!.name,
       qc_result: "Pending",
+      result: "Pending",
       notes: "",
       date_received: new Date().toISOString().slice(0, 10),
     });

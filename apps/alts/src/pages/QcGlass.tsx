@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { Link, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
@@ -56,23 +55,6 @@ export default function QcGlass() {
     refetchInterval: 45_000,
   });
 
-  const start = useMutation({
-    mutationFn: (row: QcRow) =>
-      api.post<{ id: string; name?: string }>("/api/qc", {
-        customOrder: row.customOrder || undefined,
-        salesOrder: row.salesOrder || undefined,
-      }),
-    onSuccess: (data) => {
-      const id = data.id || data.name;
-      if (!id || /^(LSTNY-SO|LSTX-SO|SO-|SAL-)/i.test(id)) {
-        toast.error("QC opened, but ERPNext did not return an inspection");
-        return;
-      }
-      nav(`/qc/${encodeURIComponent(id)}`);
-    },
-    onError: (e: Error) => toast.error(e.message || "Could not start QC"),
-  });
-
   const rows = list.data ?? [];
   const needle = q.trim().toLowerCase();
   const shown = useMemo(() => {
@@ -90,15 +72,8 @@ export default function QcGlass() {
 
   const openRow = (row: QcRow) => {
     const inspection = row.inspectionId || row.name || row.id;
-    if (inspection && /^(LSH-QC-|QC-)/i.test(inspection)) {
-      nav(`/qc/${encodeURIComponent(inspection)}`);
-      return;
-    }
-    if (inspection && !/^(LSTNY-SO|LSTX-SO|SO-|SAL-)/i.test(inspection)) {
-      nav(`/qc/${encodeURIComponent(inspection)}`);
-      return;
-    }
-    start.mutate(row);
+    if (!inspection) return;
+    nav(`/qc/${encodeURIComponent(inspection)}`);
   };
 
   return (
@@ -110,6 +85,12 @@ export default function QcGlass() {
           <div className="caps mt-1">MTM only · after the garment is in store</div>
         </div>
         <div className="flex-1" />
+        <Link
+          to="/settings"
+          className="h-11 px-3 rounded-full border border-brass/30 text-[11px] font-bold uppercase tracking-widest inline-flex items-center"
+        >
+          Settings
+        </Link>
         <div className={cn("sf-live", list.isFetching && "is-sync", list.isError && "is-down")}>
           <span className="dot" />
           {list.isError ? "ERPNext down" : live}
@@ -155,7 +136,6 @@ export default function QcGlass() {
           <button
             key={row.inspectionId || row.id}
             type="button"
-            disabled={start.isPending}
             onClick={() => openRow(row)}
             className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3"
           >

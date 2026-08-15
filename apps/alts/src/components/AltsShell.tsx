@@ -1,27 +1,14 @@
-import { Outlet, Link, useNavigate, useLocation } from "react-router-dom";
+import { Outlet, Link, useLocation } from "react-router-dom";
 import { useMe } from "@ls/auth/session";
-import { signOut } from "@ls/auth/authClient";
-import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@ls/design/utils";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
 import { BrandSeal } from "@alts/components/BrandSeal";
-import { clearAltsPrivateStorage } from "@alts/lib/logoutPrivacy";
 
 /** Minimal chrome for FOH — tile home owns its own header; nested pages get a slim top bar + universal search. */
 export default function AltsShell() {
   const { data: me } = useMe();
-  const nav = useNavigate();
   const loc = useLocation();
-  const qc = useQueryClient();
   const isHome = loc.pathname === "/";
-
-  const logout = async () => {
-    // Clear customer data synchronously before the shared device changes hands.
-    clearAltsPrivateStorage();
-    qc.clear();
-    await signOut();
-    nav("/login", { replace: true });
-  };
 
   if (isHome) {
     return (
@@ -48,14 +35,14 @@ export default function AltsShell() {
         </Link>
         <UniversalSearchInline className="mx-1" />
         {me && (
-          <button
-            type="button"
-            onClick={logout}
+          <Link
+            to="/settings"
             className="text-[11px] sm:text-xs uppercase tracking-widest text-cream-dim hover:text-cream px-2 sm:px-3 py-2 shrink-0"
+            aria-label="Settings"
           >
             <span className="hidden sm:inline">{me.name?.split(" ")[0] ?? "Staff"} · </span>
-            Out
-          </button>
+            Settings
+          </Link>
         )}
       </header>
       <main className="flex-1 min-h-0">

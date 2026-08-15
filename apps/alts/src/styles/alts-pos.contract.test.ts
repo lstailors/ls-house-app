@@ -120,6 +120,12 @@ describe("iPhone scale contract", () => {
     expect(settings).toContain("/api/qc/settings");
     expect(settings).not.toContain("localStorage");
     expect(settings).toContain("signOut");
+    const shell = readFileSync(new URL("../components/AltsShell.tsx", import.meta.url), "utf8");
+    expect(shell).toContain('to="/settings"');
+    expect(shell).not.toMatch(/onClick=\{logout\}/);
+    const qc = readFileSync(new URL("../pages/QcGlass.tsx", import.meta.url), "utf8");
+    expect(qc).toContain("nav(`/qc/${encodeURIComponent(inspection)}`)");
+    expect(qc).not.toContain('api.post');
   });
 
   test("home never locks to one viewport — iPhone landscape must scroll", () => {
