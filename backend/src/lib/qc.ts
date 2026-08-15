@@ -104,7 +104,7 @@ export function qcResultOf(doc: Record<string, unknown> | null | undefined): QcR
 
 export function tabToQcResult(tab: string): QcResult | null {
   const t = tab.toLowerCase();
-  if (t === "open") return "Pending";
+  if (t === "waiting" || t === "open") return "Pending";
   if (t === "passed" || t === "pass") return "Pass";
   if (t === "failed" || t === "fail") return "Fail";
   return null;

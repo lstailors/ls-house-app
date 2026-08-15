@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
 import { api } from '@ls/api-client'
 import { cn } from "@ls/design/utils"
+import TimedSpinner from "@alts/components/TimedSpinner"
 
 interface PublicTicket {
   name: string
@@ -50,7 +51,7 @@ export default function ETicket() {
   const [params] = useSearchParams()
   const key = params.get('k') || params.get('key') || ''
 
-  const { data: ticket, isLoading, isError } = useQuery<PublicTicket>({
+  const { data: ticket, isLoading, isError, refetch } = useQuery<PublicTicket>({
     queryKey: ['public-ticket', ticketName, key],
     queryFn: () =>
       api.get<PublicTicket>(
@@ -67,14 +68,7 @@ export default function ETicket() {
   const locked = !!ticket?.locked
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-forest-deep flex items-center justify-center">
-        <div className="space-y-3 text-center">
-          <div className="h-6 w-6 rounded-full border-2 border-brass/30 border-t-brass-shimmer animate-spin mx-auto" />
-          <p className="text-cream-dim/60 text-sm">Loading your ticket…</p>
-        </div>
-      </div>
-    )
+    return <TimedSpinner fullscreen label="Loading your ticket…" onRetry={() => void refetch()} />
   }
 
   if (isError || !ticket) {

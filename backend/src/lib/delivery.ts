@@ -35,12 +35,14 @@ export function erpDatetime(d?: Date | string | null): string {
 
 /**
  * ERP stores site-local wall time. Do NOT force Z (that was the 4h skew bug).
- * Return ISO-ish local for FE; browsers parse without Z as local.
+ * Date-only values stay YYYY-MM-DD so the UI never invents midnight.
  */
 export function erpToIso(s: string | null | undefined): string | null {
   if (!s) return null;
-  if (s.includes("Z") || /[+-]\d{2}:?\d{2}$/.test(s)) return s;
-  return s.replace(" ", "T");
+  const trimmed = String(s).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  if (trimmed.includes("Z") || /[+-]\d{2}:?\d{2}$/.test(trimmed)) return trimmed;
+  return trimmed.replace(" ", "T");
 }
 
 function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {

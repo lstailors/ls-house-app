@@ -5,6 +5,7 @@ import { Printer, ArrowLeft, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@ls/api-client'
 import { cn } from "@ls/design/utils"
+import TimedSpinner from "@alts/components/TimedSpinner"
 
 interface AlterationTicketDoc {
   name: string
@@ -38,7 +39,7 @@ export default function AlterationReceipt() {
   const [printing, setPrinting] = useState(false)
   const printed = useRef(false)
 
-  const { data: ticket, isLoading } = useQuery<AlterationTicketDoc>({
+  const { data: ticket, isLoading, refetch } = useQuery<AlterationTicketDoc>({
     queryKey: ['intake-ticket', ticketName],
     queryFn: () => api.get<AlterationTicketDoc>(`/api/intake-alterations/tickets/${ticketName}`),
     enabled: !!ticketName,
@@ -70,9 +71,7 @@ export default function AlterationReceipt() {
   }
 
   if (isLoading) return (
-    <div className="min-h-screen bg-white flex items-center justify-center">
-      <div className="w-8 h-8 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin" />
-    </div>
+    <TimedSpinner fullscreen label="Loading receipt…" onRetry={() => void refetch()} />
   )
 
   if (!ticket) return (

@@ -48,7 +48,7 @@ function mapSoRow(r: any): SoHit {
 
 export default function TicketKind() {
   const nav = useNavigate();
-  const [kind, setKind] = useState<Kind>("walk_in");
+  const [kind, setKind] = useState<Kind | null>(null);
   const [q, setQ] = useState("");
   /** Multi-select sales orders (same customer preferred). */
   const [selectedSos, setSelectedSos] = useState<SoHit[]>([]);
@@ -288,7 +288,6 @@ export default function TicketKind() {
           <button
             type="button"
             onClick={() => {
-              setKind("walk_in");
               setSelectedSos([]);
               setCartPieces([]);
               continueWalkIn();
@@ -356,7 +355,6 @@ export default function TicketKind() {
           <button
                         type="button"
                         onClick={() => {
-                          setKind("redo");
                           setSelectedSos([]);
                           setCartPieces([]);
                           continueRedo();
@@ -392,21 +390,12 @@ export default function TicketKind() {
         </aside>
 
         <main className="overflow-hidden min-w-0 flex flex-col bg-black/15">
-          {kind === "walk_in" && (
+          {kind == null && (
             <div className="max-w-xl mx-auto pt-8 text-center p-5">
-              <h2 className="display text-3xl mb-2">Walk-in</h2>
-              <p className="text-sm text-cream-dim mb-4">
-                Opening client & cart…
+              <h2 className="display text-3xl mb-2">Pick a kind</h2>
+              <p className="text-sm text-cream-dim leading-relaxed">
+                Choose Walk-in, Custom order, or Redo on the left. Nothing loads until you tap.
               </p>
-              <div className="h-10 w-10 mx-auto rounded-full border-2 border-brass/40 border-t-brass animate-spin" />
-            </div>
-          )}
-
-          {kind === "redo" && (
-            <div className="max-w-xl mx-auto pt-8 text-center p-5">
-              <h2 className="display text-3xl mb-2">{REDO_DISPLAY.kindTitle}</h2>
-              <p className="text-sm text-cream-dim mb-4">Opening client & cart…</p>
-              <div className="h-10 w-10 mx-auto rounded-full border-2 border-signal-emerald/40 border-t-signal-emerald animate-spin" />
             </div>
           )}
 

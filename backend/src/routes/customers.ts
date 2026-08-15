@@ -39,6 +39,7 @@ customersRouter.get("/", async (c) => {
   const q = (c.req.query("q") ?? "").trim();
   const locationFilter = c.req.query("location") ?? "";
   const vipFilter = c.req.query("vip") ?? "";
+  const casaFilter = c.req.query("casa") ?? "";
   const statusFilter = c.req.query("status") ?? "Active";
   // Browse page size; search uses multi-field fuzzy inside listCustomers
   const limit = Math.min(
@@ -50,6 +51,7 @@ customersRouter.get("/", async (c) => {
   const opts: Parameters<typeof listCustomers>[0] = {
     q,
     vip: vipFilter || undefined,
+    casa: casaFilter || undefined,
     status: statusFilter,
     limit,
     offset,

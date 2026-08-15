@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { api } from "@ls/api-client";
 import { StatusPill } from "@ls/design";
 import { cn } from "@ls/design/utils";
+import TimedSpinner from "@alts/components/TimedSpinner";
 import "@alts/styles/alts-pos.css";
 
 type BoardDelivery = {
@@ -213,11 +214,7 @@ export default function PodCapture() {
   });
 
   if (deliveryQ.isLoading) {
-    return (
-      <div className="alts-root min-h-dvh grid place-items-center">
-        <div className="h-6 w-6 rounded-full border-2 border-brass/40 border-t-brass animate-spin" />
-      </div>
-    );
+    return <TimedSpinner fullscreen label="Loading delivery…" onRetry={() => void deliveryQ.refetch()} />;
   }
 
   if (deliveryQ.isError || !d) {

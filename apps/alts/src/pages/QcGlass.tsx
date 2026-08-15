@@ -1,15 +1,16 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import StatusBadge from "@alts/components/StatusBadge";
-import MtmStatusRail from "@alts/components/MtmStatusRail";
-import { MTM_STATUSES, type MtmStatusKey } from "@alts/lib/mtmStatus";
+import OrderStatusChips from "@alts/components/OrderStatusChips";
+import TimedSpinner from "@alts/components/TimedSpinner";
+import { type MtmStatusKey } from "@alts/lib/mtmStatus";
 import { clientInitials, syncLabel } from "@alts/lib/ticketDisplay";
+import { useAltsMetrics } from "@alts/lib/useAltsMetrics";
 import "@alts/styles/alts-pos.css";
 
 type Tab = "waiting" | "open" | "passed" | "failed";
@@ -51,11 +52,9 @@ function day(iso?: string | null) {
 
 export default function QcGlass() {
   const nav = useNavigate();
-  const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("waiting");
   const [pipeline, setPipeline] = useState<MtmStatusKey | "">("");
   const [q, setQ] = useState("");
-  const [pendingName, setPendingName] = useState<string | null>(null);
 
   const list = useQuery({
     queryKey: ["alts-qc", tab, pipeline],
@@ -65,18 +64,13 @@ export default function QcGlass() {
         : api.get<QcRow[]>(`/api/qc?tab=${tab}`),
     refetchInterval: 45_000,
   });
-
-  const setStatus = useMutation({
-    mutationFn: ({ name, status }: { name: string; status: string }) =>
-      api.patch(`/api/qc/orders/${encodeURIComponent(name)}/status`, { status }),
-    onMutate: ({ name }) => setPendingName(name),
-    onSuccess: () => {
-      toast.success("Status updated");
-      void qc.invalidateQueries({ queryKey: ["alts-qc"] });
-    },
-    onError: (e: Error) => toast.error(e.message || "Could not update status"),
-    onSettled: () => setPendingName(null),
-  });
+  const metrics = useAltsMetrics();
+  const qcCounts = {
+    waiting: metrics.data?.qc.waiting ?? 0,
+    open: metrics.data?.qc.open ?? 0,
+    passed: metrics.data?.qc.passed ?? 0,
+    failed: metrics.data?.qc.failed ?? 0,
+  };
 
   const rows = list.data ?? [];
   const needle = q.trim().toLowerCase();
@@ -137,30 +131,19 @@ export default function QcGlass() {
             )}
           >
             {lab}
-            {!pipeline && tab === k ? <span className="og-count">{shown.length}</span> : null}
+            <span className="og-count">{qcCounts[k]}</span>
           </button>
         ))}
       </div>
 
       <div className="px-4 sm:px-5 pt-3">
         <div className="caps text-brass-light mb-2">Live order status</div>
-        <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-0.5 px-0.5">
-          {MTM_STATUSES.map((s) => (
-            <button
-              key={s.key}
-              type="button"
-              onClick={() => setPipeline(s.key)}
-              className={cn(
-                "h-11 min-h-[44px] px-3 rounded-full border text-[9px] font-bold tracking-[0.08em] uppercase whitespace-nowrap",
-                pipeline === s.key
-                  ? "bg-brass/22 border-brass text-brass-light"
-                  : "border-brass/22 bg-black/25 text-cream-dim",
-              )}
-            >
-              {s.key}
-            </button>
-          ))}
-        </div>
+        <OrderStatusChips
+          variant="legend"
+          current={pipeline || null}
+          allowClear
+          onSelect={(status) => setPipeline((status || "") as MtmStatusKey | "")}
+        />
       </div>
 
       <div className="px-4 sm:px-5 pt-3">
@@ -181,60 +164,51 @@ export default function QcGlass() {
           />
         )}
 
+        {list.isLoading && !shown.length && !list.isError && (
+          <TimedSpinner label="Loading inspections…" onRetry={() => void list.refetch()} />
+        )}
+
         {shown.map((row) => {
-          const orderName = row.orderName || row.customOrder || null;
           return (
-            <div key={row.inspectionId || row.id} className="og-row sf-card card-glass px-4 py-3.5">
-              <button
-                type="button"
-                onClick={() => openRow(row)}
-                className="w-full text-left flex items-center gap-3"
-              >
-                <span className="sf-avatar" aria-hidden>
-                  {clientInitials(row.customerName || "QC")}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <StatusBadge
-                      status={row.qcResult || row.result || row.orderStatus || "Quality Control"}
-                      tone={
-                        tab === "waiting"
-                          ? "qc"
-                          : tab === "open"
-                            ? "shop"
-                            : tab === "passed"
-                              ? "pickup"
-                              : "tasks"
-                      }
-                    />
-                    {day(row.dateReceived) ? (
-                      <span className="font-mono text-xs text-brass-light">{day(row.dateReceived)}</span>
-                    ) : null}
-                  </div>
-                  <div className="display text-[22px] leading-none mt-1 truncate">
-                    {row.customerName || "Client"}
-                  </div>
-                  <div className="text-xs text-cream-dim mt-1 truncate">
-                    {[row.inspectionId || row.id, row.salesOrder, row.garmentSummary]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </div>
+            <button
+              key={row.inspectionId || row.id}
+              type="button"
+              onClick={() => openRow(row)}
+              className="og-row sf-card card-glass px-4 py-3.5 w-full text-left flex items-center gap-3"
+            >
+              <span className="sf-avatar" aria-hidden>
+                {clientInitials(row.customerName || "QC")}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <StatusBadge
+                    status={row.qcResult || row.result || "Quality Control"}
+                    tone={
+                      tab === "waiting"
+                        ? "qc"
+                        : tab === "open"
+                          ? "shop"
+                          : tab === "passed"
+                            ? "pickup"
+                            : "tasks"
+                    }
+                  />
+                  {day(row.dateReceived) ? (
+                    <span className="font-mono text-xs text-brass-light">{day(row.dateReceived)}</span>
+                  ) : null}
                 </div>
-                <div className="text-cream-dim">→</div>
-              </button>
-              <div className="mt-3">
-                <MtmStatusRail
-                  compact
-                  current={row.orderStatus || row.qcResult || row.result}
-                  pending={pendingName === orderName ? setStatus.variables?.status : null}
-                  onChange={
-                    orderName
-                      ? (status) => setStatus.mutate({ name: orderName, status })
-                      : undefined
-                  }
-                />
+                <div className="display text-[22px] leading-none mt-1 truncate">
+                  {row.customerName || "Client"}
+                </div>
+                <div className="text-xs text-cream-dim mt-1 truncate">
+                  {[row.inspectionId || row.id, row.salesOrder, row.garmentSummary]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
               </div>
-            </div>
+              <OrderStatusChips variant="badge" current={row.orderStatus} className="shrink-0" />
+              <div className="text-cream-dim shrink-0">→</div>
+            </button>
           );
         })}
 

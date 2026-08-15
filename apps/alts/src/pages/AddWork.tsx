@@ -6,10 +6,12 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Lock, Plus } from "lucide-react";
+import { ArrowLeft, Lock, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
+import TimedSpinner from "@alts/components/TimedSpinner";
+import { useLoadTimeout } from "@alts/components/TimedSpinner";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import TaskSubitemPicker, {
@@ -326,10 +328,15 @@ export default function AddWork() {
     }
   }
 
-  if (ticketQ.isError) {
+  const ticketTimedOut = useLoadTimeout(ticketQ.isLoading);
+
+  if (ticketQ.isError || ticketTimedOut) {
     return (
       <div className="alts-root min-h-dvh p-5">
-        <QueryErrorPanel title="Could not load ticket" onRetry={() => ticketQ.refetch()} />
+        <QueryErrorPanel
+          title={ticketTimedOut ? "This is taking too long" : "Could not load ticket"}
+          onRetry={() => ticketQ.refetch()}
+        />
       </div>
     );
   }
@@ -357,9 +364,7 @@ export default function AddWork() {
 
       <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-5 pb-40">
         {ticketQ.isLoading && (
-          <div className="flex items-center gap-2 text-cream-dim text-sm">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading ticket…
-          </div>
+          <TimedSpinner label="Loading ticket…" onRetry={() => void ticketQ.refetch()} />
         )}
 
         {blocked && (

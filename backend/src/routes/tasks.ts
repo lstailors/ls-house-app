@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
-import { erpList, erpGet, erpCreate, erpUpdate } from "../lib/erp";
+import { erpList, erpGet, erpCreate, erpUpdate, erpCount } from "../lib/erp";
 import { grokChat, grokJSON } from "../lib/grok";
 
 export const tasksRouter = new Hono();
@@ -103,6 +103,8 @@ tasksRouter.get("/", async (c) => {
   const status = (c.req.query("status") ?? "open").toLowerCase();
   const assignee = c.req.query("assignee") ?? "all";
   const context = c.req.query("context");
+  const house = (c.req.query("scope") ?? "").toLowerCase() === "house";
+  const overdueOnly = c.req.query("overdue") === "1" || c.req.query("overdue") === "true";
   const mgmt = isMgmt(user.role);
 
   const filters: unknown[] = [];
@@ -111,26 +113,39 @@ tasksRouter.get("/", async (c) => {
   if (status === "open") filters.push(["status", "=", "Open"]);
   else if (status === "closed") filters.push(["status", "=", "Closed"]);
 
-  // Visibility: non-management always scoped to their own tasks. Management can
-  // pick a specific assignee via the pills, or "all" to see the whole team.
-  if (!mgmt) {
+  if (overdueOnly) {
+    filters.push(["date", "<", nyToday()]);
+  }
+
+  // House list (Alts /tasks): all open ToDos. Personal list stays the default
+  // for the webapp. Non-management may still request scope=house on the floor.
+  if (!house && !mgmt) {
     filters.push(["allocated_to", "=", user.email]);
-  } else if (assignee && assignee !== "all") {
+  } else if (!house && mgmt && assignee && assignee !== "all") {
     filters.push(["allocated_to", "=", assignee]);
   }
 
   if (context) filters.push(["lsh_context", "=", context]);
 
   try {
-    const limitParam = parseInt(c.req.query("limit") ?? "500", 10);
-    const limit = Math.min(Math.max(isNaN(limitParam) ? 500 : limitParam, 1), 1000);
-    const rows = await erpList<ErpTodo>("ToDo", {
-      filters,
-      fields: TODO_FIELDS,
-      order_by: "date asc",
-      limit,
+    const limitParam = parseInt(c.req.query("limit") ?? "100", 10);
+    const startParam = parseInt(c.req.query("start") ?? "0", 10);
+    const limit = Math.min(Math.max(Number.isNaN(limitParam) ? 100 : limitParam, 1), 200);
+    const start = Math.max(Number.isNaN(startParam) ? 0 : startParam, 0);
+    const [rows, total] = await Promise.all([
+      erpList<ErpTodo>("ToDo", {
+        filters,
+        fields: TODO_FIELDS,
+        order_by: "date asc",
+        limit,
+        start,
+      }),
+      erpCount("ToDo", filters),
+    ]);
+    return c.json({
+      data: rows.map(serialize),
+      meta: { total, start, limit, hasMore: start + rows.length < total },
     });
-    return c.json({ data: rows.map(serialize) });
   } catch (e: any) {
     return c.json({ error: { message: e?.message ?? "ERP error" } }, 500);
   }

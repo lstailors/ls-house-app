@@ -480,6 +480,7 @@ export async function listCustomers(
     q?: string;
     location?: string;
     vip?: string;
+    casa?: string;
     status?: string;
     limit?: number;
     offset?: number;
@@ -505,6 +506,9 @@ export async function listCustomers(
     } else if (opts.vip === "Standard") {
       data = data.filter((c) => !c.vipFlag && (!c.vipTier || c.vipTier === "Standard"));
     }
+    if (opts.casa && opts.casa !== "All" && opts.casa !== "0") {
+      data = data.filter((c) => !!c.casaTier);
+    }
     void opts.location;
     return { data, total: data.length, mode: "search" as const };
   }
@@ -523,6 +527,10 @@ export async function listCustomers(
     filters.push(["vip_flag", "=", 1]);
   } else if (opts.vip === "Standard") {
     filters.push(["vip_flag", "=", 0]);
+  }
+
+  if (opts.casa && opts.casa !== "All" && opts.casa !== "0") {
+    filters.push(["casa_membership", "is", "set"]);
   }
 
   // location filter not on live Customer (no custom_lst_division) — ignore quietly

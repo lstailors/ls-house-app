@@ -10,7 +10,8 @@
     "seed:erpnext": "bun run src/scripts/seed-erpnext-lsh.ts",
     "verify:erpnext": "bun run src/scripts/verify-erpnext-setup.ts",
     "set:alts-print-url": "bun run src/scripts/set-alts-print-base-url.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

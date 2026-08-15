@@ -1,7 +1,7 @@
 import { Toaster as Sonner } from "@ls/design/ui/sonner";
 import { TooltipProvider } from "@ls/design/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { RoleGuard } from "@ls/auth/RoleGuard";
 import Login from "@ls/auth/Login";
@@ -33,6 +33,8 @@ import AltsSettings from "@alts/pages/AltsSettings";
 import TicketDetail from "@alts/pages/intake/TicketDetail";
 import { startOfflineQueueWatcher } from "@alts/lib/offlineQueue";
 import { toast } from "sonner";
+import TimedSpinner from "@alts/components/TimedSpinner";
+import NotFound from "@alts/pages/NotFound";
 
 const AlterationTags = lazy(() => import("@alts/pages/print/GarmentTagPrint"));
 const AlterationReceipt = lazy(() => import("@alts/pages/intake/AlterationReceipt"));
@@ -65,11 +67,7 @@ const queryClient = new QueryClient({
 });
 
 function Spin() {
-  return (
-    <div className="flex items-center justify-center min-h-dvh bg-forest-deep">
-      <div className="h-6 w-6 rounded-full border-2 border-brass/40 border-t-brass animate-spin" />
-    </div>
-  );
+  return <TimedSpinner fullscreen label="Opening…" />;
 }
 
 /** Print routes: preview on any device; tip on phone for counter printers. */
@@ -388,7 +386,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/reports"
+                  path="/reports/:tab?"
                   element={
                     <RoleGuard allow={[...FOH]}>
                       <Reports />
@@ -454,7 +452,7 @@ export default function App() {
                 />
               </Route>
 
-              <Route path="*" element={<Navigate to="/" replace />} />
+              <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
           <LandscapeGate />

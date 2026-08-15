@@ -11,6 +11,7 @@ import { BrandSeal } from "@alts/components/BrandSeal";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
 import { clientInitials, storeHour } from "@alts/lib/ticketDisplay";
 import { usePresence } from "@alts/lib/luxuryMotion";
+import { useAltsMetrics } from "@alts/lib/useAltsMetrics";
 import type { StatusTone } from "@alts/lib/statusTone";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
@@ -550,22 +551,7 @@ export default function HomeTiles() {
   });
   const erpDown = home.isError || (erpHealth.data ? !erpHealth.data.erp.reachable : false);
 
-  const taskCount = useQuery({
-    queryKey: ["alts-tasks-count"],
-    queryFn: () => api.get<{ count: number; overdue: number }>("/api/tasks/open-count"),
-    staleTime: 30_000,
-    refetchInterval: 60_000,
-    retry: 1,
-  });
-
-  const qcCount = useQuery({
-    queryKey: ["alts-qc-count"],
-    enabled: me?.role === "super_admin" || me?.role === "tailor",
-    queryFn: () => api.get<{ waiting: number; open: number }>("/api/qc/count"),
-    staleTime: 30_000,
-    refetchInterval: 60_000,
-    retry: 1,
-  });
+  const metrics = useAltsMetrics();
 
   type FloorBrief = {
     body: string;
@@ -659,6 +645,14 @@ export default function HomeTiles() {
   const c = feed?.counts;
   const strip = feed?.strip;
   const feeds = feed?.feeds;
+  const m = metrics.data;
+  const taskOpen = m?.tasks.open ?? 0;
+  const taskOverdue = m?.tasks.overdue ?? 0;
+  const qcWaiting = m?.qc.waiting ?? 0;
+  const unpaidCount = m?.invoices.unpaid_count ?? c?.openInvoices ?? 0;
+  const unpaidTotal = m?.invoices.unpaid_total ?? c?.openInvoicesAmount ?? 0;
+  const outForDelivery = m?.deliveries.out ?? strip?.outForDelivery ?? 0;
+  const deliveredToday = m?.deliveries.delivered_today ?? strip?.deliveredToday ?? 0;
   const conflictCount = c?.doubleBookedSlots ?? 0;
   const firstConflict = feeds?.conflictDetails?.[0];
 
@@ -799,21 +793,22 @@ export default function HomeTiles() {
   };
 
   const delivLive = (() => {
-    const n = c?.pendingBoard ?? 0;
-    if (n <= 0) return { text: "No active runs", tone: "cd" as LiveTone };
+    const n = (m?.deliveries.queued ?? 0) + (m?.deliveries.out ?? 0);
+    if (n <= 0 && !(c?.pendingBoard ?? 0)) return { text: "No active runs", tone: "cd" as LiveTone };
+    const pending = n || c?.pendingBoard || 0;
     return {
       text: (
         <>
-          <b>{n}</b> on board
-          {(strip?.outForDelivery ?? 0) > 0 ? (
+          <b>{pending}</b> on board
+          {outForDelivery > 0 ? (
             <>
               {" "}
-              · <b>{strip!.outForDelivery}</b> out
+              · <b>{outForDelivery}</b> out
             </>
           ) : null}
         </>
       ),
-      tone: (strip?.outForDelivery ?? 0) > 0 ? ("am" as LiveTone) : ("em" as LiveTone),
+      tone: outForDelivery > 0 ? ("am" as LiveTone) : ("em" as LiveTone),
     };
   })();
 
@@ -833,7 +828,7 @@ export default function HomeTiles() {
   })();
 
   const invLive = (() => {
-    const n = c?.openInvoices ?? 0;
+    const n = unpaidCount;
     const oldest = c?.oldestUnpaidDays;
     if (n <= 0) return { text: "All clear", tone: "cd" as LiveTone };
     return {
@@ -863,9 +858,7 @@ export default function HomeTiles() {
   })();
 
   const moneyBadge =
-    (c?.openInvoices ?? 0) > 0
-      ? `${c!.openInvoices} · ${formatCompactMoney(c!.openInvoicesAmount)}`
-      : null;
+    unpaidCount > 0 ? `${unpaidCount} · ${formatCompactMoney(unpaidTotal)}` : null;
 
   const tiles: TileDef[] = [
     {
@@ -1038,19 +1031,19 @@ export default function HomeTiles() {
       key: "tasks",
       to: "/tasks",
       title: "Tasks",
-      sub: (taskCount.data?.overdue ?? 0) > 0 ? `${taskCount.data!.overdue} overdue` : "House list",
-      badge: taskCount.data?.count || null,
+      sub: taskOverdue > 0 ? `${taskOverdue} overdue` : "House list",
+      badge: taskOpen || null,
       badgeKind: "tasks",
       live:
-        (taskCount.data?.count ?? 0) > 0 ? (
+        taskOpen > 0 ? (
           <>
-            <b>{taskCount.data!.count}</b> open
-            {(taskCount.data?.overdue ?? 0) > 0 ? ` · ${taskCount.data!.overdue} late` : ""}
+            <b>{taskOpen}</b> open
+            {taskOverdue > 0 ? ` · ${taskOverdue} late` : ""}
           </>
         ) : (
           "All clear"
         ),
-      liveTone: (taskCount.data?.overdue ?? 0) > 0 ? "ro" : (taskCount.data?.count ?? 0) > 0 ? "em" : "cd",
+      liveTone: taskOverdue > 0 ? "ro" : taskOpen > 0 ? "em" : "cd",
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <rect x="8" y="8" width="36" height="36" rx="4" />
@@ -1062,8 +1055,17 @@ export default function HomeTiles() {
       key: "messages",
       to: "/messages",
       title: "Messages",
-      sub: "Texts · calls",
-      live: "Inbox",
+      sub: "Texts · calls · voice",
+      badge: m?.messages.all || null,
+      badgeKind: "tasks" as const,
+      live:
+        (m?.messages.all ?? 0) > 0 ? (
+          <>
+            <b>{m!.messages.texts}</b> texts · <b>{m!.messages.calls}</b> calls
+          </>
+        ) : (
+          "Inbox"
+        ),
       liveTone: "em",
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -1077,18 +1079,32 @@ export default function HomeTiles() {
       to: "/qc",
       title: "QC",
       sub: "MTM · photos · sign",
-      badge: qcCount.data?.waiting || null,
+      badge: qcWaiting || null,
       badgeKind: "qc",
       live:
-        (qcCount.data?.waiting ?? 0) > 0 ? (
-          <>
-            <b>{qcCount.data!.waiting}</b> waiting
-            {(qcCount.data?.open ?? 0) > 0 ? ` · ${qcCount.data!.open} open` : ""}
-          </>
+        metrics.isError && !m ? (
+          <button
+            type="button"
+            className="underline decoration-brass/50 underline-offset-2"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void metrics.refetch();
+            }}
+          >
+            Retry counts
+          </button>
+        ) : !m ? (
+          <span
+            className="inline-block h-3 w-[8.5rem] rounded bg-brass/20 animate-pulse"
+            aria-label="Loading QC counts"
+          />
         ) : (
-          "Store QC · makes only"
+          <>
+            <b>{m.qc.waiting}</b> waiting · <b>{m.qc.open}</b> open
+          </>
         ),
-      liveTone: (qcCount.data?.waiting ?? 0) > 0 ? "am" : "em",
+      liveTone: !m ? "cd" : qcWaiting > 0 ? "am" : "em",
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="26" cy="26" r="18" />
@@ -1115,7 +1131,8 @@ export default function HomeTiles() {
       to: "/reports",
       title: "Floor Reports",
       sub: "Pipeline · tally · $",
-      admin: true,
+      live: "Snapshot · NYC · Houston · aging",
+      liveTone: "em",
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 44h40" strokeWidth="1.6" />
@@ -1198,21 +1215,21 @@ export default function HomeTiles() {
           <span>overdue</span>
         </Link>
         <Link to="/deliveries" className="seg pill">
-          <b className="display tabular-nums">{strip?.outForDelivery ?? "—"}</b>
+          <b className="display tabular-nums">{outForDelivery || "—"}</b>
           <span>out for delivery</span>
         </Link>
         <Link to="/deliveries" className="seg pill gr">
-          <b className="display tabular-nums">{strip?.deliveredToday ?? "—"}</b>
+          <b className="display tabular-nums">{deliveredToday || "—"}</b>
           <span>delivered today</span>
         </Link>
         <Link
           to="/invoices"
-          className={cn("seg pill", (c?.openInvoices ?? 0) > 0 && "am")}
+          className={cn("seg pill", unpaidCount > 0 && "am")}
         >
           <b className="display tabular-nums">
-            {c?.openInvoicesAmount != null ? formatCompactMoney(c.openInvoicesAmount) : "—"}
+            {unpaidCount > 0 || unpaidTotal > 0 ? formatCompactMoney(unpaidTotal) : "—"}
           </b>
-          <span>{c?.openInvoices ? `${c.openInvoices} unpaid` : "all paid"}</span>
+          <span>{unpaidCount ? `${unpaidCount} unpaid` : "all paid"}</span>
         </Link>
         <button
           type="button"
@@ -1350,17 +1367,7 @@ export default function HomeTiles() {
                 <h2>{t.title}</h2>
                 <div className="sub">{t.sub}</div>
               </div>
-              {t.admin ? (
-                <a
-                  href="https://app.lstailors.com/owner"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="host"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  app.lstailors.com/owner
-                </a>
-              ) : t.live != null ? (
+              {t.live != null ? (
                 <div className={cn("live", t.liveTone === "am" && "am", t.liveTone === "ro" && "ro")}>
                   <LiveDot tone={t.liveTone} />
                   <span className="truncate min-w-0">{t.live}</span>
