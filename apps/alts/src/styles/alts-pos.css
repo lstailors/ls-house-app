@@ -195,6 +195,17 @@
   font-weight: 700;
 }
 
+.alts-root .badge-rush {
+  background: rgba(176, 141, 87, 0.95);
+  color: var(--fd);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .alts-root .card-glass {
   background: var(--glass);
   border: 1px solid rgba(176, 141, 87, 0.22);
