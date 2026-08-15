@@ -6,6 +6,7 @@ import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { billingStatusLabel } from "@alts/lib/billingLabels";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
+import ErpStatusBanner from "@alts/components/ErpStatusBanner";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { storeToday } from "@alts/lib/storeDate";
@@ -354,15 +355,16 @@ export default function ShopFloorBoard() {
       </div>
 
       <div className="flex-1 overflow-x-auto px-5 pb-6">
-        {tickets.isError && (
-          <div className="mb-3">
+        <div className="mb-3 space-y-3">
+          <ErpStatusBanner onRetry={() => tickets.refetch()} />
+          {tickets.isError ? (
             <QueryErrorPanel
               title="Could not load shop floor"
-              message="Ticket board failed to load. Retry — empty columns are not the same as an outage."
+              message={tickets.error instanceof Error ? tickets.error.message : "Ticket board failed to load. Retry — empty columns are not the same as an outage."}
               onRetry={() => tickets.refetch()}
             />
-          </div>
-        )}
+          ) : null}
+        </div>
 
         {view === "board" && (
           <div className="shop-floor-board-cols flex gap-3 min-w-[900px] h-full min-h-[420px]">

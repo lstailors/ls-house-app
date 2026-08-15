@@ -32,11 +32,12 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
   if (!response.ok) {
     const json = await response.json().catch(() => null);
-    throw new ApiError(
-      json?.error?.message || json?.message || `Request failed with status ${response.status}`,
-      response.status,
-      json?.error || json
-    );
+    const message =
+      json?.error?.message ||
+      (typeof json?.error === "string" ? json.error : null) ||
+      json?.message ||
+      `Request failed with status ${response.status}`;
+    throw new ApiError(message, response.status, json?.error || json);
   }
 
   // 1. Handle 204 No Content
@@ -47,7 +48,14 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   // 2. JSON responses: parse and unwrap { data }
   const contentType = response.headers.get("content-type");
   if (contentType?.includes("application/json")) {
-    const json: ApiResponse<T> = await response.json();
+    const json: ApiResponse<T> & { error?: { message?: string } | string } = await response.json();
+    const errMsg =
+      typeof json?.error === "string" ? json.error : json?.error?.message;
+    // Legacy ticket list returned 200 + { data: [], error } when ERPNext failed.
+    // Treat that as a load failure so boards never look like an empty day.
+    if (errMsg && (json.data == null || (Array.isArray(json.data) && json.data.length === 0))) {
+      throw new ApiError(errMsg, response.status, json.error);
+    }
     return json.data;
   }
 

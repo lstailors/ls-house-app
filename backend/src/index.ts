@@ -57,6 +57,7 @@ import { dispatchRouter } from "./routes/dispatch";
 import { bookingRouter, publicBookingRouter } from "./routes/booking";
 import { deliveryZonesRouter } from "./routes/delivery-zones";
 import { placesRouter } from "./routes/places";
+import { healthRouter } from "./routes/health";
 
 const app = new Hono();
 
@@ -85,6 +86,7 @@ app.use(
 app.use("*", logger());
 
 app.get("/health", (c) => c.json({ status: "ok" }));
+app.route("/api/health", healthRouter);
 
 // App routes
 app.route("/api/auth", authRouter);

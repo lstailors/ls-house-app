@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
+import ErpStatusBanner from "@alts/components/ErpStatusBanner";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { storeToday } from "@alts/lib/storeDate";
@@ -112,10 +113,11 @@ export default function OrdersGlass() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-8 space-y-2">
+        <ErpStatusBanner onRetry={() => tickets.refetch()} />
         {tickets.isError && (
           <QueryErrorPanel
             title="Could not load orders"
-            message="Ticket list failed. Retry — do not treat this as an empty filter."
+            message={tickets.error instanceof Error ? tickets.error.message : "Ticket list failed. Retry — do not treat this as an empty filter."}
             onRetry={() => tickets.refetch()}
           />
         )}
@@ -177,7 +179,9 @@ export default function OrdersGlass() {
             );
           })}
         {!tickets.isLoading && !tickets.isError && !rows.length && (
-          <p className="text-cream-dim p-8 text-center italic">No tickets in this filter</p>
+          <p className="text-cream-dim p-8 text-center italic">
+            {tab === "all" ? "No tickets came back from ERPNext." : "No tickets in this filter"}
+          </p>
         )}
       </div>
     </div>

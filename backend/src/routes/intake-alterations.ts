@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { getAuthedUser } from '../lib/scope';
 import { uploadFile, erpFileAbsoluteUrl } from '../lib/erpnext/files';
-import { erpList, erpGet as erpGetDoc, erpUpdate, erpPdf, erpRunMethod, erpCreate, erpSubmit } from '../lib/erp';
+import { erpList, erpGet as erpGetDoc, erpUpdate, erpPdf, erpRunMethod, erpCreate, erpSubmit, isAltsOrigin } from '../lib/erp';
 import { sendSms } from '../lib/twilio';
 import { eTicketKey, eTicketKeyValid, eTicketPublicUrl } from '../lib/eticket-token';
 import { planDeliveryFee } from './delivery-zones';
@@ -23,8 +23,8 @@ function eTicketQrUrl(ticketName: string): string {
 }
 
 // Unified @ls/erp-client path (STAGE_PLAN rule #3) — replaces prior ad-hoc MCP calls.
-async function mcpList<T>(doctype: string, fields: string[], filters: any[] = [], limit = 200, orderBy = ''): Promise<T[]> {
-  return erpList<T>(doctype, { fields, filters, limit, order_by: orderBy || undefined });
+async function mcpList<T>(doctype: string, fields: string[], filters: any[] = [], limit = 200, orderBy = '', throwOnError = false): Promise<T[]> {
+  return erpList<T>(doctype, { fields, filters, limit, order_by: orderBy || undefined, throwOnError });
 }
 
 async function mcpGet<T>(doctype: string, name: string): Promise<T> {
@@ -362,13 +362,16 @@ intakeAlterationsRouter.get('/tickets', async (c) => {
     const filters: any[] = status
       ? [['workflow_state', '=', status]]
       : [['workflow_state', '!=', 'Cancelled']];
-    if (origin) filters.push(['origin_location', '=', origin]);
+    // Do not filter origin_location in ERP — a missing/renamed field 417's the
+    // whole list into []. NYC-only is applied in JS after a successful fetch.
     const rows = await mcpList<any>('Alteration Ticket',
       ['name','customer_name','customer_phone','customer','origin_location','workflow_state','ticket_date','due_date','is_rush','ticket_total','payment_status','billing_status','assigned_tailor','linked_sales_order','included_in_custom','sales_invoice','delivery_method','notified_ready_at','modified','creation'],
-      filters, limit, 'modified desc');
-    return c.json({ data: rows });
+      filters, limit, 'modified desc', true);
+    const scoped = origin ? rows.filter((r) => isAltsOrigin(r?.origin_location)) : rows;
+    return c.json({ data: scoped });
   } catch (e: any) {
-    return c.json({ data: [], error: e.message });
+    console.error('[intake-alterations] tickets list failed:', e?.message);
+    return c.json({ error: { message: e?.message || 'ERPNext ticket list failed' } }, 502);
   }
 });
 

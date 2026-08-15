@@ -1,9 +1,5 @@
 // Enriched board rows in 3 batched calls. Server-only.
-const ERP_URL = process.env.ERPNEXT_BASE_URL ?? process.env.ERP_URL ?? "https://erp.lstailors.com";
-const authHeaders = {
-  Authorization: `token ${process.env.ERPNEXT_API_KEY ?? process.env.ERP_API_KEY}:${process.env.ERPNEXT_API_SECRET ?? process.env.ERP_API_SECRET}`,
-  Accept: "application/json",
-};
+import { erpList, isAltsOrigin } from "../erp";
 
 export type BoardFilter = "all" | "in_progress" | "complete" | "delivered";
 const STATE_GROUPS: Record<Exclude<BoardFilter, "all">, string[]> = {
@@ -18,29 +14,30 @@ export interface AlterationRow {
   paymentStatus: string; price: number; invoice: string | null; deliveryMethod: string | null;
 }
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${ERP_URL}${path}`, { headers: authHeaders, cache: "no-store" });
-  if (!res.ok) throw new Error(`ERPNext ${res.status} on ${path}`);
-  return ((await res.json()) as any).data as T;
-}
-
 export async function loadAlterationRows(filter: BoardFilter = "all", location?: string): Promise<AlterationRow[]> {
   const filters: any[] = [];
   if (filter !== "all") filters.push(["workflow_state", "in", STATE_GROUPS[filter]]);
-  if (location) filters.push(["origin_location", "=", location]);
-  const q = new URLSearchParams({
-    fields: JSON.stringify(["name","customer_name","origin_location","due_date","is_rush","workflow_state","payment_status","ticket_total","sales_invoice","delivery_method","assigned_tailor"]),
-    filters: JSON.stringify(filters), order_by: "due_date asc", limit_page_length: "0",
+  const tickets = await erpList<any>("Alteration Ticket", {
+    fields: ["name","customer_name","origin_location","due_date","is_rush","workflow_state","payment_status","ticket_total","sales_invoice","delivery_method","assigned_tailor"],
+    filters,
+    order_by: "due_date asc",
+    limit: 0,
+    throwOnError: true,
   });
-  const tickets = await get<any[]>(`/api/resource/Alteration Ticket?${q}`);
-  if (!tickets.length) return [];
-  const names = tickets.map((t) => t.name);
+  const scoped = tickets.filter((t) => {
+    if (location) return String(t.origin_location || "").toUpperCase() === location.toUpperCase();
+    return isAltsOrigin(t.origin_location);
+  });
+  if (!scoped.length) return [];
+  const names = scoped.map((t) => t.name);
 
-  const gq = new URLSearchParams({
-    parent: "Alteration Ticket", fields: JSON.stringify(["parent","garment_type"]),
-    filters: JSON.stringify([["parent","in",names]]), limit_page_length: "0",
-  });
-  const garments = await get<any[]>(`/api/resource/Alteration Ticket Garment?${gq}`);
+  const garments = await erpList<any>("Alteration Ticket Garment", {
+    parent: "Alteration Ticket",
+    fields: ["parent", "garment_type"],
+    filters: [["parent", "in", names]],
+    limit: 0,
+    throwOnError: true,
+  }).catch(() => []);
   const byTicket = new Map<string, string[]>();
   for (const g of garments) {
     const arr = byTicket.get(g.parent) ?? [];
@@ -48,15 +45,19 @@ export async function loadAlterationRows(filter: BoardFilter = "all", location?:
     byTicket.set(g.parent, arr);
   }
 
-  const tailorIds = [...new Set(tickets.map((t) => t.assigned_tailor).filter(Boolean))];
+  const tailorIds = [...new Set(scoped.map((t) => t.assigned_tailor).filter(Boolean))];
   const tailorMap = new Map<string, string>();
   if (tailorIds.length) {
-    const eq = new URLSearchParams({ fields: JSON.stringify(["name","employee_name"]), filters: JSON.stringify([["name","in",tailorIds]]), limit_page_length: "0" });
-    const emps = await get<any[]>(`/api/resource/Employee?${eq}`);
+    const emps = await erpList<any>("Employee", {
+      fields: ["name", "employee_name"],
+      filters: [["name", "in", tailorIds]],
+      limit: 0,
+      throwOnError: true,
+    }).catch(() => []);
     emps.forEach((e) => tailorMap.set(e.name, e.employee_name));
   }
 
-  return tickets.map((t): AlterationRow => {
+  return scoped.map((t): AlterationRow => {
     const types = byTicket.get(t.name) ?? [];
     return {
       name: t.name, customerName: t.customer_name, location: t.origin_location,

@@ -217,7 +217,8 @@ async function fetchYZOrders(): Promise<YZOrder[]> {
     fields: YZ_FIELDS,
     order_by: "ship_date_planned asc",
     limit: 500,
-  }).catch(() => []);
+    throwOnError: true,
+  });
 
   const today = todayStr();
 
@@ -310,8 +311,13 @@ async function fetchYZOrders(): Promise<YZOrder[]> {
 yzRouter.get("/production", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  const orders = await fetchYZOrders();
-  return c.json({ data: orders });
+  try {
+    const orders = await fetchYZOrders();
+    return c.json({ data: orders });
+  } catch (e: any) {
+    console.error("[yz/production] ERPNext list failed:", e?.message);
+    return c.json({ error: { message: e?.message || "ERPNext production list failed" } }, 502);
+  }
 });
 
 // ── AI production brief ─────────────────────────────────────────────────────
@@ -326,7 +332,13 @@ yzRouter.get("/production/brief", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
-  const orders = await fetchYZOrders();
+  let orders: YZOrder[];
+  try {
+    orders = await fetchYZOrders();
+  } catch (e: any) {
+    console.error("[yz/production/brief] ERPNext list failed:", e?.message);
+    return c.json({ error: { message: e?.message || "ERPNext production list failed" } }, 502);
+  }
   const today = todayStr();
   const weekEnd = addDaysStr(today, 7);
 

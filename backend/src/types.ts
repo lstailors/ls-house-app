@@ -1371,3 +1371,18 @@ export const MissionControlAlertsResponse = z.object({
   cache_age_minutes: z.number().nullable().optional(),
 });
 export type MissionControlAlertsResponse = z.infer<typeof MissionControlAlertsResponse>;
+
+export const ErpHealth = z.object({
+  configured: z.boolean(),
+  reachable: z.boolean(),
+  latencyMs: z.number().nullable(),
+  error: z.string().nullable(),
+});
+export type ErpHealth = z.infer<typeof ErpHealth>;
+
+export const ApiHealth = z.object({
+  ok: z.boolean(),
+  status: z.enum(["ok", "degraded"]),
+  erp: ErpHealth,
+});
+export type ApiHealth = z.infer<typeof ApiHealth>;
