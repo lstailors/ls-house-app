@@ -14,20 +14,20 @@ import {
 } from "react";
 import { ChevronLeft, Folder, GripVertical, Loader2, Search, Star } from "lucide-react";
 import { cn } from "@ls/design/utils";
-import { GarmentZoneIcon } from "@alts/components/intake/GarmentZoneIcon";
+import { GarmentZoneIcon } from "@/components/intake/GarmentZoneIcon";
 import {
   loadFavoriteIds,
   normalizeGarmentType,
   reorderFavoriteIds,
   toggleFavoriteId,
-} from "@alts/lib/intakeFavorites";
+} from "@/lib/intakeFavorites";
 import {
   isGroup as isGroupFn,
   labelOfPreset,
   matchZone,
   zonesForGarment,
   type BodyZoneDef,
-} from "@alts/components/intake/bodyZones";
+} from "@/components/intake/bodyZones";
 
 export { normalizeGarmentType };
 

@@ -188,7 +188,7 @@ export default function GarmentOptionsDrawer({
         className={cn(
           "lux-intake-drawer fixed inset-y-0 z-[75] hidden md:flex flex-col",
           entered ? "is-in" : "is-out pointer-events-none",
-          "right-[340px] w-[min(480px,calc(100vw-360px))] min-w-[320px]",
+          "right-[340px] w-[min(720px,calc(100vw-360px))] min-w-[320px]",
           "border-l border-r border-brass/30",
           "shadow-[-24px_0_60px_rgba(0,0,0,0.5)]",
         )}

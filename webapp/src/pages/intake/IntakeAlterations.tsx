@@ -12,6 +12,7 @@ import { cn } from "@ls/design/utils"
 import { useMe } from '@ls/auth'
 import { CustomerEditSheet } from '@/components/pos/CustomerEditSheet'
 import { SaveCartControls } from '@/components/alterations/SaveCartControls'
+import TaskSubitemPicker, { type HierarchyPreset } from '@/components/intake/TaskSubitemPicker'
 import type { ParkedCart, CartPayload } from '@/lib/cart/parked'
 import type { CustomerInput } from '@/lib/erpnext/customer'
 
@@ -48,9 +49,16 @@ type PaymentMethod = 'pay_now' | 'deposit' | 'on_account'
 type Preset = {
   id: string
   preset_name: string
+  display_name?: string
+  garment_type?: string
   garment_types: string[]
   price: number
   est_minutes: number | null
+  is_group?: number | boolean
+  parent_preset?: string | null
+  item_code?: string | null
+  quick_pick?: number | boolean
+  sort_order?: number
 }
 
 // ─── SVG Components ───────────────────────────────────────────────────────────
@@ -806,7 +814,7 @@ function ActiveGarmentCard({
 
   const activePresets = new Set(garment.lines.filter(l => l.preset).map(l => l.preset))
 
-  const togglePreset = (preset: Preset) => {
+  const togglePreset = (preset: HierarchyPreset) => {
     if (activePresets.has(preset.id)) {
       onUpdate({ ...garment, lines: garment.lines.filter(l => l.preset !== preset.id) })
     } else {
@@ -814,7 +822,12 @@ function ActiveGarmentCard({
         ...garment,
         lines: [
           ...garment.lines,
-          { preset: preset.id, description: preset.preset_name, price: preset.price, estMinutes: preset.est_minutes },
+          {
+            preset: preset.id,
+            description: preset.display_name || preset.preset_name,
+            price: preset.price,
+            estMinutes: preset.est_minutes ?? null,
+          },
         ],
       })
     }
@@ -923,50 +936,18 @@ function ActiveGarmentCard({
         </div>
       </div>
 
-      {/* Alteration Chips */}
+      {/* Body map + starred Quick actions */}
       <div className="mb-4">
         <p className="ui-label text-cream-muted mb-2">Alterations</p>
         {relevantPresets.length === 0 ? (
           <p className="text-cream-dim text-sm italic">No presets for this garment type</p>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {relevantPresets.map(preset => {
-              const selected = activePresets.has(preset.id)
-              return (
-                <button
-                  key={preset.id}
-                  onClick={() => togglePreset(preset)}
-                  className={cn(
-                    'relative flex flex-col items-start gap-1 p-3 rounded-xl border transition-all text-left',
-                    selected
-                      ? 'bg-brass/20 border-brass/70 shadow-[0_0_10px_rgba(180,140,60,0.15)]'
-                      : 'bg-forest-raised/60 border-brass/15 hover:border-brass/40 hover:bg-forest-raised'
-                  )}
-                >
-                  {selected && (
-                    <span className="absolute top-2 right-2 w-5 h-5 rounded-full bg-brass flex items-center justify-center">
-                      <Check className="w-3 h-3 text-forest-deep" />
-                    </span>
-                  )}
-                  <span className={cn(
-                    'text-xs font-medium leading-snug pr-6',
-                    selected ? 'text-cream' : 'text-cream-muted'
-                  )}>
-                    {preset.preset_name}
-                  </span>
-                  <span className={cn(
-                    'font-display italic text-base font-semibold',
-                    selected ? 'text-brass-shimmer' : 'text-brass-light/70'
-                  )}>
-                    {formatUSD(preset.price)}
-                  </span>
-                  {preset.est_minutes && (
-                    <span className="text-[10px] text-cream-dim">{preset.est_minutes} min</span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
+          <TaskSubitemPicker
+            presets={presets}
+            garmentType={garment.garmentType}
+            selectedIds={activePresets}
+            onToggleLeaf={togglePreset}
+          />
         )}
       </div>
 
