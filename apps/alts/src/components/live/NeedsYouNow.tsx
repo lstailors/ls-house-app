@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { cn } from "@ls/design/utils";
 import type { LiveException } from "@ls/types";
+import { isMoneyFigure } from "@alts/lib/coverMoney";
 
 const ACTION: Record<LiveException["action"], string> = {
   open: "Open",
@@ -11,9 +12,11 @@ const ACTION: Record<LiveException["action"], string> = {
 export function NeedsYouNow({
   items,
   pulse,
+  coverMoney = false,
 }: {
   items: LiveException[];
   pulse?: boolean;
+  coverMoney?: boolean;
 }) {
   return (
     <section
@@ -48,7 +51,9 @@ export function NeedsYouNow({
                 <b className="truncate">{item.name}</b>
                 <span className="truncate">{item.subtitle || ACTION[item.action]}</span>
               </div>
-              <em className="live-need-num display">{item.number}</em>
+              <em className="live-need-num display">
+                {coverMoney && isMoneyFigure(item.number) ? "••" : item.number}
+              </em>
               <i className="live-need-act">{ACTION[item.action]}</i>
             </Link>
           ))

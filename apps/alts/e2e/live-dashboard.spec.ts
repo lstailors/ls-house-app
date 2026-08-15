@@ -108,6 +108,7 @@ function liveHome(revToday: number, overdue: number) {
     },
     activity: [
       { id: "a1", at: "4:32", atIso: "2026-08-15T16:32:00", text: "QC passed · C. Dorrian", href: "/qc" },
+      { id: "a2", at: "Paid", atIso: "2026-08-15T16:40:00", text: "Paid $1.5k · Invoice 4412", href: "/invoices" },
     ],
   };
 }
@@ -192,6 +193,22 @@ test("live dashboard bands render and a metrics update pulses without layout shi
   const gridAfter = await grid.boundingBox();
   expect(Math.abs((after?.y ?? 0) - (before?.y ?? 0))).toBeLessThan(6);
   expect(Math.abs((gridAfter?.height ?? 0) - (gridBefore?.height ?? 0))).toBeLessThan(6);
+});
+
+test("Hide $ covers sales figures so a client cannot read them", async ({ page }) => {
+  await mockApis(page, { rev: 1200, overdue: 7 });
+  await page.goto("/");
+  await expect(page.locator('[data-testid="rev-today"]')).toContainText("$1.2k");
+  await expect(page.getByTestId("cover-money")).toHaveText("Hide numbers");
+
+  await page.getByTestId("cover-money").click();
+
+  await expect(page.getByTestId("cover-money")).toHaveText("Show numbers");
+  await expect(page.locator('[data-testid="rev-today"]')).toHaveCount(0);
+  await expect(page.locator('[data-band="money"]')).toContainText("Sales numbers covered");
+  await expect(page.locator("body")).not.toContainText("$1.2k");
+  await expect(page.locator("body")).not.toContainText("$5.7k");
+  await expect(page.locator('[data-band="ticker"]')).not.toContainText("$1.5k");
 });
 
 test("kiosk mode shows bands and ticker without the tile grid", async ({ page }) => {

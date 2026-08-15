@@ -76,6 +76,11 @@ export function TodayRail({
           />
         </div>
       </div>
+      <div className="live-today-legend" aria-hidden>
+        <span><i className="is-appointment">●</i> Appointment</span>
+        <span><i className="is-due_out">♢</i> Promised due</span>
+        <span><i className="is-delivery">⛟</i> Delivery run</span>
+      </div>
       <div className="live-today-chips">
         <Link to="/appointments" className="live-chip">
           Coming in today: <b className="display"><TickNumber value={rail.chips.comingIn} /></b>

@@ -18,11 +18,13 @@ import { useLiveMetrics } from "@alts/lib/useLiveMetrics";
 import { NeedsYouNow } from "@alts/components/live/NeedsYouNow";
 import { TodayRail } from "@alts/components/live/TodayRail";
 import { MoneyStrip } from "@alts/components/live/MoneyStrip";
+import { CoverMoneyButton } from "@alts/components/live/CoverMoneyButton";
 import { ActivityTicker } from "@alts/components/live/ActivityTicker";
 import { TickNumber } from "@alts/components/live/TickNumber";
 import { EMPTY_LIVE_HOME } from "@alts/lib/liveDashboard";
 import { useShopLink } from "@alts/offline/status";
 import { NeedsConnection } from "@alts/components/NeedsConnection";
+import { readCoverMoney, writeCoverMoney } from "@alts/lib/coverMoney";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
@@ -465,6 +467,7 @@ export default function HomeTiles() {
   const kiosk = params.get("kiosk") === "1";
   const live = useLiveMetrics();
   const [espressoOpen, setEspressoOpen] = useState(readEspressoOpenDefault);
+  const [coverMoney, setCoverMoney] = useState(readCoverMoney);
   const espressoMotion = usePresence(espressoOpen);
   const [askThread, setAskThread] = useState<AskMsg[]>([]);
   const [askInput, setAskInput] = useState("");
@@ -493,6 +496,14 @@ export default function HomeTiles() {
       } catch {
         /* ignore */
       }
+      return next;
+    });
+  }, []);
+
+  const toggleCoverMoney = useCallback(() => {
+    setCoverMoney((prev) => {
+      const next = !prev;
+      writeCoverMoney(next);
       return next;
     });
   }, []);
@@ -800,7 +811,9 @@ export default function HomeTiles() {
 
   const moneyBadge =
     (c?.openInvoices ?? 0) > 0
-      ? `${c!.openInvoices} · ${formatCompactMoney(c!.openInvoicesAmount)}`
+      ? coverMoney
+        ? `${c!.openInvoices} unpaid`
+        : `${c!.openInvoices} · ${formatCompactMoney(c!.openInvoicesAmount)}`
       : null;
 
   const tiles: TileDef[] = [
@@ -1072,7 +1085,7 @@ export default function HomeTiles() {
       key: "reports",
       to: "/reports",
       title: "Floor Reports",
-      sub: "Pipeline · tally · $",
+      sub: coverMoney ? "Pipeline · tally" : "Pipeline · tally · $",
       admin: true,
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -1091,6 +1104,7 @@ export default function HomeTiles() {
         "alts-root home-040 flex flex-col min-h-dvh overflow-x-hidden px-[14px] sm:px-[22px] pt-[max(10px,env(safe-area-inset-top))] pb-[max(5.5rem,env(safe-area-inset-bottom))] gap-2.5",
         kiosk && "is-kiosk",
         ambient && "is-ambient",
+        coverMoney && "is-cover-money",
       )}
     >
       {/* Header — seal, brand, search, loc, weather, avatar */}
@@ -1115,6 +1129,7 @@ export default function HomeTiles() {
             "—"
           )}
         </div>
+        <CoverMoneyButton on={coverMoney} onToggle={toggleCoverMoney} />
         {!kiosk && (
         <button
           type="button"
@@ -1174,6 +1189,16 @@ export default function HomeTiles() {
           <b className="display tabular-nums">{strip?.deliveredToday ?? "—"}</b>
           <span>delivered today</span>
         </Link>
+        <button
+          type="button"
+          onClick={toggleCoverMoney}
+          className={cn("seg pill", coverMoney ? "gr" : "am")}
+          data-testid="cover-money-strip"
+          title={coverMoney ? "Show sales numbers" : "Hide sales numbers from customers"}
+        >
+          <b className="display">{coverMoney ? "SHOW" : "HIDE"}</b>
+          <span>numbers</span>
+        </button>
         <Link
           to={
             c?.oldestUnpaidInvoiceId
@@ -1183,7 +1208,11 @@ export default function HomeTiles() {
           className={cn("seg pill", (c?.openInvoices ?? 0) > 0 && "am")}
         >
           <b className="display tabular-nums">
-            {c?.openInvoicesAmount != null ? formatCompactMoney(c.openInvoicesAmount) : "—"}
+            {coverMoney
+              ? (c?.openInvoices ?? "—")
+              : c?.openInvoicesAmount != null
+                ? formatCompactMoney(c.openInvoicesAmount)
+                : "—"}
           </b>
           <span>{c?.openInvoices ? `${c.openInvoices} unpaid` : "all paid"}</span>
         </Link>
@@ -1274,9 +1303,22 @@ export default function HomeTiles() {
         </div>
       ) : (
         <>
-          <NeedsYouNow items={board.exceptions} pulse={pulse.exceptions} />
+          <NeedsYouNow items={board.exceptions} pulse={pulse.exceptions} coverMoney={coverMoney} />
           <TodayRail rail={board.todayRail} pulse={pulse.comingIn || pulse.mustLeave || pulse.ready} />
-          <MoneyStrip money={board.money} pulse={pulse.revToday || pulse.ar} />
+          {coverMoney ? (
+            <section className="live-band live-money is-covered" data-band="money" aria-label="Sales numbers covered">
+              <div className="live-money-head">
+                <p className="live-money-covered">Sales numbers covered</p>
+                <CoverMoneyButton on={coverMoney} onToggle={toggleCoverMoney} size="band" />
+              </div>
+            </section>
+          ) : (
+            <MoneyStrip
+              money={board.money}
+              pulse={pulse.revToday || pulse.ar}
+              coverControl={<CoverMoneyButton on={coverMoney} onToggle={toggleCoverMoney} size="band" />}
+            />
+          )}
         </>
       )}
 
@@ -1386,7 +1428,7 @@ export default function HomeTiles() {
           detail="The live ticker will resume when you're back online. Last cached snapshot stays on the tiles."
         />
       ) : (
-        <ActivityTicker items={board.activity} />
+        <ActivityTicker items={board.activity} coverMoney={coverMoney} />
       )}
     </div>
   );
