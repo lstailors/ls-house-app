@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { erpList, extractFieldNotPermitted, isAltsOrigin } from "./erp";
+import { erpList, extractFieldNotPermitted, isAltsOrigin, resetDroppedFields } from "./erp";
 
 describe("extractFieldNotPermitted", () => {
   test("parses Frappe 417 field-not-permitted message", () => {
@@ -55,6 +55,7 @@ describe("erpList field retry", () => {
     process.env.ERPNEXT_API_KEY = prev.key;
     process.env.ERPNEXT_API_SECRET = prev.secret;
     globalThis.fetch = prev.fetch;
+    resetDroppedFields();
   });
 
   test("retries after dropping an unknown field and returns rows", async () => {
@@ -91,6 +92,31 @@ describe("erpList field retry", () => {
     expect(calls).toHaveLength(2);
     expect(calls[0]).toContain("billing_status");
     expect(calls[1]).not.toContain("billing_status");
+  });
+
+  test("remembers dropped fields so the next list skips the 417", async () => {
+    process.env.ERPNEXT_BASE_URL = "https://erp.example.test";
+    process.env.ERPNEXT_API_KEY = "k";
+    process.env.ERPNEXT_API_SECRET = "s";
+
+    const calls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("billing_status")) {
+        return new Response("Field not permitted in query: billing_status", { status: 417 });
+      }
+      return new Response(JSON.stringify({ data: [{ name: "ALT-1" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    await erpList("Alteration Ticket", { fields: ["name", "billing_status"], throwOnError: true });
+    await erpList("Alteration Ticket", { fields: ["name", "billing_status"], throwOnError: true });
+
+    expect(calls.filter((u) => u.includes("billing_status"))).toHaveLength(1);
+    expect(calls).toHaveLength(3);
   });
 
   test("sends limit_page_length=0 so Frappe returns the full list", async () => {

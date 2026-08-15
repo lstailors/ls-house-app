@@ -41,7 +41,7 @@ export default function Lookup() {
     queryKey: ["lookup-t", go],
     enabled: go.trim().length >= 2,
     queryFn: async () => {
-      const rows = await api.get<any[]>(`/api/intake-alterations/tickets?limit=150`);
+      const rows = await api.get<any[]>(`/api/intake-alterations/tickets?limit=500`);
       const s = go.toLowerCase();
       return (rows ?? []).filter(
         (t) =>
