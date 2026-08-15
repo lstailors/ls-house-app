@@ -15,8 +15,10 @@ import { TailorTallyStrip } from "@alts/components/TailorTallyStrip";
 type Ticket = {
   name: string;
   customer_name?: string;
+  customer_phone?: string;
   workflow_state?: string;
   due_date?: string;
+  due_time?: string;
   is_rush?: number;
   ticket_total?: number;
   payment_status?: string;
@@ -24,6 +26,7 @@ type Ticket = {
   assigned_tailor?: string;
   origin_location?: string;
   linked_sales_order?: string;
+  notified_ready_at?: string | null;
 };
 
 const COLS = ["Received", "In Progress", "Ready", "Picked Up"] as const;
@@ -54,6 +57,36 @@ function fmtDue(due?: string): { text: string; kind: "late" | "soon" | "ok"; lab
   return { text: `Due ${label}`, kind: "ok", label };
 }
 
+function fmtTime(raw?: string): string {
+  const m = String(raw ?? "").trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return "";
+  let h = Number(m[1]);
+  const min = m[2];
+  if (!Number.isFinite(h)) return "";
+  const ap = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return `${h}:${min} ${ap}`;
+}
+
+function isRush(t: Ticket) {
+  return Number(t.is_rush) === 1;
+}
+
+function needsReadyText(t: Ticket) {
+  return t.workflow_state === "Ready" && !String(t.notified_ready_at ?? "").trim();
+}
+
+function sortShopTickets(a: Ticket, b: Ticket) {
+  const lateA = daysLate(a.due_date);
+  const lateB = daysLate(b.due_date);
+  if (lateA > 0 !== lateB > 0) return lateA > 0 ? -1 : 1;
+  if (isRush(a) !== isRush(b)) return isRush(a) ? -1 : 1;
+  const da = a.due_date || "9999-99-99";
+  const db = b.due_date || "9999-99-99";
+  if (da !== db) return da.localeCompare(db);
+  return String(a.due_time || "99:99").localeCompare(String(b.due_time || "99:99"));
+}
+
 function money(n?: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n || 0);
 }
@@ -64,30 +97,38 @@ function TicketCard({
   next,
   onOpen,
   onAdvance,
+  onTextReady,
   pending,
+  texting,
 }: {
   t: Ticket;
   col: string;
   next: { status: string; label: string } | null;
   onOpen: () => void;
   onAdvance: () => void;
+  onTextReady?: () => void;
   pending: boolean;
+  texting?: boolean;
 }) {
   const due = fmtDue(t.due_date);
+  const time = fmtTime(t.due_time);
   const nonBill =
     t.billing_status === "Warranty" || t.billing_status === "Included in Custom Order";
+  const textReady = col === "Ready" && needsReadyText(t);
   return (
     <div
       className={cn(
         "w-full text-left rounded-xl border border-brass/20 bg-black/25 p-3 transition-colors",
         due.kind === "late" && "border-l-2 border-l-signal-rose",
         due.kind === "soon" && "border-l-2 border-l-signal-amber",
+        isRush(t) && due.kind === "ok" && "border-l-2 border-l-brass",
         col === "Picked Up" && "opacity-55",
       )}
     >
       <button type="button" onClick={onOpen} className="w-full text-left">
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
           <span className="text-[12px] font-mono text-brass-light truncate">{t.name}</span>
+          {isRush(t) && <span className="badge-rush">Rush</span>}
           {due.kind === "late" && <span className="badge-late">{due.text}</span>}
           {due.kind === "soon" && <span className="badge-soon">{due.text}</span>}
         </div>
@@ -102,7 +143,10 @@ function TicketCard({
               "—"
             )}
           </span>
-          <span className="ml-auto">{due.label}</span>
+          <span className="ml-auto">
+            {due.label}
+            {time ? ` · ${time}` : ""}
+          </span>
         </div>
         {nonBill && (
           <div className="text-xs text-[var(--vi,#9B8BC4)] mt-1">
@@ -116,7 +160,23 @@ function TicketCard({
           col === "Ready" && (
             <div className="text-[12px] text-signal-amber mt-1">{t.payment_status}</div>
           )}
+        {textReady && (
+          <div className="text-[12px] text-signal-amber mt-1">Ready — customer not texted</div>
+        )}
       </button>
+      {textReady && onTextReady && (
+        <button
+          type="button"
+          disabled={texting}
+          onClick={(e) => {
+            e.stopPropagation();
+            onTextReady();
+          }}
+          className="mt-2 w-full h-9 rounded-lg border border-signal-amber/40 text-[12px] font-bold tracking-widest uppercase text-signal-amber hover:bg-signal-amber/15 disabled:opacity-40"
+        >
+          {texting ? "Texting…" : "Text ready"}
+        </button>
+      )}
       {next && (
         <button
           type="button"
@@ -138,7 +198,7 @@ export default function ShopFloorBoard() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "today" | "unassigned" | "unpaid">("all");
+  const [filter, setFilter] = useState<"all" | "today" | "unassigned" | "unpaid" | "text">("all");
   const [view, setView] = useState<ViewMode>("board");
 
   const tickets = useQuery({
@@ -163,6 +223,17 @@ export default function ShopFloorBoard() {
       }
     },
     onError: (e: Error) => toast.error(e.message || "Status update failed"),
+  });
+
+  const textReady = useMutation({
+    mutationFn: (name: string) =>
+      api.post(`/api/intake-alterations/tickets/${encodeURIComponent(name)}/notify-ready`, {}),
+    onSuccess: (_d, name) => {
+      toast.success(`${name} — ready text sent`);
+      qc.invalidateQueries({ queryKey: ["shop-floor-tickets"] });
+      qc.invalidateQueries({ queryKey: ["alts-home-stats"] });
+    },
+    onError: (e: Error) => toast.error(e.message || "Text failed"),
   });
 
   const list = useMemo(() => {
@@ -193,6 +264,9 @@ export default function ShopFloorBoard() {
           (Number(t.ticket_total) || 0) > 0,
       );
     }
+    if (filter === "text") {
+      rows = rows.filter((t) => needsReadyText(t));
+    }
     return rows;
   }, [tickets.data, q, filter]);
 
@@ -204,6 +278,7 @@ export default function ShopFloorBoard() {
       if (m[st]) m[st].push(t);
       else m["Received"].push(t);
     }
+    for (const c of COLS) m[c]!.sort(sortShopTickets);
     return m;
   }, [list]);
 
@@ -214,6 +289,7 @@ export default function ShopFloorBoard() {
       if (!m.has(key)) m.set(key, []);
       m.get(key)!.push(t);
     }
+    for (const rows of m.values()) rows.sort(sortShopTickets);
     return [...m.entries()].sort((a, b) => {
       if (a[0] === "Unassigned") return -1;
       if (b[0] === "Unassigned") return 1;
@@ -242,7 +318,8 @@ export default function ShopFloorBoard() {
     const dueToday = open.filter((t) => t.due_date === today).length;
     const unassigned = open.filter((t) => !t.assigned_tailor).length;
     const ready = list.filter((t) => t.workflow_state === "Ready").length;
-    return { overdue, dueToday, inShop: open.length, unassigned, ready };
+    const needsText = list.filter((t) => needsReadyText(t)).length;
+    return { overdue, dueToday, inShop: open.length, unassigned, ready, needsText };
   }, [list]);
 
   return (
@@ -268,13 +345,14 @@ export default function ShopFloorBoard() {
         </div>
       </header>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 px-5 py-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-2 px-5 py-4">
         {[
           { v: kpis.overdue, l: "Overdue", alert: true },
           { v: kpis.dueToday, l: "Due today", warn: true },
           { v: kpis.inShop, l: "In the shop" },
           { v: kpis.unassigned, l: "Unassigned", warn: true },
           { v: kpis.ready, l: "Ready" },
+          { v: kpis.needsText, l: "Needs text", warn: true },
         ].map((k) => (
           <div
             key={k.l}
@@ -332,6 +410,7 @@ export default function ShopFloorBoard() {
             ["today", "Due today"],
             ["unassigned", "Unassigned"],
             ["unpaid", "Ready unpaid"],
+            ["text", "Needs text"],
           ] as const
         ).map(([k, lab]) => (
           <button
@@ -391,10 +470,12 @@ export default function ShopFloorBoard() {
                       col={col}
                       next={NEXT[col]}
                       pending={advance.isPending}
+                      texting={textReady.isPending && textReady.variables === t.name}
                       onOpen={() => nav(`/orders/alterations/${t.name}`)}
                       onAdvance={() =>
                         advance.mutate({ name: t.name, status: NEXT[col]!.status })
                       }
+                      onTextReady={() => textReady.mutate(t.name)}
                     />
                   ))}
                   {tickets.isLoading && <div className="text-cream-dim text-sm p-3">Loading…</div>}
@@ -423,6 +504,8 @@ export default function ShopFloorBoard() {
                       col={t.workflow_state || "Received"}
                       next={NEXT[t.workflow_state || "Received"] ?? null}
                       pending={advance.isPending}
+                      texting={textReady.isPending && textReady.variables === t.name}
+                      onTextReady={() => textReady.mutate(t.name)}
                       onOpen={() => nav(`/orders/alterations/${t.name}`)}
                       onAdvance={() => {
                         const n = NEXT[t.workflow_state || "Received"];

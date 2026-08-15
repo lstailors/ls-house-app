@@ -365,7 +365,7 @@ intakeAlterationsRouter.get('/tickets', async (c) => {
     // Do not filter origin_location in ERP — a missing/renamed field 417's the
     // whole list into []. NYC-only is applied in JS after a successful fetch.
     const rows = await mcpList<any>('Alteration Ticket',
-      ['name','customer_name','customer_phone','customer','origin_location','workflow_state','ticket_date','due_date','is_rush','ticket_total','payment_status','billing_status','assigned_tailor','linked_sales_order','included_in_custom','sales_invoice','delivery_method','notified_ready_at','modified','creation'],
+      ['name','customer_name','customer_phone','customer','origin_location','workflow_state','ticket_date','due_date','due_time','is_rush','ticket_total','payment_status','billing_status','assigned_tailor','linked_sales_order','included_in_custom','sales_invoice','delivery_method','notified_ready_at','modified','creation'],
       filters, limit, 'modified desc', true);
     const scoped = origin ? rows.filter((r) => isAltsOrigin(r?.origin_location)) : rows;
     return c.json({ data: scoped });
@@ -1665,11 +1665,14 @@ intakeAlterationsRouter.post('/tickets/:name/notify-ready', async (c) => {
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   const ticketName = c.req.param('name');
-  const body = (await c.req.json()) as any;
-  const { phone, message } = body;
+  const body = (await c.req.json().catch(() => ({}))) as any;
+  const ticket = await mcpGet<any>('Alteration Ticket', ticketName).catch(() => null);
+  const phone = String(body.phone || ticket?.customer_phone || ticket?.customer_mobile || '').trim();
+  const first = String(ticket?.customer_name || 'there').trim().split(/\s+/)[0] || 'there';
+  const message = String(body.message || '').trim()
+    || `Hi ${first}, your alteration at L&S Tailors is ready for pickup! View your e-ticket: ${eTicketPublicUrl(ticketName)}`;
 
-  if (!phone) return c.json({ error: { message: 'phone required' } }, 400);
-  if (!message) return c.json({ error: { message: 'message required' } }, 400);
+  if (!phone) return c.json({ error: { message: 'No phone on this ticket — add one, then text.' } }, 422);
 
   // Always attach QR code image — iOS auto-scans it from the Messages app
   const sid = await sendSms(phone, message, eTicketQrUrl(ticketName));
