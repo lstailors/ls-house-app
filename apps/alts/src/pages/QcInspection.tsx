@@ -11,7 +11,6 @@ import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
 import { ConfirmDialog } from "@alts/components/ConfirmDialog";
 import StatusBadge from "@alts/components/StatusBadge";
-import MtmStatusRail from "@alts/components/MtmStatusRail";
 import { clientInitials } from "@alts/lib/ticketDisplay";
 import "@alts/styles/alts-pos.css";
 
@@ -84,7 +83,6 @@ export default function QcInspection() {
   const [showQr, setShowQr] = useState(false);
   const [embedSrc, setEmbedSrc] = useState<string | null>(null);
   const [decide, setDecide] = useState<"pass" | "fail" | null>(null);
-  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const [confirmAllPass, setConfirmAllPass] = useState(false);
   const [failDraft, setFailDraft] = useState<{ ids: string[]; labels: string[] } | null>(null);
   const [failDraftNote, setFailDraftNote] = useState("");
@@ -97,21 +95,6 @@ export default function QcInspection() {
 
   const data = detail.data;
   const inspectionId = data?.id || data?.name || null;
-  const orderName =
-    data?.orderName || data?.mtmproOrder || data?.customOrder || data?.links?.mtmproOrder || null;
-
-  const setOrderStatus = useMutation({
-    mutationFn: (status: string) =>
-      api.patch(`/api/qc/orders/${encodeURIComponent(orderName!)}/status`, { status }),
-    onMutate: (status) => setPendingStatus(status),
-    onSuccess: () => {
-      toast.success("Status updated");
-      void qc.invalidateQueries({ queryKey: ["alts-qc"] });
-      void qc.invalidateQueries({ queryKey: ["alts-qc-detail", id] });
-    },
-    onError: (e: Error) => toast.error(e.message || "Could not update status"),
-    onSettled: () => setPendingStatus(null),
-  });
 
   const skipCheckSave = useRef(true);
 
@@ -363,9 +346,9 @@ export default function QcInspection() {
           <div className="caps mt-1 truncate">
             {[data?.mtmproOrder || id, data?.salesOrder].filter(Boolean).join(" · ")}
           </div>
-          {(data?.result || data?.orderStatus) && (
+          {data?.result && (
             <div className="mt-1">
-              <StatusBadge status={String(data?.result || data?.orderStatus)} />
+              <StatusBadge status={String(data.result)} />
             </div>
           )}
         </div>
@@ -415,14 +398,6 @@ export default function QcInspection() {
           <div className="flex flex-wrap gap-2 mt-3">
             {data?.mtmproOrder && <span className="chip">{data.mtmproOrder}</span>}
             {data?.salesOrder && <span className="chip">{data.salesOrder}</span>}
-          </div>
-          <div className="mt-4">
-            <div className="caps text-brass-light mb-2">Live order status</div>
-            <MtmStatusRail
-              current={data?.orderStatus}
-              pending={pendingStatus}
-              onChange={orderName ? (status) => setOrderStatus.mutate(status) : undefined}
-            />
           </div>
           <div className="grid grid-cols-2 gap-2 mt-4">
             <button type="button" onClick={() => void loadPdf()} className="btn-brass h-12 text-[11px]">

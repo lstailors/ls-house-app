@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
-import { erpList, erpGet, erpCreate, erpUpdate, erpPdf } from "../lib/erp";
+import { erpList, erpGet, erpCreate, erpUpdate } from "../lib/erp";
 import { uploadFile, erpFileAbsoluteUrl } from "../lib/erpnext/files";
 import { DT } from "../lib/erpnext/doctypes";
 import {
@@ -20,8 +20,9 @@ import {
   tabToQcResult,
   type QcCheck,
 } from "../lib/qc";
-import { createQcSignatureSubmission, docusealEnabled } from "../lib/docuseal";
+import { createQcSignatureSubmission, docusealEnabled, pingDocuseal } from "../lib/docuseal";
 import { loadDocusealSettings, maskKey, saveDocusealSettings } from "../lib/qc-settings";
+import { loadQcOrderPdf } from "../lib/qc-pdf";
 import { getAltsMetrics } from "../lib/metrics";
 import { sendSms, alertCarl } from "../lib/twilio";
 import { canShowTestData, filterTestRows } from "../lib/ops-mode";
@@ -603,6 +604,17 @@ qcRouter.patch("/settings", async (c) => {
   }
 });
 
+qcRouter.post("/settings/test", async (c) => {
+  const gate = await requireAdmin(c);
+  if (gate.res) return gate.res;
+  try {
+    const ping = await pingDocuseal();
+    return c.json({ data: ping });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message || "Could not reach DocuSeal" } }, 502);
+  }
+});
+
 // GET /api/qc/count — same Pending COUNT as WAITING tab + home tile
 qcRouter.get("/count", async (c) => {
   const gate = await requireFloor(c);
@@ -727,52 +739,17 @@ qcRouter.get("/:id/pdf", async (c) => {
   try {
     const insp = await resolveInspection(id);
     const so = insp?.sales_order || (/^LSTNY-SO|^LSTX-SO|^SAL-|^SO-/i.test(id) ? id : null);
-    const custom = insp?.custom_order || null;
-    const mtm =
-      insp?.mtmpro_order ||
-      (/^LST-\d/i.test(id) ? id : null) ||
-      (/^LST-\d/i.test(String(custom || "")) ? custom : null);
-
-    const tryPdf = async (doctype: string, name: string, format: string) => {
-      const res = await erpPdf(doctype, name, format);
-      if (!res.ok) return null;
-      const buf = await res.arrayBuffer();
-      if (buf.byteLength < 80) return null;
-      const head = new TextDecoder().decode(buf.slice(0, 8));
-      if (!head.startsWith("%PDF")) return null;
-      return buf;
-    };
-
-    let buf: ArrayBuffer | null = null;
-    let filename = `${id}.pdf`;
-    if (mtm) {
-      for (const fmt of ["Standard", "MTMPro Order", "LSH MTM Pro", "MTM Pro Order"]) {
-        buf = await tryPdf(DT.MTM_PRO_ORDER, mtm, fmt);
-        if (buf) {
-          filename = `${mtm}.pdf`;
-          break;
-        }
-      }
-    }
-    if (!buf && custom) {
-      for (const fmt of ["Standard", "LSH Custom Order"]) {
-        buf = await tryPdf(DT_CUSTOM, custom, fmt);
-        if (buf) {
-          filename = `${custom}.pdf`;
-          break;
-        }
-      }
-    }
-    if (!buf && so) {
-      for (const fmt of ["Standard", "Sales Order", "L&S Sales Order"]) {
-        buf = await tryPdf("Sales Order", so, fmt);
-        if (buf) {
-          filename = `${so}.pdf`;
-          break;
-        }
-      }
-    }
-    if (!buf) return c.json({ error: { message: "No PDF on this order" } }, 404);
+    const found = await loadQcOrderPdf(
+      {
+        name: insp?.name,
+        sales_order: so,
+        custom_order: insp?.custom_order,
+        mtmpro_order: insp?.mtmpro_order,
+      },
+      id,
+    );
+    if (!found) return c.json({ error: { message: "No PDF on this order" } }, 404);
+    const { buf, filename } = found;
     return new Response(buf, {
       headers: {
         "Content-Type": "application/pdf",
@@ -1032,20 +1009,26 @@ qcRouter.post("/:id/sign", async (c) => {
       return c.json({ error: { message: "DocuSeal is not connected — sign on the pad" } }, 400);
     }
 
-    let pdfBytes: ArrayBuffer | null = null;
-    const so = existing.sales_order;
-    if (so) {
-      const pdf = await erpPdf("Sales Order", so, "Standard");
-      if (pdf.ok) pdfBytes = await pdf.arrayBuffer();
-    }
+    const pdf = await loadQcOrderPdf(existing, existing.name);
     const sub = await createQcSignatureSubmission({
       title: `QC ${existing.custom_order || existing.sales_order || existing.name}`,
       inspectorEmail: gate.user!.email,
       inspectorName: gate.user!.name || gate.user!.email,
-      pdfBytes,
-      pdfName: `${so || existing.name}.pdf`,
+      pdfBytes: pdf?.buf ?? null,
+      pdfName: pdf?.filename || `${existing.name}.pdf`,
     });
-    if (!sub) return c.json({ error: { message: "Could not start DocuSeal" } }, 502);
+    if (!sub) {
+      return c.json(
+        {
+          error: {
+            message: pdf
+              ? "DocuSeal did not start — check the API key in Settings"
+              : "No order PDF to send to DocuSeal, and no template is set",
+          },
+        },
+        502,
+      );
+    }
     await updateDroppingFields(existing.name, {
       docuseal_submission_id: String(sub.id),
       docuseal_embed_src: sub.embedSrc,
