@@ -1,15 +1,12 @@
 /** DocuSeal signing — optional. If unset, the phone uses an on-device signature pad. */
 
-function base() {
-  return (process.env.DOCUSEAL_URL || "https://api.docuseal.com").replace(/\/$/, "");
-}
+import { loadDocusealSettings } from "./qc-settings";
 
-function key() {
-  return (process.env.DOCUSEAL_API_KEY || "").trim();
-}
+const FALLBACK_URL = "https://docuseal.lstailors.com";
 
-export function docusealEnabled() {
-  return Boolean(key());
+export async function docusealEnabled() {
+  const s = await loadDocusealSettings();
+  return Boolean(s.apiKey);
 }
 
 export type DocuSealSubmission = {
@@ -25,19 +22,21 @@ export async function createQcSignatureSubmission(opts: {
   pdfBytes?: ArrayBuffer | null;
   pdfName?: string;
 }): Promise<DocuSealSubmission | null> {
-  if (!key()) return null;
+  const cfg = await loadDocusealSettings();
+  if (!cfg.apiKey) return null;
 
   const templateId = (process.env.DOCUSEAL_TEMPLATE_ID || "").trim();
   const headers = {
-    "X-Auth-Token": key(),
+    "X-Auth-Token": cfg.apiKey,
     "Content-Type": "application/json",
     Accept: "application/json",
   };
+  const base = (cfg.url || FALLBACK_URL).replace(/\/$/, "");
 
   let res: Response;
   if (opts.pdfBytes && opts.pdfBytes.byteLength > 0) {
     const b64 = Buffer.from(opts.pdfBytes).toString("base64");
-    res = await fetch(`${base()}/submissions/pdf`, {
+    res = await fetch(`${base}/submissions/pdf`, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -54,7 +53,7 @@ export async function createQcSignatureSubmission(opts: {
       }),
     });
   } else if (templateId) {
-    res = await fetch(`${base()}/submissions`, {
+    res = await fetch(`${base}/submissions`, {
       method: "POST",
       headers,
       body: JSON.stringify({

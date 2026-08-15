@@ -1,6 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useMe } from "@ls/auth/session";
-import { signOut } from "@ls/auth/authClient";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
@@ -10,7 +9,6 @@ import { useErpHealth } from "@alts/components/ErpStatusBanner";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
-import { clearAltsPrivateStorage } from "@alts/lib/logoutPrivacy";
 import { clientInitials, storeHour } from "@alts/lib/ticketDisplay";
 import { usePresence } from "@alts/lib/luxuryMotion";
 
@@ -561,6 +559,7 @@ export default function HomeTiles() {
 
   const qcCount = useQuery({
     queryKey: ["alts-qc-count"],
+    enabled: me?.role === "super_admin" || me?.role === "tailor",
     queryFn: () => api.get<{ waiting: number; open: number }>("/api/qc/count"),
     staleTime: 30_000,
     refetchInterval: 60_000,
@@ -670,14 +669,8 @@ export default function HomeTiles() {
     return `${Math.floor(sec / 60)}m ago`;
   }, [feed?.syncedAt, home.dataUpdatedAt]);
 
-  const logout = async () => {
-    clearAltsPrivateStorage();
-    qc.clear();
-    await signOut();
-    nav("/login", { replace: true });
-  };
-
   const initials = clientInitials(me?.name ?? "LS");
+  const canQc = me?.role === "super_admin" || me?.role === "tailor";
 
   const lastTicketLive = (() => {
     const t = feeds?.lastTicket;
@@ -1159,9 +1152,10 @@ export default function HomeTiles() {
         </div>
         <button
           type="button"
-          onClick={logout}
+          onClick={() => nav("/settings")}
           className="w-8 h-8 rounded-full bg-forest-raised border border-brass/32 grid place-items-center text-[11.5px] font-bold text-brass-light shrink-0 min-h-0 min-w-0"
-          title={me?.name ?? "Staff"}
+          title={me?.name ?? "Settings"}
+          aria-label="Settings"
         >
           {initials}
         </button>
@@ -1324,7 +1318,9 @@ export default function HomeTiles() {
 
       {/* 5×2 tile grid — fills remaining height */}
       <div className="home-040-grid flex-1 min-h-0">
-        {tiles.map((t) => {
+        {tiles
+          .filter((t) => t.key !== "qc" || canQc)
+          .map((t) => {
           const className = cn(
             "home-040-tile",
             t.primary && "pri",

@@ -7,7 +7,9 @@ import {
   ACCESS_TTL_SEC,
   REFRESH_IF_REMAINING_SEC,
   clearSessionCookie,
+  readErpSid,
   readSessionToken,
+  setErpSidCookie,
   setSessionCookie,
 } from "../lib/session-cookie";
 
@@ -49,6 +51,13 @@ authRouter.post(
     if (loginJson?.message !== "Logged In") {
       return c.json({ error: { message: "Invalid email or password" } }, 401);
     }
+
+    const sidHeader =
+      typeof loginRes.headers.getSetCookie === "function"
+        ? loginRes.headers.getSetCookie().join(",")
+        : loginRes.headers.get("set-cookie") || "";
+    const sidMatch = sidHeader.match(/(?:^|,|\s)sid=([^;]+)/i);
+    if (sidMatch?.[1]) setErpSidCookie(c, sidMatch[1], ACCESS_TTL_SEC);
 
     // Fetch full name from ERPNext User record (using admin API key)
     const key = process.env.ERPNEXT_API_KEY ?? "";
@@ -98,7 +107,19 @@ authRouter.post(
   },
 );
 
-authRouter.post("/logout", (c) => {
+authRouter.post("/logout", async (c) => {
+  const sid = readErpSid(c);
+  const base = ERP_BASE();
+  if (sid && base) {
+    await fetch(`${base}/api/method/logout`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Cookie: `sid=${sid}`,
+        "User-Agent": ERP_UA,
+      },
+    }).catch(() => null);
+  }
   clearSessionCookie(c);
   return c.json({ data: { ok: true } });
 });
@@ -132,6 +153,8 @@ authRouter.post("/refresh", async (c) => {
   }
 
   setSessionCookie(c, token, ACCESS_TTL_SEC);
+  const sid = readErpSid(c);
+  if (sid) setErpSidCookie(c, sid, ACCESS_TTL_SEC);
   return c.json({
     data: {
       token,
@@ -163,6 +186,8 @@ export async function maybeSlideSession(c: import("hono").Context, token: string
       ACCESS_TTL_SEC,
     );
     setSessionCookie(c, next, ACCESS_TTL_SEC);
+    const sid = readErpSid(c);
+    if (sid) setErpSidCookie(c, sid, ACCESS_TTL_SEC);
     return next;
   } catch {
     return token;

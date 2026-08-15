@@ -109,7 +109,7 @@ export default function QcInspection() {
   const start = useMutation({
     mutationFn: () =>
       api.post<{ id: string; name?: string }>("/api/qc", {
-        mtmproOrder: data?.mtmproOrder || (/^LST-/i.test(id) ? id : undefined),
+        customOrder: data?.mtmproOrder || (data as Inspection & { customOrder?: string })?.customOrder,
         salesOrder: data?.salesOrder || undefined,
       }),
     onSuccess: (created) => {
@@ -221,23 +221,21 @@ export default function QcInspection() {
     return { total, passed, failed, open: total - passed - failed };
   }, [checks]);
 
-  const finish = (result: "Pass" | "Fail", nextStatus?: string) => {
+  const finish = (result: "Pass" | "Fail") => {
     if (!inspectionId) return;
-    if (result === "Fail" && !failReason.trim() && summary.failed === 0) {
-      toast.error("Say what failed — a note or a failed check");
+    if (result === "Fail" && !String(notes || failReason).trim()) {
+      toast.error("Notes are required to fail");
       return;
     }
     save.mutate(
       {
         checks,
-        notes,
-        failReason,
-        result,
-        nextStatus: result === "Pass" ? nextStatus || "Awaiting Fitting" : "Alterations",
+        notes: notes || failReason,
+        qc_result: result,
       },
       {
         onSuccess: () => {
-          toast.success(result === "Pass" ? `Passed · ${nextStatus || "Awaiting Fitting"}` : "Failed · Alterations");
+          toast.success(result === "Pass" ? "Passed" : "Failed");
           setDecide(null);
           qc.invalidateQueries({ queryKey: ["alts-qc-detail", id] });
         },
@@ -249,7 +247,7 @@ export default function QcInspection() {
     data?.scanUrl ||
     `https://alts.lstailors.com/qc/${encodeURIComponent(inspectionId || id)}`;
   const qrSrc = `${QR_API}?data=${encodeURIComponent(scanUrl)}&size=280`;
-  const locked = /pass|fail/i.test(String(data?.result || ""));
+  const locked = /^(pass|fail)$/i.test(String((data as Inspection & { qcResult?: string })?.qcResult || data?.result || ""));
   const groups = groupChecks(checks);
   const photos = data?.photos ?? [];
 
@@ -624,7 +622,7 @@ export default function QcInspection() {
             style={{ background: "linear-gradient(180deg,#152A1E,#0D1A10)" }}
           >
             <h2 className="display text-[32px] leading-none">Pass</h2>
-            <p className="text-sm text-cream-dim mt-2">Where should this make go next?</p>
+            <p className="text-sm text-cream-dim mt-2">ERPNext will move this make to Awaiting Fitting, or Awaiting Shipment if it ships direct.</p>
             {summary.open > 0 && (
               <p className="text-xs text-signal-amber mt-2">{summary.open} checks still open — they will stay as skip.</p>
             )}
@@ -632,18 +630,10 @@ export default function QcInspection() {
               <button
                 type="button"
                 disabled={save.isPending}
-                onClick={() => finish("Pass", "Awaiting Fitting")}
+                onClick={() => finish("Pass")}
                 className="btn-brass h-14 text-xs"
               >
-                Awaiting Fitting
-              </button>
-              <button
-                type="button"
-                disabled={save.isPending}
-                onClick={() => finish("Pass", "Awaiting Shipment")}
-                className="h-14 rounded-xl border border-brass/35 text-[12px] font-bold uppercase tracking-widest"
-              >
-                Awaiting Shipment
+                Confirm pass
               </button>
               <button type="button" onClick={() => setDecide(null)} className="btn-ghost h-12 text-xs">
                 Back

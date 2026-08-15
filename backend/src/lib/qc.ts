@@ -86,3 +86,117 @@ export function checksSummary(checks: QcCheck[]) {
   const open = total - passed - failed;
   return { total, passed, failed, open };
 }
+
+export type QcResult = "Pending" | "Pass" | "Fail";
+
+export function qcResultOf(doc: Record<string, unknown> | null | undefined): QcResult {
+  const raw = String(doc?.qc_result ?? doc?.result ?? doc?.status ?? "Pending").trim();
+  if (/^pass$/i.test(raw)) return "Pass";
+  if (/^fail$/i.test(raw)) return "Fail";
+  return "Pending";
+}
+
+export function tabToQcResult(tab: string): QcResult | null {
+  const t = tab.toLowerCase();
+  if (t === "open") return "Pending";
+  if (t === "passed" || t === "pass") return "Pass";
+  if (t === "failed" || t === "fail") return "Fail";
+  return null;
+}
+
+/** Six floor checks — match LSH QC Inspection groups. */
+export const QC_SIX = [
+  { id: "identity", group: "Identity", fields: ["identity", "check_identity", "identity_check", "identity_ok"] },
+  { id: "measurements", group: "Measurements", fields: ["measurements", "check_measurements", "measurements_check"] },
+  { id: "construction", group: "Construction", fields: ["construction", "check_construction", "construction_check"] },
+  { id: "finish", group: "Finish", fields: ["finish", "check_finish", "finish_check"] },
+  { id: "condition", group: "Condition", fields: ["condition", "check_condition", "condition_check"] },
+  { id: "fit_ready", group: "Fit-ready", fields: ["fit_ready", "fit-ready", "check_fit_ready", "fit_ready_check"] },
+] as const;
+
+export function coercePass(v: unknown): boolean | null {
+  if (v === true || v === 1 || v === "1") return true;
+  if (v === false || v === 0 || v === "0") return false;
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  if (/^(pass|yes|true|ok)$/i.test(s)) return true;
+  if (/^(fail|no|false)$/i.test(s)) return false;
+  return null;
+}
+
+export function checksFromDoc(doc: Record<string, unknown> | null | undefined): QcCheck[] {
+  if (!doc) return blankChecks();
+  const rawJson = doc.checks_json ?? doc.checks;
+  if (rawJson) {
+    try {
+      const parsed = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
+      if (Array.isArray(parsed) && parsed.length) return mergeChecks(parsed);
+    } catch {
+      /* fall through to field mapping */
+    }
+  }
+  const byGroup = new Map<string, boolean | null>();
+  let any = false;
+  for (const six of QC_SIX) {
+    for (const f of six.fields) {
+      if (doc[f] != null && doc[f] !== "") {
+        byGroup.set(six.group, coercePass(doc[f]));
+        any = true;
+        break;
+      }
+    }
+  }
+  if (!any) return blankChecks();
+  return QC_CHECK_CATALOG.map((c) => ({
+    ...c,
+    pass: byGroup.has(c.group) ? byGroup.get(c.group)! : null,
+  }));
+}
+
+export function checksToDocFields(checks: QcCheck[]): Record<string, unknown> {
+  const out: Record<string, unknown> = { checks_json: JSON.stringify(mergeChecks(checks)) };
+  for (const six of QC_SIX) {
+    const group = checks.filter((c) => c.group === six.group);
+    if (!group.length) continue;
+    const failed = group.some((c) => c.pass === false);
+    const allPass = group.every((c) => c.pass === true);
+    if (!failed && !allPass) continue;
+    const val = failed ? 0 : 1;
+    out[six.id] = val;
+    out[`check_${six.id}`] = val;
+  }
+  return out;
+}
+
+export function isQcInspectionName(name: unknown): boolean {
+  return /^(LSH-QC-|QC-)/i.test(String(name || "").trim());
+}
+
+export function isSalesOrderName(name: unknown): boolean {
+  return /^(LSTNY-SO|LSTX-SO|SO-|SAL-)/i.test(String(name || "").trim());
+}
+
+export function dedupeByInspectionName<T extends { name?: string | null; id?: string | null }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const row of rows) {
+    const key = String(row.name || row.id || "").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
+}
+
+/** Return YYYY-MM-DD for date_received; drop blanks and dates after today. */
+export function dateReceivedLabel(raw: unknown, now = new Date()): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  const iso = s.includes("T") ? s : /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T12:00:00` : s;
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return null;
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
+  if (d.getTime() > end.getTime()) return null;
+  return s.slice(0, 10);
+}

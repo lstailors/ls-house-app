@@ -28,6 +28,7 @@ import MessagesGlass from "@alts/pages/MessagesGlass";
 import HouseFind from "@alts/pages/HouseFind";
 import QcGlass from "@alts/pages/QcGlass";
 import QcInspection from "@alts/pages/QcInspection";
+import AltsSettings from "@alts/pages/AltsSettings";
 import TicketDetail from "@alts/pages/intake/TicketDetail";
 import { startOfflineQueueWatcher } from "@alts/lib/offlineQueue";
 import { toast } from "sonner";
@@ -54,6 +55,7 @@ const FloorPerformance = lazy(() => import("@alts/pages/FloorPerformance"));
 const Reports = lazy(() => import("@alts/pages/Reports"));
 
 const FOH = ["super_admin", "store_manager", "salesperson", "tailor"] as const;
+const QC = ["super_admin", "tailor"] as const;
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -192,7 +194,7 @@ export default function App() {
               <Route
                 path="/qc"
                 element={
-                  <RoleGuard allow={[...FOH]}>
+                  <RoleGuard allow={[...QC]}>
                     <QcGlass />
                   </RoleGuard>
                 }
@@ -200,8 +202,16 @@ export default function App() {
               <Route
                 path="/qc/:id"
                 element={
-                  <RoleGuard allow={[...FOH]}>
+                  <RoleGuard allow={[...QC]}>
                     <QcInspection />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/settings"
+                element={
+                  <RoleGuard allow={[...FOH, "driver"]}>
+                    <AltsSettings />
                   </RoleGuard>
                 }
               />

@@ -5,118 +5,78 @@ import { uploadFile, erpFileAbsoluteUrl } from "../lib/erpnext/files";
 import { DT } from "../lib/erpnext/doctypes";
 import {
   QC_CHECK_CATALOG,
-  QC_FAIL_STATUS,
-  QC_PASS_STATUSES,
   QC_QUEUE_STATUSES,
   MTM_STATUSES,
   blankChecks,
+  checksFromDoc,
   checksSummary,
-  mergeChecks,
+  checksToDocFields,
+  dateReceivedLabel,
+  dedupeByInspectionName,
+  isQcInspectionName,
+  isSalesOrderName,
+  qcResultOf,
+  tabToQcResult,
   type QcCheck,
 } from "../lib/qc";
 import { createQcSignatureSubmission, docusealEnabled } from "../lib/docuseal";
+import { loadDocusealSettings, maskKey, saveDocusealSettings } from "../lib/qc-settings";
 
 export const qcRouter = new Hono();
 
 const DT_QC = DT.QC_INSPECTION;
-const DT_MTM = DT.MTM_PRO_ORDER;
+const DT_CUSTOM = DT.CUSTOM_ORDER;
 
-const FOH = new Set(["super_admin", "store_manager", "salesperson", "tailor"]);
+/** Tailor + Admin only. */
+const QC_ROLES = new Set(["super_admin", "tailor"]);
+const ADMIN = new Set(["super_admin"]);
 
 function deny(c: any, status: 401 | 403 = 401) {
   return c.json({ error: { message: status === 401 ? "Unauthorized" : "Forbidden" } }, status);
 }
 
-async function requireFloor(c: any) {
+async function requireQc(c: any) {
   const user = await getAuthedUser(c);
   if (!user) return { user: null, res: deny(c, 401) };
-  if (!FOH.has(user.role)) return { user: null, res: deny(c, 403) };
+  if (!QC_ROLES.has(user.role)) return { user: null, res: deny(c, 403) };
   return { user, res: null };
 }
 
+async function requireAdmin(c: any) {
+  const user = await getAuthedUser(c);
+  if (!user) return { user: null, res: deny(c, 401) };
+  if (!ADMIN.has(user.role)) return { user: null, res: deny(c, 403) };
+  return { user, res: null };
+}
+
+/** Known LSH QC Inspection fields. erpList drops any that do not exist. */
 const QC_FIELDS = [
   "name",
   "sales_order",
-  "mtmpro_order",
+  "custom_order",
   "customer",
   "customer_name",
   "inspector",
-  "inspector_email",
+  "qc_result",
   "result",
   "status",
   "notes",
-  "fail_reason",
-  "next_status",
+  "date_received",
+  "fulfillment_mode",
+  "identity",
+  "measurements",
+  "construction",
+  "finish",
+  "condition",
+  "fit_ready",
   "checks_json",
   "signed_at",
   "signature_url",
   "docuseal_submission_id",
   "docuseal_embed_src",
-  "order_pdf_url",
   "creation",
   "modified",
 ];
-
-const MTM_FIELDS = [
-  "name",
-  "customer",
-  "customer_name",
-  "order_status",
-  "status",
-  "order_type",
-  "order_date",
-  "need_by_date",
-  "factory",
-  "priority",
-  "sales_order",
-  "garment_summary",
-  "production_status",
-];
-
-function parseChecks(raw: unknown): QcCheck[] {
-  if (typeof raw === "string") {
-    try {
-      return mergeChecks(JSON.parse(raw));
-    } catch {
-      return blankChecks();
-    }
-  }
-  return mergeChecks(raw);
-}
-
-function serializeInspection(doc: any, extras: Record<string, unknown> = {}) {
-  const checks = parseChecks(doc.checks_json ?? doc.checks);
-  return {
-    id: doc.name,
-    name: doc.name,
-    salesOrder: doc.sales_order || null,
-    mtmproOrder: doc.mtmpro_order || null,
-    customer: doc.customer || null,
-    customerName: doc.customer_name || extras.customerName || null,
-    inspector: doc.inspector || null,
-    inspectorEmail: doc.inspector_email || null,
-    result: doc.result || "Open",
-    status: doc.status || doc.result || "Open",
-    notes: doc.notes || "",
-    failReason: doc.fail_reason || "",
-    nextStatus: doc.next_status || null,
-    checks,
-    summary: checksSummary(checks),
-    signedAt: doc.signed_at || null,
-    signatureUrl: doc.signature_url || null,
-    docusealSubmissionId: doc.docuseal_submission_id || null,
-    docusealEmbedSrc: doc.docuseal_embed_src || null,
-    orderPdfUrl: doc.order_pdf_url || null,
-    scanUrl: `https://alts.lstailors.com/qc/${encodeURIComponent(doc.name)}`,
-    createdAt: doc.creation || null,
-    modifiedAt: doc.modified || null,
-    ...extras,
-  };
-}
-
-function mtmStatus(row: any): string {
-  return String(row.order_status || row.production_status || row.status || "").trim();
-}
 
 function unknownField(msg: string): string | null {
   const m =
@@ -161,28 +121,164 @@ async function updateDroppingFields(name: string, doc: Record<string, unknown>) 
   throw new Error("Could not update QC inspection");
 }
 
-async function listMtmInQueue() {
-  const attempts: unknown[][][] = [
-    [["order_status", "in", [...QC_QUEUE_STATUSES]]],
-    [["status", "in", [...QC_QUEUE_STATUSES]]],
-    [["production_status", "in", [...QC_QUEUE_STATUSES]]],
-  ];
-  for (const filters of attempts) {
-    const rows = await erpList<any>(DT_MTM, {
-      filters,
-      fields: MTM_FIELDS,
-      limit: 200,
-      order_by: "modified desc",
-    }).catch(() => null);
-    if (rows && rows.length) return rows;
-  }
-  const recent = await erpList<any>(DT_MTM, {
-    fields: MTM_FIELDS,
+async function listInspections() {
+  return erpList<any>(DT_QC, {
+    fields: QC_FIELDS,
     limit: 200,
     order_by: "modified desc",
   }).catch(() => [] as any[]);
-  const queue = new Set<string>(QC_QUEUE_STATUSES);
-  return recent.filter((row) => queue.has(mtmStatus(row)));
+}
+
+/** MTM make orders in the QC queue — never walk-in alteration tickets, never an unfiltered dump. */
+async function listMakeOrdersInQcQueue() {
+  const statuses = ["Quality Control", "Received at Store"];
+  const fields = [
+    "name",
+    "customer",
+    "customer_name",
+    "status",
+    "order_status",
+    "erp_sales_order",
+    "sales_order",
+    "date_received",
+    "garment_type",
+    "garment_summary",
+  ];
+  for (const field of ["status", "order_status"] as const) {
+    const rows = await erpList<any>(DT_CUSTOM, {
+      filters: [[field, "in", statuses]],
+      fields,
+      limit: 50,
+      order_by: "modified desc",
+    }).catch(() => [] as any[]);
+    if (rows.length) return rows;
+  }
+  return [] as any[];
+}
+
+function serializeInspection(doc: any, extras: Record<string, unknown> = {}) {
+  const checks: QcCheck[] = checksFromDoc(doc);
+  const qcResult = qcResultOf(doc);
+  return {
+    id: doc.name,
+    name: doc.name,
+    salesOrder: doc.sales_order || null,
+    customOrder: doc.custom_order || null,
+    mtmproOrder: doc.custom_order || doc.mtmpro_order || null,
+    customer: doc.customer || null,
+    customerName: doc.customer_name || extras.customerName || null,
+    inspector: doc.inspector || null,
+    result: qcResult,
+    qcResult,
+    status: qcResult,
+    notes: doc.notes || "",
+    failReason: doc.fail_reason || doc.notes || "",
+    fulfillmentMode: doc.fulfillment_mode || null,
+    checks,
+    summary: checksSummary(checks),
+    signedAt: doc.signed_at || null,
+    signatureUrl: doc.signature_url || null,
+    docusealSubmissionId: doc.docuseal_submission_id || null,
+    docusealEmbedSrc: doc.docuseal_embed_src || null,
+    dateReceived: dateReceivedLabel(doc.date_received),
+    scanUrl: `https://alts.lstailors.com/qc/${encodeURIComponent(doc.name)}`,
+    createdAt: doc.creation || null,
+    modifiedAt: doc.modified || null,
+    ...extras,
+  };
+}
+
+function serializeListRow(doc: any, extras: Record<string, unknown> = {}) {
+  const qcResult = qcResultOf(doc);
+  return {
+    id: doc.name,
+    name: doc.name,
+    inspectionId: doc.name,
+    salesOrder: doc.sales_order || extras.salesOrder || null,
+    customOrder: doc.custom_order || extras.customOrder || null,
+    customer: doc.customer || extras.customer || null,
+    customerName: doc.customer_name || extras.customerName || "Client",
+    qcResult,
+    result: qcResult,
+    orderStatus: extras.orderStatus || null,
+    garmentSummary: extras.garmentSummary || doc.garment_summary || null,
+    dateReceived: dateReceivedLabel(doc.date_received),
+    scanUrl: `https://alts.lstailors.com/qc/${encodeURIComponent(doc.name)}`,
+  };
+}
+
+function isMakeOrderRow(row: any): boolean {
+  const name = String(row?.name || "");
+  if (/^ALT-/i.test(name)) return false;
+  const kind = String(row?.order_type || row?.kind || row?.ticket_type || "").toLowerCase();
+  if (kind && /alter/.test(kind)) return false;
+  return true;
+}
+
+async function waitingRows() {
+  const [inspections, orders] = await Promise.all([listInspections(), listMakeOrdersInQcQueue()]);
+  const pending = inspections.filter(
+    (r) => isQcInspectionName(r.name) && !isSalesOrderName(r.name) && qcResultOf(r) === "Pending",
+  );
+
+  const makes = orders.filter(isMakeOrderRow);
+  const orderKeys = new Set<string>();
+  const orderByKey = new Map<string, any>();
+  for (const o of makes) {
+    for (const key of [o.name, o.erp_sales_order, o.sales_order]) {
+      if (key) {
+        orderKeys.add(String(key));
+        orderByKey.set(String(key), o);
+      }
+    }
+  }
+
+  // Cards are inspections, never an unfiltered MTM / sales-order dump.
+  let rows = pending;
+  if (orderKeys.size) {
+    const matched = pending.filter(
+      (i) => orderKeys.has(String(i.custom_order || "")) || orderKeys.has(String(i.sales_order || "")),
+    );
+    if (matched.length) rows = matched;
+  }
+
+  return dedupeByInspectionName(rows).map((doc) => {
+    const order = orderByKey.get(String(doc.custom_order || "")) || orderByKey.get(String(doc.sales_order || ""));
+    return serializeListRow(doc, {
+      customOrder: order?.name || doc.custom_order,
+      salesOrder: order?.erp_sales_order || order?.sales_order || doc.sales_order,
+      customerName: doc.customer_name || order?.customer_name,
+      orderStatus: order?.order_status || order?.status || "Quality Control",
+      garmentSummary: order?.garment_summary || order?.garment_type,
+    });
+  });
+}
+
+async function resolveInspection(id: string) {
+  const direct = await erpGet<any>(DT_QC, id).catch(() => null);
+  if (direct) return direct;
+
+  const bySo = await erpList<any>(DT_QC, {
+    filters: [["sales_order", "=", id]],
+    fields: QC_FIELDS,
+    limit: 5,
+    order_by: "modified desc",
+  }).catch(() => [] as any[]);
+  if (bySo[0]?.name) {
+    return (await erpGet<any>(DT_QC, bySo[0].name).catch(() => null)) || bySo[0];
+  }
+
+  const byCo = await erpList<any>(DT_QC, {
+    filters: [["custom_order", "=", id]],
+    fields: QC_FIELDS,
+    limit: 5,
+    order_by: "modified desc",
+  }).catch(() => [] as any[]);
+  if (byCo[0]?.name) {
+    return (await erpGet<any>(DT_QC, byCo[0].name).catch(() => null)) || byCo[0];
+  }
+
+  return null;
 }
 
 export async function markQcSignedBySubmission(submissionId: string, signedUrl?: string | null) {
@@ -190,7 +286,7 @@ export async function markQcSignedBySubmission(submissionId: string, signedUrl?:
   if (!id) return null;
   const rows = await erpList<any>(DT_QC, {
     filters: [["docuseal_submission_id", "=", id]],
-    fields: QC_FIELDS,
+    fields: ["name"],
     limit: 5,
   }).catch(() => []);
   const row = rows[0];
@@ -201,408 +297,362 @@ export async function markQcSignedBySubmission(submissionId: string, signedUrl?:
   return row.name;
 }
 
-async function findOpenInspection(mtm: string | null, so: string | null) {
-  const filters: unknown[][] = [];
-  if (mtm) filters.push(["mtmpro_order", "=", mtm]);
-  else if (so) filters.push(["sales_order", "=", so]);
-  else return null;
-  const rows = await erpList<any>(DT_QC, {
-    filters,
-    fields: QC_FIELDS,
-    limit: 20,
-    order_by: "modified desc",
-  }).catch(() => []);
-  return rows.find((r) => String(r.result || r.status || "Open") === "Open") || rows[0] || null;
-}
-
-async function loadMtm(name: string) {
-  return erpGet<any>(DT_MTM, name).catch(() => null);
-}
-
-async function loadSo(name: string) {
-  return erpGet<any>("Sales Order", name).catch(() => null);
-}
-
-async function setMtmStatus(name: string, status: string) {
-  try {
-    await erpUpdate(DT_MTM, name, { order_status: status });
-    return;
-  } catch {
-    try {
-      await erpUpdate(DT_MTM, name, { status });
-    } catch {
-      /* order may use a custom field we cannot write */
-    }
-  }
-}
-
 // GET /api/qc/catalog
 qcRouter.get("/catalog", async (c) => {
-  const gate = await requireFloor(c);
+  const gate = await requireQc(c);
   if (gate.res) return gate.res;
   return c.json({
     data: {
       statuses: MTM_STATUSES,
       queueStatuses: QC_QUEUE_STATUSES,
-      passStatuses: QC_PASS_STATUSES,
-      failStatus: QC_FAIL_STATUS,
       checks: QC_CHECK_CATALOG,
-      docuseal: docusealEnabled(),
+      docuseal: await docusealEnabled(),
     },
   });
+});
+
+// GET /api/qc/settings — Admin. Never returns the raw key.
+qcRouter.get("/settings", async (c) => {
+  const gate = await requireAdmin(c);
+  if (gate.res) return gate.res;
+  try {
+    const s = await loadDocusealSettings();
+    return c.json({
+      data: {
+        url: s.url,
+        apiKeySet: Boolean(s.apiKey),
+        apiKeyMasked: maskKey(s.apiKey),
+      },
+    });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message || "Could not load settings" } }, 502);
+  }
+});
+
+qcRouter.patch("/settings", async (c) => {
+  const gate = await requireAdmin(c);
+  if (gate.res) return gate.res;
+  const body = await c.req.json().catch(() => ({}));
+  try {
+    const saved = await saveDocusealSettings({
+      apiKey: typeof body.apiKey === "string" ? body.apiKey : undefined,
+      url: typeof body.url === "string" ? body.url : undefined,
+    });
+    return c.json({
+      data: {
+        url: saved.url,
+        apiKeySet: Boolean(saved.apiKey),
+        apiKeyMasked: maskKey(saved.apiKey),
+      },
+    });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message || "Could not save settings" } }, 502);
+  }
+});
+
+// GET /api/qc/count
+qcRouter.get("/count", async (c) => {
+  const gate = await requireQc(c);
+  if (gate.res) return gate.res;
+  try {
+    const waiting = await waitingRows();
+    return c.json({ data: { waiting: waiting.length, open: waiting.length } });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message || "Could not count QC" } }, 502);
+  }
 });
 
 // GET /api/qc?tab=waiting|open|passed|failed
 qcRouter.get("/", async (c) => {
-  const gate = await requireFloor(c);
+  const gate = await requireQc(c);
   if (gate.res) return gate.res;
   const tab = (c.req.query("tab") || "waiting").toLowerCase();
 
-  const inspections = await erpList<any>(DT_QC, {
-    fields: QC_FIELDS,
-    limit: 200,
-    order_by: "modified desc",
-  }).catch(() => []);
-
-  if (tab === "open") {
-    return c.json({
-      data: inspections
-        .filter((r) => String(r.result || r.status || "Open") === "Open")
-        .map((r) => serializeInspection(r)),
-    });
-  }
-  if (tab === "passed") {
-    return c.json({
-      data: inspections.filter((r) => /pass/i.test(String(r.result || r.status))).map((r) => serializeInspection(r)),
-    });
-  }
-  if (tab === "failed") {
-    return c.json({
-      data: inspections.filter((r) => /fail/i.test(String(r.result || r.status))).map((r) => serializeInspection(r)),
-    });
-  }
-
-  const mtm = await listMtmInQueue();
-
-  const waiting = mtm.map((row) => {
-    const existing = inspections.find(
-      (i) => i.mtmpro_order === row.name || (row.sales_order && i.sales_order === row.sales_order),
-    );
-    return {
-      id: existing?.name || row.name,
-      mtmproOrder: row.name,
-      salesOrder: row.sales_order || null,
-      customer: row.customer || null,
-      customerName: row.customer_name || row.customer || "Client",
-      orderType: row.order_type || null,
-      factory: row.factory || null,
-      needBy: row.need_by_date || null,
-      garmentSummary: row.garment_summary || null,
-      orderStatus: mtmStatus(row) || "Quality Control",
-      inspectionId: existing?.name || null,
-      result: existing?.result || "Open",
-      scanUrl: `https://alts.lstailors.com/qc/${encodeURIComponent(existing?.name || row.name)}`,
-    };
-  });
-
-  return c.json({ data: waiting });
-});
-
-// GET /api/qc/count — home tile badge
-qcRouter.get("/count", async (c) => {
-  const gate = await requireFloor(c);
-  if (gate.res) return gate.res;
-  const [waiting, inspections] = await Promise.all([
-    listMtmInQueue(),
-    erpList<any>(DT_QC, {
-      fields: ["name", "result", "status"],
-      limit: 200,
-      order_by: "modified desc",
-    }).catch(() => [] as any[]),
-  ]);
-  const open = inspections.filter((r) => String(r.result || r.status || "Open") === "Open").length;
-  return c.json({ data: { waiting: waiting.length, open } });
-});
-
-// GET /api/qc/:id/pdf — order PDF (must stay before /:id)
-qcRouter.get("/:id/pdf", async (c) => {
-  const gate = await requireFloor(c);
-  if (gate.res) return gate.res;
-  const id = decodeURIComponent(c.req.param("id"));
-  const insp = await erpGet<any>(DT_QC, id).catch(() => null);
-  const so = insp?.sales_order || (/^SAL-|^SO-|^LSTNY-SO|^LSTX-SO/i.test(id) ? id : null);
-  const mtm = insp?.mtmpro_order || (!so ? id : null);
-
-  const tryPdf = async (doctype: string, name: string, format: string) => {
-    const res = await erpPdf(doctype, name, format);
-    if (!res.ok) return null;
-    const buf = await res.arrayBuffer();
-    if (buf.byteLength < 80) return null;
-    const head = new TextDecoder().decode(buf.slice(0, 8));
-    if (!head.startsWith("%PDF")) return null;
-    return buf;
-  };
-
-  let buf: ArrayBuffer | null = null;
-  let filename = `${id}.pdf`;
-  if (so) {
-    for (const fmt of ["Standard", "Sales Order", "L&S Sales Order"]) {
-      buf = await tryPdf("Sales Order", so, fmt);
-      if (buf) {
-        filename = `${so}.pdf`;
-        break;
-      }
-    }
-  }
-  if (!buf && mtm) {
-    for (const fmt of ["Standard", "MTMPro Order"]) {
-      buf = await tryPdf(DT_MTM, mtm, fmt);
-      if (buf) {
-        filename = `${mtm}.pdf`;
-        break;
-      }
-    }
-  }
-  if (!buf) return c.json({ error: { message: "No PDF on this order" } }, 404);
-  return new Response(buf, {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${filename}"`,
-    },
-  });
-});
-
-// GET /api/qc/:id
-qcRouter.get("/:id", async (c) => {
-  const gate = await requireFloor(c);
-  if (gate.res) return gate.res;
-  const id = decodeURIComponent(c.req.param("id"));
-
-  let insp = await erpGet<any>(DT_QC, id).catch(() => null);
-  if (!insp) insp = await findOpenInspection(id, null);
-  if (!insp) insp = await findOpenInspection(null, id);
-
-  let mtm: any = null;
-  let so: any = null;
-  if (insp) {
-    if (insp.mtmpro_order) mtm = await loadMtm(insp.mtmpro_order);
-    if (insp.sales_order) so = await loadSo(insp.sales_order);
-  } else {
-    mtm = await loadMtm(id);
-    if (!mtm) so = await loadSo(id);
-    if (!mtm && !so) return c.json({ error: { message: "Not found" } }, 404);
-    return c.json({
-      data: {
-        id: null,
-        mtmproOrder: mtm?.name || null,
-        salesOrder: so?.name || mtm?.sales_order || null,
-        customer: mtm?.customer || so?.customer || null,
-        customerName: mtm?.customer_name || so?.customer_name || "Client",
-        orderType: mtm?.order_type || so?.make_type || null,
-        factory: mtm?.factory || null,
-        needBy: mtm?.need_by_date || so?.delivery_date || null,
-        garmentSummary: mtm?.garment_summary || null,
-        orderStatus: mtm ? mtmStatus(mtm) : so?.status || null,
-        result: "Open",
-        checks: blankChecks(),
-        summary: checksSummary(blankChecks()),
-        notes: "",
-        photos: [],
-        docuseal: docusealEnabled(),
-        scanUrl: `https://alts.lstailors.com/qc/${encodeURIComponent(mtm?.name || so?.name || id)}`,
-        links: {
-          customer: mtm?.customer || so?.customer || null,
-          salesOrder: so?.name || mtm?.sales_order || null,
-          mtmproOrder: mtm?.name || null,
-        },
-      },
-    });
-  }
-
-  const files = await erpList<any>(DT.FILE, {
-    filters: [
-      ["attached_to_doctype", "=", DT_QC],
-      ["attached_to_name", "=", insp.name],
-    ],
-    fields: ["name", "file_url", "file_name", "creation"],
-    limit: 80,
-    order_by: "creation desc",
-  }).catch(() => []);
-
-  const photos = files
-    .filter((f) => /\.(jpe?g|png|webp|heic)$/i.test(String(f.file_name || f.file_url || "")))
-    .map((f) => ({
-      id: f.name,
-      name: f.file_name,
-      url: erpFileAbsoluteUrl(f.file_url),
-      createdAt: f.creation,
-    }));
-
-  return c.json({
-    data: serializeInspection(insp, {
-      orderType: mtm?.order_type || so?.make_type || null,
-      factory: mtm?.factory || null,
-      needBy: mtm?.need_by_date || so?.delivery_date || null,
-      garmentSummary: mtm?.garment_summary || null,
-      orderStatus: mtm ? mtmStatus(mtm) : so?.status || null,
-      photos,
-      docuseal: docusealEnabled(),
-      links: {
-        customer: insp.customer || mtm?.customer || so?.customer || null,
-        salesOrder: insp.sales_order || so?.name || mtm?.sales_order || null,
-        mtmproOrder: insp.mtmpro_order || mtm?.name || null,
-      },
-    }),
-  });
-});
-
-// POST /api/qc — start (or resume) an inspection for an MTM / sales order
-qcRouter.post("/", async (c) => {
-  const gate = await requireFloor(c);
-  if (gate.res) return gate.res;
-  const body = await c.req.json().catch(() => ({}));
-  const mtmName = String(body.mtmproOrder || body.mtmpro_order || "").trim() || null;
-  const soName = String(body.salesOrder || body.sales_order || "").trim() || null;
-  if (!mtmName && !soName) return c.json({ error: { message: "mtmproOrder or salesOrder required" } }, 400);
-
-  const existing = await findOpenInspection(mtmName, soName);
-  if (existing) return c.json({ data: serializeInspection(existing) });
-
-  const mtm = mtmName ? await loadMtm(mtmName) : null;
-  const so = soName ? await loadSo(soName) : mtm?.sales_order ? await loadSo(mtm.sales_order) : null;
-
-  const created = await createDroppingFields({
-    doctype: DT_QC,
-    sales_order: so?.name || soName,
-    mtmpro_order: mtm?.name || mtmName,
-    customer: mtm?.customer || so?.customer,
-    customer_name: mtm?.customer_name || so?.customer_name,
-    inspector: gate.user!.name,
-    inspector_email: gate.user!.email,
-    result: "Open",
-    status: "Open",
-    notes: "",
-    checks_json: JSON.stringify(blankChecks()),
-  });
-  if (!created) return c.json({ error: { message: "Could not open QC in ERPNext" } }, 502);
-
-  const target = mtm?.name || mtmName;
-  if (target && mtmStatus(mtm || {}) !== "Quality Control") {
-    await setMtmStatus(target, "Quality Control");
-  }
-
-  return c.json({ data: serializeInspection(created) }, 201);
-});
-
-// PATCH /api/qc/:id
-qcRouter.patch("/:id", async (c) => {
-  const gate = await requireFloor(c);
-  if (gate.res) return gate.res;
-  const id = decodeURIComponent(c.req.param("id"));
-  const existing = await erpGet<any>(DT_QC, id);
-  if (!existing) return c.json({ error: { message: "Not found" } }, 404);
-  const body = await c.req.json().catch(() => ({}));
-
-  const update: Record<string, unknown> = {};
-  if (Array.isArray(body.checks)) update.checks_json = JSON.stringify(mergeChecks(body.checks));
-  if (typeof body.notes === "string") update.notes = body.notes;
-  if (typeof body.failReason === "string") update.fail_reason = body.failReason;
-  if (typeof body.nextStatus === "string") update.next_status = body.nextStatus;
-  if (typeof body.signatureUrl === "string") update.signature_url = body.signatureUrl;
-
-  if (body.result === "Pass" || body.result === "Fail") {
-    update.result = body.result;
-    update.status = body.result;
-    const next =
-      body.result === "Pass"
-        ? QC_PASS_STATUSES.includes(body.nextStatus) ? body.nextStatus : "Awaiting Fitting"
-        : QC_FAIL_STATUS;
-    update.next_status = next;
-    const mtm = existing.mtmpro_order;
-    if (mtm) await setMtmStatus(mtm, next);
-  }
-
-  const saved = await updateDroppingFields(id, update);
-  return c.json({ data: serializeInspection(saved || { ...existing, ...update }) });
-});
-
-// POST /api/qc/:id/photos
-qcRouter.post("/:id/photos", async (c) => {
-  const gate = await requireFloor(c);
-  if (gate.res) return gate.res;
-  const id = decodeURIComponent(c.req.param("id"));
-  const existing = await erpGet<any>(DT_QC, id);
-  if (!existing) return c.json({ error: { message: "Not found" } }, 404);
-
-  let form: Record<string, unknown>;
   try {
-    form = await c.req.parseBody({ all: true });
-  } catch {
-    return c.json({ error: { message: "Bad form data" } }, 400);
+    if (tab === "waiting") {
+      return c.json({ data: await waitingRows() });
+    }
+
+    const want = tabToQcResult(tab);
+    const inspections = await listInspections();
+    const rows = dedupeByInspectionName(
+      inspections.filter(
+        (r) =>
+          isQcInspectionName(r.name) &&
+          !isSalesOrderName(r.name) &&
+          (want ? qcResultOf(r) === want : true),
+      ),
+    ).map((r) => serializeListRow(r));
+    return c.json({ data: rows });
+  } catch (e: any) {
+    console.error("GET /api/qc", e);
+    return c.json({ error: { message: e?.message || "Could not load QC" } }, 502);
   }
-  const raw = form["file"];
-  const file = (Array.isArray(raw) ? raw[0] : raw) as File | undefined;
-  if (!file || !(file instanceof File) || file.size === 0) {
-    return c.json({ error: { message: "file is required" } }, 400);
-  }
-  const buffer = new Uint8Array(await file.arrayBuffer());
-  const { fileUrl, fileId } = await uploadFile({
-    file: buffer,
-    filename: file.name || `qc-${Date.now()}.jpg`,
-    contentType: file.type || "image/jpeg",
-    doctype: DT_QC,
-    docname: id,
-    isPrivate: false,
-  });
-  return c.json({ data: { url: erpFileAbsoluteUrl(fileUrl), fileId } });
 });
 
-// POST /api/qc/:id/sign — DocuSeal embed, or save a drawn signature
-qcRouter.post("/:id/sign", async (c) => {
-  const gate = await requireFloor(c);
+// GET /api/qc/:id/pdf
+qcRouter.get("/:id/pdf", async (c) => {
+  const gate = await requireQc(c);
   if (gate.res) return gate.res;
   const id = decodeURIComponent(c.req.param("id"));
-  const existing = await erpGet<any>(DT_QC, id);
-  if (!existing) return c.json({ error: { message: "Not found" } }, 404);
-  const body = await c.req.json().catch(() => ({}));
+  try {
+    const insp = await resolveInspection(id);
+    const so = insp?.sales_order || (/^LSTNY-SO|^LSTX-SO|^SAL-|^SO-/i.test(id) ? id : null);
+    const custom = insp?.custom_order || null;
 
-  if (typeof body.signatureDataUrl === "string" && body.signatureDataUrl.startsWith("data:image")) {
-    const b64 = body.signatureDataUrl.split(",")[1] || "";
-    const bytes = Buffer.from(b64, "base64");
-    const { fileUrl } = await uploadFile({
-      file: bytes,
-      filename: `qc-sign-${id}.png`,
-      contentType: "image/png",
+    const tryPdf = async (doctype: string, name: string, format: string) => {
+      const res = await erpPdf(doctype, name, format);
+      if (!res.ok) return null;
+      const buf = await res.arrayBuffer();
+      if (buf.byteLength < 80) return null;
+      const head = new TextDecoder().decode(buf.slice(0, 8));
+      if (!head.startsWith("%PDF")) return null;
+      return buf;
+    };
+
+    let buf: ArrayBuffer | null = null;
+    let filename = `${id}.pdf`;
+    if (so) {
+      for (const fmt of ["Standard", "Sales Order", "L&S Sales Order"]) {
+        buf = await tryPdf("Sales Order", so, fmt);
+        if (buf) {
+          filename = `${so}.pdf`;
+          break;
+        }
+      }
+    }
+    if (!buf && custom) {
+      for (const fmt of ["Standard", "LSH Custom Order"]) {
+        buf = await tryPdf(DT_CUSTOM, custom, fmt);
+        if (buf) {
+          filename = `${custom}.pdf`;
+          break;
+        }
+      }
+    }
+    if (!buf) return c.json({ error: { message: "No PDF on this order" } }, 404);
+    return new Response(buf, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `inline; filename="${filename}"`,
+      },
+    });
+  } catch (e: any) {
+    console.error("GET /api/qc/:id/pdf", e);
+    return c.json({ error: { message: e?.message || "PDF failed" } }, 502);
+  }
+});
+
+// GET /api/qc/:id — always by inspection name LSH-QC-…, or resolve from SO / custom order
+qcRouter.get("/:id", async (c) => {
+  const gate = await requireQc(c);
+  if (gate.res) return gate.res;
+  const id = decodeURIComponent(c.req.param("id"));
+
+  try {
+    const insp = await resolveInspection(id);
+    if (!insp?.name) return c.json({ error: { message: "Not found" } }, 404);
+
+    const files = await erpList<any>(DT.FILE, {
+      filters: [
+        ["attached_to_doctype", "=", DT_QC],
+        ["attached_to_name", "=", insp.name],
+      ],
+      fields: ["name", "file_url", "file_name", "creation"],
+      limit: 80,
+      order_by: "creation desc",
+    }).catch(() => []);
+
+    const photos = files
+      .filter((f) => /\.(jpe?g|png|webp|heic)$/i.test(String(f.file_name || f.file_url || "")))
+      .map((f) => ({
+        id: f.name,
+        name: f.file_name,
+        url: erpFileAbsoluteUrl(f.file_url),
+        createdAt: f.creation,
+      }));
+
+    let orderStatus: string | null = null;
+    let garmentSummary: string | null = null;
+    if (insp.custom_order) {
+      const co = await erpGet<any>(DT_CUSTOM, insp.custom_order).catch(() => null);
+      orderStatus = co?.order_status || co?.status || null;
+      garmentSummary = co?.garment_summary || co?.garment_type || null;
+    }
+
+    return c.json({
+      data: serializeInspection(insp, {
+        photos,
+        docuseal: await docusealEnabled(),
+        orderStatus,
+        garmentSummary,
+        links: {
+          customer: insp.customer || null,
+          salesOrder: insp.sales_order || null,
+          customOrder: insp.custom_order || null,
+        },
+      }),
+    });
+  } catch (e: any) {
+    console.error("GET /api/qc/:id", e);
+    return c.json({ error: { message: e?.message || "Could not load inspection" } }, 502);
+  }
+});
+
+// POST /api/qc — start only when no inspection exists yet
+qcRouter.post("/", async (c) => {
+  const gate = await requireQc(c);
+  if (gate.res) return gate.res;
+  const body = await c.req.json().catch(() => ({}));
+  const customName = String(body.customOrder || body.custom_order || "").trim() || null;
+  const soName = String(body.salesOrder || body.sales_order || "").trim() || null;
+  if (!customName && !soName) return c.json({ error: { message: "customOrder or salesOrder required" } }, 400);
+
+  try {
+    const existing =
+      (customName ? await resolveInspection(customName) : null) ||
+      (soName ? await resolveInspection(soName) : null);
+    if (existing?.name) return c.json({ data: serializeInspection(existing) });
+
+    const co = customName ? await erpGet<any>(DT_CUSTOM, customName).catch(() => null) : null;
+    const so = soName ? await erpGet<any>("Sales Order", soName).catch(() => null) : null;
+
+    const created = await createDroppingFields({
       doctype: DT_QC,
-      docname: id,
+      sales_order: so?.name || soName || co?.erp_sales_order,
+      custom_order: co?.name || customName,
+      customer: co?.customer || so?.customer,
+      customer_name: co?.customer_name || so?.customer_name,
+      inspector: gate.user!.name,
+      qc_result: "Pending",
+      notes: "",
+      date_received: new Date().toISOString().slice(0, 10),
+    });
+    if (!created) return c.json({ error: { message: "Could not open QC in ERPNext" } }, 502);
+    return c.json({ data: serializeInspection(created) }, 201);
+  } catch (e: any) {
+    console.error("POST /api/qc", e);
+    return c.json({ error: { message: e?.message || "Could not start QC" } }, 502);
+  }
+});
+
+// PATCH /api/qc/:id — checks/notes. Pass/Fail routing stays in Frappe.
+qcRouter.patch("/:id", async (c) => {
+  const gate = await requireQc(c);
+  if (gate.res) return gate.res;
+  const id = decodeURIComponent(c.req.param("id"));
+  try {
+    const existing = await resolveInspection(id);
+    if (!existing?.name) return c.json({ error: { message: "Not found" } }, 404);
+    const body = await c.req.json().catch(() => ({}));
+
+    const update: Record<string, unknown> = {};
+    if (Array.isArray(body.checks)) Object.assign(update, checksToDocFields(body.checks));
+    if (typeof body.notes === "string") update.notes = body.notes;
+    if (typeof body.signatureUrl === "string") update.signature_url = body.signatureUrl;
+
+    const want = body.qc_result || body.result;
+    if (want === "Pass" || want === "Fail") {
+      if (want === "Fail") {
+        const notes = String(body.notes ?? body.failReason ?? update.notes ?? existing.notes ?? "").trim();
+        if (!notes) return c.json({ error: { message: "Notes are required to fail" } }, 400);
+        update.notes = notes;
+      }
+      update.qc_result = want;
+    }
+
+    const saved = await updateDroppingFields(existing.name, update);
+    const fresh = (await erpGet<any>(DT_QC, existing.name).catch(() => null)) || saved || { ...existing, ...update };
+    return c.json({ data: serializeInspection(fresh) });
+  } catch (e: any) {
+    console.error("PATCH /api/qc/:id", e);
+    return c.json({ error: { message: e?.message || "Could not save QC" } }, 502);
+  }
+});
+
+qcRouter.post("/:id/photos", async (c) => {
+  const gate = await requireQc(c);
+  if (gate.res) return gate.res;
+  const id = decodeURIComponent(c.req.param("id"));
+  try {
+    const existing = await resolveInspection(id);
+    if (!existing?.name) return c.json({ error: { message: "Not found" } }, 404);
+
+    let form: Record<string, unknown>;
+    try {
+      form = await c.req.parseBody({ all: true });
+    } catch {
+      return c.json({ error: { message: "Bad form data" } }, 400);
+    }
+    const raw = form["file"];
+    const file = (Array.isArray(raw) ? raw[0] : raw) as File | undefined;
+    if (!file || !(file instanceof File) || file.size === 0) {
+      return c.json({ error: { message: "file is required" } }, 400);
+    }
+    const buffer = new Uint8Array(await file.arrayBuffer());
+    const { fileUrl, fileId } = await uploadFile({
+      file: buffer,
+      filename: file.name || `qc-${Date.now()}.jpg`,
+      contentType: file.type || "image/jpeg",
+      doctype: DT_QC,
+      docname: existing.name,
       isPrivate: false,
     });
-    const url = erpFileAbsoluteUrl(fileUrl);
-    await updateDroppingFields(id, { signature_url: url, signed_at: new Date().toISOString() });
-    return c.json({ data: { signatureUrl: url, signedAt: new Date().toISOString(), embedSrc: null } });
+    return c.json({ data: { url: erpFileAbsoluteUrl(fileUrl), fileId } });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message || "Upload failed" } }, 502);
   }
+});
 
-  if (!docusealEnabled()) {
-    return c.json({ error: { message: "DocuSeal is not connected — sign on the pad" } }, 400);
-  }
+qcRouter.post("/:id/sign", async (c) => {
+  const gate = await requireQc(c);
+  if (gate.res) return gate.res;
+  const id = decodeURIComponent(c.req.param("id"));
+  try {
+    const existing = await resolveInspection(id);
+    if (!existing?.name) return c.json({ error: { message: "Not found" } }, 404);
+    const body = await c.req.json().catch(() => ({}));
 
-  let pdfBytes: ArrayBuffer | null = null;
-  const so = existing.sales_order;
-  if (so) {
-    const pdf = await erpPdf("Sales Order", so, "Standard");
-    if (pdf.ok) pdfBytes = await pdf.arrayBuffer();
+    if (typeof body.signatureDataUrl === "string" && body.signatureDataUrl.startsWith("data:image")) {
+      const b64 = body.signatureDataUrl.split(",")[1] || "";
+      const bytes = Buffer.from(b64, "base64");
+      const { fileUrl } = await uploadFile({
+        file: bytes,
+        filename: `qc-sign-${existing.name}.png`,
+        contentType: "image/png",
+        doctype: DT_QC,
+        docname: existing.name,
+        isPrivate: false,
+      });
+      const url = erpFileAbsoluteUrl(fileUrl);
+      await updateDroppingFields(existing.name, { signature_url: url, signed_at: new Date().toISOString() });
+      return c.json({ data: { signatureUrl: url, signedAt: new Date().toISOString(), embedSrc: null } });
+    }
+
+    if (!(await docusealEnabled())) {
+      return c.json({ error: { message: "DocuSeal is not connected — sign on the pad" } }, 400);
+    }
+
+    let pdfBytes: ArrayBuffer | null = null;
+    const so = existing.sales_order;
+    if (so) {
+      const pdf = await erpPdf("Sales Order", so, "Standard");
+      if (pdf.ok) pdfBytes = await pdf.arrayBuffer();
+    }
+    const sub = await createQcSignatureSubmission({
+      title: `QC ${existing.custom_order || existing.sales_order || existing.name}`,
+      inspectorEmail: gate.user!.email,
+      inspectorName: gate.user!.name || gate.user!.email,
+      pdfBytes,
+      pdfName: `${so || existing.name}.pdf`,
+    });
+    if (!sub) return c.json({ error: { message: "Could not start DocuSeal" } }, 502);
+    await updateDroppingFields(existing.name, {
+      docuseal_submission_id: String(sub.id),
+      docuseal_embed_src: sub.embedSrc,
+    });
+    return c.json({ data: { embedSrc: sub.embedSrc, submissionId: sub.id } });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message || "Could not sign" } }, 502);
   }
-  const sub = await createQcSignatureSubmission({
-    title: `QC ${existing.mtmpro_order || existing.sales_order || id}`,
-    inspectorEmail: gate.user!.email,
-    inspectorName: gate.user!.name || gate.user!.email,
-    pdfBytes,
-    pdfName: `${so || id}.pdf`,
-  });
-  if (!sub) return c.json({ error: { message: "Could not start DocuSeal" } }, 502);
-  await updateDroppingFields(id, {
-    docuseal_submission_id: String(sub.id),
-    docuseal_embed_src: sub.embedSrc,
-  });
-  return c.json({ data: { embedSrc: sub.embedSrc, submissionId: sub.id } });
 });

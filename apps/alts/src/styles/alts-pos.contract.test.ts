@@ -111,6 +111,15 @@ describe("iPhone scale contract", () => {
     expect(app).toContain('path="/qc"');
     expect(app).toContain("QcInspection");
     expect(app).toContain('path="/qc/:id"');
+    expect(app).toContain("AltsSettings");
+    expect(app).toContain('path="/settings"');
+    const home = readFileSync(new URL("../pages/HomeTiles.tsx", import.meta.url), "utf8");
+    expect(home).toContain('nav("/settings")');
+    expect(home).not.toMatch(/onClick=\{logout\}/);
+    const settings = readFileSync(new URL("../pages/AltsSettings.tsx", import.meta.url), "utf8");
+    expect(settings).toContain("/api/qc/settings");
+    expect(settings).not.toContain("localStorage");
+    expect(settings).toContain("signOut");
   });
 
   test("home never locks to one viewport — iPhone landscape must scroll", () => {

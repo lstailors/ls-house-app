@@ -13,15 +13,16 @@ type Tab = "waiting" | "open" | "passed" | "failed";
 
 type QcRow = {
   id: string;
-  mtmproOrder?: string | null;
+  name?: string | null;
+  inspectionId?: string | null;
   salesOrder?: string | null;
+  customOrder?: string | null;
   customerName?: string | null;
   garmentSummary?: string | null;
   orderStatus?: string | null;
+  qcResult?: string | null;
   result?: string | null;
-  inspectionId?: string | null;
-  factory?: string | null;
-  needBy?: string | null;
+  dateReceived?: string | null;
   scanUrl?: string;
 };
 
@@ -34,8 +35,13 @@ const TABS: Array<[Tab, string]> = [
 
 function day(iso?: string | null) {
   if (!iso) return "";
-  const d = new Date(iso.includes("T") ? iso : `${iso}T12:00:00`);
-  if (!Number.isFinite(d.getTime())) return String(iso).slice(0, 10);
+  const s = String(iso).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "";
+  const d = new Date(`${s}T12:00:00`);
+  if (!Number.isFinite(d.getTime())) return "";
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  if (d.getTime() > today.getTime()) return "";
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
@@ -53,13 +59,13 @@ export default function QcGlass() {
   const start = useMutation({
     mutationFn: (row: QcRow) =>
       api.post<{ id: string; name?: string }>("/api/qc", {
-        mtmproOrder: row.mtmproOrder || undefined,
+        customOrder: row.customOrder || undefined,
         salesOrder: row.salesOrder || undefined,
       }),
     onSuccess: (data) => {
       const id = data.id || data.name;
-      if (!id) {
-        toast.error("QC opened, but ERPNext did not return a name");
+      if (!id || /^(LSTNY-SO|LSTX-SO|SO-|SAL-)/i.test(id)) {
+        toast.error("QC opened, but ERPNext did not return an inspection");
         return;
       }
       nav(`/qc/${encodeURIComponent(id)}`);
@@ -72,7 +78,7 @@ export default function QcGlass() {
   const shown = useMemo(() => {
     if (!needle) return rows;
     return rows.filter((r) =>
-      [r.customerName, r.mtmproOrder, r.salesOrder, r.garmentSummary, r.id, r.inspectionId]
+      [r.customerName, r.customOrder, r.salesOrder, r.garmentSummary, r.id, r.inspectionId]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
@@ -83,9 +89,13 @@ export default function QcGlass() {
   const live = syncLabel(list.dataUpdatedAt, list.isFetching);
 
   const openRow = (row: QcRow) => {
-    const existing = row.inspectionId || (tab !== "waiting" ? row.id : null);
-    if (existing) {
-      nav(`/qc/${encodeURIComponent(existing)}`);
+    const inspection = row.inspectionId || row.name || row.id;
+    if (inspection && /^(LSH-QC-|QC-)/i.test(inspection)) {
+      nav(`/qc/${encodeURIComponent(inspection)}`);
+      return;
+    }
+    if (inspection && !/^(LSTNY-SO|LSTX-SO|SO-|SAL-)/i.test(inspection)) {
+      nav(`/qc/${encodeURIComponent(inspection)}`);
       return;
     }
     start.mutate(row);
@@ -143,7 +153,7 @@ export default function QcGlass() {
 
         {shown.map((row) => (
           <button
-            key={`${row.id}-${row.mtmproOrder || ""}`}
+            key={row.inspectionId || row.id}
             type="button"
             disabled={start.isPending}
             onClick={() => openRow(row)}
@@ -154,14 +164,16 @@ export default function QcGlass() {
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="chip">{row.orderStatus || row.result || "Quality Control"}</span>
-                {row.needBy && <span className="font-mono text-xs text-brass-light">{day(row.needBy)}</span>}
+                <span className="chip">{row.orderStatus || row.qcResult || row.result || "Quality Control"}</span>
+                {day(row.dateReceived) && (
+                  <span className="font-mono text-xs text-brass-light">{day(row.dateReceived)}</span>
+                )}
               </div>
               <div className="display text-[22px] leading-none mt-1 truncate">
                 {row.customerName || "Client"}
               </div>
               <div className="text-xs text-cream-dim mt-1 truncate">
-                {[row.mtmproOrder, row.salesOrder, row.garmentSummary, row.factory]
+                {[row.inspectionId || row.id, row.salesOrder, row.garmentSummary]
                   .filter(Boolean)
                   .join(" · ")}
               </div>

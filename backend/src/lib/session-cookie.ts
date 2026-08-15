@@ -5,6 +5,7 @@ import type { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 
 export const SESSION_COOKIE = "lst_session";
+export const ERP_SID_COOKIE = "lst_erp_sid";
 
 /** Access JWT lifetime — 8 hours (was 30 days in localStorage era). */
 export const ACCESS_TTL_SEC = 60 * 60 * 8;
@@ -50,10 +51,23 @@ export function setSessionCookie(c: Context, token: string, maxAge = ACCESS_TTL_
   setCookie(c, SESSION_COOKIE, token, baseOpts(maxAge));
 }
 
+export function setErpSidCookie(c: Context, sid: string, maxAge = ACCESS_TTL_SEC): void {
+  setCookie(c, ERP_SID_COOKIE, sid, baseOpts(maxAge));
+}
+
+export function readErpSid(c: Context): string | null {
+  return getCookie(c, ERP_SID_COOKIE) || null;
+}
+
 export function clearSessionCookie(c: Context): void {
   // maxAge 0 + matching domain/path so browsers drop it
+  const domain = cookieDomain();
   deleteCookie(c, SESSION_COOKIE, {
     path: "/",
-    ...(cookieDomain() ? { domain: cookieDomain() } : {}),
+    ...(domain ? { domain } : {}),
+  });
+  deleteCookie(c, ERP_SID_COOKIE, {
+    path: "/",
+    ...(domain ? { domain } : {}),
   });
 }
