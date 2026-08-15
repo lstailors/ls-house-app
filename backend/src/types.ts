@@ -1492,6 +1492,39 @@ export const UpdateQcInspectionInput = z.object({
 });
 export type UpdateQcInspectionInput = z.infer<typeof UpdateQcInspectionInput>;
 
+export const QcRateBucket = z.object({
+  key: z.string(),
+  pass: z.number(),
+  fail: z.number(),
+  rate: z.number(),
+});
+export type QcRateBucket = z.infer<typeof QcRateBucket>;
+
+export const QcRates = z.object({
+  passed: z.number(),
+  failed: z.number(),
+  pending: z.number(),
+  passRate: z.number(),
+  passedThisWeek: z.number(),
+  byWeek: z.array(QcRateBucket),
+  byGarment: z.array(QcRateBucket),
+  bySource: z.array(QcRateBucket),
+});
+export type QcRates = z.infer<typeof QcRates>;
+
+export const InvoiceTextReceiptInput = z.object({
+  phone: z.string().optional(),
+});
+export type InvoiceTextReceiptInput = z.infer<typeof InvoiceTextReceiptInput>;
+
+export const InvoiceTextReceiptResult = z.object({
+  sent: z.boolean(),
+  phone: z.string().nullable(),
+});
+export type InvoiceTextReceiptResult = z.infer<typeof InvoiceTextReceiptResult>;
+
+// ─── Alts house metrics (explicit ERPNext COUNTs — never list.length) ────────
+
 export const AltsMetrics = z.object({
   generated_at: z.string(),
   today: z.string(),
@@ -1499,6 +1532,8 @@ export const AltsMetrics = z.object({
   tasks: z.object({
     open: z.number(),
     overdue: z.number(),
+    yesterday_open: z.number().optional(),
+    trend: z.enum(["up", "down", "flat"]).optional(),
   }),
   qc: z.object({
     waiting: z.number(),
@@ -1525,5 +1560,223 @@ export const AltsMetrics = z.object({
     other: z.number(),
     all: z.number(),
   }),
+  floor: z
+    .object({
+      overdue: z.number(),
+      due_today: z.number(),
+      ready: z.number(),
+      in_progress: z.number(),
+      at_home: z.number(),
+      stalled_48h: z.number(),
+      ready_not_texted: z.number(),
+      invoices_90: z.number(),
+    })
+    .optional(),
 });
 export type AltsMetrics = z.infer<typeof AltsMetrics>;
+
+export const LiveExceptionKind = z.enum([
+  "overdue",
+  "stalled",
+  "qc_fail",
+  "qc_wait",
+  "unanswered_text",
+  "invoice_90",
+]);
+export type LiveExceptionKind = z.infer<typeof LiveExceptionKind>;
+
+export const LiveException = z.object({
+  id: z.string(),
+  kind: LiveExceptionKind,
+  severity: z.enum(["urgent", "attention"]),
+  name: z.string(),
+  number: z.string(),
+  icon: z.string(),
+  href: z.string(),
+  action: z.enum(["open", "text", "charge"]),
+  subtitle: z.string().optional(),
+  rank: z.number(),
+});
+export type LiveException = z.infer<typeof LiveException>;
+
+export const LiveAging = z.object({
+  "0-30": z.number(),
+  "31-60": z.number(),
+  "61-90": z.number(),
+  "90+": z.number(),
+});
+export type LiveAging = z.infer<typeof LiveAging>;
+
+export const LiveRailMark = z.object({
+  id: z.string(),
+  minutes: z.number(),
+  label: z.string(),
+  href: z.string(),
+  kind: z.enum(["appointment", "due_out", "delivery"]),
+});
+export type LiveRailMark = z.infer<typeof LiveRailMark>;
+
+export const LiveActivity = z.object({
+  id: z.string(),
+  at: z.string(),
+  atIso: z.string(),
+  text: z.string(),
+  href: z.string(),
+});
+export type LiveActivity = z.infer<typeof LiveActivity>;
+
+export const LiveHome = z.object({
+  generated_at: z.string(),
+  today: z.string(),
+  syncedAt: z.number(),
+  location: z.string(),
+  metrics: AltsMetrics,
+  strip: z.object({
+    overdue: z.number(),
+    dueToday: z.number(),
+    outForDelivery: z.number(),
+    deliveredToday: z.number(),
+  }),
+  counts: z.object({
+    open: z.number(),
+    ready: z.number(),
+    inProgress: z.number(),
+    atHome: z.number(),
+    readyNotTexted: z.number(),
+    pendingBoard: z.number(),
+    openGarments: z.number(),
+    openInvoices: z.number(),
+    openInvoicesAmount: z.number(),
+    oldestUnpaidDays: z.number().nullable(),
+    oldestUnpaidInvoiceId: z.string().nullable().optional(),
+    lateTransferCount: z.number(),
+    stalledCount: z.number(),
+    doubleBookedSlots: z.number(),
+  }),
+  feeds: z.object({
+    lastTicket: z
+      .object({
+        name: z.string(),
+        customerName: z.string(),
+        createdAt: z.string().nullable(),
+      })
+      .nullable(),
+    lastProgress: z
+      .object({
+        workerName: z.string(),
+        garmentLabel: z.string(),
+        completedAt: z.string(),
+        ticket: z.string().optional(),
+      })
+      .nullable(),
+    lastTouchedCustomer: z
+      .object({
+        name: z.string(),
+        modified: z.string().nullable(),
+      })
+      .nullable(),
+    lateTransferNames: z.array(z.string()),
+    stalledReasons: z.record(z.string(), z.number()),
+    conflictDetails: z.array(
+      z.object({ a: z.string(), b: z.string(), tailor: z.string(), at: z.string() }),
+    ),
+  }),
+  exceptions: z.array(LiveException),
+  todayRail: z.object({
+    openMin: z.number(),
+    closeMin: z.number(),
+    nowMin: z.number(),
+    shopOpen: z.boolean(),
+    appointments: z.array(LiveRailMark),
+    dueOuts: z.array(LiveRailMark),
+    deliveries: z.array(LiveRailMark),
+    chips: z.object({
+      comingIn: z.number(),
+      mustLeave: z.number(),
+      readyPickup: z.number(),
+      readyAllTexted: z.boolean(),
+    }),
+  }),
+  money: z.object({
+    revToday: z.number(),
+    revSpark: z.array(z.number()),
+    weekRev: z.number(),
+    lastWeekRev: z.number(),
+    weekDeltaPct: z.number(),
+    arTotal: z.number(),
+    arAging: LiveAging,
+    pipeline: z.object({
+      nyc: z.number(),
+      hou: z.number(),
+      total: z.number(),
+    }),
+  }),
+  glimpses: z.object({
+    floor: z.object({
+      tailors: z.array(
+        z.object({ name: z.string(), inProgress: z.number(), stalled: z.number() }),
+      ),
+      stalled: z.number(),
+    }),
+    pickup: z.object({
+      names: z.array(z.object({ name: z.string(), texted: z.boolean(), ticket: z.string() })),
+      ready: z.number(),
+    }),
+    messages: z.object({
+      sender: z.string().nullable(),
+      preview: z.string().nullable(),
+      unread: z.number(),
+    }),
+    invoices: z.object({
+      unpaid: z.number(),
+      aging: LiveAging,
+    }),
+    deliveries: z.object({
+      queued: z.number(),
+      out: z.number(),
+      deliveredToday: z.number(),
+    }),
+    appointments: z.object({
+      next: z
+        .object({
+          time: z.string(),
+          type: z.string(),
+          client: z.string(),
+        })
+        .nullable(),
+    }),
+    tasks: z.object({
+      open: z.number(),
+      yesterdayOpen: z.number(),
+      trend: z.enum(["up", "down", "flat"]),
+    }),
+    qc: z.object({
+      waiting: z.number(),
+      passRateWeek: z.number(),
+    }),
+  }),
+  activity: z.array(LiveActivity),
+});
+export type LiveHome = z.infer<typeof LiveHome>;
+
+export const OfflineCollection = z.object({
+  lastSyncedAt: z.string(),
+  rows: z.array(z.record(z.string(), z.unknown())),
+});
+export type OfflineCollection = z.infer<typeof OfflineCollection>;
+
+export const OfflineSnapshot = z.object({
+  generated_at: z.string(),
+  today: z.string(),
+  since: z.string().nullable(),
+  collections: z.object({
+    tickets: OfflineCollection,
+    houseOrders: OfflineCollection,
+    appointments: OfflineCollection,
+    customers: OfflineCollection,
+    invoices: OfflineCollection,
+    catalog: OfflineCollection,
+    qc: OfflineCollection,
+  }),
+});
+export type OfflineSnapshot = z.infer<typeof OfflineSnapshot>;

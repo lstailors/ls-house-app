@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
+import { localFirstTickets } from "@alts/offline/localFirst";
 import { cn } from "@ls/design/utils";
 import { billingStatusLabel } from "@alts/lib/billingLabels";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import ErpStatusBanner from "@alts/components/ErpStatusBanner";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import { AltsSearchField } from "@alts/components/AltsSearchField";
+import { KanbanSkeleton, ListSkeleton } from "@alts/components/skeletons";
 import { storeToday } from "@alts/lib/storeDate";
+import { formatMoney } from "@alts/lib/money";
 import { TailorTallyStrip } from "@alts/components/TailorTallyStrip";
 import {
   clientInitials,
@@ -55,7 +59,7 @@ function needsReadyText(t: Ticket) {
 }
 
 function money(n?: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n || 0);
+  return formatMoney(n);
 }
 
 function TicketCard({
@@ -171,16 +175,40 @@ function TicketCard({
   );
 }
 
+type FloorFilter = "all" | "overdue" | "morning" | "today" | "unassigned" | "unpaid" | "text" | "ready";
+
+const FILTER_KEYS: FloorFilter[] = ["all", "overdue", "morning", "today", "unassigned", "unpaid", "text", "ready"];
+
+function parseFloorFilter(raw: string | null, fallback: FloorFilter): FloorFilter {
+  if (raw && FILTER_KEYS.includes(raw as FloorFilter)) return raw as FloorFilter;
+  return fallback;
+}
+
 export default function ShopFloorBoard() {
   const nav = useNavigate();
   const qc = useQueryClient();
+  const [params, setParams] = useSearchParams();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<
-    "all" | "morning" | "today" | "unassigned" | "unpaid" | "text" | "ready"
-  >(storeHour() < 12 ? "morning" : "all");
+  const [filter, setFilter] = useState<FloorFilter>(() =>
+    parseFloorFilter(params.get("filter"), storeHour() < 12 ? "morning" : "all"),
+  );
   const [view, setView] = useState<ViewMode>("board");
   const [showPickedUp, setShowPickedUp] = useState(false);
   const [nowTick, setNowTick] = useState(0);
+
+  useEffect(() => {
+    const next = parseFloorFilter(params.get("filter"), filter);
+    if (next !== filter) setFilter(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
+
+  function applyFilter(k: FloorFilter) {
+    setFilter(k);
+    const next = new URLSearchParams(params);
+    if (k === "all") next.delete("filter");
+    else next.set("filter", k);
+    setParams(next, { replace: true });
+  }
 
   useEffect(() => {
     const id = window.setInterval(() => setNowTick((n) => n + 1), 15_000);
@@ -189,7 +217,8 @@ export default function ShopFloorBoard() {
 
   const tickets = useQuery({
     queryKey: ["shop-floor-tickets"],
-    queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=500"),
+    queryFn: () =>
+      localFirstTickets(() => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=500")),
     refetchInterval: 60_000,
   });
 
@@ -232,6 +261,14 @@ export default function ShopFloorBoard() {
           t.customer_name?.toLowerCase().includes(s) ||
           t.assigned_tailor?.toLowerCase().includes(s) ||
           t.linked_sales_order?.toLowerCase().includes(s),
+      );
+    }
+    if (filter === "overdue") {
+      rows = rows.filter(
+        (t) =>
+          t.workflow_state !== "Picked Up" &&
+          t.workflow_state !== "Cancelled" &&
+          daysLate(t.due_date) > 0,
       );
     }
     if (filter === "today") {
@@ -355,15 +392,12 @@ export default function ShopFloorBoard() {
         <div className="flex items-center rounded-full border border-brass/20 bg-black/30 px-3 py-2 text-[12px] font-bold tracking-widest uppercase text-brass-light">
           NYC
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-brass/20 bg-black/30 px-3 h-11 min-w-[180px] w-full md:w-auto md:min-w-[240px]">
-          <span className="text-cream-dim">⌕</span>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Ticket, name, tailor, SO…"
-            className="bg-transparent outline-none text-sm flex-1 text-cream placeholder:text-cream-dim"
-          />
-        </div>
+        <AltsSearchField
+          value={q}
+          onChange={setQ}
+          scope="this board"
+          className="w-full md:w-[280px]"
+        />
       </header>
 
       {eyes.length > 0 && (
@@ -383,7 +417,7 @@ export default function ShopFloorBoard() {
                   <div className="font-mono text-[11px] text-brass-light">{t.name}</div>
                   <div className="display text-lg truncate">{t.customer_name || "—"}</div>
                   <div className="text-[11px] text-cream-dim mt-0.5">
-                    {late ? `${daysLate(t.due_date)}d late` : isRush(t) ? "Rush" : "Text ready"}
+                    {late ? `OVERDUE · ${daysLate(t.due_date)}d` : isRush(t) ? "Rush" : "Text ready"}
                   </div>
                 </button>
               );
@@ -395,7 +429,7 @@ export default function ShopFloorBoard() {
       <div className="grid grid-cols-2 md:grid-cols-6 gap-2 px-5 py-4">
         {(
           [
-            { v: kpis.overdue, l: "Overdue", key: "morning" as const, alert: true },
+            { v: kpis.overdue, l: "Overdue", key: "overdue" as const, alert: true },
             { v: kpis.dueToday, l: "Due today", key: "today" as const, warn: true },
             { v: kpis.inShop, l: "In the shop", key: "all" as const },
             { v: kpis.unassigned, l: "Unassigned", key: "unassigned" as const, warn: true },
@@ -406,7 +440,7 @@ export default function ShopFloorBoard() {
           <button
             key={k.l}
             type="button"
-            onClick={() => setFilter(k.key)}
+            onClick={() => applyFilter(k.key)}
             className={cn(
               "sf-kpi card-glass px-4 py-3",
               filter === k.key && "is-on",
@@ -458,6 +492,7 @@ export default function ShopFloorBoard() {
       <div className="flex gap-2 px-5 pb-3 flex-wrap">
         {(
           [
+            ["overdue", "Overdue"],
             ["morning", "Morning"],
             ["all", "All work"],
             ["today", "Due today"],
@@ -470,7 +505,7 @@ export default function ShopFloorBoard() {
           <button
             key={k}
             type="button"
-            onClick={() => setFilter(k)}
+            onClick={() => applyFilter(k)}
             className={cn(
               "px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide border",
               filter === k ? "bg-brass/20 border-brass text-cream" : "border-brass/25 text-cream-dim",
@@ -510,6 +545,9 @@ export default function ShopFloorBoard() {
         </div>
 
         {view === "board" && (
+          tickets.isLoading ? (
+            <KanbanSkeleton cols={3} />
+          ) : (
           <div className="shop-floor-board-cols flex gap-3 min-w-[900px] h-full min-h-[420px]">
             {visibleCols.map((col) => (
               <div
@@ -551,7 +589,6 @@ export default function ShopFloorBoard() {
                       onTextReady={() => textReady.mutate(t.name)}
                     />
                   ))}
-                  {tickets.isLoading && <div className="text-cream-dim text-sm p-3">Loading…</div>}
                   {!tickets.isLoading && !(byCol[col]?.length) && (
                     <div className="sf-empty">
                       {col === "Ready" ? "Nothing waiting at the counter." : "Clear — nothing here."}
@@ -561,9 +598,13 @@ export default function ShopFloorBoard() {
               </div>
             ))}
           </div>
+          )
         )}
 
         {view === "tailor" && (
+          tickets.isLoading ? (
+            <ListSkeleton rows={6} />
+          ) : (
           <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
             {byTailor.map(([tailor, rows]) => (
               <div key={tailor} className="card-glass overflow-hidden flex flex-col min-h-[200px]">
@@ -595,6 +636,7 @@ export default function ShopFloorBoard() {
               <p className="text-cream-dim text-sm italic">No open tickets</p>
             )}
           </div>
+          )
         )}
 
         {view === "calendar" && (

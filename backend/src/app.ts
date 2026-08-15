@@ -62,6 +62,7 @@ import { placesRouter } from "./routes/places";
 import { healthRouter } from "./routes/health";
 import { qcRouter } from "./routes/qc";
 import { metricsRouter } from "./routes/metrics";
+import { offlineRouter } from "./routes/offline";
 
 const app = new Hono();
 
@@ -172,5 +173,6 @@ app.route("/api/delivery-zones", deliveryZonesRouter);
 app.route("/api/places", placesRouter);
 app.route("/api/qc", qcRouter);
 app.route("/api/metrics", metricsRouter);
+app.route("/api/offline", offlineRouter);
 
 export default app;

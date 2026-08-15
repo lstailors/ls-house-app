@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Lock, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
+import { localFirstCatalog, localFirstRow } from "@alts/offline/localFirst";
 import { cn } from "@ls/design/utils";
 import TimedSpinner from "@alts/components/TimedSpinner";
 import { useLoadTimeout } from "@alts/components/TimedSpinner";
@@ -19,6 +20,7 @@ import TaskSubitemPicker, {
   isGroupPreset,
 } from "@alts/components/intake/TaskSubitemPicker";
 import "@alts/styles/alts-pos.css";
+import { formatMoney } from "@alts/lib/money";
 
 type Preset = HierarchyPreset;
 
@@ -61,8 +63,8 @@ function isDone(status?: string | null) {
   return s === "done" || s === "ready" || s === "complete" || s === "completed";
 }
 
-function money(n: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n || 0);
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 function addDays(iso: string | undefined, days: number): string {
@@ -125,13 +127,17 @@ export default function AddWork() {
 
   const ticketQ = useQuery({
     queryKey: ["ticket", ticketName],
-    queryFn: () => api.get<TicketDoc>(`/api/intake-alterations/tickets/${encodeURIComponent(ticketName)}`),
+    queryFn: () =>
+      localFirstRow("tickets", ticketName, () =>
+        api.get<TicketDoc>(`/api/intake-alterations/tickets/${encodeURIComponent(ticketName)}`),
+      ),
     enabled: !!ticketName,
   });
 
   const presetsQ = useQuery({
     queryKey: ["presets", "NYC"],
-    queryFn: () => api.get<Preset[]>("/api/intake-alterations/presets?origin=NYC"),
+    queryFn: () =>
+      localFirstCatalog(() => api.get<Preset[]>("/api/intake-alterations/presets?origin=NYC")),
   });
 
   const ticket = ticketQ.data;

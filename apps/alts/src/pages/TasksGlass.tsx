@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
+import { useShopLink } from "@alts/offline/status";
+import { NeedsConnection } from "@alts/components/NeedsConnection";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
@@ -59,6 +61,7 @@ function who(email?: string | null) {
 }
 
 export default function TasksGlass() {
+  const shop = useShopLink();
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("open");
   const [picked, setPicked] = useState<Todo | null>(null);
@@ -168,7 +171,13 @@ export default function TasksGlass() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-2 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))]">
-        {list.isError && (
+        {shop === "offline" && (
+          <NeedsConnection
+            title="Tasks need a connection"
+            detail="The house task list will be available when you're back online."
+          />
+        )}
+        {list.isError && shop !== "offline" && (
           <QueryErrorPanel
             title="Could not load tasks"
             message={list.error instanceof Error ? list.error.message : "Retry — an empty list is not the same as an outage."}
@@ -209,7 +218,13 @@ export default function TasksGlass() {
           );
         })}
         {!list.isLoading && !shown.length && !list.isError && (
-          <div className="sf-empty">{tab === "overdue" ? "Nothing late." : tab === "done" ? "Nothing closed yet." : "The list is clear."}</div>
+          <div className="sf-empty">
+            {tab === "overdue"
+              ? "Nothing late."
+              : tab === "done"
+                ? "Nothing closed yet."
+                : "The list is clear. Take a bow — every task is done."}
+          </div>
         )}
         {hasMore && (
           <button

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@ls/design/utils";
+import { formatMoney } from "@alts/lib/money";
 
 export type SellFilterId = "all" | "mtm" | "in" | "order" | "tops" | "bottoms";
 
@@ -21,8 +22,8 @@ export type SellableItem = {
   kind?: "mtm" | "rtw";
 };
 
-function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 const FILTERS: { id: SellFilterId; label: string }[] = [

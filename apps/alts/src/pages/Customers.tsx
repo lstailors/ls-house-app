@@ -8,6 +8,7 @@ import { SectionHeader } from "@ls/design";
 import { EmptyState } from "@ls/design";
 import { Button } from "@ls/design/ui/button";
 import { api } from "@ls/api-client";
+import { localFirstCustomerBookTotal, localFirstCustomers } from "@alts/offline/localFirst";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@ls/design/utils";
 import TimedSpinner from "@alts/components/TimedSpinner";
@@ -146,19 +147,20 @@ export default function Customers() {
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["customers", statusFilter, vipFilter, debouncedQ, browseLimit],
-    queryFn: async () => {
-      const res = await api.raw(`/api/customers?${params.toString()}`);
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json?.error?.message ?? `Customers failed (${res.status})`);
-      }
-      const rows: Customer[] = Array.isArray(json?.data) ? json.data : [];
-      return {
-        customers: rows,
-        total: typeof json?.total === "number" ? json.total : rows.length,
-        mode: (json?.mode as string) || (isSearching ? "search" : "browse"),
-      };
-    },
+    queryFn: async () =>
+      localFirstCustomers<Customer>(async () => {
+        const res = await api.raw(`/api/customers?${params.toString()}`);
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(json?.error?.message ?? `Customers failed (${res.status})`);
+        }
+        const rows: Customer[] = Array.isArray(json?.data) ? json.data : [];
+        return {
+          customers: rows,
+          total: typeof json?.total === "number" ? json.total : rows.length,
+          mode: (json?.mode as string) || (isSearching ? "search" : "browse"),
+        };
+      }, isSearching ? debouncedQ : ""),
     staleTime: isSearching ? 15_000 : 60_000,
     placeholderData: (prev) => prev,
   });
@@ -177,12 +179,17 @@ export default function Customers() {
         if (!res.ok) throw new Error(json?.error?.message ?? "Book count failed");
         return typeof json?.total === "number" ? json.total : 0;
       };
-      const [total, vip, casa] = await Promise.all([
-        pull("status=Active&limit=1"),
-        pull("status=Active&vip=1&limit=1"),
-        pull("status=Active&casa=1&limit=1"),
-      ]);
-      return { total, vip, casa };
+      try {
+        const [total, vip, casa] = await Promise.all([
+          pull("status=Active&limit=1"),
+          pull("status=Active&vip=1&limit=1"),
+          pull("status=Active&casa=1&limit=1"),
+        ]);
+        return { total, vip, casa };
+      } catch {
+        const offline = await localFirstCustomerBookTotal(async () => ({ total: 0 }));
+        return { total: offline.total, vip: 0, casa: 0 };
+      }
     },
     staleTime: 5 * 60_000,
   });

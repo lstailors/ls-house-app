@@ -12,15 +12,27 @@
 
 import { erpCount, erpList } from "./erp";
 import { DT } from "./erpnext/doctypes";
-import { addDaysIso, nyTodayIso } from "./shop-time";
+import { addDaysIso, hoursAgoNySql, nyTodayIso } from "./shop-time";
 import type { AltsMetrics } from "../types";
 
 export type ErpFilter = unknown[];
 
+export const TERMINAL_TICKET_STATES = ["Picked Up", "Cancelled"] as const;
+
 export type MetricFilterSet = {
   openAlterations: ErpFilter;
+  overdue: ErpFilter;
+  dueToday: ErpFilter;
+  ready: ErpFilter;
+  inProgress: ErpFilter;
+  atHome: ErpFilter;
+  stalled48h: ErpFilter;
+  readyNotTexted: ErpFilter;
+  invoices90: ErpFilter;
   tasksOpen: ErpFilter;
   tasksOverdue: ErpFilter;
+  tasksCreatedToday: ErpFilter;
+  tasksClosedToday: ErpFilter;
   qcWaiting: ErpFilter;
   qcPassed: ErpFilter;
   qcFailed: ErpFilter;
@@ -37,14 +49,48 @@ export type MetricFilterSet = {
 };
 
 /** Frozen filter definitions — drift tests re-COUNT with these exact arrays. */
-export function metricFilters(todayNy: string): MetricFilterSet {
+export function metricFilters(todayNy: string, now = new Date()): MetricFilterSet {
   const holdSince = addDaysIso(todayNy, -6);
+  const stalledCutoff = hoursAgoNySql(48, now);
+  const invoices90since = addDaysIso(todayNy, -90);
   return {
-    openAlterations: [["workflow_state", "not in", ["Picked Up", "Cancelled"]]],
+    openAlterations: [["workflow_state", "not in", [...TERMINAL_TICKET_STATES]]],
+    overdue: [
+      ["workflow_state", "not in", [...TERMINAL_TICKET_STATES]],
+      ["due_date", "<", todayNy],
+    ],
+    dueToday: [
+      ["workflow_state", "not in", [...TERMINAL_TICKET_STATES]],
+      ["due_date", "=", todayNy],
+    ],
+    ready: [["workflow_state", "=", "Ready"]],
+    inProgress: [["workflow_state", "=", "In Progress"]],
+    atHome: [
+      ["workflow_state", "not in", [...TERMINAL_TICKET_STATES, "Ready"]],
+      ["assigned_tailor", "is", "set"],
+    ],
+    stalled48h: [
+      ["workflow_state", "not in", [...TERMINAL_TICKET_STATES]],
+      ["modified", "<", stalledCutoff],
+    ],
+    readyNotTexted: [
+      ["workflow_state", "=", "Ready"],
+      ["notified_ready_at", "is", "not set"],
+    ],
+    invoices90: [
+      ["docstatus", "=", 1],
+      ["outstanding_amount", ">", 0],
+      ["posting_date", "<", invoices90since],
+    ],
     tasksOpen: [["status", "=", "Open"]],
     tasksOverdue: [
       ["status", "=", "Open"],
       ["date", "<", todayNy],
+    ],
+    tasksCreatedToday: [["creation", ">=", `${todayNy} 00:00:00`]],
+    tasksClosedToday: [
+      ["status", "in", ["Closed", "Cancelled"]],
+      ["modified", ">=", `${todayNy} 00:00:00`],
     ],
     qcWaiting: [["qc_result", "=", "Pending"]],
     qcPassed: [["qc_result", "=", "Pass"]],
@@ -126,8 +172,18 @@ export async function getAltsMetrics(opts?: {
 
   const [
     open_alterations,
+    overdue,
+    due_today,
+    ready,
+    in_progress,
+    at_home,
+    stalled_48h,
+    ready_not_texted,
+    invoices_90,
     tasksOpen,
     tasksOverdue,
+    tasksCreatedToday,
+    tasksClosedToday,
     qcWaiting,
     qcPassed,
     qcFailed,
@@ -144,8 +200,18 @@ export async function getAltsMetrics(opts?: {
     fittings,
   ] = await Promise.all([
     count("Alteration Ticket", f.openAlterations),
+    count("Alteration Ticket", f.overdue),
+    count("Alteration Ticket", f.dueToday),
+    count("Alteration Ticket", f.ready),
+    count("Alteration Ticket", f.inProgress),
+    count("Alteration Ticket", f.atHome),
+    count("Alteration Ticket", f.stalled48h),
+    count("Alteration Ticket", f.readyNotTexted),
+    count("Sales Invoice", f.invoices90),
     count("ToDo", f.tasksOpen),
     count("ToDo", f.tasksOverdue),
+    count("ToDo", f.tasksCreatedToday),
+    count("ToDo", f.tasksClosedToday),
     countQcByResult("Pending", count),
     countQcByResult("Pass", count),
     countQcByResult("Fail", count),
@@ -164,12 +230,15 @@ export async function getAltsMetrics(opts?: {
 
   const other = 0;
   const all = texts + calls + voice + fittings + other;
+  const yesterday_open = Math.max(0, tasksOpen - tasksCreatedToday + tasksClosedToday);
+  const taskTrend: "up" | "down" | "flat" =
+    tasksOpen > yesterday_open ? "up" : tasksOpen < yesterday_open ? "down" : "flat";
 
   return {
     generated_at: new Date().toISOString(),
     today,
     open_alterations,
-    tasks: { open: tasksOpen, overdue: tasksOverdue },
+    tasks: { open: tasksOpen, overdue: tasksOverdue, yesterday_open, trend: taskTrend },
     qc: {
       waiting: qcWaiting,
       open: qcWaiting,
@@ -180,5 +249,15 @@ export async function getAltsMetrics(opts?: {
     deliveries: { queued, out, delivered_today, on_hold },
     hd_tickets_open,
     messages: { texts, calls, voice, fittings, other, all },
+    floor: {
+      overdue,
+      due_today,
+      ready,
+      in_progress,
+      at_home,
+      stalled_48h,
+      ready_not_texted,
+      invoices_90,
+    },
   };
 }

@@ -12,23 +12,7 @@ export default function AltsShell() {
   const isHome = loc.pathname === "/";
   const kiosk = useKioskMode();
 
-  if (isHome) {
-    return (
-      <div className="min-h-dvh overflow-x-hidden overflow-y-auto bg-forest-deep text-cream">
-        <Outlet />
-      </div>
-    );
-  }
-
-  if (kiosk) {
-    return (
-      <div className="min-h-dvh bg-forest-deep text-cream">
-        <Outlet />
-      </div>
-    );
-  }
-
-  if (isHome) {
+  if (kiosk || isHome) {
     return (
       <div className="min-h-dvh overflow-x-hidden overflow-y-auto bg-forest-deep text-cream">
         <Outlet />

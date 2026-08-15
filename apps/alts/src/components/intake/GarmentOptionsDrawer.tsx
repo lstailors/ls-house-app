@@ -3,9 +3,10 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { LUX_MS, useBodyLock, useOverlayEscape, usePresence } from "@alts/lib/luxuryMotion";
 import TaskSubitemPicker, { type HierarchyPreset } from "@alts/components/intake/TaskSubitemPicker";
+import { formatMoney } from "@alts/lib/money";
 
-function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 export type DrawerLine = {

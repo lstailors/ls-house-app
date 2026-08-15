@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
+import { localFirstTickets } from "@alts/offline/localFirst";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
@@ -58,7 +59,24 @@ export default function ProgressBoard() {
 
   const board = useQuery({
     queryKey: ["alts-progress-board"],
-    queryFn: () => api.get<Piece[]>("/api/garment/board"),
+    queryFn: async () => {
+      try {
+        return await api.get<Piece[]>("/api/garment/board");
+      } catch {
+        const tickets = await localFirstTickets<Record<string, unknown>>(async () => {
+          throw new Error("offline");
+        });
+        return tickets.map((t) => ({
+          id: String(t.name ?? ""),
+          ticket: String(t.name ?? ""),
+          garmentType: "Ticket",
+          status: String(t.workflow_state ?? ""),
+          customerName: String(t.customer_name ?? ""),
+          dueDate: t.due_date ? String(t.due_date) : null,
+          tailor: t.assigned_tailor ? String(t.assigned_tailor) : null,
+        })) as Piece[];
+      }
+    },
     refetchInterval: 45_000,
   });
 

@@ -110,7 +110,8 @@ describe("MTM on the Walk-in sell catalog", () => {
     const codes = out.map((d) => d.item_code);
     expect(codes.slice(0, HOUSE_MTM_ITEMS.length)).toEqual(HOUSE_MTM_ITEMS.map((h) => h.item_code));
     expect(codes).toContain("TRA-1");
-    expect(out[0].kind).toBe("mtm");
+    const first = out[0] as { kind?: string } | undefined;
+    expect(first?.kind).toBe("mtm");
     expect(applySellableFilters(out, { filter: "mtm" }).length).toBe(HOUSE_MTM_ITEMS.length);
   });
 });

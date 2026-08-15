@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
+import { localFirstCatalog, localFirstCustomerSearch } from "@alts/offline/localFirst";
 import { useMe } from "@ls/auth/session";
 import { cn } from "@ls/design/utils";
 import ParkDrawer from "@alts/components/ParkDrawer";
@@ -37,6 +38,7 @@ import IntakeConfirm, {
 } from "@alts/components/intake/IntakeConfirm";
 import { enqueueIntakeTicket } from "@alts/lib/offlineQueue";
 import AddressAutocomplete from "@alts/components/intake/AddressAutocomplete";
+import { formatMoney } from "@alts/lib/money";
 
 const GARMENT_TYPES = [
   "Jacket",
@@ -118,8 +120,8 @@ type Preset = {
 
 type Remind = "eod" | "3d" | "2w" | "never";
 
-function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 function uid() {
@@ -336,26 +338,28 @@ export default function IntakeStepped() {
   const search = useQuery({
     queryKey: ["cust-search", q],
     enabled: q.trim().length >= 2 && !customer,
-    queryFn: async () => {
-      const rows = await api.get<any[]>(
-        `/api/intake-alterations/customers/search?q=${encodeURIComponent(q.trim())}`,
-      );
-      return (rows ?? []).map((r: any) => {
-        const addr = [r.address, r.city, r.state].filter(Boolean).join(", ");
-        return {
-          id: r.name ?? r.id,
-          name: r.customer_name ?? r.name,
-          phone: r.mobile_no ?? r.phone ?? "",
-          email: r.email_id ?? r.email ?? "",
-          addressLine: addr || r.address_line || "",
-        } as CustomerHit;
-      });
-    },
+    queryFn: async () =>
+      localFirstCustomerSearch<CustomerHit>(q.trim(), async () => {
+        const rows = await api.get<any[]>(
+          `/api/intake-alterations/customers/search?q=${encodeURIComponent(q.trim())}`,
+        );
+        return (rows ?? []).map((r: any) => {
+          const addr = [r.address, r.city, r.state].filter(Boolean).join(", ");
+          return {
+            id: r.name ?? r.id,
+            name: r.customer_name ?? r.name,
+            phone: r.mobile_no ?? r.phone ?? "",
+            email: r.email_id ?? r.email ?? "",
+            addressLine: addr || r.address_line || "",
+          } as CustomerHit;
+        });
+      }),
   });
 
   const presets = useQuery({
     queryKey: ["presets", origin],
-    queryFn: () => api.get<Preset[]>(`/api/intake-alterations/presets?origin=${origin}`),
+    queryFn: () =>
+      localFirstCatalog(() => api.get<Preset[]>(`/api/intake-alterations/presets?origin=${origin}`)),
   });
 
   const sellable = useQuery({

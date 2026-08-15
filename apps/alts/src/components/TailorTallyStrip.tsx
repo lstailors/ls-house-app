@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
+import { formatMoney } from "@alts/lib/money";
 
 export type TailorTally = {
   date: string;
@@ -23,8 +24,8 @@ export type TailorTally = {
   }>;
 };
 
-function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 function fmtMins(m: number) {
@@ -49,8 +50,8 @@ export function TailorTallyStrip({ className }: { className?: string }) {
     retry: 1,
   });
 
-  const data = q.data;
-  const empty = !data || data.totals.pieces === 0;
+  const data = q.data && !Array.isArray(q.data) ? q.data : undefined;
+  const empty = !data || !data.totals || data.totals.pieces === 0;
 
   return (
     <section

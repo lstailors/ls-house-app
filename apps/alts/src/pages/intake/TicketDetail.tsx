@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@ls/api-client'
+import { localFirstRow } from '@alts/offline/localFirst'
 import { cn } from "@ls/design/utils"
 import { useMe } from '@ls/auth'
 import type { CartPayload } from '@alts/lib/cart/parked'
@@ -1016,7 +1017,10 @@ export default function TicketDetail() {
     isError,
   } = useQuery<AlterationTicketDoc>({
     queryKey: ['ticket', ticketName],
-    queryFn: () => api.get<AlterationTicketDoc>('/api/intake-alterations/tickets/' + ticketName),
+    queryFn: () =>
+      localFirstRow('tickets', ticketName!, () =>
+        api.get<AlterationTicketDoc>('/api/intake-alterations/tickets/' + ticketName),
+      ),
     enabled: !!ticketName,
   })
 

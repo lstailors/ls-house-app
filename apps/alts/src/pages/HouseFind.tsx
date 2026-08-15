@@ -2,12 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
+import { localFirstHouseOrders, localFirstTickets } from "@alts/offline/localFirst";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
 import StatusBadge from "@alts/components/StatusBadge";
-import { clientInitials, syncLabel } from "@alts/lib/ticketDisplay";
+import { OverduePill } from "@alts/components/OverduePill";
+import { AltsSearchField } from "@alts/components/AltsSearchField";
+import { ListSkeleton } from "@alts/components/skeletons";
+import { clientInitials, sortShopTickets, syncLabel } from "@alts/lib/ticketDisplay";
+import { formatMoney } from "@alts/lib/money";
 import "@alts/styles/alts-pos.css";
 
 type Tab = "rtw" | "alts" | "mtm";
@@ -61,7 +66,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 function money(n?: number) {
   if (n == null || Number.isNaN(Number(n))) return "";
-  return Number(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
+  return formatMoney(n);
 }
 
 function prettyStatus(s?: string) {
@@ -99,7 +104,8 @@ export default function HouseFind() {
 
   const custom = useQuery({
     queryKey: ["alts-custom-orders"],
-    queryFn: () => api.get<CustomOrder[]>("/api/custom-orders?limit=200"),
+    queryFn: () =>
+      localFirstHouseOrders(() => api.get<CustomOrder[]>("/api/custom-orders?limit=200")),
     refetchInterval: 90_000,
   });
 
@@ -114,7 +120,10 @@ export default function HouseFind() {
 
   const tickets = useQuery({
     queryKey: ["alts-house-tickets"],
-    queryFn: () => api.get<AltTicket[]>("/api/intake-alterations/tickets?limit=500&origin=ALL"),
+    queryFn: () =>
+      localFirstTickets(() =>
+        api.get<AltTicket[]>("/api/intake-alterations/tickets?limit=500&origin=ALL"),
+      ),
     refetchInterval: 90_000,
   });
 
@@ -141,17 +150,39 @@ export default function HouseFind() {
     );
   }, [sales.data, needle]);
 
-  const rtwRows = soRows.filter((o) => !isMtmMake(o.make_type));
-  const mtmSoRows = soRows.filter((o) => isMtmMake(o.make_type));
+  const rtwRows = useMemo(() => {
+    const rows = soRows.filter((o) => !isMtmMake(o.make_type));
+    return [...rows].sort((a, b) =>
+      sortShopTickets(
+        { due_date: a.delivery_date, status: a.status },
+        { due_date: b.delivery_date, status: b.status },
+      ),
+    );
+  }, [soRows]);
+  const mtmSoRows = useMemo(() => {
+    const rows = soRows.filter((o) => isMtmMake(o.make_type));
+    return [...rows].sort((a, b) =>
+      sortShopTickets(
+        { due_date: a.delivery_date, status: a.status },
+        { due_date: b.delivery_date, status: b.status },
+      ),
+    );
+  }, [soRows]);
 
   const altRows = useMemo(() => {
     const rows = tickets.data ?? [];
-    return rows.filter((t) =>
+    const filtered = rows.filter((t) =>
       matches(
         [t.name, t.customer_name, t.customer, t.workflow_state, t.linked_sales_order, t.origin_location]
           .filter(Boolean)
           .join(" "),
         needle,
+      ),
+    );
+    return [...filtered].sort((a, b) =>
+      sortShopTickets(
+        { due_date: a.due_date, workflow_state: a.workflow_state },
+        { due_date: b.due_date, workflow_state: b.workflow_state },
       ),
     );
   }, [tickets.data, needle]);
@@ -178,12 +209,7 @@ export default function HouseFind() {
       </header>
 
       <div className="px-4 sm:px-5 pt-3 space-y-3">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Name, ticket, SO, or MTM Pro…"
-          className="w-full rounded-full border border-brass/25 bg-black/30 px-4 py-3 text-base text-cream placeholder:text-cream-dim"
-        />
+        <AltsSearchField value={q} onChange={setQ} scope="house orders" />
         <div className="flex flex-wrap gap-2">
           {(
             [
@@ -231,6 +257,7 @@ export default function HouseFind() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <StatusBadge status={o.status || "Open"} size="sm" />
+                  <OverduePill due={o.delivery_date} status={o.status} />
                   {o.make_type && <span className="text-[12px] text-cream-dim">{o.make_type}</span>}
                   {money(o.grand_total) && <span className="text-[12px] text-brass-light">{money(o.grand_total)}</span>}
                 </div>
@@ -257,6 +284,7 @@ export default function HouseFind() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <StatusBadge status={t.workflow_state || "Open"} size="sm" />
+                  <OverduePill due={t.due_date} status={t.workflow_state} />
                   {t.origin_location && <span className="text-[12px] text-cream-dim">{t.origin_location}</span>}
                   {money(t.ticket_total) && <span className="text-[12px] text-brass-light">{money(t.ticket_total)}</span>}
                 </div>
@@ -314,11 +342,12 @@ export default function HouseFind() {
                   {clientInitials(o.customer_name || o.customer)}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <StatusBadge status={o.status || "Open"} size="sm" />
-                    {o.make_type && <span className="text-[12px] text-cream-dim">{o.make_type}</span>}
-                    {money(o.grand_total) && <span className="text-[12px] text-brass-light">{money(o.grand_total)}</span>}
-                  </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <StatusBadge status={o.status || "Open"} size="sm" />
+                      <OverduePill due={o.delivery_date} status={o.status} />
+                      {o.make_type && <span className="text-[12px] text-cream-dim">{o.make_type}</span>}
+                      {money(o.grand_total) && <span className="text-[12px] text-brass-light">{money(o.grand_total)}</span>}
+                    </div>
                   <div className="font-mono text-[15px] text-brass-light mt-1.5 tracking-wide">{o.name}</div>
                   <div className="display text-[24px] leading-none mt-1 truncate">{o.customer_name || "Client"}</div>
                   <div className="text-sm text-cream-dim mt-1 truncate">
@@ -331,6 +360,8 @@ export default function HouseFind() {
             ))}
           </>
         )}
+
+        {err.isLoading && <ListSkeleton rows={8} />}
 
         {!err.isLoading &&
           ((tab === "rtw" && !rtwRows.length) ||

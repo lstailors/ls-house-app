@@ -1322,6 +1322,7 @@ dashboardRouter.get("/alts-home", async (c) => {
 
     let openInvoicesAmount = 0;
     let oldestUnpaidDays: number | null = null;
+    let oldestUnpaidInvoiceId: string | null = null;
     const openInvoices = invoices.length;
     const nowMs = Date.now();
     for (const inv of invoices) {
@@ -1332,7 +1333,10 @@ dashboardRouter.get("/alts-home", async (c) => {
           0,
           Math.floor((nowMs - Date.parse(`${anchor}T12:00:00Z`)) / 86_400_000),
         );
-        if (oldestUnpaidDays == null || days > oldestUnpaidDays) oldestUnpaidDays = days;
+        if (oldestUnpaidDays == null || days > oldestUnpaidDays) {
+          oldestUnpaidDays = days;
+          oldestUnpaidInvoiceId = inv.name || null;
+        }
       }
     }
     openInvoicesAmount = Math.round(openInvoicesAmount * 100) / 100;
@@ -1492,6 +1496,7 @@ dashboardRouter.get("/alts-home", async (c) => {
           openInvoices,
           openInvoicesAmount,
           oldestUnpaidDays,
+          oldestUnpaidInvoiceId,
           lateTransferCount,
           stalledCount,
           doubleBookedSlots,

@@ -12,6 +12,7 @@ import { ChargeTerminalButton } from "@alts/components/payments/ChargeTerminalBu
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import AddressAutocomplete from "@alts/components/intake/AddressAutocomplete";
+import { formatMoney } from "@alts/lib/money";
 
 type Ticket = {
   name: string;
@@ -31,8 +32,8 @@ type Ticket = {
 
 type Method = "Pickup" | "Hand Delivery" | "Courier";
 
-function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 function asMethod(v?: string | null): Method {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { pickupBagStats } from "./pickupBag";
+import { pickupBagStats, shouldRestorePickupBag } from "./pickupBag";
 
 describe("pickupBagStats", () => {
   test("counts invoices with ticketRef as tickets and reconciles paid vs due", () => {
@@ -23,5 +23,16 @@ describe("pickupBagStats", () => {
     expect(stats.ticketCount).toBe(1);
     expect(stats.invoiceCount).toBe(1);
     expect(stats.bagPaid).toBe(100);
+  });
+});
+
+describe("shouldRestorePickupBag", () => {
+  test("fresh pickup stays empty", () => {
+    expect(shouldRestorePickupBag(new URLSearchParams())).toBe(false);
+  });
+  test("scanner and deep links restore", () => {
+    expect(shouldRestorePickupBag(new URLSearchParams("scanned=1"))).toBe(true);
+    expect(shouldRestorePickupBag(new URLSearchParams("ticket=ALT-1"))).toBe(true);
+    expect(shouldRestorePickupBag(new URLSearchParams("addInvoice=SINV-1"))).toBe(true);
   });
 });

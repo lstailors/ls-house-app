@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
+import { localFirstTickets } from "@alts/offline/localFirst";
 import { cn } from "@ls/design/utils";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
@@ -63,7 +64,8 @@ export default function Transfers() {
 
   const tickets = useQuery({
     queryKey: ["xfer-tickets"],
-    queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=500"),
+    queryFn: () =>
+      localFirstTickets(() => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=500")),
   });
 
   useEffect(() => {

@@ -9,11 +9,13 @@ import {
   TrendingUp, History,
 } from "lucide-react";
 import { api } from "@ls/api-client";
+import { localFirstCustomerRow } from "@alts/offline/localFirst";
 import { Button } from "@ls/design/ui/button";
 import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
 import { CustomerEditSheet } from "@alts/components/CustomerEditSheet";
 import AddressAutocomplete from "@alts/components/intake/AddressAutocomplete";
+import { formatMoney } from "@alts/lib/money";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface AddressRow {
@@ -384,13 +386,8 @@ function MeasurementsTab({ customer }: { customer: any }) {
 }
 
 // ── Money helpers ─────────────────────────────────────────────────────────────
-function money(n: number, cents = true) {
-  return Number(n || 0).toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: cents ? 2 : 0,
-    maximumFractionDigits: cents ? 2 : 0,
-  });
+function money(n?: number | string | null, _cents?: boolean) {
+  return formatMoney(n);
 }
 
 interface SpendStats {
@@ -890,7 +887,10 @@ export default function CustomerDetail() {
 
   const { data: customer, isLoading, error } = useQuery({
     queryKey: ["customer", id],
-    queryFn: () => api.get<Customer>(`/api/customers/${encodeURIComponent(id!)}`),
+    queryFn: () =>
+      localFirstCustomerRow<Customer>(id!, () =>
+        api.get<Customer>(`/api/customers/${encodeURIComponent(id!)}`),
+      ),
     enabled: !!id && id !== "new",
   });
 

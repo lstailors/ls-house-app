@@ -30,6 +30,15 @@ describe("metricFilters", () => {
       ["lsh_delivered_at", "<=", "2026-08-15 23:59:59"],
     ]);
   });
+
+  test("overdue is due_date before today and non-terminal", () => {
+    const f = metricFilters("2026-08-15");
+    expect(f.overdue).toEqual([
+      ["workflow_state", "not in", ["Picked Up", "Cancelled"]],
+      ["due_date", "<", "2026-08-15"],
+    ]);
+    expect(f.invoices90[2]).toEqual(["posting_date", "<", "2026-05-17"]);
+  });
 });
 
 describe("getAltsMetrics", () => {

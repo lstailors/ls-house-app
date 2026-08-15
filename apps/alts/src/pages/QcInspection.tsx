@@ -9,6 +9,7 @@ import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
+import { ConfirmDialog } from "@alts/components/ConfirmDialog";
 import StatusBadge from "@alts/components/StatusBadge";
 import MtmStatusRail from "@alts/components/MtmStatusRail";
 import { clientInitials } from "@alts/lib/ticketDisplay";
@@ -84,6 +85,9 @@ export default function QcInspection() {
   const [embedSrc, setEmbedSrc] = useState<string | null>(null);
   const [decide, setDecide] = useState<"pass" | "fail" | null>(null);
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
+  const [confirmAllPass, setConfirmAllPass] = useState(false);
+  const [failDraft, setFailDraft] = useState<{ ids: string[]; labels: string[] } | null>(null);
+  const [failDraftNote, setFailDraftNote] = useState("");
 
   const detail = useQuery({
     queryKey: ["alts-qc-detail", id],
@@ -223,11 +227,48 @@ export default function QcInspection() {
   };
 
   const setCheck = (checkId: string, pass: boolean | null) => {
+    if (pass === false) {
+      const row = checks.find((c) => c.id === checkId);
+      setFailDraft({ ids: [checkId], labels: [row?.label || "Check"] });
+      setFailDraftNote("");
+      return;
+    }
     setChecks((prev) => prev.map((c) => (c.id === checkId ? { ...c, pass } : c)));
   };
 
   const markGroup = (group: string, pass: boolean) => {
+    if (!pass) {
+      const rows = checks.filter((c) => c.group === group);
+      setFailDraft({ ids: rows.map((c) => c.id), labels: rows.map((c) => c.label) });
+      setFailDraftNote("");
+      return;
+    }
     setChecks((prev) => prev.map((c) => (c.group === group ? { ...c, pass } : c)));
+  };
+
+  const applyFailDraft = () => {
+    const note = failDraftNote.trim();
+    if (!note) {
+      toast.error("A note is required to fail a check");
+      return;
+    }
+    if (!failDraft) return;
+    setChecks((prev) => prev.map((c) => (failDraft.ids.includes(c.id) ? { ...c, pass: false } : c)));
+    setNotes((prev) => {
+      const add = `${failDraft.labels.join(", ")}: ${note}`;
+      return prev.trim() ? `${prev.trim()}\n${add}` : add;
+    });
+    setFailReason((prev) => {
+      const add = `${failDraft.labels.join(", ")}: ${note}`;
+      return prev.trim() ? `${prev.trim()}\n${add}` : add;
+    });
+    setFailDraft(null);
+    setFailDraftNote("");
+  };
+
+  const applyAllPass = () => {
+    setChecks((prev) => prev.map((c) => ({ ...c, pass: true })));
+    setConfirmAllPass(false);
   };
 
   const persistChecks = () => {
@@ -410,7 +451,11 @@ export default function QcInspection() {
               {!locked && (
                 <button
                   type="button"
-                  onClick={() => setChecks((prev) => prev.map((c) => ({ ...c, pass: true })))}
+                  onClick={() => {
+                    const open = checks.filter((c) => c.pass !== true).length;
+                    if (open > 1) setConfirmAllPass(true);
+                    else applyAllPass();
+                  }}
                   className="h-11 px-3 rounded-full border border-brass/30 text-[11px] font-bold uppercase tracking-widest"
                 >
                   All pass
@@ -725,6 +770,24 @@ export default function QcInspection() {
             ) : (
               <div className="mt-3 text-[12px] font-bold uppercase tracking-widest text-signal-emerald">Signed</div>
             )}
+            <div className="grid grid-cols-2 gap-2 mt-4">
+              <button
+                type="button"
+                disabled={!inspectionId || upload.isPending || locked}
+                onClick={() => cameraRef.current?.click()}
+                className="h-12 rounded-xl border border-brass/35 text-[11px] font-bold uppercase tracking-widest"
+              >
+                Photo of fail
+              </button>
+              <button
+                type="button"
+                disabled={!inspectionId || upload.isPending || locked}
+                onClick={() => libraryRef.current?.click()}
+                className="h-12 rounded-xl border border-brass/35 text-[11px] font-bold uppercase tracking-widest"
+              >
+                Library
+              </button>
+            </div>
             <div className="flex flex-col gap-2 mt-5">
               <button
                 type="button"
@@ -736,6 +799,82 @@ export default function QcInspection() {
               </button>
               <button type="button" onClick={() => setDecide(null)} className="btn-ghost h-12 text-xs">
                 Back
+              </button>
+            </div>
+          </div>
+        )}
+      </LuxuryLayer>
+
+      <ConfirmDialog
+        open={confirmAllPass}
+        onClose={() => setConfirmAllPass(false)}
+        title="Mark all checks pass?"
+        tone="brass"
+        confirmLabel="All pass"
+        body={
+          <p>
+            {checks.filter((c) => c.pass !== true).length} open checks will be marked pass
+            {checks.length ? ` (of ${checks.length} total)` : ""}.
+          </p>
+        }
+        onConfirm={applyAllPass}
+      />
+
+      <LuxuryLayer
+        open={!!failDraft}
+        onClose={() => setFailDraft(null)}
+        variant="modal"
+        label="Fail check"
+        z={90}
+      >
+        {failDraft && (
+          <div
+            className="w-full max-w-md mx-auto rounded-2xl border border-brass/30 px-5 pt-4 pb-5"
+            style={{ background: "linear-gradient(180deg,#152A1E,#0D1A10)" }}
+          >
+            <h2 className="display text-[26px] leading-tight m-0">Fail requires a note</h2>
+            <p className="text-sm text-cream-dim mt-2">
+              {failDraft.labels.join(", ")} — say what is wrong, then optionally photograph it.
+            </p>
+            <textarea
+              value={failDraftNote}
+              onChange={(e) => setFailDraftNote(e.target.value)}
+              rows={3}
+              placeholder="What failed"
+              className="mt-3 w-full rounded-xl bg-black/35 border border-brass/25 px-3.5 py-3 text-[14.5px] text-cream outline-none focus:border-brass"
+            />
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <button
+                type="button"
+                disabled={!inspectionId || upload.isPending}
+                onClick={() => cameraRef.current?.click()}
+                className="h-12 rounded-xl border border-brass/35 text-[11px] font-bold uppercase tracking-widest"
+              >
+                {upload.isPending ? "Uploading…" : "📷 Photo"}
+              </button>
+              <button
+                type="button"
+                disabled={!inspectionId || upload.isPending}
+                onClick={() => libraryRef.current?.click()}
+                className="h-12 rounded-xl border border-brass/35 text-[11px] font-bold uppercase tracking-widest"
+              >
+                Library
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => setFailDraft(null)}
+                className="h-12 rounded-xl border border-brass/30 text-[11px] font-bold uppercase tracking-widest"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={applyFailDraft}
+                className="h-12 rounded-xl bg-signal-rose text-forest-deep text-[11px] font-bold uppercase tracking-widest"
+              >
+                Fail check
               </button>
             </div>
           </div>

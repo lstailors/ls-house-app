@@ -3,10 +3,12 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
+import { localFirstRow, localFirstTickets } from "@alts/offline/localFirst";
 import { cn } from "@ls/design/utils";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import { formatMoney } from "@alts/lib/money";
 
 type Ticket = {
   name: string;
@@ -20,8 +22,8 @@ type Ticket = {
   due_date?: string;
 };
 
-function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 export default function QuoteComposer() {
@@ -35,13 +37,17 @@ export default function QuoteComposer() {
 
   const open = useQuery({
     queryKey: ["quote-open-tickets"],
-    queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=500"),
+    queryFn: () =>
+      localFirstTickets(() => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=500")),
   });
 
   const detail = useQuery({
     queryKey: ["quote-ticket", ticketId],
     enabled: !!ticketId,
-    queryFn: () => api.get<Ticket>(`/api/intake-alterations/tickets/${ticketId}`),
+    queryFn: () =>
+      localFirstRow("tickets", ticketId, () =>
+        api.get<Ticket>(`/api/intake-alterations/tickets/${ticketId}`),
+      ),
   });
 
   const t = detail.data;

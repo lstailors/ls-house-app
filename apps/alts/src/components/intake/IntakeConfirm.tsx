@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
+import { formatMoney } from "@alts/lib/money";
 
 export type IntakeConfirmResult = {
   ticketName: string;
@@ -42,12 +43,8 @@ type Props = {
   onDoneHome?: () => void;
 };
 
-function money(n: number) {
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 function firstName(full: string) {

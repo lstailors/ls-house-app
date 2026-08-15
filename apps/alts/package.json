@@ -3,12 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "alts.lstailors.com \u2014 intake + day-to-day FOH",
+  "description": "alts.lstailors.com — intake + day-to-day FOH",
   "scripts": {
     "dev": "vite --port 8010",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "test": "bun test src",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -16,6 +18,7 @@
     "@ls/auth": "workspace:*",
     "@ls/design": "workspace:*",
     "@ls/types": "workspace:*",
+    "@sentry/react": "^8.47.0",
     "@tanstack/react-query": "^5.90.10",
     "@zxing/browser": "^0.2.1",
     "@zxing/library": "^0.23.0",
@@ -23,10 +26,13 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
+    "dexie": "^4.4.5",
     "framer-motion": "^12.23.28",
     "html5-qrcode": "^2.3.8",
     "jsqr": "^1.4.0",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.462.0",
+    "qrcode": "^1.5.4",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -37,9 +43,7 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
-    "zod": "4.1.11",
-    "qrcode": "^1.5.4",
-    "leaflet": "^1.9.4"
+    "zod": "4.1.11"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
@@ -52,6 +56,7 @@
     "vite": "^5.4.11",
     "vite-plugin-pwa": "^0.21.1",
     "@types/qrcode": "^1.5.6",
-    "@types/leaflet": "^1.9.21"
+    "@types/leaflet": "^1.9.21",
+    "@playwright/test": "^1.49.1"
   }
 }

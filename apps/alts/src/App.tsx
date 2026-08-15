@@ -32,6 +32,9 @@ import QcInspection from "@alts/pages/QcInspection";
 import AltsSettings from "@alts/pages/AltsSettings";
 import TicketDetail from "@alts/pages/intake/TicketDetail";
 import { startOfflineQueueWatcher } from "@alts/lib/offlineQueue";
+import { startOfflineHeartbeat } from "@alts/offline/status";
+import { startOfflineHydrate } from "@alts/offline/hydrate";
+import { OfflineBanner } from "@alts/components/OfflineBanner";
 import { toast } from "sonner";
 import TimedSpinner from "@alts/components/TimedSpinner";
 import NotFound from "@alts/pages/NotFound";
@@ -77,10 +80,20 @@ function printSurface(node: ReactNode, feature?: string) {
 
 export default function App() {
   useEffect(() => {
-    return startOfflineQueueWatcher((r) => {
+    const stopHeartbeat = startOfflineHeartbeat();
+    let stopHydrate: (() => void) | undefined;
+    void startOfflineHydrate(queryClient).then((stop) => {
+      stopHydrate = stop;
+    });
+    const stopQueue = startOfflineQueueWatcher((r) => {
       if (r.ok > 0) toast.success(`Sent ${r.ok} offline ticket${r.ok === 1 ? "" : "s"}`);
       if (r.failed > 0) toast.error(`${r.failed} offline ticket${r.failed === 1 ? "" : "s"} still failing`);
     });
+    return () => {
+      stopHeartbeat();
+      stopHydrate?.();
+      stopQueue();
+    };
   }, []);
 
   return (
@@ -96,6 +109,7 @@ export default function App() {
           }}
         />
         <BrowserRouter>
+          <OfflineBanner />
           {/*
             Routes always stay mounted.
             Print routes: LandscapeGate only on tags/thermal/receipt/label when tablet portrait.

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
+import { localFirstAppointments, localFirstHouseCal } from "@alts/offline/localFirst";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
@@ -128,8 +129,10 @@ export default function AppointmentsGlass() {
   const book = useQuery({
     queryKey: ["alts-appointments", rangeFrom, rangeTo],
     queryFn: () =>
-      api.get<{ appointments: Appt[]; blocks: Block[] }>(
-        `/api/appointments?date_from=${rangeFrom}&date_to=${rangeTo}`,
+      localFirstAppointments<Appt, Block>(rangeFrom, rangeTo, () =>
+        api.get<{ appointments: Appt[]; blocks: Block[] }>(
+          `/api/appointments?date_from=${rangeFrom}&date_to=${rangeTo}`,
+        ),
       ),
     refetchInterval: 60_000,
   });
@@ -137,7 +140,10 @@ export default function AppointmentsGlass() {
   const house = useQuery({
     queryKey: ["alts-house-cal", rangeFrom, rangeTo],
     enabled: tab === "house" || tab === "cal",
-    queryFn: () => api.get<HouseEvent[]>(`/api/calendar/events?start=${rangeFrom}&end=${rangeTo}`),
+    queryFn: () =>
+      localFirstHouseCal<HouseEvent>(rangeFrom, rangeTo, () =>
+        api.get<HouseEvent[]>(`/api/calendar/events?start=${rangeFrom}&end=${rangeTo}`),
+      ),
     refetchInterval: 60_000,
   });
 

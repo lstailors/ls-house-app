@@ -1,7 +1,8 @@
 import { cn } from "@ls/design/utils";
+import { formatMoney } from "@alts/lib/money";
 
-function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 type Props = {

@@ -1,5 +1,5 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
@@ -7,6 +7,7 @@ import { ChargeTerminalButton } from "@alts/components/payments/ChargeTerminalBu
 import { ChargeCardOnFileButton } from "@alts/components/payments/ChargeCardOnFileButton";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { payUrl } from "@alts/lib/printUrls";
+import { formatMoney } from "@alts/lib/money";
 import "@alts/styles/alts-pos.css";
 
 type Item = {
@@ -45,7 +46,7 @@ type Invoice = {
 };
 
 function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  return formatMoney(n);
 }
 
 export default function InvoiceDetail() {
@@ -76,6 +77,16 @@ export default function InvoiceDetail() {
     void qc.invalidateQueries({ queryKey: ["alts-invoice", id] });
     void qc.invalidateQueries({ queryKey: ["alts-invoices"] });
   };
+
+  const textReceipt = useMutation({
+    mutationFn: () =>
+      api.post<{ sent: boolean; phone: string | null }>(
+        `/api/invoices/${encodeURIComponent(id!)}/text-receipt`,
+        {},
+      ),
+    onSuccess: (d) => toast.success(d?.sent ? `Receipt texted${d.phone ? ` · ${d.phone}` : ""}` : "Queued"),
+    onError: (e: Error) => toast.error(e.message || "Could not text receipt"),
+  });
 
   return (
     <div className="alts-root min-h-dvh flex flex-col">
@@ -226,6 +237,15 @@ export default function InvoiceDetail() {
                 </p>
               </div>
             )}
+
+            <button
+              type="button"
+              disabled={textReceipt.isPending}
+              onClick={() => textReceipt.mutate()}
+              className="w-full h-12 rounded-xl border border-brass/30 text-[11px] font-bold uppercase tracking-widest"
+            >
+              {textReceipt.isPending ? "Sending…" : "Text receipt"}
+            </button>
 
             {/* Lines */}
             <div className="rounded-2xl border border-brass/15 overflow-hidden">

@@ -8,12 +8,29 @@ export function daysLate(due?: string) {
   return Math.floor((t.getTime() - d.getTime()) / 86400000);
 }
 
+/** Closed / released work — never overdue. */
+export function isTerminalStatus(status?: string | null): boolean {
+  const s = String(status || "")
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, " ");
+  return (
+    s === "picked up" ||
+    s === "cancelled" ||
+    s === "canceled" ||
+    s === "delivered" ||
+    s === "closed" ||
+    s === "completed" ||
+    s === "paid"
+  );
+}
+
 export function fmtDue(due?: string): { text: string; kind: "late" | "soon" | "ok"; label: string } {
   if (!due) return { text: "—", kind: "ok", label: "—" };
   const late = daysLate(due);
   const d = new Date(due + "T12:00:00");
   const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  if (late > 0) return { text: `${late}d late`, kind: "late", label };
+  if (late > 0) return { text: `OVERDUE · ${late}d`, kind: "late", label };
   if (late === 0) return { text: "Due today", kind: "soon", label };
   return { text: `Due ${label}`, kind: "ok", label };
 }
@@ -78,13 +95,26 @@ export function syncLabel(updatedAt?: number, fetching?: boolean): string {
   return `Live · ${Math.floor(s / 60)}m ago`;
 }
 
-export function sortShopTickets<T extends { due_date?: string; due_time?: string; is_rush?: number }>(
-  a: T,
-  b: T,
-) {
-  const lateA = daysLate(a.due_date);
-  const lateB = daysLate(b.due_date);
-  if (lateA > 0 !== lateB > 0) return lateA > 0 ? -1 : 1;
+export function sortShopTickets<
+  T extends {
+    due_date?: string;
+    due_time?: string;
+    is_rush?: number;
+    workflow_state?: string;
+    status?: string;
+  },
+>(a: T, b: T) {
+  const termA = isTerminalStatus(a.workflow_state || a.status);
+  const termB = isTerminalStatus(b.workflow_state || b.status);
+  if (termA !== termB) return termA ? 1 : -1;
+  const lateA = !termA && daysLate(a.due_date) > 0;
+  const lateB = !termB && daysLate(b.due_date) > 0;
+  if (lateA !== lateB) return lateA ? -1 : 1;
+  if (lateA && lateB) {
+    const da = a.due_date || "9999-99-99";
+    const db = b.due_date || "9999-99-99";
+    if (da !== db) return da.localeCompare(db);
+  }
   if (isRush(a) !== isRush(b)) return isRush(a) ? -1 : 1;
   const da = a.due_date || "9999-99-99";
   const db = b.due_date || "9999-99-99";

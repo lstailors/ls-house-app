@@ -1,4 +1,5 @@
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { SectionHeader } from "@ls/design";
 import { api } from "@ls/api-client";
@@ -7,10 +8,11 @@ import { TailorTallyStrip } from "@alts/components/TailorTallyStrip";
 import StatusBadge from "@alts/components/StatusBadge";
 import { STATUS_TONES, toneFor, type StatusTone } from "@alts/lib/statusTone";
 import { useActiveLocation } from "@alts/lib/locationContext";
-import { useAltsMetrics } from "@alts/lib/useAltsMetrics";
 import { useMe } from "@ls/auth";
-import { useKioskMode } from "@alts/lib/kiosk";
-import NotFound from "@alts/pages/NotFound";
+import { formatMoney } from "@alts/lib/money";
+import { useShopLink } from "@alts/offline/status";
+import { NeedsConnection } from "@alts/components/NeedsConnection";
+import { syncLabel } from "@alts/lib/ticketDisplay";
 import "@alts/styles/alts-pos.css";
 
 type FloorReports = {
@@ -50,43 +52,29 @@ type View = "snapshot" | "nyc" | "hou" | "throughput" | "aging" | "qc";
 
 type QcRow = { id: string; qcResult?: string | null; result?: string | null };
 
-const TAB_VIEWS: Array<{ slug: string; view: View; label: string }> = [
-  { slug: "snapshot", view: "snapshot", label: "Snapshot" },
-  { slug: "nyc", view: "nyc", label: "NYC" },
-  { slug: "houston", view: "hou", label: "Houston" },
-  { slug: "throughput", view: "throughput", label: "Throughput" },
-  { slug: "aging", view: "aging", label: "Aging" },
-  { slug: "qc-rates", view: "qc", label: "QC rates" },
+const VIEWS: Array<[View, string]> = [
+  ["snapshot", "Snapshot"],
+  ["nyc", "NYC"],
+  ["hou", "Houston"],
+  ["throughput", "Throughput"],
+  ["aging", "Aging"],
+  ["qc", "QC rates"],
 ];
 
-const SLUG_TO_VIEW: Record<string, View> = {
-  snapshot: "snapshot",
-  nyc: "nyc",
-  houston: "hou",
-  hou: "hou",
-  throughput: "throughput",
-  aging: "aging",
-  "qc-rates": "qc",
-  qc: "qc",
-};
-
-function viewFromSlug(slug?: string): View | null {
-  if (!slug) return "snapshot";
-  return SLUG_TO_VIEW[slug] ?? null;
-}
-
-function reportsHref(slug: string, kiosk: boolean) {
-  const path = slug === "snapshot" ? "/reports" : `/reports/${slug}`;
-  return kiosk ? `${path}?kiosk=1` : path;
-}
-
 function money(n: number) {
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
+  return formatMoney(n);
 }
+
+type QcRates = {
+  passed: number;
+  failed: number;
+  pending: number;
+  passRate: number;
+  passedThisWeek: number;
+  byWeek: Array<{ key: string; pass: number; fail: number; rate: number }>;
+  byGarment: Array<{ key: string; pass: number; fail: number; rate: number }>;
+  bySource: Array<{ key: string; pass: number; fail: number; rate: number }>;
+};
 
 function locCode(raw: string) {
   const u = String(raw).toUpperCase();
@@ -113,16 +101,10 @@ function SnapshotBody({
   data,
   isLoading,
   loc,
-  openHd,
-  deliveriesQueued,
-  openAlts,
 }: {
   data?: FloorReports;
   isLoading: boolean;
   loc: string;
-  openHd?: number;
-  deliveriesQueued?: number;
-  openAlts?: number;
 }) {
   const maxPipe = Math.max(...(data?.pipeline?.map((p) => p.count) ?? [1]), 1);
   const maxTailor = Math.max(...(data?.tailorWorkload?.map((t) => t.count) ?? [1]), 1);
@@ -141,12 +123,12 @@ function SnapshotBody({
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         {[
-          { label: "Open alts", v: openAlts ?? data?.snapshot.openAlts ?? "—" },
+          { label: "Open alts", v: data?.snapshot.openAlts ?? "—" },
           { label: "Alts today", v: data?.snapshot.altsToday ?? "—" },
           { label: "Rev today", v: data ? money(data.snapshot.revenueToday) : "—" },
           { label: "Rev 7d", v: data ? money(data.snapshot.revenueWeek) : "—" },
-          { label: "Open HD", v: openHd ?? data?.snapshot.openHd ?? "—" },
-          { label: "Deliveries", v: deliveriesQueued ?? data?.snapshot.deliveriesQueued ?? "—" },
+          { label: "Open HD", v: data?.snapshot.openHd ?? "—" },
+          { label: "Deliveries", v: data?.snapshot.deliveriesQueued ?? "—" },
         ].map((c) => (
           <div key={c.label} className="glass-panel rounded-xl p-4 border border-brass/15">
             <div className="ui-label mb-1">{c.label}</div>
@@ -291,14 +273,33 @@ function useFloor(loc: string) {
 
 export default function Reports() {
   const { data: me } = useMe();
+  const shop = useShopLink();
   const { activeLocationId } = useActiveLocation();
+  const [params] = useSearchParams();
+  const kiosk = params.get("kiosk") === "1";
+  const rotateSec = Number(params.get("rotate") || 0);
   const rawLoc = activeLocationId || me?.locationId || "";
   const loc = locCode(rawLoc);
-  const { tab } = useParams<{ tab?: string }>();
-  const kiosk = useKioskMode();
-  const view = viewFromSlug(tab);
+  const [view, setView] = useState<View>("snapshot");
+  const [nowTick, setNowTick] = useState(0);
 
-  const metrics = useAltsMetrics();
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick((n) => n + 1), 1_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!rotateSec || rotateSec < 5) return;
+    const id = window.setInterval(() => {
+      setView((cur) => {
+        const i = VIEWS.findIndex(([k]) => k === cur);
+        const next = VIEWS[(i + 1) % VIEWS.length];
+        return next?.[0] ?? "snapshot";
+      });
+    }, rotateSec * 1000);
+    return () => window.clearInterval(id);
+  }, [rotateSec]);
+
   const reportLoc = view === "nyc" ? "NYC" : view === "hou" ? "HOU" : loc;
   const floor = useFloor(reportLoc);
 
@@ -322,49 +323,74 @@ export default function Reports() {
     enabled: view === "qc",
     queryFn: () => api.get<QcRow[]>("/api/qc?tab=waiting"),
   });
+  const qcRates = useQuery({
+    queryKey: ["floor-qc-rates"],
+    enabled: view === "qc",
+    queryFn: () => api.get<QcRates>("/api/qc/rates"),
+    refetchInterval: 60_000,
+  });
 
   const data = floor.data;
   const aging = data?.aging;
   const maxThru = Math.max(...(data?.throughput?.map((d) => d.count) ?? [1]), 1);
-  const passN = metrics.data?.qc.passed ?? qcPass.data?.length ?? 0;
-  const failN = metrics.data?.qc.failed ?? qcFail.data?.length ?? 0;
-  const openN = metrics.data?.qc.open ?? qcOpen.data?.length ?? 0;
-  const waitN = metrics.data?.qc.waiting ?? qcWait.data?.length ?? 0;
+  const passN = qcPass.data?.length ?? 0;
+  const failN = qcFail.data?.length ?? 0;
+  const openN = qcOpen.data?.length ?? 0;
+  const waitN = qcWait.data?.length ?? 0;
   const decided = passN + failN;
-  const passRate = decided ? Math.round((passN / decided) * 100) : 0;
+  const passRate = qcRates.data?.passRate ?? (decided ? Math.round((passN / decided) * 100) : 0);
+  void nowTick;
+  const live = syncLabel(floor.dataUpdatedAt, floor.isFetching);
 
-  if (!view) return <NotFound />;
+  if (shop === "offline" && !data) {
+    return (
+      <div className={cn("alts-root space-y-6 animate-fade-up", kiosk && "p-5 min-h-dvh")}>
+        <NeedsConnection
+          title="Reports need a connection"
+          detail="Live floor reports will be available when you're back online."
+        />
+      </div>
+    );
+  }
 
   return (
-    <div className="alts-root space-y-6 animate-fade-up">
+    <div className={cn("alts-root space-y-6 animate-fade-up", kiosk && "p-5 min-h-dvh")}>
+      {shop === "offline" && (
+        <NeedsConnection
+          title="Reports need a connection"
+          detail="Showing the last snapshot we have on this device."
+        />
+      )}
+      {kiosk && (
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="display text-[28px] leading-none">Floor reports</div>
+            <div className="caps mt-1">Kiosk · landscape tablet</div>
+          </div>
+          <div className={cn("sf-live", floor.isFetching && "is-sync")}>
+            <span className="dot" />
+            {live}
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
-        {TAB_VIEWS.map((t) => (
-          <Link
-            key={t.slug}
-            to={reportsHref(t.slug, kiosk)}
+        {VIEWS.map(([k, lab]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setView(k)}
             className={cn(
               "px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide border",
-              view === t.view ? "bg-brass/20 border-brass text-cream" : "border-brass/25 text-cream-dim",
+              view === k ? "bg-brass/20 border-brass text-cream" : "border-brass/25 text-cream-dim",
             )}
           >
-            {t.label}
-          </Link>
+            {lab}
+          </button>
         ))}
       </div>
 
       {(view === "snapshot" || view === "nyc" || view === "hou") && (
-        <SnapshotBody
-          data={data}
-          isLoading={floor.isLoading}
-          loc={reportLoc}
-          openHd={metrics.data?.hd_tickets_open}
-          openAlts={view === "snapshot" ? metrics.data?.open_alterations : undefined}
-          deliveriesQueued={
-            view === "snapshot" && metrics.data
-              ? metrics.data.deliveries.queued + metrics.data.deliveries.out
-              : undefined
-          }
-        />
+        <SnapshotBody data={data} isLoading={floor.isLoading} loc={reportLoc} />
       )}
 
       {view === "throughput" && (
@@ -490,7 +516,7 @@ export default function Reports() {
                 Pass <span className="text-brass-shimmer">rates</span>
               </>
             }
-            description="Store QC on MTM makes · house COUNTs"
+            description="Store QC on MTM makes · last 200 inspections"
           />
           {qcPass.isError || qcFail.isError ? (
             <div className="glass-panel rounded-2xl p-5 border border-brass/15 text-sm text-cream-dim">
@@ -517,7 +543,10 @@ export default function Reports() {
                   {decided ? `${passRate}%` : "—"}
                 </div>
                 <p className="text-sm text-cream-dim mt-2">
-                  {decided ? `${passN} passed · ${failN} failed` : "No finished inspections yet."}
+                  {decided || qcRates.data
+                    ? `${qcRates.data?.passed ?? passN} passed · ${qcRates.data?.failed ?? failN} failed`
+                    : "No finished inspections yet."}
+                  {qcRates.data ? ` · ${qcRates.data.passedThisWeek} passed this week` : ""}
                 </p>
                 <div className="h-3 rounded-full bg-forest-highlight/50 overflow-hidden mt-4 flex">
                   <div
@@ -530,6 +559,38 @@ export default function Reports() {
                   />
                 </div>
               </div>
+              {(
+                [
+                  ["By week", qcRates.data?.byWeek ?? []],
+                  ["By garment", qcRates.data?.byGarment ?? []],
+                  ["By source (store vs make)", qcRates.data?.bySource ?? []],
+                ] as const
+              ).map(([title, rows]) => (
+                <div key={title} className="glass-panel rounded-2xl p-5 border border-brass/15">
+                  <div className="ui-label mb-3">{title}</div>
+                  <div className="space-y-2">
+                    {rows.map((r) => (
+                      <div key={r.key} className="flex items-center gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm text-cream truncate">{r.key}</div>
+                          <div className="h-1.5 rounded-full bg-forest-highlight/50 overflow-hidden mt-1 flex">
+                            <div
+                              className="h-full"
+                              style={{ width: `${r.rate}%`, background: STATUS_TONES.pickup.bar }}
+                            />
+                          </div>
+                        </div>
+                        <div className="text-sm tabular-nums text-cream-dim shrink-0">
+                          {r.rate}% · {r.pass}/{r.pass + r.fail}
+                        </div>
+                      </div>
+                    ))}
+                    {!rows.length && !qcRates.isLoading && (
+                      <div className="text-sm text-cream-muted">No finished inspections yet.</div>
+                    )}
+                  </div>
+                </div>
+              ))}
             </>
           )}
         </>

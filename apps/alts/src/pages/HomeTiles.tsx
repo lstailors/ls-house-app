@@ -1,18 +1,28 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMe } from "@ls/auth/session";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
-import { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { useErpHealth } from "@alts/components/ErpStatusBanner";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
 import { clientInitials, storeHour } from "@alts/lib/ticketDisplay";
+import { formatCompactMoney } from "@alts/lib/money";
+import { TileSkeleton } from "@alts/components/skeletons";
 import { usePresence } from "@alts/lib/luxuryMotion";
-import { useAltsMetrics } from "@alts/lib/useAltsMetrics";
 import type { StatusTone } from "@alts/lib/statusTone";
+import { useLiveMetrics } from "@alts/lib/useLiveMetrics";
+import { NeedsYouNow } from "@alts/components/live/NeedsYouNow";
+import { TodayRail } from "@alts/components/live/TodayRail";
+import { MoneyStrip } from "@alts/components/live/MoneyStrip";
+import { ActivityTicker } from "@alts/components/live/ActivityTicker";
+import { TickNumber } from "@alts/components/live/TickNumber";
+import { EMPTY_LIVE_HOME } from "@alts/lib/liveDashboard";
+import { useShopLink } from "@alts/offline/status";
+import { NeedsConnection } from "@alts/components/NeedsConnection";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
@@ -90,19 +100,6 @@ function shortName(full?: string | null) {
   if (parts.length <= 1) return parts[0] || "Client";
   if (parts.length === 2) return parts.join(" ");
   return `${parts[0]} ${parts[parts.length - 1]}`;
-}
-
-function formatCompactMoney(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "$0";
-  if (n >= 1_000_000) {
-    const v = n / 1_000_000;
-    return `$${v >= 10 ? Math.round(v) : v.toFixed(1).replace(/\.0$/, "")}M`;
-  }
-  if (n >= 1000) {
-    const v = n / 1000;
-    return `$${v >= 100 ? Math.round(v) : v.toFixed(1).replace(/\.0$/, "")}k`;
-  }
-  return `$${Math.round(n)}`;
 }
 
 /** Render Daily Espresso lines — icon column + action brass wash. */
@@ -415,45 +412,6 @@ function AskRoccoComposer({
   );
 }
 
-type AltsHomeFeed = {
-  location: string;
-  syncedAt: number;
-  strip: {
-    overdue: number;
-    dueToday: number;
-    outForDelivery: number;
-    deliveredToday: number;
-  };
-  counts: {
-    open: number;
-    ready: number;
-    inProgress: number;
-    atHome: number;
-    readyNotTexted: number;
-    pendingBoard: number;
-    openGarments: number;
-    openInvoices: number;
-    openInvoicesAmount: number;
-    oldestUnpaidDays: number | null;
-    lateTransferCount: number;
-    stalledCount: number;
-    doubleBookedSlots: number;
-  };
-  feeds: {
-    lastTicket: { name: string; customerName: string; createdAt: string | null } | null;
-    lastProgress: {
-      workerName: string;
-      garmentLabel: string;
-      completedAt: string;
-      ticket?: string;
-    } | null;
-    lastTouchedCustomer: { name: string; modified: string | null } | null;
-    lateTransferNames: string[];
-    stalledReasons: Record<string, number>;
-    conflictDetails: Array<{ a: string; b: string; tailor: string; at: string }>;
-  };
-};
-
 type LiveTone = "em" | "am" | "ro" | "cd" | null;
 
 type TileDef = {
@@ -503,6 +461,9 @@ export default function HomeTiles() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const erpHealth = useErpHealth();
+  const [params] = useSearchParams();
+  const kiosk = params.get("kiosk") === "1";
+  const live = useLiveMetrics();
   const [espressoOpen, setEspressoOpen] = useState(readEspressoOpenDefault);
   const espressoMotion = usePresence(espressoOpen);
   const [askThread, setAskThread] = useState<AskMsg[]>([]);
@@ -536,22 +497,10 @@ export default function HomeTiles() {
     });
   }, []);
 
-  // Key stays "alts-home-stats" so intake/scanner/pod invalidations still refresh this feed.
-  const home = useQuery({
-    queryKey: ["alts-home-stats"],
-    queryFn: async (): Promise<AltsHomeFeed> => {
-      const res = await api.raw("/api/dashboard/alts-home");
-      const j = await res.json().catch(() => ({} as any));
-      if (!res.ok) throw new Error(j?.error?.message || "Home feed failed");
-      return (j?.data ?? j) as AltsHomeFeed;
-    },
-    staleTime: 30_000,
-    refetchInterval: 60_000,
-    retry: 2,
-  });
-  const erpDown = home.isError || (erpHealth.data ? !erpHealth.data.erp.reachable : false);
-
-  const metrics = useAltsMetrics();
+  const home = live;
+  const shop = useShopLink();
+  const erpDown = live.isError || (erpHealth.data ? !erpHealth.data.erp.reachable : false);
+  const offline = shop === "offline" || live.status === "offline";
 
   type FloorBrief = {
     body: string;
@@ -645,27 +594,17 @@ export default function HomeTiles() {
   const c = feed?.counts;
   const strip = feed?.strip;
   const feeds = feed?.feeds;
-  const m = metrics.data;
-  const taskOpen = m?.tasks.open ?? 0;
-  const taskOverdue = m?.tasks.overdue ?? 0;
-  const qcWaiting = m?.qc.waiting ?? 0;
-  const unpaidCount = m?.invoices.unpaid_count ?? c?.openInvoices ?? 0;
-  const unpaidTotal = m?.invoices.unpaid_total ?? c?.openInvoicesAmount ?? 0;
-  const outForDelivery = m?.deliveries.out ?? strip?.outForDelivery ?? 0;
-  const deliveredToday = m?.deliveries.delivered_today ?? strip?.deliveredToday ?? 0;
   const conflictCount = c?.doubleBookedSlots ?? 0;
   const firstConflict = feeds?.conflictDetails?.[0];
 
-  const syncAge = useMemo(() => {
-    const ts = feed?.syncedAt ?? Date.now();
-    const sec = Math.max(0, Math.round((Date.now() - ts) / 1000));
-    if (sec < 5) return "just now";
-    if (sec < 60) return `${sec}s ago`;
-    return `${Math.floor(sec / 60)}m ago`;
-  }, [feed?.syncedAt, home.dataUpdatedAt]);
+  const syncAge = live.ageLabel;
 
   const initials = clientInitials(me?.name ?? "LS");
   const canQc = me?.role === "super_admin" || me?.role === "tailor";
+  const hour = storeHour();
+  const ambient = kiosk && (hour >= 18 || hour < 9);
+  const board = feed ?? EMPTY_LIVE_HOME;
+  const pulse = live.pulsed;
 
   const lastTicketLive = (() => {
     const t = feeds?.lastTicket;
@@ -793,22 +732,21 @@ export default function HomeTiles() {
   };
 
   const delivLive = (() => {
-    const n = (m?.deliveries.queued ?? 0) + (m?.deliveries.out ?? 0);
-    if (n <= 0 && !(c?.pendingBoard ?? 0)) return { text: "No active runs", tone: "cd" as LiveTone };
-    const pending = n || c?.pendingBoard || 0;
+    const n = c?.pendingBoard ?? 0;
+    if (n <= 0) return { text: "No active runs", tone: "cd" as LiveTone };
     return {
       text: (
         <>
-          <b>{pending}</b> on board
-          {outForDelivery > 0 ? (
+          <b>{n}</b> on board
+          {(strip?.outForDelivery ?? 0) > 0 ? (
             <>
               {" "}
-              · <b>{outForDelivery}</b> out
+              · <b>{strip!.outForDelivery}</b> out
             </>
           ) : null}
         </>
       ),
-      tone: outForDelivery > 0 ? ("am" as LiveTone) : ("em" as LiveTone),
+      tone: (strip?.outForDelivery ?? 0) > 0 ? ("am" as LiveTone) : ("em" as LiveTone),
     };
   })();
 
@@ -828,9 +766,9 @@ export default function HomeTiles() {
   })();
 
   const invLive = (() => {
-    const n = unpaidCount;
+    const n = c?.openInvoices ?? 0;
     const oldest = c?.oldestUnpaidDays;
-    if (n <= 0) return { text: "All clear", tone: "cd" as LiveTone };
+    if (n <= 0) return { text: "All clear", tone: "cd" as LiveTone, href: "/invoices" };
     return {
       text: (
         <>
@@ -839,6 +777,9 @@ export default function HomeTiles() {
         </>
       ),
       tone: n > 0 ? ("am" as LiveTone) : ("em" as LiveTone),
+      href: c?.oldestUnpaidInvoiceId
+        ? `/invoices/${encodeURIComponent(c.oldestUnpaidInvoiceId)}`
+        : "/invoices",
     };
   })();
 
@@ -858,7 +799,9 @@ export default function HomeTiles() {
   })();
 
   const moneyBadge =
-    unpaidCount > 0 ? `${unpaidCount} · ${formatCompactMoney(unpaidTotal)}` : null;
+    (c?.openInvoices ?? 0) > 0
+      ? `${c!.openInvoices} · ${formatCompactMoney(c!.openInvoicesAmount)}`
+      : null;
 
   const tiles: TileDef[] = [
     {
@@ -883,7 +826,12 @@ export default function HomeTiles() {
       key: "floor",
       to: "/shop-floor",
       title: "Shop Floor",
-      sub: `${c?.openGarments ?? c?.open ?? 0} pcs · ${c?.ready ?? 0} ready`,
+      sub: feed?.glimpses.floor.tailors.length
+        ? feed.glimpses.floor.tailors
+            .slice(0, 4)
+            .map((t) => `${t.name} ${t.inProgress}${t.stalled ? "!" : ""}`)
+            .join(" · ")
+        : `${c?.openGarments ?? c?.open ?? 0} pcs · ${c?.ready ?? 0} ready`,
       badge: c?.open || null,
       badgeKind: "shop",
       live: shopLive.text,
@@ -915,7 +863,9 @@ export default function HomeTiles() {
       key: "pickup",
       to: "/pickup",
       title: "Pickup",
-      sub: "Hand back · settle",
+      sub: feed?.glimpses.pickup.names.length
+        ? feed.glimpses.pickup.names.map((n) => `${n.name}${n.texted ? " ✓" : ""}`).join(" · ")
+        : "Hand back · settle",
       badge: c?.ready || null,
       badgeKind: "pickup",
       live: pickupLive.text,
@@ -960,7 +910,7 @@ export default function HomeTiles() {
       key: "deliveries",
       to: "/deliveries",
       title: "Deliveries",
-      sub: "Board · route · POD",
+      sub: `Queued ${feed?.glimpses.deliveries.queued ?? 0} · Out ${feed?.glimpses.deliveries.out ?? 0} · ✓ ${feed?.glimpses.deliveries.deliveredToday ?? 0}`,
       badge: c?.pendingBoard || null,
       badgeKind: "shop",
       dim: (c?.pendingBoard ?? 0) === 0,
@@ -991,9 +941,11 @@ export default function HomeTiles() {
     },
     {
       key: "invoices",
-      to: "/invoices",
+      to: c?.oldestUnpaidInvoiceId
+        ? `/invoices/${encodeURIComponent(c.oldestUnpaidInvoiceId)}`
+        : "/invoices",
       title: "Invoices",
-      sub: "Custom + alts AR",
+      sub: `${feed?.glimpses.invoices.unpaid ?? 0} unpaid`,
       badge: moneyBadge,
       badgeKind: "qc",
       live: invLive.text,
@@ -1010,7 +962,11 @@ export default function HomeTiles() {
       key: "appointments",
       to: "/appointments",
       title: "Appointments",
-      sub: conflictCount > 0 ? `${conflictCount} conflict${conflictCount > 1 ? "s" : ""} · 7 days` : "Today · week · house",
+      sub: feed?.glimpses.appointments.next
+        ? `${feed.glimpses.appointments.next.time} · ${feed.glimpses.appointments.next.type} · ${feed.glimpses.appointments.next.client}`
+        : conflictCount > 0
+          ? `${conflictCount} conflict${conflictCount > 1 ? "s" : ""} · 7 days`
+          : "Today · week · house",
       badge: conflictCount > 0 ? conflictCount : null,
       badgeKind: "tasks" as const,
       live: apptLive.text,
@@ -1031,19 +987,22 @@ export default function HomeTiles() {
       key: "tasks",
       to: "/tasks",
       title: "Tasks",
-      sub: taskOverdue > 0 ? `${taskOverdue} overdue` : "House list",
-      badge: taskOpen || null,
+      sub:
+        (feed?.glimpses.tasks.open ?? 0) > 0
+          ? `${feed!.glimpses.tasks.open} open${feed!.glimpses.tasks.trend === "up" ? " ↑" : feed!.glimpses.tasks.trend === "down" ? " ↓" : ""}`
+          : "House list",
+      badge: feed?.glimpses.tasks.open || null,
       badgeKind: "tasks",
       live:
-        taskOpen > 0 ? (
+        (feed?.glimpses.tasks.open ?? 0) > 0 ? (
           <>
-            <b>{taskOpen}</b> open
-            {taskOverdue > 0 ? ` · ${taskOverdue} late` : ""}
+            <b>{feed!.glimpses.tasks.open}</b> open
+            {feed!.glimpses.tasks.trend === "up" ? " ↑" : feed!.glimpses.tasks.trend === "down" ? " ↓" : ""}
           </>
         ) : (
           "All clear"
         ),
-      liveTone: taskOverdue > 0 ? "ro" : taskOpen > 0 ? "em" : "cd",
+      liveTone: (feed?.metrics.tasks.overdue ?? 0) > 0 ? "ro" : (feed?.glimpses.tasks.open ?? 0) > 0 ? "em" : "cd",
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <rect x="8" y="8" width="36" height="36" rx="4" />
@@ -1055,17 +1014,12 @@ export default function HomeTiles() {
       key: "messages",
       to: "/messages",
       title: "Messages",
-      sub: "Texts · calls · voice",
-      badge: m?.messages.all || null,
-      badgeKind: "tasks" as const,
-      live:
-        (m?.messages.all ?? 0) > 0 ? (
-          <>
-            <b>{m!.messages.texts}</b> texts · <b>{m!.messages.calls}</b> calls
-          </>
-        ) : (
-          "Inbox"
-        ),
+      sub: feed?.glimpses.messages.preview
+        ? `${feed.glimpses.messages.sender ?? "Inbox"} · ${feed.glimpses.messages.preview}`
+        : "Texts · calls",
+      live: feed?.glimpses.messages.unread
+        ? `${feed.glimpses.messages.unread} unread`
+        : "Inbox",
       liveTone: "em",
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -1078,33 +1032,21 @@ export default function HomeTiles() {
       key: "qc",
       to: "/qc",
       title: "QC",
-      sub: "MTM · photos · sign",
-      badge: qcWaiting || null,
+      sub:
+        (feed?.glimpses.qc.waiting ?? 0) > 0
+          ? `${feed!.glimpses.qc.waiting} waiting · ${feed!.glimpses.qc.passRateWeek}% week`
+          : `${feed?.glimpses.qc.passRateWeek ?? 100}% pass this week`,
+      badge: feed?.glimpses.qc.waiting || null,
       badgeKind: "qc",
       live:
-        metrics.isError && !m ? (
-          <button
-            type="button"
-            className="underline decoration-brass/50 underline-offset-2"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              void metrics.refetch();
-            }}
-          >
-            Retry counts
-          </button>
-        ) : !m ? (
-          <span
-            className="inline-block h-3 w-[8.5rem] rounded bg-brass/20 animate-pulse"
-            aria-label="Loading QC counts"
-          />
-        ) : (
+        (feed?.glimpses.qc.waiting ?? 0) > 0 ? (
           <>
-            <b>{m.qc.waiting}</b> waiting · <b>{m.qc.open}</b> open
+            <b>{feed!.glimpses.qc.waiting}</b> waiting · {feed!.glimpses.qc.passRateWeek}% week
           </>
+        ) : (
+          `${feed?.glimpses.qc.passRateWeek ?? 100}% pass this week`
         ),
-      liveTone: !m ? "cd" : qcWaiting > 0 ? "am" : "em",
+      liveTone: (feed?.glimpses.qc.waiting ?? 0) > 0 ? "am" : "em",
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="26" cy="26" r="18" />
@@ -1131,8 +1073,7 @@ export default function HomeTiles() {
       to: "/reports",
       title: "Floor Reports",
       sub: "Pipeline · tally · $",
-      live: "Snapshot · NYC · Houston · aging",
-      liveTone: "em",
+      admin: true,
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 44h40" strokeWidth="1.6" />
@@ -1145,20 +1086,26 @@ export default function HomeTiles() {
   ];
 
   return (
-    <div className="alts-root home-040 flex flex-col min-h-dvh overflow-x-hidden px-[14px] sm:px-[22px] pt-[max(10px,env(safe-area-inset-top))] pb-[max(5.5rem,env(safe-area-inset-bottom))] gap-2.5">
+    <div
+      className={cn(
+        "alts-root home-040 flex flex-col min-h-dvh overflow-x-hidden px-[14px] sm:px-[22px] pt-[max(10px,env(safe-area-inset-top))] pb-[max(5.5rem,env(safe-area-inset-bottom))] gap-2.5",
+        kiosk && "is-kiosk",
+        ambient && "is-ambient",
+      )}
+    >
       {/* Header — seal, brand, search, loc, weather, avatar */}
-      <header className="home-040-hd flex items-center gap-3 shrink-0">
+      <header className="home-040-hd flex items-center gap-2 sm:gap-3 shrink-0 min-w-0 flex-wrap">
         <BrandSeal className="shrink-0" size={34} />
         <div className="min-w-0 hidden sm:block shrink-0">
           <div className="display text-[24px] leading-tight">L&S House</div>
           <div className="text-[11px] tracking-[0.16em] uppercase text-[var(--cd)]">Alterations</div>
         </div>
-        <UniversalSearchInline className="mx-0.5 sm:mx-1 flex-1 max-w-[320px]" />
-        <div className="flex-1" />
-        <div className="hidden md:flex items-center rounded-full border border-brass/35 px-3 py-1.5 text-[10.5px] font-bold tracking-[0.1em] text-brass-light shrink-0">
+        {!kiosk && <UniversalSearchInline className="mx-0.5 sm:mx-1 flex-1 min-w-0 max-w-[min(100%,280px)]" />}
+        <div className="flex-1 min-w-0 hidden lg:block" />
+        <div className="hidden xl:flex items-center rounded-full border border-brass/35 px-3 py-1.5 text-[10.5px] font-bold tracking-[0.1em] text-brass-light shrink-0">
           NYC
         </div>
-        <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-[var(--cd)] shrink-0">
+        <div className="hidden xl:flex items-center gap-1.5 text-[11px] text-[var(--cd)] shrink-0 max-w-[140px] truncate">
           {weather.data ? (
             <>
               <span aria-hidden>{weatherEmoji(weather.data.weathercode)}</span>
@@ -1168,6 +1115,7 @@ export default function HomeTiles() {
             "—"
           )}
         </div>
+        {!kiosk && (
         <button
           type="button"
           onClick={() => nav("/settings")}
@@ -1177,6 +1125,7 @@ export default function HomeTiles() {
         >
           {initials}
         </button>
+        )}
       </header>
 
       {/* Status strip — greeting + espresso + counts + live */}
@@ -1208,44 +1157,56 @@ export default function HomeTiles() {
         </button>
 
         <Link
-          to="/shop-floor"
-          className={cn("seg pill", (strip?.overdue ?? 0) > 0 && "rd")}
+          to="/shop-floor?filter=overdue"
+          className={cn("seg pill", (strip?.overdue ?? 0) > 0 && "rd", pulse.overdue && "is-pulse")}
+          data-testid="overdue-chip"
         >
-          <b className="display tabular-nums">{strip?.overdue ?? "—"}</b>
-          <span>overdue</span>
+          <b className="display tabular-nums">
+            {strip?.overdue != null ? <TickNumber value={strip.overdue} /> : "—"}
+          </b>
+          <span>OVERDUE</span>
         </Link>
         <Link to="/deliveries" className="seg pill">
-          <b className="display tabular-nums">{outForDelivery || "—"}</b>
+          <b className="display tabular-nums">{strip?.outForDelivery ?? "—"}</b>
           <span>out for delivery</span>
         </Link>
         <Link to="/deliveries" className="seg pill gr">
-          <b className="display tabular-nums">{deliveredToday || "—"}</b>
+          <b className="display tabular-nums">{strip?.deliveredToday ?? "—"}</b>
           <span>delivered today</span>
         </Link>
         <Link
-          to="/invoices"
-          className={cn("seg pill", unpaidCount > 0 && "am")}
+          to={
+            c?.oldestUnpaidInvoiceId
+              ? `/invoices/${encodeURIComponent(c.oldestUnpaidInvoiceId)}`
+              : "/invoices"
+          }
+          className={cn("seg pill", (c?.openInvoices ?? 0) > 0 && "am")}
         >
           <b className="display tabular-nums">
-            {unpaidCount > 0 || unpaidTotal > 0 ? formatCompactMoney(unpaidTotal) : "—"}
+            {c?.openInvoicesAmount != null ? formatCompactMoney(c.openInvoicesAmount) : "—"}
           </b>
-          <span>{unpaidCount ? `${unpaidCount} unpaid` : "all paid"}</span>
+          <span>{c?.openInvoices ? `${c.openInvoices} unpaid` : "all paid"}</span>
         </Link>
         <button
           type="button"
-          onClick={() => home.refetch()}
-          className="seg refresh border-0 bg-transparent cursor-pointer"
+          onClick={() => void live.refetch()}
+          className={cn("seg refresh border-0 bg-transparent cursor-pointer", `is-${offline ? "offline" : live.status}`)}
+          data-testid="live-chip"
         >
           <span
             className={cn(
               "dot",
-              erpDown && "bg-[var(--am)] shadow-[0_0_8px_rgba(232,168,92,0.7)]",
+              live.status === "stale" && !offline && "is-stale",
+              (live.status === "down" || erpDown) && !offline && "is-down",
+              offline && "is-offline",
             )}
           />
           <span className="leading-tight text-left">
-            {erpDown ? "ERPNext down" : "ERPNext live"}
+            {offline ? "OFFLINE" : live.status === "down" || erpDown ? "LIVE · retry" : "LIVE"}
             <br />
-            <span className="normal-case tracking-normal opacity-80">{home.isFetching ? "…" : syncAge}</span>
+            <span className="normal-case tracking-normal opacity-80">
+              {offline ? "shop cache" : live.status === "down" ? "feed down" : `updated ${syncAge}`}
+            </span>
           </span>
         </button>
       </div>
@@ -1305,8 +1266,22 @@ export default function HomeTiles() {
         </div>
       )}
 
+      {live.isLoading ? (
+        <div className="live-band-skel" aria-busy="true" aria-label="Loading live bands">
+          <div className="h-16 rounded-xl bg-brass/10 border border-brass/10 animate-pulse" />
+          <div className="h-14 rounded-xl bg-brass/10 border border-brass/10 animate-pulse" />
+          <div className="h-16 rounded-xl bg-brass/10 border border-brass/10 animate-pulse" />
+        </div>
+      ) : (
+        <>
+          <NeedsYouNow items={board.exceptions} pulse={pulse.exceptions} />
+          <TodayRail rail={board.todayRail} pulse={pulse.comingIn || pulse.mustLeave || pulse.ready} />
+          <MoneyStrip money={board.money} pulse={pulse.revToday || pulse.ar} />
+        </>
+      )}
+
       {/* Quick actions */}
-      <div className="home-040-qa shrink-0 flex gap-2.5">
+      <div className={cn("home-040-qa shrink-0 flex gap-2.5", kiosk && "hidden")} data-testid="quick-actions">
         <Link to="/dispatch" className="qbtn primary">
           <span aria-hidden>⚡</span> Charge &amp; Dispatch
         </Link>
@@ -1321,7 +1296,7 @@ export default function HomeTiles() {
         </Link>
       </div>
 
-      {(home.isError || erpDown) && (
+      {(home.isError || erpDown) && !kiosk && !offline && (
         <div className="shrink-0">
           <QueryErrorPanel
             title="Could not load the shop board"
@@ -1335,7 +1310,10 @@ export default function HomeTiles() {
       )}
 
       {/* 5×2 tile grid — fills remaining height */}
-      <div className="home-040-grid flex-1 min-h-0">
+      {!kiosk && (home.isLoading ? (
+        <TileSkeleton count={10} />
+      ) : (
+      <div className="home-040-grid flex-1 min-h-0" data-testid="tile-grid">
         {tiles
           .filter((t) => t.key !== "qc" || canQc)
           .map((t) => {
@@ -1344,6 +1322,7 @@ export default function HomeTiles() {
             t.primary && "pri",
             t.admin && "admin",
             t.dim && "dim",
+            (pulse[t.key] || (t.key === "invoices" && pulse.invoices) || (t.key === "qc" && pulse.qc)) && "is-pulse",
           );
 
           const tileBody = (
@@ -1367,7 +1346,17 @@ export default function HomeTiles() {
                 <h2>{t.title}</h2>
                 <div className="sub">{t.sub}</div>
               </div>
-              {t.live != null ? (
+              {t.admin ? (
+                <a
+                  href="https://app.lstailors.com/owner"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="host"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  app.lstailors.com/owner
+                </a>
+              ) : t.live != null ? (
                 <div className={cn("live", t.liveTone === "am" && "am", t.liveTone === "ro" && "ro")}>
                   <LiveDot tone={t.liveTone} />
                   <span className="truncate min-w-0">{t.live}</span>
@@ -1390,6 +1379,15 @@ export default function HomeTiles() {
           );
         })}
       </div>
+      ))}
+      {offline ? (
+        <NeedsConnection
+          title="Activity needs connection"
+          detail="The live ticker will resume when you're back online. Last cached snapshot stays on the tiles."
+        />
+      ) : (
+        <ActivityTicker items={board.activity} />
+      )}
     </div>
   );
 }
