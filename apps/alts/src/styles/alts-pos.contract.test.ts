@@ -56,4 +56,25 @@ describe("iPhone scale contract", () => {
     expect(app).toContain("AppointmentsGlass");
     expect(app).toContain('path="/appointments"');
   });
+
+  test("house pages live on Alts for phone use", () => {
+    expect(app).toContain("TasksGlass");
+    expect(app).toContain('path="/tasks"');
+    expect(app).toContain("MessagesGlass");
+    expect(app).toContain('path="/messages"');
+    expect(app).toContain("HouseFind");
+    expect(app).toContain('path="/house"');
+  });
+
+  test("home never locks to one viewport — iPhone landscape must scroll", () => {
+    expect(css).toContain("height: auto !important");
+    expect(css).toContain("overflow-y: visible !important");
+    expect(css).not.toMatch(/\.home-040-grid\s*\{[^}]*overflow:\s*hidden/s);
+    expect(css).not.toContain("grid-template-rows: repeat(2");
+  });
+
+  test("short-height chrome compress stays off iPhone landscape", () => {
+    expect(css).toContain("@media (min-width: 1200px) and (min-height: 700px) and (max-height: 900px)");
+    expect(css).not.toMatch(/@media \(min-width:\s*900px\) and \(max-height:\s*900px\)/);
+  });
 });

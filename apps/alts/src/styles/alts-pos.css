@@ -12,6 +12,12 @@ body,
   overflow-x: hidden;
 }
 
+html,
+body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 body {
   margin: 0;
   min-height: 100dvh;
@@ -655,14 +661,22 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════
- * SPEC 040 — Alts dashboard one-screen (tablet landscape)
- * Header + strip + QA + 5×2 tiles. No page scroll at ≥900 landscape.
- * Packs to available dvh; short-height media compresses chrome.
+ * SPEC 040 — Alts home (phone, iPad, desk)
+ * Always grows with the tiles and scrolls. Never lock to one
+ * viewport — iPhone landscape is ~850–932px wide and used to
+ * hit the old “desktop” overflow:hidden rule.
  * ═══════════════════════════════════════════════════════════════ */
 .home-040 {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   width: 100%;
   box-sizing: border-box;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 100dvh;
+  overflow-x: hidden !important;
+  overflow-y: visible !important;
 }
 
 .home-040-hd {
@@ -680,13 +694,14 @@ body {
 .home-040-strip {
   display: flex;
   align-items: stretch;
+  flex-wrap: wrap;
   gap: 0;
   border-radius: 16px;
   background: var(--glass);
   border: 1px solid rgba(176, 141, 87, 0.2);
-  overflow: hidden;
+  overflow: visible;
   min-height: 52px;
-  height: 52px;
+  height: auto;
   flex: 0 0 auto;
 }
 
@@ -802,12 +817,13 @@ body {
 
 .home-040-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: none;
+  grid-auto-rows: minmax(128px, auto);
   gap: 8px;
   min-height: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
+  flex: none;
+  overflow: visible;
 }
 
 .home-040-tile {
@@ -822,9 +838,9 @@ body {
   overflow: hidden;
   text-decoration: none;
   color: inherit;
-  min-height: 0 !important;
+  min-height: 128px !important;
   min-width: 0 !important;
-  height: 100%;
+  height: auto;
   transition: transform 0.13s, box-shadow 0.16s, border-color 0.13s, background 0.13s;
 }
 
@@ -1045,16 +1061,8 @@ body {
   max-height: min(36vh, 320px);
 }
 
-/* Phone / narrow: allow scroll, 2-col grid */
-@media (max-width: 899.98px) {
-  .home-040 {
-    height: auto !important;
-    max-height: none !important;
-    min-height: 100dvh;
-    overflow-x: hidden !important;
-    overflow-y: auto !important;
-  }
-
+/* Phone + iPhone landscape + iPad portrait — wrap chrome, 2-up tiles */
+@media (max-width: 1199.98px), (max-height: 699.98px) {
   .home-040-strip {
     flex-wrap: wrap;
     height: auto;
@@ -1098,23 +1106,27 @@ body {
   }
 }
 
-/* Tablet landscape / desk: hard lock one viewport, no scroll */
-@media (min-width: 900px) {
-  .home-040 {
-    height: 100% !important;
-    max-height: 100% !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
-  }
-
+/* Wide desk: 5-across, still scrolls if the tiles don't fit */
+@media (min-width: 1200px) and (min-height: 700px) {
   .home-040-grid {
-    flex: 1 1 auto;
-    min-height: 0;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-auto-rows: minmax(140px, auto);
+    overflow: visible;
+    flex: none;
   }
 }
 
-/* Short landscape (iPad Air/Pro ~744–900 tall with chrome) — compress chrome */
-@media (min-width: 900px) and (max-height: 900px) {
+@media (min-width: 900px) and (max-width: 1199.98px) {
+  .home-040-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: minmax(132px, auto);
+    overflow: visible;
+    flex: none;
+  }
+}
+
+/* Large desk only — never run on iPhone landscape (~850–932 × 390) */
+@media (min-width: 1200px) and (min-height: 700px) and (max-height: 900px) {
   .home-040 {
     gap: 6px;
     padding-top: max(8px, env(safe-area-inset-top)) !important;
@@ -1122,7 +1134,6 @@ body {
   }
 
   .home-040-strip {
-    height: 46px;
     min-height: 46px;
     border-radius: 12px;
   }
@@ -1181,7 +1192,7 @@ body {
 }
 
 /* Very short (browser chrome + menu bar on desktop laptop) */
-@media (min-width: 900px) and (max-height: 760px) {
+@media (min-width: 1200px) and (min-height: 700px) and (max-height: 760px) {
   .home-040 {
     gap: 5px;
     padding-left: 14px !important;
@@ -1189,7 +1200,6 @@ body {
   }
 
   .home-040-strip {
-    height: 42px;
     min-height: 42px;
   }
 

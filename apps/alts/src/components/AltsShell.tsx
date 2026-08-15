@@ -25,7 +25,7 @@ export default function AltsShell() {
 
   if (isHome) {
     return (
-      <div className="h-dvh max-h-dvh overflow-hidden bg-forest-deep text-cream">
+      <div className="min-h-dvh overflow-x-hidden overflow-y-auto bg-forest-deep text-cream">
         <Outlet />
       </div>
     );

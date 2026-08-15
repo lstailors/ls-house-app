@@ -155,7 +155,10 @@ export default function UniversalSearchHost() {
     !pathname.startsWith("/transfers") &&
     !pathname.startsWith("/parked") &&
     !pathname.startsWith("/floor-performance") &&
-    !pathname.startsWith("/appointments");
+    !pathname.startsWith("/appointments") &&
+    !pathname.startsWith("/tasks") &&
+    !pathname.startsWith("/messages") &&
+    !pathname.startsWith("/house");
 
   return (
     <>

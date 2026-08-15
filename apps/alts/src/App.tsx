@@ -23,6 +23,9 @@ import TicketPhotos from "@alts/pages/TicketPhotos";
 import Dispatch from "@alts/pages/Dispatch";
 import QuoteComposer from "@alts/pages/QuoteComposer";
 import AppointmentsGlass from "@alts/pages/AppointmentsGlass";
+import TasksGlass from "@alts/pages/TasksGlass";
+import MessagesGlass from "@alts/pages/MessagesGlass";
+import HouseFind from "@alts/pages/HouseFind";
 import TicketDetail from "@alts/pages/intake/TicketDetail";
 import { startOfflineQueueWatcher } from "@alts/lib/offlineQueue";
 import { toast } from "sonner";
@@ -157,6 +160,30 @@ export default function App() {
                 element={
                   <RoleGuard allow={[...FOH]}>
                     <AppointmentsGlass />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/tasks"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <TasksGlass />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/messages"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <MessagesGlass />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/house"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <HouseFind />
                   </RoleGuard>
                 }
               />

@@ -509,6 +509,21 @@ export default function HomeTiles() {
   const [askInput, setAskInput] = useState("");
   const [askActiveChip, setAskActiveChip] = useState<string | null>(null);
 
+  // iPhone Safari keeps the old layout box until a tick after rotate.
+  useEffect(() => {
+    const bump = () => {
+      requestAnimationFrame(() => {
+        window.scrollTo(0, window.scrollY);
+      });
+    };
+    window.addEventListener("orientationchange", bump);
+    window.visualViewport?.addEventListener("resize", bump);
+    return () => {
+      window.removeEventListener("orientationchange", bump);
+      window.visualViewport?.removeEventListener("resize", bump);
+    };
+  }, []);
+
   const toggleEspresso = useCallback(() => {
     setEspressoOpen((prev) => {
       const next = !prev;
@@ -535,6 +550,14 @@ export default function HomeTiles() {
     retry: 2,
   });
   const erpDown = home.isError || (erpHealth.data ? !erpHealth.data.erp.reachable : false);
+
+  const taskCount = useQuery({
+    queryKey: ["alts-tasks-count"],
+    queryFn: () => api.get<{ count: number; overdue: number }>("/api/tasks/open-count"),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
 
   type FloorBrief = {
     body: string;
@@ -1010,6 +1033,58 @@ export default function HomeTiles() {
       ),
     },
     {
+      key: "tasks",
+      to: "/tasks",
+      title: "Tasks",
+      sub: (taskCount.data?.overdue ?? 0) > 0 ? `${taskCount.data!.overdue} overdue` : "House list",
+      badge: taskCount.data?.count || null,
+      badgeKind: (taskCount.data?.overdue ?? 0) > 0 ? "alert" : "neutral",
+      live:
+        (taskCount.data?.count ?? 0) > 0 ? (
+          <>
+            <b>{taskCount.data!.count}</b> open
+            {(taskCount.data?.overdue ?? 0) > 0 ? ` · ${taskCount.data!.overdue} late` : ""}
+          </>
+        ) : (
+          "All clear"
+        ),
+      liveTone: (taskCount.data?.overdue ?? 0) > 0 ? "ro" : (taskCount.data?.count ?? 0) > 0 ? "em" : "cd",
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="8" y="8" width="36" height="36" rx="4" />
+          <path d="M16 26l7 7 13-14" strokeWidth="2" />
+        </svg>
+      ),
+    },
+    {
+      key: "messages",
+      to: "/messages",
+      title: "Messages",
+      sub: "Texts · calls",
+      live: "Inbox",
+      liveTone: "em",
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="6" y="12" width="40" height="28" rx="4" />
+          <path d="M6 16l20 14L46 16" />
+        </svg>
+      ),
+    },
+    {
+      key: "house",
+      to: "/house",
+      title: "House orders",
+      sub: "Custom · sales orders",
+      live: "Find a make",
+      liveTone: "em",
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M8 22L26 8l18 14v20a3 3 0 0 1-3 3H11a3 3 0 0 1-3-3z" />
+          <path d="M20 45V30h12v15" />
+        </svg>
+      ),
+    },
+    {
       key: "reports",
       to: "/reports",
       title: "Floor Reports",
@@ -1027,7 +1102,7 @@ export default function HomeTiles() {
   ];
 
   return (
-    <div className="alts-root home-040 flex flex-col h-full max-h-full min-h-0 overflow-hidden px-[14px] sm:px-[22px] pt-[max(10px,env(safe-area-inset-top))] pb-[max(10px,env(safe-area-inset-bottom))] gap-2.5">
+    <div className="alts-root home-040 flex flex-col min-h-dvh overflow-x-hidden px-[14px] sm:px-[22px] pt-[max(10px,env(safe-area-inset-top))] pb-[max(5.5rem,env(safe-area-inset-bottom))] gap-2.5">
       {/* Header — seal, brand, search, loc, weather, avatar */}
       <header className="home-040-hd flex items-center gap-3 shrink-0">
         <BrandSeal className="shrink-0" size={34} />
@@ -1102,6 +1177,15 @@ export default function HomeTiles() {
         <Link to="/deliveries" className="seg pill gr">
           <b className="display tabular-nums">{strip?.deliveredToday ?? "—"}</b>
           <span>delivered today</span>
+        </Link>
+        <Link
+          to="/invoices"
+          className={cn("seg pill", (c?.openInvoices ?? 0) > 0 && "am")}
+        >
+          <b className="display tabular-nums">
+            {c?.openInvoicesAmount != null ? formatCompactMoney(c.openInvoicesAmount) : "—"}
+          </b>
+          <span>{c?.openInvoices ? `${c.openInvoices} unpaid` : "all paid"}</span>
         </Link>
         <button
           type="button"
@@ -1187,6 +1271,9 @@ export default function HomeTiles() {
         </Link>
         <Link to="/orders/alterations" className="qbtn">
           <span aria-hidden>▤</span> Orders
+        </Link>
+        <Link to="/house" className="qbtn">
+          <span aria-hidden>⌂</span> House
         </Link>
       </div>
 
