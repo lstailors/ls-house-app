@@ -21,20 +21,22 @@ import { formatDateTime } from "@ls/design/format";
 import { cn } from "@ls/design/utils";
 import { api } from "@ls/api-client";
 import type { Delivery } from "@ls/types";
+import StatusBadge from "@alts/components/StatusBadge";
+import type { StatusTone } from "@alts/lib/statusTone";
 
 const FILTERS = [
   { value: "all", label: "All" },
   { value: "scheduled", label: "Queued" },
   { value: "out_for_delivery", label: "Out" },
   { value: "delivered", label: "Delivered" },
-  { value: "failed", label: "Failed" },
+  { value: "failed", label: "On hold" },
 ];
 
 const BOARD_COLS = [
-  { key: "scheduled", label: "Queued", statuses: ["scheduled"] as const },
-  { key: "out_for_delivery", label: "Out", statuses: ["out_for_delivery"] as const },
-  { key: "delivered", label: "Delivered", statuses: ["delivered"] as const },
-  { key: "failed", label: "Failed", statuses: ["failed", "cancelled"] as const },
+  { key: "scheduled", label: "Queued", statuses: ["scheduled"] as const, tone: "shop" as StatusTone },
+  { key: "out_for_delivery", label: "Out", statuses: ["out_for_delivery"] as const, tone: "qc" as StatusTone },
+  { key: "delivered", label: "Delivered", statuses: ["delivered"] as const, tone: "pickup" as StatusTone },
+  { key: "failed", label: "On hold", statuses: ["failed", "cancelled"] as const, tone: "tasks" as StatusTone },
 ] as const;
 
 export default function Deliveries() {
@@ -186,7 +188,7 @@ export default function Deliveries() {
           active={filter === "delivered"}
         />
         <KpiCard
-          label="Failed"
+          label="On hold"
           value={counts.failed}
           icon={<Package className="h-4 w-4" />}
           accent="amber"
@@ -371,12 +373,16 @@ export default function Deliveries() {
           {boardColumns.map((col) => (
             <div
               key={col.key}
-              className="min-w-[260px] w-[min(100%,300px)] sm:min-w-0 sm:flex-1 snap-start flex flex-col rounded-2xl border border-brass/15 bg-forest-dark/30 max-h-[70vh]"
+              className={cn(
+                "min-w-[260px] w-[min(100%,300px)] sm:min-w-0 sm:flex-1 snap-start flex flex-col rounded-2xl border max-h-[70vh]",
+                col.tone === "pickup" && "border-[rgba(79,191,142,0.35)] bg-[rgba(79,191,142,0.06)]",
+                col.tone === "qc" && "border-[rgba(232,168,92,0.4)] bg-[rgba(232,168,92,0.07)]",
+                col.tone === "tasks" && "border-[rgba(217,123,108,0.4)] bg-[rgba(217,123,108,0.07)]",
+                col.tone === "shop" && "border-brass/25 bg-black/20",
+              )}
             >
               <div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-3 py-2.5 border-b border-brass/10 bg-forest-deep/90 backdrop-blur rounded-t-2xl">
-                <span className="text-[11px] uppercase tracking-[0.16em] text-cream-dim font-semibold">
-                  {col.label}
-                </span>
+                <StatusBadge status={col.label} tone={col.tone} />
                 <span className="text-[11px] font-mono text-brass-light/80 tabular-nums">
                   {col.items.length}
                 </span>
@@ -421,6 +427,11 @@ export default function Deliveries() {
                             </div>
                           </div>
                           <div className="flex flex-col items-end gap-1 shrink-0">
+                            <StatusBadge
+                              status={isOverdue ? "Overdue" : d.status}
+                              tone={isOverdue ? "tasks" : col.tone}
+                              size="sm"
+                            />
                             {methodLabel ? (
                               <span className="text-[9px] uppercase tracking-wider text-brass-light/80">
                                 {methodLabel}

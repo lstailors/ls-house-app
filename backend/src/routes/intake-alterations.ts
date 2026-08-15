@@ -1198,7 +1198,7 @@ intakeAlterationsRouter.get('/sales-orders/search', async (c) => {
   if (!user) return c.json({ error: 'Unauthorized' }, 401);
 
   const q = (c.req.query('q') || '').trim();
-  const limit = Math.min(Number(c.req.query('limit') || 12), 30);
+  const limit = Math.min(Number(c.req.query('limit') || 40), 80);
 
   try {
     const fields = [

@@ -9,6 +9,7 @@ import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
+import StatusBadge from "@alts/components/StatusBadge";
 import { clientInitials } from "@alts/lib/ticketDisplay";
 import "@alts/styles/alts-pos.css";
 
@@ -70,6 +71,7 @@ export default function QcInspection() {
   const cameraRef = useRef<HTMLInputElement>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
   const sigRef = useRef<SignatureCanvas>(null);
+  const failSigRef = useRef<SignatureCanvas>(null);
   const [notes, setNotes] = useState("");
   const [failReason, setFailReason] = useState("");
   const [checks, setChecks] = useState<QcCheck[]>([]);
@@ -159,8 +161,8 @@ export default function QcInspection() {
   });
 
   const signPad = useMutation({
-    mutationFn: async () => {
-      const pad = sigRef.current;
+    mutationFn: async (which: "main" | "fail" = "main") => {
+      const pad = which === "fail" ? failSigRef.current : sigRef.current;
       if (!pad || pad.isEmpty()) throw new Error("Sign the pad first");
       const signatureDataUrl = pad.getCanvas().toDataURL("image/png");
       return api.post(`/api/qc/${encodeURIComponent(inspectionId!)}/sign`, { signatureDataUrl });
@@ -223,24 +225,46 @@ export default function QcInspection() {
 
   const finish = (result: "Pass" | "Fail") => {
     if (!inspectionId) return;
-    if (result === "Fail" && !String(notes || failReason).trim()) {
-      toast.error("Notes are required to fail");
+    const failedLabels = checks.filter((c) => c.pass === false).map((c) => c.label).join("; ");
+    const reason = String(failReason || notes || failedLabels).trim();
+    if (result === "Fail" && !reason) {
+      toast.error("Say what failed");
       return;
     }
-    save.mutate(
-      {
-        checks,
-        notes: notes || failReason,
-        qc_result: result,
-      },
-      {
-        onSuccess: () => {
-          toast.success(result === "Pass" ? "Passed" : "Failed");
-          setDecide(null);
-          qc.invalidateQueries({ queryKey: ["alts-qc-detail", id] });
+    const run = () =>
+      save.mutate(
+        {
+          checks,
+          notes: result === "Fail" ? reason : notes,
+          failReason: result === "Fail" ? reason : failReason,
+          qc_result: result,
+          result,
         },
-      },
-    );
+        {
+          onSuccess: () => {
+            toast.success(result === "Pass" ? "Passed" : "Sent to Alterations");
+            setDecide(null);
+            qc.invalidateQueries({ queryKey: ["alts-qc-detail", id] });
+            qc.invalidateQueries({ queryKey: ["alts-qc"] });
+          },
+        },
+      );
+
+    if (result === "Fail" && !data?.signedAt && !data?.signatureUrl) {
+      const pad = failSigRef.current || sigRef.current;
+      if (!pad || pad.isEmpty()) {
+        toast.error("Sign the pad, then send");
+        return;
+      }
+      signPad.mutate("fail", {
+        onSuccess: () => run(),
+        onError: () => {
+          signPad.mutate("main", { onSuccess: () => run() });
+        },
+      });
+      return;
+    }
+    run();
   };
 
   const scanUrl =
@@ -277,10 +301,13 @@ export default function QcInspection() {
         <div className="min-w-0 flex-1">
           <div className="display text-[26px] leading-none truncate">{data?.customerName || "Quality Control"}</div>
           <div className="caps mt-1 truncate">
-            {[data?.mtmproOrder || id, data?.salesOrder, data?.orderStatus || data?.result]
-              .filter(Boolean)
-              .join(" · ")}
+            {[data?.mtmproOrder || id, data?.salesOrder].filter(Boolean).join(" · ")}
           </div>
+          {(data?.result || data?.orderStatus) && (
+            <div className="mt-1">
+              <StatusBadge status={String(data?.result || data?.orderStatus)} />
+            </div>
+          )}
         </div>
         <button
           type="button"
@@ -332,7 +359,7 @@ export default function QcInspection() {
           </div>
           <div className="grid grid-cols-2 gap-2 mt-4">
             <button type="button" onClick={() => void loadPdf()} className="btn-brass h-12 text-[11px]">
-              Order PDF
+              Open PDF
             </button>
             {data?.links?.customer && (
               <Link
@@ -536,7 +563,7 @@ export default function QcInspection() {
                       <button
                         type="button"
                         disabled={signPad.isPending}
-                        onClick={() => signPad.mutate()}
+                        onClick={() => signPad.mutate("main")}
                         className="btn-brass h-12 text-[11px]"
                       >
                         Save signature
@@ -647,7 +674,7 @@ export default function QcInspection() {
             style={{ background: "linear-gradient(180deg,#152A1E,#0D1A10)" }}
           >
             <h2 className="display text-[32px] leading-none">Fail</h2>
-            <p className="text-sm text-cream-dim mt-2">Sends the MTM order to Alterations. It comes back through QC.</p>
+            <p className="text-sm text-cream-dim mt-2">Sends the MTM order to Alterations. Sign, then send — the piece comes back through QC.</p>
             <label className="block mt-4">
               <span className="caps mb-1.5 block">What failed</span>
               <textarea
@@ -658,14 +685,28 @@ export default function QcInspection() {
                 className="w-full rounded-xl bg-black/35 border border-brass/25 px-3.5 py-3 text-[14.5px] text-cream outline-none focus:border-brass"
               />
             </label>
+            {!data?.signedAt && !data?.signatureUrl ? (
+              <div className="mt-4 rounded-xl border border-brass/25 bg-[#F6F1E4] overflow-hidden">
+                <SignatureCanvas
+                  ref={failSigRef}
+                  penColor="#1A1A1A"
+                  canvasProps={{ className: "w-full h-36" }}
+                />
+                <p className="px-3 py-2 text-[11px] font-bold uppercase tracking-widest text-forest-deep/80">
+                  Sign here, then send — you do not need a second save
+                </p>
+              </div>
+            ) : (
+              <div className="mt-3 text-[12px] font-bold uppercase tracking-widest text-signal-emerald">Signed</div>
+            )}
             <div className="flex flex-col gap-2 mt-5">
               <button
                 type="button"
-                disabled={save.isPending}
+                disabled={save.isPending || signPad.isPending}
                 onClick={() => finish("Fail")}
                 className="h-14 rounded-xl border border-signal-rose/50 text-[12px] font-bold uppercase tracking-widest text-signal-rose"
               >
-                Send to Alterations
+                {save.isPending || signPad.isPending ? "Sending…" : "Send to Alterations"}
               </button>
               <button type="button" onClick={() => setDecide(null)} className="btn-ghost h-12 text-xs">
                 Back

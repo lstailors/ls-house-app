@@ -724,6 +724,7 @@ ownerDashboardRouter.get("/floor-reports", async (c) => {
       assigned_tailor: string;
       customer_name: string;
       ticket_date: string;
+      due_date: string;
       payment_status: string;
     }>("Alteration Ticket", {
       filters: altFilters,
@@ -735,6 +736,7 @@ ownerDashboardRouter.get("/floor-reports", async (c) => {
         "assigned_tailor",
         "customer_name",
         "ticket_date",
+        "due_date",
         "payment_status",
       ],
       limit: 2000,
@@ -824,6 +826,41 @@ ownerDashboardRouter.get("/floor-reports", async (c) => {
   const revWeek = siWeek.reduce((s, r) => s + Number(r.grand_total ?? 0), 0);
   const altsToday = alts.filter((t) => t.ticket_date === today).length;
 
+  const weekEnd = addDaysISO(today, 7);
+  const openStages = new Set(["Received", "In Progress", "Ready"]);
+  const aging = { overdue: 0, dueToday: 0, dueWeek: 0, later: 0 };
+  const overdueTickets: Array<{
+    name: string;
+    customer: string;
+    due: string;
+    stage: string;
+  }> = [];
+  const throughputDays = new Map<string, number>();
+  for (const t of alts) {
+    if (t.ticket_date && t.ticket_date >= weekStart && t.ticket_date <= today) {
+      throughputDays.set(t.ticket_date, (throughputDays.get(t.ticket_date) ?? 0) + 1);
+    }
+    if (!openStages.has(t.workflow_state || "")) continue;
+    const due = String(t.due_date || "").slice(0, 10);
+    if (!due) {
+      aging.later += 1;
+      continue;
+    }
+    if (due < today) {
+      aging.overdue += 1;
+      if (overdueTickets.length < 40) {
+        overdueTickets.push({
+          name: t.name,
+          customer: t.customer_name,
+          due,
+          stage: t.workflow_state,
+        });
+      }
+    } else if (due === today) aging.dueToday += 1;
+    else if (due <= weekEnd) aging.dueWeek += 1;
+    else aging.later += 1;
+  }
+
   const activity = alts
     .filter((t) => t.ticket_date >= weekStart)
     .slice(0, 25)
@@ -864,6 +901,11 @@ ownerDashboardRouter.get("/floor-reports", async (c) => {
       })),
       deliveryStatus: del,
       recentActivity: activity,
+      aging,
+      overdueTickets,
+      throughput: [...throughputDays.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([date, count]) => ({ date, count })),
     },
   });
 });

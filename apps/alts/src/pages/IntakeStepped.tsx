@@ -2149,7 +2149,8 @@ export default function IntakeStepped() {
 
         {/* ── Schedule (SPEC 058) — last step before write ── */}
         {step === 3 && !confirmResult && (
-          <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto">
+          <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
+            <div className="shrink-0 max-h-[34vh] overflow-y-auto">
             <DeliveryBlock
               value={delivery}
               onChange={setDelivery}
@@ -2157,6 +2158,8 @@ export default function IntakeStepped() {
               freeCustom={billing === "on_order"}
               canOverrideFee={me?.role === "super_admin" || me?.role === "store_manager"}
             />
+            </div>
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             <PromiseSchedule
               origin={origin}
               days={scheduleLoad.data?.days ?? []}
@@ -2211,6 +2214,7 @@ export default function IntakeStepped() {
                 create.mutate();
               }}
             />
+            </div>
           </div>
         )}
 

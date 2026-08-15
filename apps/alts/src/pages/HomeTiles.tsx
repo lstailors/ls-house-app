@@ -11,6 +11,7 @@ import { BrandSeal } from "@alts/components/BrandSeal";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
 import { clientInitials, storeHour } from "@alts/lib/ticketDisplay";
 import { usePresence } from "@alts/lib/luxuryMotion";
+import type { StatusTone } from "@alts/lib/statusTone";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
@@ -464,7 +465,7 @@ type TileDef = {
   admin?: boolean;
   dim?: boolean;
   badge?: React.ReactNode;
-  badgeKind?: "warn" | "alert" | "neutral" | "money";
+  badgeKind?: StatusTone | "money";
   live?: React.ReactNode;
   liveTone?: LiveTone;
   icon: React.ReactNode;
@@ -891,7 +892,7 @@ export default function HomeTiles() {
       title: "Shop Floor",
       sub: `${c?.openGarments ?? c?.open ?? 0} pcs · ${c?.ready ?? 0} ready`,
       badge: c?.open || null,
-      badgeKind: (strip?.overdue ?? 0) > 0 ? "alert" : "warn",
+      badgeKind: "shop",
       live: shopLive.text,
       liveTone: shopLive.tone,
       icon: (
@@ -904,9 +905,9 @@ export default function HomeTiles() {
     },
     {
       key: "progress",
-      to: "/scanner?mode=progress",
+      to: "/progress",
       title: "Mark Progress",
-      sub: "Scan · who · time chip",
+      sub: "Board · scan · notes",
       live: progressLive.text,
       liveTone: progressLive.tone,
       icon: (
@@ -923,7 +924,7 @@ export default function HomeTiles() {
       title: "Pickup",
       sub: "Hand back · settle",
       badge: c?.ready || null,
-      badgeKind: "warn",
+      badgeKind: "pickup",
       live: pickupLive.text,
       liveTone: pickupLive.tone,
       icon: (
@@ -968,7 +969,7 @@ export default function HomeTiles() {
       title: "Deliveries",
       sub: "Board · route · POD",
       badge: c?.pendingBoard || null,
-      badgeKind: "neutral",
+      badgeKind: "shop",
       dim: (c?.pendingBoard ?? 0) === 0,
       live: delivLive.text,
       liveTone: delivLive.tone,
@@ -1001,7 +1002,7 @@ export default function HomeTiles() {
       title: "Invoices",
       sub: "Custom + alts AR",
       badge: moneyBadge,
-      badgeKind: "money",
+      badgeKind: "qc",
       live: invLive.text,
       liveTone: invLive.tone,
       icon: (
@@ -1018,7 +1019,7 @@ export default function HomeTiles() {
       title: "Appointments",
       sub: conflictCount > 0 ? `${conflictCount} conflict${conflictCount > 1 ? "s" : ""} · 7 days` : "Today · week · house",
       badge: conflictCount > 0 ? conflictCount : null,
-      badgeKind: "alert" as const,
+      badgeKind: "tasks" as const,
       live: apptLive.text,
       liveTone: apptLive.tone,
       icon: (
@@ -1039,7 +1040,7 @@ export default function HomeTiles() {
       title: "Tasks",
       sub: (taskCount.data?.overdue ?? 0) > 0 ? `${taskCount.data!.overdue} overdue` : "House list",
       badge: taskCount.data?.count || null,
-      badgeKind: (taskCount.data?.overdue ?? 0) > 0 ? "alert" : "neutral",
+      badgeKind: "tasks",
       live:
         (taskCount.data?.count ?? 0) > 0 ? (
           <>
@@ -1077,7 +1078,7 @@ export default function HomeTiles() {
       title: "QC",
       sub: "MTM · photos · sign",
       badge: qcCount.data?.waiting || null,
-      badgeKind: (qcCount.data?.waiting ?? 0) > 0 ? "warn" : "neutral",
+      badgeKind: "qc",
       live:
         (qcCount.data?.waiting ?? 0) > 0 ? (
           <>
@@ -1099,7 +1100,7 @@ export default function HomeTiles() {
       key: "house",
       to: "/house",
       title: "House orders",
-      sub: "Custom · sales orders",
+      sub: "RTW · alts · MTM Pro",
       live: "Find a make",
       liveTone: "em",
       icon: (
@@ -1132,8 +1133,8 @@ export default function HomeTiles() {
       <header className="home-040-hd flex items-center gap-3 shrink-0">
         <BrandSeal className="shrink-0" size={34} />
         <div className="min-w-0 hidden sm:block shrink-0">
-          <div className="display text-[19px] leading-tight">L&S House</div>
-          <div className="text-[9px] tracking-[0.16em] uppercase text-[var(--cd)]">Alterations</div>
+          <div className="display text-[24px] leading-tight">L&S House</div>
+          <div className="text-[11px] tracking-[0.16em] uppercase text-[var(--cd)]">Alterations</div>
         </div>
         <UniversalSearchInline className="mx-0.5 sm:mx-1 flex-1 max-w-[320px]" />
         <div className="flex-1" />
@@ -1165,7 +1166,7 @@ export default function HomeTiles() {
       <div className="home-040-strip shrink-0">
         <div className="seg greet grow min-w-0">
           <div className="min-w-0">
-            <b className="display block text-[18px] leading-tight truncate">
+            <b className="display block text-[22px] leading-tight truncate">
               {timeGreeting()}, {greetingName(me?.name)}
             </b>
             <i className="block text-[10px] text-[var(--cd)] not-italic truncate">{storeHoursLine()}</i>
@@ -1334,8 +1335,10 @@ export default function HomeTiles() {
                 <span
                   className={cn(
                     "home-040-badge",
-                    t.badgeKind === "alert" && "al",
-                    t.badgeKind === "warn" && "wn",
+                    t.badgeKind === "pickup" && "st-pickup",
+                    t.badgeKind === "qc" && "st-qc",
+                    t.badgeKind === "tasks" && "st-tasks",
+                    t.badgeKind === "shop" && "st-shop",
                     t.badgeKind === "money" && "money",
                   )}
                 >

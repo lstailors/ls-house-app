@@ -1,10 +1,15 @@
+import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { SectionHeader } from "@ls/design";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { TailorTallyStrip } from "@alts/components/TailorTallyStrip";
+import StatusBadge from "@alts/components/StatusBadge";
+import { STATUS_TONES, toneFor, type StatusTone } from "@alts/lib/statusTone";
 import { useActiveLocation } from "@alts/lib/locationContext";
 import { useMe } from "@ls/auth";
+import "@alts/styles/alts-pos.css";
 
 type FloorReports = {
   location: string;
@@ -34,21 +39,23 @@ type FloorReports = {
     date: string;
     payment: string;
   }>;
+  aging?: { overdue: number; dueToday: number; dueWeek: number; later: number };
+  overdueTickets?: Array<{ name: string; customer: string; due: string; stage: string }>;
+  throughput?: Array<{ date: string; count: number }>;
 };
 
-const PIPE_COLORS: Record<string, string> = {
-  Received: "#60a5fa",
-  "In Progress": "#f59e0b",
-  Ready: "#34d399",
-  "Picked Up": "#8A8474",
-};
+type View = "snapshot" | "nyc" | "hou" | "throughput" | "aging" | "qc";
 
-const PRI_COLORS: Record<string, string> = {
-  Urgent: "#f43f5e",
-  High: "#f59e0b",
-  Medium: "#B08D57",
-  Low: "#8A8474",
-};
+type QcRow = { id: string; qcResult?: string | null; result?: string | null };
+
+const VIEWS: Array<[View, string]> = [
+  ["snapshot", "Snapshot"],
+  ["nyc", "NYC"],
+  ["hou", "Houston"],
+  ["throughput", "Throughput"],
+  ["aging", "Aging"],
+  ["qc", "QC rates"],
+];
 
 function money(n: number) {
   return n.toLocaleString("en-US", {
@@ -58,35 +65,41 @@ function money(n: number) {
   });
 }
 
-export default function Reports() {
-  const { data: me } = useMe();
-  const { activeLocationId } = useActiveLocation();
-  const rawLoc = activeLocationId || me?.locationId || "";
-  const loc =
-    String(rawLoc).toUpperCase() === "HOU" ||
-    String(rawLoc).toUpperCase() === "HOUSTON" ||
-    String(rawLoc).toUpperCase() === "TX"
-      ? "HOU"
-      : String(rawLoc).toUpperCase() === "NYC" ||
-          String(rawLoc).toUpperCase() === "NY" ||
-          String(rawLoc).toUpperCase() === "NEW YORK"
-        ? "NYC"
-        : String(rawLoc).toUpperCase() || "";
+function locCode(raw: string) {
+  const u = String(raw).toUpperCase();
+  if (u === "HOU" || u === "HOUSTON" || u === "TX") return "HOU";
+  if (u === "NYC" || u === "NY" || u === "NEW YORK") return "NYC";
+  return u || "";
+}
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["floor-reports", loc],
-    queryFn: () =>
-      api.get<FloorReports>(
-        `/api/dashboard/floor-reports${loc ? `?location=${encodeURIComponent(loc)}` : ""}`,
-      ),
-    refetchInterval: 60_000,
-  });
+function stageTone(stage: string): StatusTone {
+  if (/ready|picked/i.test(stage)) return "pickup";
+  if (/progress/i.test(stage)) return "shop";
+  if (/received/i.test(stage)) return "shop";
+  return toneFor(stage);
+}
 
+function priorityTone(p: string): StatusTone {
+  if (/urgent/i.test(p)) return "tasks";
+  if (/high/i.test(p)) return "qc";
+  if (/medium/i.test(p)) return "shop";
+  return "neutral";
+}
+
+function SnapshotBody({
+  data,
+  isLoading,
+  loc,
+}: {
+  data?: FloorReports;
+  isLoading: boolean;
+  loc: string;
+}) {
   const maxPipe = Math.max(...(data?.pipeline?.map((p) => p.count) ?? [1]), 1);
   const maxTailor = Math.max(...(data?.tailorWorkload?.map((t) => t.count) ?? [1]), 1);
 
   return (
-    <div className="space-y-6 animate-fade-up">
+    <>
       <SectionHeader
         eyebrow="Floor · Reports"
         title={
@@ -97,7 +110,6 @@ export default function Reports() {
         description={`${data?.location || loc || "ALL"} · refreshes every 60s · landscape tablet`}
       />
 
-      {/* Today's snapshot */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         {[
           { label: "Open alts", v: data?.snapshot.openAlts ?? "—" },
@@ -114,28 +126,27 @@ export default function Reports() {
         ))}
       </div>
 
-      {/* Tailor tally reuse */}
       <TailorTallyStrip />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Pipeline */}
         <div className="glass-panel rounded-2xl p-5 border border-brass/15">
           <div className="ui-label mb-4">Alteration Pipeline</div>
           <div className="space-y-3">
             {(data?.pipeline ?? []).map((p) => {
               const pct = Math.round((p.count / maxPipe) * 100);
+              const tone = stageTone(p.stage);
               return (
                 <div key={p.stage}>
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-cream">{p.stage}</span>
-                    <span className="font-semibold" style={{ color: PIPE_COLORS[p.stage] }}>
+                    <span className="font-semibold" style={{ color: STATUS_TONES[tone].fg }}>
                       {p.count}
                     </span>
                   </div>
                   <div className="h-2 rounded-full bg-forest-highlight/50 overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
-                      style={{ width: `${pct}%`, background: PIPE_COLORS[p.stage] ?? "#B08D57" }}
+                      style={{ width: `${pct}%`, background: STATUS_TONES[tone].bar }}
                     />
                   </div>
                 </div>
@@ -147,25 +158,25 @@ export default function Reports() {
           </div>
         </div>
 
-        {/* Tailor workload open tickets */}
         <div className="glass-panel rounded-2xl p-5 border border-brass/15">
           <div className="ui-label mb-4">Open work by tailor</div>
           <div className="space-y-2">
             {(data?.tailorWorkload ?? []).slice(0, 10).map((t) => {
               const pct = Math.round((t.count / maxTailor) * 100);
               const un = t.tailor === "Unassigned";
+              const tone: StatusTone = un ? "tasks" : "shop";
               return (
                 <div key={t.tailor}>
                   <div className="flex justify-between text-xs mb-1">
-                    <span className={cn(un ? "text-signal-rose font-semibold" : "text-cream")}>
+                    <span className={cn(un ? "font-semibold" : "text-cream")} style={{ color: un ? STATUS_TONES.tasks.fg : undefined }}>
                       {t.tailor}
                     </span>
                     <span className="tabular-nums">{t.count}</span>
                   </div>
                   <div className="h-1.5 rounded-full bg-forest-highlight/50 overflow-hidden">
                     <div
-                      className={cn("h-full rounded-full", un ? "bg-signal-rose/80" : "bg-brass/70")}
-                      style={{ width: `${pct}%` }}
+                      className="h-full rounded-full"
+                      style={{ width: `${pct}%`, background: STATUS_TONES[tone].bar }}
                     />
                   </div>
                 </div>
@@ -179,18 +190,13 @@ export default function Reports() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Ticket priority */}
         <div className="glass-panel rounded-2xl p-5 border border-brass/15">
           <div className="ui-label mb-4">Ticket Priority</div>
           <div className="space-y-2">
             {(data?.ticketPriority ?? []).map((p) => (
               <div key={p.priority} className="flex items-center justify-between text-sm">
                 <span className="flex items-center gap-2 text-cream-muted">
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ background: PRI_COLORS[p.priority] ?? "#B08D57" }}
-                  />
-                  {p.priority}
+                  <StatusBadge status={p.priority} tone={priorityTone(p.priority)} size="sm" />
                 </span>
                 <span className="kpi-number text-xl">{p.count}</span>
               </div>
@@ -198,23 +204,17 @@ export default function Reports() {
           </div>
         </div>
 
-        {/* Delivery */}
         <div className="glass-panel rounded-2xl p-5 border border-brass/15">
           <div className="ui-label mb-4">Deliveries</div>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: "Queued", v: data?.deliveryStatus.queued ?? 0 },
-              { label: "Out", v: data?.deliveryStatus.outForDelivery ?? 0 },
-              { label: "Delivered", v: data?.deliveryStatus.delivered ?? 0 },
-              { label: "Failed", v: data?.deliveryStatus.failed ?? 0, danger: true },
+              { label: "Queued", v: data?.deliveryStatus.queued ?? 0, tone: "shop" as StatusTone },
+              { label: "Out", v: data?.deliveryStatus.outForDelivery ?? 0, tone: "qc" as StatusTone },
+              { label: "Delivered", v: data?.deliveryStatus.delivered ?? 0, tone: "pickup" as StatusTone },
+              { label: "On hold", v: data?.deliveryStatus.failed ?? 0, tone: "tasks" as StatusTone },
             ].map((x) => (
               <div key={x.label} className="rounded-xl bg-forest-highlight/30 p-3 text-center">
-                <div
-                  className={cn(
-                    "kpi-number text-2xl",
-                    x.danger && Number(x.v) > 0 ? "text-signal-rose" : "text-cream",
-                  )}
-                >
+                <div className="kpi-number text-2xl" style={{ color: STATUS_TONES[x.tone].fg }}>
                   {x.v}
                 </div>
                 <div className="text-[10px] uppercase tracking-wider text-cream-dim mt-1">{x.label}</div>
@@ -223,7 +223,6 @@ export default function Reports() {
           </div>
         </div>
 
-        {/* Recent activity */}
         <div className="glass-panel rounded-2xl p-5 border border-brass/15 lg:col-span-1">
           <div className="ui-label mb-4">Recent Activity</div>
           <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -233,8 +232,10 @@ export default function Reports() {
                   <span className="text-cream truncate">{a.customer || a.name}</span>
                   <span className="text-brass-light shrink-0">{money(a.total)}</span>
                 </div>
-                <div className="text-cream-dim mt-0.5">
-                  {a.name} · {a.stage} · {a.date}
+                <div className="text-cream-dim mt-0.5 flex items-center gap-2 flex-wrap">
+                  <span className="font-mono">{a.name}</span>
+                  <StatusBadge status={a.stage} size="sm" />
+                  <span>{a.date}</span>
                 </div>
               </div>
             ))}
@@ -244,6 +245,251 @@ export default function Reports() {
           </div>
         </div>
       </div>
+    </>
+  );
+}
+
+function useFloor(loc: string) {
+  return useQuery({
+    queryKey: ["floor-reports", loc],
+    queryFn: () =>
+      api.get<FloorReports>(
+        `/api/dashboard/floor-reports${loc ? `?location=${encodeURIComponent(loc)}` : ""}`,
+      ),
+    refetchInterval: 60_000,
+  });
+}
+
+export default function Reports() {
+  const { data: me } = useMe();
+  const { activeLocationId } = useActiveLocation();
+  const rawLoc = activeLocationId || me?.locationId || "";
+  const loc = locCode(rawLoc);
+  const [view, setView] = useState<View>("snapshot");
+
+  const reportLoc = view === "nyc" ? "NYC" : view === "hou" ? "HOU" : loc;
+  const floor = useFloor(reportLoc);
+
+  const qcOpen = useQuery({
+    queryKey: ["floor-qc-open"],
+    enabled: view === "qc",
+    queryFn: () => api.get<QcRow[]>("/api/qc?tab=open"),
+  });
+  const qcPass = useQuery({
+    queryKey: ["floor-qc-pass"],
+    enabled: view === "qc",
+    queryFn: () => api.get<QcRow[]>("/api/qc?tab=passed"),
+  });
+  const qcFail = useQuery({
+    queryKey: ["floor-qc-fail"],
+    enabled: view === "qc",
+    queryFn: () => api.get<QcRow[]>("/api/qc?tab=failed"),
+  });
+  const qcWait = useQuery({
+    queryKey: ["floor-qc-wait"],
+    enabled: view === "qc",
+    queryFn: () => api.get<QcRow[]>("/api/qc?tab=waiting"),
+  });
+
+  const data = floor.data;
+  const aging = data?.aging;
+  const maxThru = Math.max(...(data?.throughput?.map((d) => d.count) ?? [1]), 1);
+  const passN = qcPass.data?.length ?? 0;
+  const failN = qcFail.data?.length ?? 0;
+  const openN = qcOpen.data?.length ?? 0;
+  const waitN = qcWait.data?.length ?? 0;
+  const decided = passN + failN;
+  const passRate = decided ? Math.round((passN / decided) * 100) : 0;
+
+  return (
+    <div className="alts-root space-y-6 animate-fade-up">
+      <div className="flex flex-wrap gap-2">
+        {VIEWS.map(([k, lab]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setView(k)}
+            className={cn(
+              "px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide border",
+              view === k ? "bg-brass/20 border-brass text-cream" : "border-brass/25 text-cream-dim",
+            )}
+          >
+            {lab}
+          </button>
+        ))}
+      </div>
+
+      {(view === "snapshot" || view === "nyc" || view === "hou") && (
+        <SnapshotBody data={data} isLoading={floor.isLoading} loc={reportLoc} />
+      )}
+
+      {view === "throughput" && (
+        <>
+          <SectionHeader
+            eyebrow="Floor · Throughput"
+            title={
+              <>
+                Tickets <span className="text-brass-shimmer">this week</span>
+              </>
+            }
+            description={`${data?.location || reportLoc || "ALL"} · intake by day`}
+          />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: "Alts today", v: data?.snapshot.altsToday ?? "—" },
+              { label: "Open alts", v: data?.snapshot.openAlts ?? "—" },
+              { label: "Rev 7d", v: data ? money(data.snapshot.revenueWeek) : "—" },
+              { label: "Deliveries out", v: data?.snapshot.deliveriesQueued ?? "—" },
+            ].map((c) => (
+              <div key={c.label} className="glass-panel rounded-xl p-4 border border-brass/15">
+                <div className="ui-label mb-1">{c.label}</div>
+                <div className="kpi-number text-2xl text-cream">{floor.isLoading ? "…" : c.v}</div>
+              </div>
+            ))}
+          </div>
+          <div className="glass-panel rounded-2xl p-5 border border-brass/15">
+            <div className="ui-label mb-4">Intake by day</div>
+            <div className="space-y-3">
+              {(data?.throughput ?? []).map((d) => {
+                const pct = Math.round((d.count / maxThru) * 100);
+                return (
+                  <div key={d.date}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-cream">{d.date}</span>
+                      <span className="tabular-nums">{d.count}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-forest-highlight/50 overflow-hidden">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${pct}%`, background: STATUS_TONES.shop.bar }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              {!data?.throughput?.length && !floor.isLoading && (
+                <div className="text-sm text-cream-muted">No intake this week.</div>
+              )}
+            </div>
+          </div>
+          <div className="glass-panel rounded-2xl p-5 border border-brass/15">
+            <div className="ui-label mb-4">Pipeline</div>
+            <div className="flex flex-wrap gap-2">
+              {(data?.pipeline ?? []).map((p) => (
+                <div key={p.stage} className="rounded-xl border border-brass/20 px-4 py-3 min-w-[120px]">
+                  <StatusBadge status={p.stage} tone={stageTone(p.stage)} />
+                  <div className="kpi-number text-3xl mt-2">{p.count}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {view === "aging" && (
+        <>
+          <SectionHeader
+            eyebrow="Floor · Aging"
+            title={
+              <>
+                Open tickets <span className="text-brass-shimmer">by due date</span>
+              </>
+            }
+            description={`${data?.location || reportLoc || "ALL"} · overdue first`}
+          />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: "Overdue", v: aging?.overdue ?? 0, tone: "tasks" as StatusTone },
+              { label: "Due today", v: aging?.dueToday ?? 0, tone: "qc" as StatusTone },
+              { label: "This week", v: aging?.dueWeek ?? 0, tone: "shop" as StatusTone },
+              { label: "Later", v: aging?.later ?? 0, tone: "neutral" as StatusTone },
+            ].map((c) => (
+              <div key={c.label} className="glass-panel rounded-xl p-4 border border-brass/15">
+                <StatusBadge status={c.label} tone={c.tone} size="sm" />
+                <div className="kpi-number text-3xl mt-2" style={{ color: STATUS_TONES[c.tone].fg }}>
+                  {floor.isLoading ? "…" : c.v}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="glass-panel rounded-2xl p-5 border border-brass/15">
+            <div className="ui-label mb-4">Overdue tickets</div>
+            <div className="space-y-2">
+              {(data?.overdueTickets ?? []).map((t) => (
+                <Link
+                  key={t.name}
+                  to={`/orders/alterations/${encodeURIComponent(t.name)}`}
+                  className="flex items-center gap-3 py-2 border-b border-brass/10"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="font-mono text-sm text-brass-light">{t.name}</div>
+                    <div className="display text-xl leading-none mt-0.5 truncate">{t.customer || "Client"}</div>
+                  </div>
+                  <StatusBadge status={t.stage} size="sm" />
+                  <span className="text-sm tabular-nums text-cream-dim shrink-0">{t.due}</span>
+                </Link>
+              ))}
+              {!data?.overdueTickets?.length && !floor.isLoading && (
+                <div className="text-sm text-cream-muted">Nothing overdue.</div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {view === "qc" && (
+        <>
+          <SectionHeader
+            eyebrow="Floor · QC"
+            title={
+              <>
+                Pass <span className="text-brass-shimmer">rates</span>
+              </>
+            }
+            description="Store QC on MTM makes · last 200 inspections"
+          />
+          {qcPass.isError || qcFail.isError ? (
+            <div className="glass-panel rounded-2xl p-5 border border-brass/15 text-sm text-cream-dim">
+              QC rates are available to tailors. Open QC from the home tiles if this is your station.
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: "Waiting", v: waitN, tone: "qc" as StatusTone },
+                  { label: "Open", v: openN, tone: "shop" as StatusTone },
+                  { label: "Passed", v: passN, tone: "pickup" as StatusTone },
+                  { label: "Failed", v: failN, tone: "tasks" as StatusTone },
+                ].map((c) => (
+                  <div key={c.label} className="glass-panel rounded-xl p-4 border border-brass/15">
+                    <StatusBadge status={c.label} tone={c.tone} size="sm" />
+                    <div className="kpi-number text-3xl mt-2">{c.v}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="glass-panel rounded-2xl p-5 border border-brass/15">
+                <div className="ui-label mb-2">Pass rate</div>
+                <div className="kpi-number text-5xl" style={{ color: STATUS_TONES.pickup.fg }}>
+                  {decided ? `${passRate}%` : "—"}
+                </div>
+                <p className="text-sm text-cream-dim mt-2">
+                  {decided ? `${passN} passed · ${failN} failed` : "No finished inspections yet."}
+                </p>
+                <div className="h-3 rounded-full bg-forest-highlight/50 overflow-hidden mt-4 flex">
+                  <div
+                    className="h-full"
+                    style={{ width: `${passRate}%`, background: STATUS_TONES.pickup.bar }}
+                  />
+                  <div
+                    className="h-full"
+                    style={{ width: `${decided ? 100 - passRate : 0}%`, background: STATUS_TONES.tasks.bar }}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }
