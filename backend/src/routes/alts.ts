@@ -443,7 +443,10 @@ altsRouter.get("/sellable-items", async (c) => {
   } catch (e: any) {
     console.error("[alts/sellable-items]", e?.message || e);
     // Soft-fail to seed so FOH still works
-    let dto = SEED_CATALOG.map((s) => ({ ...s, kind: sellableKind(s.item_group, s.item_code) }));
+    let dto: SellableItemDto[] = SEED_CATALOG.map((s) => ({
+      ...s,
+      kind: sellableKind(s.item_group, s.item_code),
+    }));
     dto = finalizeSellableCatalog(dto, { q, filter, limit }) as SellableItemDto[];
     return c.json({
       data: dto,

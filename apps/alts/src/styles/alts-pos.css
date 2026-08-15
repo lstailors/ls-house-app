@@ -1972,8 +1972,10 @@ body {
 }
 
 .offline-banner {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 80;
   padding: 0.55rem 1rem;
   text-align: center;
@@ -1983,6 +1985,7 @@ body {
   background: linear-gradient(90deg, #1a3326 0%, #243d2c 50%, #1a3326 100%);
   border-bottom: 1px solid rgba(212, 175, 88, 0.45);
   box-shadow: 0 8px 24px rgba(8, 16, 10, 0.35);
+  pointer-events: none;
 }
 
 .needs-connection {

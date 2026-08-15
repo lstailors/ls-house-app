@@ -169,6 +169,7 @@ test("live dashboard bands render and a metrics update pulses without layout shi
   await expect(page.locator('[data-testid="rev-today"]')).toContainText("$1.2k");
   await expect(page.locator('[data-testid="overdue-chip"]')).toContainText("7");
   await expect(page.getByText("2:30 · Fitting · J. Peyser")).toBeVisible();
+  await expect(page.getByTestId("offline-banner")).toHaveCount(0);
 
   const qa = page.locator('[data-testid="quick-actions"]');
   const grid = page.locator('[data-testid="tile-grid"]');
