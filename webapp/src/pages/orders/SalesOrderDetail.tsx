@@ -28,6 +28,7 @@ import { formatUSD, formatDate } from "@ls/design/format"
 import { cn } from "@ls/design/utils"
 import { ChargeTerminalButton } from "@/components/payments/ChargeTerminalButton"
 import { ChargeCardOnFileButton } from "@/components/payments/ChargeCardOnFileButton"
+import MtmStatusRail from "@/components/MtmStatusRail"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -202,6 +203,7 @@ export default function SalesOrderDetail() {
   const [copiedInvoice, setCopiedInvoice] = useState<string | null>(null)
   const [smsOpen, setSmsOpen] = useState(false)
   const [smsText, setSmsText] = useState("")
+  const [pendingFactory, setPendingFactory] = useState<string | null>(null)
 
   const {
     data: order,
@@ -217,6 +219,18 @@ export default function SalesOrderDetail() {
     queryKey: ["sales-order-factory", id],
     queryFn: () => api.get<any[]>(`/api/sales-orders/${id}/factory`),
     enabled: !!id,
+  })
+
+  const setFactoryStatus = useMutation({
+    mutationFn: ({ name, status }: { name: string; status: string }) =>
+      api.patch(`/api/qc/orders/${encodeURIComponent(name)}/status`, { status }),
+    onMutate: ({ name }) => setPendingFactory(name),
+    onSuccess: () => {
+      toast.success("Status updated")
+      void qc.invalidateQueries({ queryKey: ["sales-order-factory", id] })
+    },
+    onError: (e: Error) => toast.error(e.message || "Could not update status"),
+    onSettled: () => setPendingFactory(null),
   })
 
   // Initialize smsText when order loads (can't use order in useState initializer since hooks run before order loads)
@@ -588,42 +602,36 @@ export default function SalesOrderDetail() {
               <div className="ui-label mb-4 flex items-center gap-1.5">
                 <Factory className="h-3.5 w-3.5" /> Factory Orders
               </div>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {factoryOrders.map((fo: any) => {
-                  const statusColors: Record<string, string> = {
-                    Drafted: "bg-cream-dim/20 text-cream-dim border-cream-dim/30",
-                    Submitted: "bg-brass/20 text-brass-light border-brass/30",
-                    "In Production": "bg-blue-500/20 text-blue-300 border-blue-500/30",
-                    "At QC": "bg-purple-500/20 text-purple-300 border-purple-500/30",
-                    Ready: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-                    Delivered: "bg-emerald-700/20 text-emerald-400 border-emerald-700/30",
-                  }
-                  const statusClass = statusColors[fo.order_status] ?? "bg-cream-dim/20 text-cream-dim border-cream-dim/30"
                   return (
                     <div
                       key={fo.name}
-                      className="flex items-start justify-between gap-3 rounded-lg border border-brass/15 bg-brass/5 px-4 py-3"
+                      className="rounded-lg border border-brass/15 bg-brass/5 px-4 py-3 space-y-3"
                     >
-                      <div className="min-w-0 space-y-1">
-                        <div className="font-mono text-xs text-cream-dim">{fo.name}</div>
-                        <div className="text-xs text-cream font-medium">{fo.order_type ?? "—"}</div>
-                        {fo.factory ? (
-                          <div className="text-[10px] text-cream-dim">{fo.factory}</div>
-                        ) : null}
-                        {fo.need_by_date ? (
-                          <div className="text-[10px] text-brass/70">
-                            Need by {formatDate(fo.need_by_date)}
-                          </div>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide border ${statusClass}`}>
-                          {fo.order_status ?? "Unknown"}
-                        </span>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 space-y-1">
+                          <div className="font-mono text-xs text-cream-dim">{fo.name}</div>
+                          <div className="text-xs text-cream font-medium">{fo.order_type ?? "—"}</div>
+                          {fo.factory ? (
+                            <div className="text-[10px] text-cream-dim">{fo.factory}</div>
+                          ) : null}
+                          {fo.need_by_date ? (
+                            <div className="text-[10px] text-brass/70">
+                              Need by {formatDate(fo.need_by_date)}
+                            </div>
+                          ) : null}
+                        </div>
                         {fo.priority ? (
-                          <span className="text-[10px] text-cream-dim capitalize">{fo.priority}</span>
+                          <span className="text-[10px] text-cream-dim capitalize shrink-0">{fo.priority}</span>
                         ) : null}
                       </div>
+                      <MtmStatusRail
+                        compact
+                        current={fo.order_status}
+                        pending={pendingFactory === fo.name ? setFactoryStatus.variables?.status : null}
+                        onChange={(status) => setFactoryStatus.mutate({ name: fo.name, status })}
+                      />
                     </div>
                   )
                 })}

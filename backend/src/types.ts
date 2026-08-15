@@ -238,6 +238,7 @@ export const CustomOrder = z.object({
   createdBy: Profile.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  orderStatus: z.string().nullable().optional(),
 });
 export type CustomOrder = z.infer<typeof CustomOrder>;
 

@@ -9,6 +9,7 @@ import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
+import MtmStatusRail from "@alts/components/MtmStatusRail";
 import { clientInitials } from "@alts/lib/ticketDisplay";
 import "@alts/styles/alts-pos.css";
 
@@ -26,7 +27,9 @@ type Inspection = {
   id: string | null;
   name?: string | null;
   salesOrder?: string | null;
+  customOrder?: string | null;
   mtmproOrder?: string | null;
+  orderName?: string | null;
   customer?: string | null;
   customerName?: string | null;
   inspector?: string | null;
@@ -78,6 +81,7 @@ export default function QcInspection() {
   const [showQr, setShowQr] = useState(false);
   const [embedSrc, setEmbedSrc] = useState<string | null>(null);
   const [decide, setDecide] = useState<"pass" | "fail" | null>(null);
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
 
   const detail = useQuery({
     queryKey: ["alts-qc-detail", id],
@@ -87,6 +91,21 @@ export default function QcInspection() {
 
   const data = detail.data;
   const inspectionId = data?.id || data?.name || null;
+  const orderName =
+    data?.orderName || data?.mtmproOrder || data?.customOrder || data?.links?.mtmproOrder || null;
+
+  const setOrderStatus = useMutation({
+    mutationFn: (status: string) =>
+      api.patch(`/api/qc/orders/${encodeURIComponent(orderName!)}/status`, { status }),
+    onMutate: (status) => setPendingStatus(status),
+    onSuccess: () => {
+      toast.success("Status updated");
+      void qc.invalidateQueries({ queryKey: ["alts-qc"] });
+      void qc.invalidateQueries({ queryKey: ["alts-qc-detail", id] });
+    },
+    onError: (e: Error) => toast.error(e.message || "Could not update status"),
+    onSettled: () => setPendingStatus(null),
+  });
 
   const skipCheckSave = useRef(true);
 
@@ -328,7 +347,14 @@ export default function QcInspection() {
           <div className="flex flex-wrap gap-2 mt-3">
             {data?.mtmproOrder && <span className="chip">{data.mtmproOrder}</span>}
             {data?.salesOrder && <span className="chip">{data.salesOrder}</span>}
-            {data?.orderStatus && <span className="chip">{data.orderStatus}</span>}
+          </div>
+          <div className="mt-4">
+            <div className="caps text-brass-light mb-2">Live order status</div>
+            <MtmStatusRail
+              current={data?.orderStatus}
+              pending={pendingStatus}
+              onChange={orderName ? (status) => setOrderStatus.mutate(status) : undefined}
+            />
           </div>
           <div className="grid grid-cols-2 gap-2 mt-4">
             <button type="button" onClick={() => void loadPdf()} className="btn-brass h-12 text-[11px]">

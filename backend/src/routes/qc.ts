@@ -7,6 +7,7 @@ import {
   QC_CHECK_CATALOG,
   QC_QUEUE_STATUSES,
   MTM_STATUSES,
+  isMtmStatus,
   blankChecks,
   checksFromDoc,
   checksSummary,
@@ -158,6 +159,93 @@ async function listMakeOrdersInQcQueue() {
   return [] as any[];
 }
 
+function isMtmStatusKey(value: string): boolean {
+  return isMtmStatus(value);
+}
+
+const MTM_ORDER_FIELDS = [
+  "name",
+  "customer",
+  "customer_name",
+  "status",
+  "order_status",
+  "erp_sales_order",
+  "sales_order",
+  "date_received",
+  "garment_type",
+  "garment_summary",
+  "order_type",
+  "factory",
+];
+
+function serializeMtmOrderRow(doc: any) {
+  const status = String(doc.order_status || doc.status || "").trim() || null;
+  return {
+    id: doc.name,
+    name: doc.name,
+    inspectionId: null,
+    orderName: doc.name,
+    salesOrder: doc.erp_sales_order || doc.sales_order || null,
+    customOrder: doc.name,
+    customer: doc.customer || null,
+    customerName: doc.customer_name || "Client",
+    orderStatus: status,
+    qcResult: null,
+    result: null,
+    garmentSummary: doc.garment_summary || doc.garment_type || doc.order_type || null,
+    factory: doc.factory || null,
+    dateReceived: dateReceivedLabel(doc.date_received),
+    scanUrl: `https://alts.lstailors.com/qc/${encodeURIComponent(doc.name)}`,
+  };
+}
+
+async function listMtmPipeline(status?: string) {
+  const want = status && isMtmStatusKey(status) ? status : "";
+  const doctypes = [DT.MTM_PRO_ORDER, DT_CUSTOM];
+  for (const dt of doctypes) {
+    for (const field of ["order_status", "status"] as const) {
+      const filters = want ? [[field, "=", want]] : [];
+      const rows = await erpList<any>(dt, {
+        filters,
+        fields: MTM_ORDER_FIELDS,
+        limit: 200,
+        order_by: "modified desc",
+      }).catch(() => [] as any[]);
+      const usable = rows.filter(isMakeOrderRow);
+      if (usable.length) return usable.map(serializeMtmOrderRow);
+    }
+  }
+  return [] as ReturnType<typeof serializeMtmOrderRow>[];
+}
+
+async function setMtmOrderStatus(name: string, status: string) {
+  const doctypes = [DT.MTM_PRO_ORDER, DT_CUSTOM];
+  for (const dt of doctypes) {
+    const doc = await erpGet<any>(dt, name).catch(() => null);
+    if (!doc?.name) continue;
+    for (const field of ["order_status", "status"] as const) {
+      try {
+        await erpUpdate(dt, name, { [field]: status });
+        return { name, status, doctype: dt };
+      } catch (e: any) {
+        const bad = unknownField(String(e?.message || ""));
+        if (bad === field) continue;
+        throw e;
+      }
+    }
+  }
+  throw new Error("Order not found");
+}
+
+async function requireFloor(c: any) {
+  const user = await getAuthedUser(c);
+  if (!user) return { user: null, res: deny(c, 401) };
+  if (user.role === "driver" || user.role === "customer") {
+    return { user: null, res: deny(c, 403) };
+  }
+  return { user, res: null };
+}
+
 function serializeInspection(doc: any, extras: Record<string, unknown> = {}) {
   const checks: QcCheck[] = checksFromDoc(doc);
   const qcResult = qcResultOf(doc);
@@ -166,7 +254,8 @@ function serializeInspection(doc: any, extras: Record<string, unknown> = {}) {
     name: doc.name,
     salesOrder: doc.sales_order || null,
     customOrder: doc.custom_order || null,
-    mtmproOrder: doc.custom_order || doc.mtmpro_order || null,
+    mtmproOrder: doc.custom_order || doc.mtmpro_order || extras.mtmproOrder || null,
+    orderName: extras.orderName || doc.custom_order || doc.mtmpro_order || null,
     customer: doc.customer || null,
     customerName: doc.customer_name || extras.customerName || null,
     inspector: doc.inspector || null,
@@ -198,6 +287,7 @@ function serializeListRow(doc: any, extras: Record<string, unknown> = {}) {
     inspectionId: doc.name,
     salesOrder: doc.sales_order || extras.salesOrder || null,
     customOrder: doc.custom_order || extras.customOrder || null,
+    orderName: extras.orderName || extras.customOrder || doc.custom_order || null,
     customer: doc.customer || extras.customer || null,
     customerName: doc.customer_name || extras.customerName || "Client",
     qcResult,
@@ -252,6 +342,7 @@ async function waitingRows() {
       customerName: doc.customer_name || order?.customer_name,
       orderStatus: order?.order_status || order?.status || "Quality Control",
       garmentSummary: order?.garment_summary || order?.garment_type,
+      orderName: order?.name || doc.custom_order,
     });
   });
 }
@@ -362,9 +453,42 @@ qcRouter.get("/count", async (c) => {
   }
 });
 
+// GET /api/qc/orders?status=Production — live MTM pipeline (all statuses)
+qcRouter.get("/orders", async (c) => {
+  const gate = await requireFloor(c);
+  if (gate.res) return gate.res;
+  const status = (c.req.query("status") || "").trim();
+  try {
+    const rows = await listMtmPipeline(status || undefined);
+    return c.json({ data: rows, meta: { statuses: MTM_STATUSES, status: status || null } });
+  } catch (e: any) {
+    console.error("GET /api/qc/orders", e);
+    return c.json({ error: { message: e?.message || "Could not load MTM orders" } }, 502);
+  }
+});
+
+// PATCH /api/qc/orders/:name/status — set live MTM / make-order status
+qcRouter.patch("/orders/:name/status", async (c) => {
+  const gate = await requireFloor(c);
+  if (gate.res) return gate.res;
+  const name = decodeURIComponent(c.req.param("name"));
+  const body = await c.req.json().catch(() => ({}));
+  const status = String(body.status || "").trim();
+  if (!isMtmStatusKey(status)) {
+    return c.json({ error: { message: "Unknown status" } }, 400);
+  }
+  try {
+    const data = await setMtmOrderStatus(name, status);
+    return c.json({ data });
+  } catch (e: any) {
+    console.error("PATCH /api/qc/orders/:name/status", e);
+    return c.json({ error: { message: e?.message || "Could not update status" } }, 502);
+  }
+});
+
 // GET /api/qc?tab=waiting|open|passed|failed
 qcRouter.get("/", async (c) => {
-  const gate = await requireQc(c);
+  const gate = await requireFloor(c);
   if (gate.res) return gate.res;
   const tab = (c.req.query("tab") || "waiting").toLowerCase();
 
@@ -443,9 +567,9 @@ qcRouter.get("/:id/pdf", async (c) => {
   }
 });
 
-// GET /api/qc/:id — always by inspection name LSH-QC-…, or resolve from SO / custom order
+// GET /api/qc/:id — floor can open the item to change live status; checks stay tailor-gated on PATCH
 qcRouter.get("/:id", async (c) => {
-  const gate = await requireQc(c);
+  const gate = await requireFloor(c);
   if (gate.res) return gate.res;
   const id = decodeURIComponent(c.req.param("id"));
 
@@ -453,17 +577,20 @@ qcRouter.get("/:id", async (c) => {
     const insp = await resolveInspection(id);
     if (!insp?.name) {
       const co = await erpGet<any>(DT_CUSTOM, id).catch(() => null);
+      const mtm = await erpGet<any>(DT.MTM_PRO_ORDER, id).catch(() => null);
       const so = await erpGet<any>("Sales Order", id).catch(() => null);
-      if (!co && !so) return c.json({ error: { message: "Not found" } }, 404);
+      if (!co && !mtm && !so) return c.json({ error: { message: "Not found" } }, 404);
+      const order = mtm || co;
       return c.json({
         data: {
           id: null,
           name: null,
-          salesOrder: so?.name || co?.erp_sales_order || co?.sales_order || null,
+          salesOrder: so?.name || order?.erp_sales_order || order?.sales_order || null,
           customOrder: co?.name || null,
-          mtmproOrder: co?.name || null,
-          customer: co?.customer || so?.customer || null,
-          customerName: co?.customer_name || so?.customer_name || "Client",
+          mtmproOrder: mtm?.name || co?.name || null,
+          orderName: order?.name || null,
+          customer: order?.customer || so?.customer || null,
+          customerName: order?.customer_name || so?.customer_name || "Client",
           qcResult: "Pending",
           result: "Pending",
           notes: "",
@@ -471,12 +598,12 @@ qcRouter.get("/:id", async (c) => {
           summary: checksSummary(blankChecks()),
           photos: [],
           docuseal: false,
-          orderStatus: co?.order_status || co?.status || so?.status || null,
-          garmentSummary: co?.garment_summary || co?.garment_type || null,
+          orderStatus: order?.order_status || order?.status || so?.status || null,
+          garmentSummary: order?.garment_summary || order?.garment_type || order?.order_type || null,
           links: {
-            customer: co?.customer || so?.customer || null,
-            salesOrder: so?.name || co?.erp_sales_order || null,
-            customOrder: co?.name || null,
+            customer: order?.customer || so?.customer || null,
+            salesOrder: so?.name || order?.erp_sales_order || null,
+            customOrder: co?.name || mtm?.name || null,
           },
         },
       });
@@ -503,10 +630,19 @@ qcRouter.get("/:id", async (c) => {
 
     let orderStatus: string | null = null;
     let garmentSummary: string | null = null;
+    let orderName: string | null = insp.custom_order || insp.mtmpro_order || null;
     if (insp.custom_order) {
       const co = await erpGet<any>(DT_CUSTOM, insp.custom_order).catch(() => null);
       orderStatus = co?.order_status || co?.status || null;
       garmentSummary = co?.garment_summary || co?.garment_type || null;
+      if (co?.name) orderName = co.name;
+    }
+    if (!orderStatus && orderName) {
+      const mtm = await erpGet<any>(DT.MTM_PRO_ORDER, orderName).catch(() => null);
+      if (mtm) {
+        orderStatus = mtm.order_status || mtm.status || orderStatus;
+        garmentSummary = garmentSummary || mtm.garment_summary || mtm.order_type || null;
+      }
     }
 
     let docuseal = false;
@@ -522,6 +658,7 @@ qcRouter.get("/:id", async (c) => {
         docuseal,
         orderStatus,
         garmentSummary,
+        orderName,
         links: {
           customer: insp.customer || null,
           salesOrder: insp.sales_order || null,
