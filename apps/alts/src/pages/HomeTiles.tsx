@@ -497,7 +497,6 @@ export default function HomeTiles() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const erpHealth = useErpHealth();
-  const erpDown = home.isError || (erpHealth.data ? !erpHealth.data.erp.reachable : false);
   const [espressoOpen, setEspressoOpen] = useState(readEspressoOpenDefault);
   const [askThread, setAskThread] = useState<AskMsg[]>([]);
   const [askInput, setAskInput] = useState("");
@@ -528,6 +527,7 @@ export default function HomeTiles() {
     refetchInterval: 60_000,
     retry: 2,
   });
+  const erpDown = home.isError || (erpHealth.data ? !erpHealth.data.erp.reachable : false);
 
   type FloorBrief = {
     body: string;

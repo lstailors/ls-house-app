@@ -1093,7 +1093,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
         let deliveryName: string | null = null;
         if (existingDel?.[0]?.name) {
           deliveryName = existingDel[0].name;
-          await erpUpdate('LSH Delivery', deliveryName, delDoc);
+          await erpUpdate('LSH Delivery', existingDel[0].name, delDoc);
         } else {
           const created = await erpCreate<any>('LSH Delivery', {
             naming_series: 'DN-NYC-.YYYY.-',
