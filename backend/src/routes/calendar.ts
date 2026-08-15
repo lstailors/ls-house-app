@@ -169,7 +169,9 @@ calendarRouter.get("/events", async (c) => {
     const cal = String(e.google_calendar ?? "").toLowerCase();
     const subject = String(e.subject ?? "");
     let feed = "nyc_appointments";
-    if (cal.includes("production") || subject.includes("AUG CLOSED") || subject.includes("In Production") || subject.includes("Ship:")) {
+    if (/birthday|b-day|\bbday\b/i.test(subject)) {
+      feed = "birthdays";
+    } else if (cal.includes("production") || subject.includes("AUG CLOSED") || subject.includes("In Production") || subject.includes("Ship:")) {
       feed = "yz_ship";
     } else if (cal.includes("houston") || cal.includes("hou")) {
       feed = "houston_appointments";

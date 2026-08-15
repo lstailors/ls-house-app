@@ -46,7 +46,7 @@ body {
   color: var(--cr);
   font-family: Montserrat, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  font-size: 14px;
+  font-size: 16px;
   background: radial-gradient(ellipse at 50% -12%, #234d38, var(--fd) 58%);
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
@@ -63,9 +63,58 @@ body {
 .alts-root .caps {
   text-transform: uppercase;
   letter-spacing: 0.16em;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--cd);
+}
+
+/* Unified status badge — shape/type shared; color from StatusTone map */
+.alts-root .st-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid;
+  font-family: Montserrat, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.alts-root .st-badge.is-sm {
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 10px;
+}
+.alts-root .st-pickup {
+  background: rgba(79, 191, 142, 0.18);
+  color: #7ee0b0;
+  border-color: rgba(79, 191, 142, 0.45);
+}
+.alts-root .st-qc {
+  background: rgba(232, 168, 92, 0.18);
+  color: #f0c48a;
+  border-color: rgba(232, 168, 92, 0.5);
+}
+.alts-root .st-tasks {
+  background: rgba(217, 123, 108, 0.2);
+  color: #f0a090;
+  border-color: rgba(217, 123, 108, 0.5);
+}
+.alts-root .st-shop {
+  background: rgba(176, 141, 87, 0.2);
+  color: #e3c48f;
+  border-color: rgba(176, 141, 87, 0.5);
+}
+.alts-root .st-neutral {
+  background: rgba(241, 233, 214, 0.08);
+  color: #d4cdb8;
+  border-color: rgba(176, 141, 87, 0.28);
 }
 
 .alts-root .seal {
@@ -685,10 +734,10 @@ body {
 
 .home-040-hd .seal,
 .home-040-hd a.seal {
-  width: 34px !important;
-  height: 34px !important;
-  min-width: 34px !important;
-  min-height: 34px !important;
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
 }
 
 .home-040-strip {
@@ -819,8 +868,8 @@ body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: none;
-  grid-auto-rows: minmax(128px, auto);
-  gap: 8px;
+  grid-auto-rows: minmax(168px, auto);
+  gap: 10px;
   min-height: 0;
   flex: none;
   overflow: visible;
@@ -831,14 +880,14 @@ body {
   border-radius: 16px;
   background: var(--glass);
   border: 1px solid rgba(176, 141, 87, 0.22);
-  padding: 14px 14px 10px;
+  padding: 16px 16px 12px;
   display: flex;
   flex-direction: column;
   cursor: pointer;
   overflow: hidden;
   text-decoration: none;
   color: inherit;
-  min-height: 128px !important;
+  min-height: 168px !important;
   min-width: 0 !important;
   height: auto;
   transition: transform 0.13s, box-shadow 0.16s, border-color 0.13s, background 0.13s;
@@ -901,7 +950,7 @@ body {
 .home-040-tile h2 {
   font-family: "Cormorant Garamond", serif;
   font-style: italic;
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 600;
   text-align: center;
   line-height: 1.15;
@@ -914,7 +963,7 @@ body {
 }
 
 .home-040-tile .sub {
-  font-size: 12px !important;
+  font-size: 13px !important;
   font-weight: 500;
   color: var(--cd);
   margin-top: 5px;
@@ -1015,31 +1064,41 @@ body {
   position: absolute;
   top: 12px;
   right: 12px;
-  min-width: 28px;
-  height: 24px;
+  min-width: 32px;
+  height: 28px;
   border-radius: 999px;
   display: grid;
   place-items: center;
-  padding: 0 8px;
-  font-size: 12px !important;
+  padding: 0 10px;
+  font-size: 13px !important;
   font-weight: 700;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(176, 141, 87, 0.32);
-  color: var(--cr);
+  letter-spacing: 0.06em;
+  background: rgba(176, 141, 87, 0.2);
+  border: 1px solid rgba(176, 141, 87, 0.5);
+  color: #e3c48f;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
-.home-040-badge.al {
+.home-040-badge.st-pickup {
+  background: rgba(79, 191, 142, 0.92);
+  border-color: transparent;
+  color: #0d1a10;
+}
+.home-040-badge.st-qc {
+  background: rgba(232, 168, 92, 0.94);
+  border-color: transparent;
+  color: #0d1a10;
+}
+.home-040-badge.st-tasks {
   background: rgba(217, 123, 108, 0.92);
   border-color: transparent;
   color: #fff;
 }
-
-.home-040-badge.wn {
-  background: rgba(232, 168, 92, 0.94);
+.home-040-badge.st-shop {
+  background: rgba(176, 141, 87, 0.92);
   border-color: transparent;
-  color: var(--fd);
+  color: #0d1a10;
 }
 
 .home-040-badge.money {

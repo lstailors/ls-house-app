@@ -444,6 +444,70 @@ garmentRouter.get("/tally", async (c) => {
 });
 
 /**
+ * GET /api/garment/board — pieces currently being altered (staging kanban).
+ */
+garmentRouter.get("/board", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  try {
+    const [wip, ready] = await Promise.all([
+      erpList<GarmentRow & { color?: string; notes?: string }>("Alteration Ticket Garment", {
+        parent: "Alteration Ticket",
+        filters: [["garment_status", "not in", ["Completed", "Picked Up", "Ready"]]],
+        fields: ["name", "parent", "garment_id", "garment_type", "garment_status", "color", "notes"],
+        limit: 400,
+        order_by: "modified desc",
+      }).catch(() => [] as GarmentRow[]),
+      erpList<GarmentRow & { color?: string; notes?: string }>("Alteration Ticket Garment", {
+        parent: "Alteration Ticket",
+        filters: [["garment_status", "=", "Ready"]],
+        fields: ["name", "parent", "garment_id", "garment_type", "garment_status", "color", "notes"],
+        limit: 150,
+        order_by: "modified desc",
+      }).catch(() => [] as GarmentRow[]),
+    ]);
+    const all = [...wip, ...ready];
+    const parents = [...new Set(all.map((r) => r.parent).filter(Boolean))];
+    const tickets = parents.length
+      ? await erpList<{
+          name: string;
+          customer_name: string;
+          workflow_state: string;
+          due_date: string;
+          assigned_tailor: string;
+          is_rush: number;
+        }>("Alteration Ticket", {
+          filters: [["name", "in", parents]],
+          fields: ["name", "customer_name", "workflow_state", "due_date", "assigned_tailor", "is_rush"],
+          limit: 400,
+        }).catch(() => [])
+      : [];
+    const byTicket = new Map(tickets.map((t) => [t.name, t]));
+    return c.json({
+      data: all.map((g) => {
+        const t = byTicket.get(g.parent);
+        return {
+          id: g.garment_id || g.name,
+          rowName: g.name,
+          ticket: g.parent,
+          garmentType: g.garment_type || "Garment",
+          color: (g as { color?: string }).color || null,
+          notes: (g as { notes?: string }).notes || "",
+          status: String(g.garment_status || "Pending").trim() || "Pending",
+          customerName: t?.customer_name || "Client",
+          dueDate: t?.due_date || null,
+          tailor: t?.assigned_tailor || null,
+          rush: Boolean(t?.is_rush),
+        };
+      }),
+    });
+  } catch (err) {
+    console.error("garment.board error:", err);
+    return c.json({ error: { message: shortErpError(err) || "Could not load board" } }, 502);
+  }
+});
+
+/**
  * POST /api/garment/auto-progress-stale
  * Received tickets older than `hours` (default 24) → Start Work (In Progress).
  * Safe to call from cron; idempotent for already-progressed tickets.

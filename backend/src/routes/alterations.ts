@@ -698,7 +698,7 @@ alterationsRouter.patch("/:ticketId/garments/:garmentId/status", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
-  const { garment_status } = await c.req.json() as { garment_status: string };
+  const body = await c.req.json() as { garment_status?: string; notes?: string };
   const ticketId = c.req.param("ticketId");
   const garmentId = c.req.param("garmentId");
 
@@ -718,7 +718,8 @@ alterationsRouter.patch("/:ticketId/garments/:garmentId/status", async (c) => {
   const garment = ticket.garments?.find((g: any) => g.garment_id === garmentId);
   if (!garment) return c.json({ error: { message: "Garment not found" } }, 404);
 
-  garment.garment_status = garment_status;
+  if (body.garment_status) garment.garment_status = body.garment_status;
+  if (typeof body.notes === "string") garment.notes = body.notes;
 
   const saveRes = await fetch(`${base}/api/resource/Alteration%20Ticket/${encodeURIComponent(ticketId)}`, {
     method: "PUT",
@@ -735,7 +736,7 @@ alterationsRouter.patch("/:ticketId/garments/:garmentId/status", async (c) => {
     return c.json({ error: { message: err._server_messages || "Save failed" } }, 502);
   }
 
-  return c.json({ data: { garment_id: garmentId, garment_status } });
+  return c.json({ data: { garment_id: garmentId, garment_status: garment.garment_status, notes: garment.notes ?? "" } });
 });
 
 

@@ -1,14 +1,16 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
+import StatusBadge from "@alts/components/StatusBadge";
 import { clientInitials, syncLabel } from "@alts/lib/ticketDisplay";
+import { storeToday } from "@alts/lib/storeDate";
 import "@alts/styles/alts-pos.css";
 
-type Tab = "all" | "sms" | "calls";
+type Tab = "all" | "sms" | "calls" | "voice" | "fittings";
 
 type SmsThread = {
   phone: string;
@@ -27,10 +29,29 @@ type CallRow = {
   duration?: number;
 };
 
+type Recording = {
+  name?: string;
+  title?: string;
+  recorded_at?: string;
+  duration_sec?: number;
+  customer?: string;
+  summary?: string;
+};
+
+type Appt = {
+  name: string;
+  scheduledTime: string;
+  customerName: string;
+  appointmentType?: string | null;
+  status?: string;
+  agentDisplayName?: string | null;
+};
+
 type CommsFeed = {
   calls?: CallRow[];
   smsThreads?: SmsThread[];
-  counts?: { missedCalls?: number; unreadSms?: number; callsToday?: number; smsThreads?: number };
+  recordings?: Recording[];
+  counts?: { missedCalls?: number; unreadSms?: number; callsToday?: number; smsThreads?: number; totalRecordings?: number };
 };
 
 function timeAgo(iso?: string) {
@@ -63,14 +84,35 @@ function fmtDuration(sec?: number) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
+function fmtClock(raw?: string | null) {
+  if (!raw) return "";
+  const s = String(raw).includes("T") ? String(raw) : String(raw).replace(" ", "T");
+  const d = new Date(s);
+  if (!Number.isFinite(d.getTime())) return "";
+  return d.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/New_York",
+  });
+}
+
 export default function MessagesGlass() {
   const [tab, setTab] = useState<Tab>("all");
   const [threadPhone, setThreadPhone] = useState<string | null>(null);
   const [call, setCall] = useState<CallRow | null>(null);
+  const [voice, setVoice] = useState<Recording | null>(null);
+  const today = storeToday();
 
   const feed = useQuery({
     queryKey: ["alts-comms"],
     queryFn: () => api.get<CommsFeed>("/api/comms?limit=80"),
+    refetchInterval: 60_000,
+  });
+
+  const fittings = useQuery({
+    queryKey: ["alts-comms-fittings", today],
+    queryFn: () =>
+      api.get<{ appointments: Appt[] }>(`/api/appointments?date_from=${today}&date_to=${today}`),
     refetchInterval: 60_000,
   });
 
@@ -86,33 +128,23 @@ export default function MessagesGlass() {
 
   const calls = feed.data?.calls ?? [];
   const sms = feed.data?.smsThreads ?? [];
+  const recordings = feed.data?.recordings ?? [];
+  const appts = fittings.data?.appointments ?? [];
   const counts = feed.data?.counts;
   const live = syncLabel(feed.dataUpdatedAt, feed.isFetching);
 
-  const rows = useMemo(() => {
-    const smsRows = sms.map((t) => ({
-      kind: "sms" as const,
-      ts: t.lastMessage?.timestamp || "",
-      thread: t,
-    }));
-    const callRows = calls.map((c) => ({
-      kind: "call" as const,
-      ts: c.time || "",
-      call: c,
-    }));
-    const all = [...smsRows, ...callRows].sort((a, b) => String(b.ts).localeCompare(String(a.ts)));
-    if (tab === "sms") return all.filter((r) => r.kind === "sms");
-    if (tab === "calls") return all.filter((r) => r.kind === "call");
-    return all;
-  }, [calls, sms, tab]);
+  const unreadSms = sms.filter((t) => t.unread > 0);
+  const otherSms = sms.filter((t) => t.unread <= 0);
+  const missed = calls.filter((c) => c.status === "missed");
+  const otherCalls = calls.filter((c) => c.status !== "missed");
 
   return (
     <div className="alts-root min-h-dvh flex flex-col overflow-x-hidden">
       <header className="flex items-center gap-3 px-4 sm:px-5 py-4 border-b border-brass/20 flex-wrap">
         <BrandSeal />
         <div className="min-w-0">
-          <div className="display text-[28px] leading-none">Messages</div>
-          <div className="caps mt-1">Texts · calls</div>
+          <div className="display text-[32px] leading-none">Messages</div>
+          <div className="caps mt-1">Texts · calls · voice · fittings</div>
         </div>
         <div className="flex-1" />
         <div className={cn("sf-live", feed.isFetching && "is-sync", feed.isError && "is-down")}>
@@ -124,9 +156,11 @@ export default function MessagesGlass() {
       <div className="px-4 sm:px-5 pt-3 flex flex-wrap gap-2">
         {(
           [
-            ["all", "All", (counts?.smsThreads ?? sms.length) + (counts?.callsToday ?? calls.length)],
-            ["sms", "Texts", counts?.unreadSms ?? sms.length],
-            ["calls", "Calls", counts?.missedCalls ?? calls.length],
+            ["all", "All", sms.length + calls.length + recordings.length + appts.length],
+            ["sms", "Texts", counts?.unreadSms ?? unreadSms.length],
+            ["calls", "Calls", counts?.missedCalls ?? missed.length],
+            ["voice", "Voice", counts?.totalRecordings ?? recordings.length],
+            ["fittings", "Fittings", appts.length],
           ] as const
         ).map(([k, lab, n]) => (
           <button
@@ -152,60 +186,93 @@ export default function MessagesGlass() {
             onRetry={() => feed.refetch()}
           />
         )}
-        {rows.map((row) => {
-          if (row.kind === "sms") {
-            const t = row.thread;
-            const preview = t.lastMessage?.content || t.lastMessage?.body || "No messages";
-            return (
+
+        {(tab === "all" || tab === "sms") && unreadSms.length > 0 && (
+          <Section title="New texts" tone="qc">
+            {unreadSms.map((t) => (
+              <SmsCard key={`u-${t.phone}`} t={t} onOpen={() => setThreadPhone(t.phone)} />
+            ))}
+          </Section>
+        )}
+        {(tab === "all" || tab === "calls") && missed.length > 0 && (
+          <Section title="Missed calls" tone="tasks">
+            {missed.map((c) => (
+              <CallCard key={`m-${c.name || c.time}`} c={c} onOpen={() => setCall(c)} />
+            ))}
+          </Section>
+        )}
+        {(tab === "all" || tab === "voice") && recordings.length > 0 && (
+          <Section title="Voice notes" tone="shop">
+            {recordings.map((r) => (
               <button
-                key={`sms-${t.phone}`}
+                key={r.name || r.recorded_at}
                 type="button"
-                onClick={() => setThreadPhone(t.phone)}
+                onClick={() => setVoice(r)}
                 className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
               >
                 <span className="sf-avatar" aria-hidden>
-                  {clientInitials(fmtPhone(t.phone))}
+                  {clientInitials(r.title || r.customer || "Voice")}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="chip">Text</span>
-                    {t.unread > 0 && <span className="text-[11px] text-[var(--am)]">{t.unread} in</span>}
-                    <span className="text-[11px] text-cream-dim">{timeAgo(t.lastMessage?.timestamp)}</span>
+                    <StatusBadge status="Voice" tone="shop" size="sm" />
+                    {fmtDuration(r.duration_sec) && (
+                      <span className="text-[11px] text-cream-dim">{fmtDuration(r.duration_sec)}</span>
+                    )}
+                    <span className="text-[11px] text-cream-dim">{timeAgo(r.recorded_at)}</span>
                   </div>
-                  <div className="display text-[22px] leading-none mt-1 truncate">{fmtPhone(t.phone)}</div>
-                  <div className="text-xs text-cream-dim mt-1 truncate">{preview}</div>
+                  <div className="display text-[22px] leading-none mt-1 truncate">{r.title || "Voice note"}</div>
+                  <div className="text-xs text-cream-dim mt-1 truncate">{r.summary || r.customer || "Plaud capture"}</div>
                 </div>
                 <div className="text-cream-dim">→</div>
               </button>
-            );
-          }
-          const c = row.call;
-          const missed = c.status === "missed";
-          const name = c.from_caller_name || fmtPhone(c.from || c.to);
-          return (
-            <button
-              key={`call-${c.name || c.time || name}`}
-              type="button"
-              onClick={() => setCall(c)}
-              className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
-            >
-              <span className="sf-avatar" aria-hidden>
-                {clientInitials(name)}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={cn("chip", missed && "text-[var(--ro)]")}>{missed ? "Missed" : "Call"}</span>
-                  {fmtDuration(c.duration) && <span className="text-[11px] text-cream-dim">{fmtDuration(c.duration)}</span>}
-                  <span className="text-[11px] text-cream-dim">{timeAgo(c.time)}</span>
+            ))}
+          </Section>
+        )}
+        {(tab === "all" || tab === "fittings") && appts.length > 0 && (
+          <Section title="Fittings today" tone="shop">
+            {appts.map((a) => (
+              <div key={a.name} className="og-row sf-card card-glass px-4 py-3.5 flex items-center gap-3 mb-2">
+                <span className="sf-avatar" aria-hidden>
+                  {clientInitials(a.customerName)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <StatusBadge status="Fitting" tone="shop" size="sm" />
+                    {a.status && <StatusBadge status={a.status} size="sm" />}
+                    <span className="font-mono text-xs text-brass-light">{fmtClock(a.scheduledTime)}</span>
+                  </div>
+                  <div className="display text-[22px] leading-none mt-1 truncate">{a.customerName || "Client"}</div>
+                  <div className="text-xs text-cream-dim mt-1 truncate">
+                    {[a.appointmentType, a.agentDisplayName].filter(Boolean).join(" · ")}
+                  </div>
                 </div>
-                <div className="display text-[22px] leading-none mt-1 truncate">{name}</div>
-                <div className="text-xs text-cream-dim mt-1 truncate">{fmtPhone(c.from || c.to)}</div>
               </div>
-              <div className="text-cream-dim">→</div>
-            </button>
-          );
-        })}
-        {!feed.isLoading && !rows.length && !feed.isError && <div className="sf-empty">The line is quiet.</div>}
+            ))}
+          </Section>
+        )}
+        {(tab === "all" || tab === "sms") && otherSms.length > 0 && (
+          <Section title="Texts" tone="shop">
+            {otherSms.map((t) => (
+              <SmsCard key={`s-${t.phone}`} t={t} onOpen={() => setThreadPhone(t.phone)} />
+            ))}
+          </Section>
+        )}
+        {(tab === "all" || tab === "calls") && otherCalls.length > 0 && (
+          <Section title="Calls" tone="pickup">
+            {otherCalls.map((c) => (
+              <CallCard key={`c-${c.name || c.time}`} c={c} onOpen={() => setCall(c)} />
+            ))}
+          </Section>
+        )}
+
+        {!feed.isLoading &&
+          ((tab === "all" && !sms.length && !calls.length && !recordings.length && !appts.length) ||
+            (tab === "sms" && !sms.length) ||
+            (tab === "calls" && !calls.length) ||
+            (tab === "voice" && !recordings.length) ||
+            (tab === "fittings" && !appts.length)) &&
+          !feed.isError && <div className="sf-empty">The line is quiet.</div>}
       </div>
 
       <LuxuryLayer open={!!threadPhone} onClose={() => setThreadPhone(null)} variant="sheet" label="Text thread" z={70}>
@@ -261,7 +328,7 @@ export default function MessagesGlass() {
               <i className="block w-10 h-1 rounded-full bg-brass/40" />
             </div>
             <div className="caps text-brass-light">{call.status === "missed" ? "Missed call" : "Call"}</div>
-            <h2 className="display text-[28px] leading-none mt-1">
+            <h2 className="display text-[32px] leading-none mt-1">
               {call.from_caller_name || fmtPhone(call.from || call.to)}
             </h2>
             <p className="text-sm text-cream-dim mt-2">
@@ -283,6 +350,95 @@ export default function MessagesGlass() {
           </div>
         )}
       </LuxuryLayer>
+
+      <LuxuryLayer open={!!voice} onClose={() => setVoice(null)} variant="sheet" label="Voice note" z={70}>
+        {voice && (
+          <div
+            className="w-full max-w-lg mx-auto rounded-t-[22px] border border-brass/30 border-b-0 px-5 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
+            style={{ background: "linear-gradient(180deg,#152A1E,#0D1A10)" }}
+          >
+            <div className="caps text-brass-light">Voice</div>
+            <h2 className="display text-[28px] leading-none mt-1">{voice.title || "Voice note"}</h2>
+            <p className="text-sm text-cream-dim mt-2">
+              {[fmtDuration(voice.duration_sec), timeAgo(voice.recorded_at)].filter(Boolean).join(" · ")}
+            </p>
+            {voice.summary && <p className="text-sm text-cream mt-3">{voice.summary}</p>}
+            <button type="button" onClick={() => setVoice(null)} className="btn-ghost h-12 w-full mt-5 text-xs">
+              Close
+            </button>
+          </div>
+        )}
+      </LuxuryLayer>
     </div>
+  );
+}
+
+function Section({
+  title,
+  tone,
+  children,
+}: {
+  title: string;
+  tone: "pickup" | "qc" | "tasks" | "shop";
+  children: ReactNode;
+}) {
+  return (
+    <section className="mb-5">
+      <div className="flex items-center gap-2 mb-2">
+        <StatusBadge status={title} tone={tone} size="sm" />
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function SmsCard({ t, onOpen }: { t: SmsThread; onOpen: () => void }) {
+  const preview = t.lastMessage?.content || t.lastMessage?.body || "No messages";
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
+    >
+      <span className="sf-avatar" aria-hidden>
+        {clientInitials(fmtPhone(t.phone))}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <StatusBadge status="Text" tone="shop" size="sm" />
+          {t.unread > 0 && <StatusBadge status={`${t.unread} new`} tone="qc" size="sm" />}
+          <span className="text-[11px] text-cream-dim">{timeAgo(t.lastMessage?.timestamp)}</span>
+        </div>
+        <div className="display text-[22px] leading-none mt-1 truncate">{fmtPhone(t.phone)}</div>
+        <div className="text-xs text-cream-dim mt-1 truncate">{preview}</div>
+      </div>
+      <div className="text-cream-dim">→</div>
+    </button>
+  );
+}
+
+function CallCard({ c, onOpen }: { c: CallRow; onOpen: () => void }) {
+  const missed = c.status === "missed";
+  const name = c.from_caller_name || fmtPhone(c.from || c.to);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
+    >
+      <span className="sf-avatar" aria-hidden>
+        {clientInitials(name)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <StatusBadge status={missed ? "Missed call" : "Call"} tone={missed ? "tasks" : "pickup"} size="sm" />
+          {fmtDuration(c.duration) && <span className="text-[11px] text-cream-dim">{fmtDuration(c.duration)}</span>}
+          <span className="text-[11px] text-cream-dim">{timeAgo(c.time)}</span>
+        </div>
+        <div className="display text-[22px] leading-none mt-1 truncate">{name}</div>
+        <div className="text-xs text-cream-dim mt-1 truncate">{fmtPhone(c.from || c.to)}</div>
+      </div>
+      <div className="text-cream-dim">→</div>
+    </button>
   );
 }

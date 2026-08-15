@@ -235,16 +235,10 @@ async function waitingRows() {
     }
   }
 
-  // Cards are inspections, never an unfiltered MTM / sales-order dump.
-  let rows = pending;
-  if (orderKeys.size) {
-    const matched = pending.filter(
-      (i) => orderKeys.has(String(i.custom_order || "")) || orderKeys.has(String(i.sales_order || "")),
-    );
-    if (matched.length) rows = matched;
-  }
+  // Cards are inspections. Keep every pending inspection — never hide the rack.
+  const rows = pending;
 
-  return dedupeByInspectionName(rows).map((doc) => {
+  const inspectionRows = dedupeByInspectionName(rows).map((doc) => {
     const order = orderByKey.get(String(doc.custom_order || "")) || orderByKey.get(String(doc.sales_order || ""));
     return serializeListRow(doc, {
       customOrder: order?.name || doc.custom_order,
@@ -254,6 +248,32 @@ async function waitingRows() {
       garmentSummary: order?.garment_summary || order?.garment_type,
     });
   });
+
+  const covered = new Set<string>();
+  for (const r of inspectionRows) {
+    for (const k of [r.customOrder, r.salesOrder, r.id, r.inspectionId]) {
+      if (k) covered.add(String(k));
+    }
+  }
+  const extras = makes
+    .filter((o) => !covered.has(String(o.name || "")) && !covered.has(String(o.erp_sales_order || o.sales_order || "")))
+    .slice(0, 40)
+    .map((o) => ({
+      id: o.name,
+      name: o.name,
+      inspectionId: null,
+      salesOrder: o.erp_sales_order || o.sales_order || null,
+      customOrder: o.name,
+      customerName: o.customer_name || "Client",
+      qcResult: "Pending",
+      result: "Pending",
+      orderStatus: o.order_status || o.status || "Quality Control",
+      garmentSummary: o.garment_summary || o.garment_type || null,
+      dateReceived: dateReceivedLabel(o.date_received),
+      scanUrl: `https://alts.lstailors.com/qc/${encodeURIComponent(o.name)}`,
+    }));
+
+  return [...inspectionRows, ...extras];
 }
 
 async function resolveInspection(id: string) {
@@ -399,6 +419,10 @@ qcRouter.get("/:id/pdf", async (c) => {
     const insp = await resolveInspection(id);
     const so = insp?.sales_order || (/^LSTNY-SO|^LSTX-SO|^SAL-|^SO-/i.test(id) ? id : null);
     const custom = insp?.custom_order || null;
+    const mtm =
+      insp?.mtmpro_order ||
+      (/^LST-\d/i.test(id) ? id : null) ||
+      (/^LST-\d/i.test(String(custom || "")) ? custom : null);
 
     const tryPdf = async (doctype: string, name: string, format: string) => {
       const res = await erpPdf(doctype, name, format);
@@ -412,11 +436,11 @@ qcRouter.get("/:id/pdf", async (c) => {
 
     let buf: ArrayBuffer | null = null;
     let filename = `${id}.pdf`;
-    if (so) {
-      for (const fmt of ["Standard", "Sales Order", "L&S Sales Order"]) {
-        buf = await tryPdf("Sales Order", so, fmt);
+    if (mtm) {
+      for (const fmt of ["Standard", "MTMPro Order", "LSH MTM Pro", "MTM Pro Order"]) {
+        buf = await tryPdf(DT.MTM_PRO_ORDER, mtm, fmt);
         if (buf) {
-          filename = `${so}.pdf`;
+          filename = `${mtm}.pdf`;
           break;
         }
       }
@@ -426,6 +450,15 @@ qcRouter.get("/:id/pdf", async (c) => {
         buf = await tryPdf(DT_CUSTOM, custom, fmt);
         if (buf) {
           filename = `${custom}.pdf`;
+          break;
+        }
+      }
+    }
+    if (!buf && so) {
+      for (const fmt of ["Standard", "Sales Order", "L&S Sales Order"]) {
+        buf = await tryPdf("Sales Order", so, fmt);
+        if (buf) {
+          filename = `${so}.pdf`;
           break;
         }
       }
@@ -453,17 +486,19 @@ qcRouter.get("/:id", async (c) => {
     const insp = await resolveInspection(id);
     if (!insp?.name) {
       const co = await erpGet<any>(DT_CUSTOM, id).catch(() => null);
+      const mtm = await erpGet<any>(DT.MTM_PRO_ORDER, id).catch(() => null);
       const so = await erpGet<any>("Sales Order", id).catch(() => null);
-      if (!co && !so) return c.json({ error: { message: "Not found" } }, 404);
+      if (!co && !mtm && !so) return c.json({ error: { message: "Not found" } }, 404);
+      const order = mtm || co;
       return c.json({
         data: {
           id: null,
           name: null,
-          salesOrder: so?.name || co?.erp_sales_order || co?.sales_order || null,
+          salesOrder: so?.name || order?.erp_sales_order || order?.sales_order || null,
           customOrder: co?.name || null,
-          mtmproOrder: co?.name || null,
-          customer: co?.customer || so?.customer || null,
-          customerName: co?.customer_name || so?.customer_name || "Client",
+          mtmproOrder: mtm?.name || co?.name || null,
+          customer: order?.customer || so?.customer || null,
+          customerName: order?.customer_name || so?.customer_name || "Client",
           qcResult: "Pending",
           result: "Pending",
           notes: "",
@@ -471,12 +506,12 @@ qcRouter.get("/:id", async (c) => {
           summary: checksSummary(blankChecks()),
           photos: [],
           docuseal: false,
-          orderStatus: co?.order_status || co?.status || so?.status || null,
-          garmentSummary: co?.garment_summary || co?.garment_type || null,
+          orderStatus: order?.order_status || order?.status || so?.status || null,
+          garmentSummary: order?.garment_summary || order?.garment_type || order?.order_type || null,
           links: {
-            customer: co?.customer || so?.customer || null,
-            salesOrder: so?.name || co?.erp_sales_order || null,
-            customOrder: co?.name || null,
+            customer: order?.customer || so?.customer || null,
+            salesOrder: so?.name || order?.erp_sales_order || null,
+            customOrder: co?.name || mtm?.name || null,
           },
         },
       });
@@ -586,6 +621,7 @@ qcRouter.patch("/:id", async (c) => {
     const update: Record<string, unknown> = {};
     if (Array.isArray(body.checks)) Object.assign(update, checksToDocFields(body.checks));
     if (typeof body.notes === "string") update.notes = body.notes;
+    if (typeof body.failReason === "string") update.fail_reason = body.failReason;
     if (typeof body.signatureUrl === "string") update.signature_url = body.signatureUrl;
 
     const want = body.qc_result || body.result;
@@ -596,6 +632,7 @@ qcRouter.patch("/:id", async (c) => {
         update.notes = notes;
       }
       update.qc_result = want;
+      update.result = want;
     }
 
     const saved = await updateDroppingFields(existing.name, update);

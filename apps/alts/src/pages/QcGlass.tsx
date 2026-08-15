@@ -5,6 +5,7 @@ import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
+import StatusBadge from "@alts/components/StatusBadge";
 import { clientInitials, syncLabel } from "@alts/lib/ticketDisplay";
 import "@alts/styles/alts-pos.css";
 
@@ -144,7 +145,18 @@ export default function QcGlass() {
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="chip">{row.orderStatus || row.qcResult || row.result || "Quality Control"}</span>
+                <StatusBadge
+                  status={row.qcResult || row.result || row.orderStatus || "Quality Control"}
+                  tone={
+                    tab === "waiting"
+                      ? "qc"
+                      : tab === "open"
+                        ? "shop"
+                        : tab === "passed"
+                          ? "pickup"
+                          : "tasks"
+                  }
+                />
                 {day(row.dateReceived) && (
                   <span className="font-mono text-xs text-brass-light">{day(row.dateReceived)}</span>
                 )}

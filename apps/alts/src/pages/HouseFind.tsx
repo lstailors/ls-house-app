@@ -6,10 +6,11 @@ import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
+import StatusBadge from "@alts/components/StatusBadge";
 import { clientInitials, syncLabel } from "@alts/lib/ticketDisplay";
 import "@alts/styles/alts-pos.css";
 
-type Tab = "custom" | "sales";
+type Tab = "rtw" | "alts" | "mtm";
 
 type CustomOrder = {
   id: string;
@@ -35,6 +36,18 @@ type SalesOrder = {
   transaction_date?: string;
   delivery_date?: string;
   delivery_status?: string;
+};
+
+type AltTicket = {
+  name: string;
+  customer?: string;
+  customer_name?: string;
+  workflow_state?: string;
+  ticket_date?: string;
+  due_date?: string;
+  ticket_total?: number;
+  origin_location?: string;
+  linked_sales_order?: string;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -63,8 +76,17 @@ function day(iso?: string | null) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+function isMtmMake(make?: string | null) {
+  return /mtm|made.?to.?measure|custom|bespoke|mtmpro/i.test(String(make || ""));
+}
+
+function matches(blob: string, q: string) {
+  if (!q) return true;
+  return blob.toLowerCase().includes(q);
+}
+
 export default function HouseFind() {
-  const [tab, setTab] = useState<Tab>("custom");
+  const [tab, setTab] = useState<Tab>("alts");
   const [q, setQ] = useState("");
   const [go, setGo] = useState("");
   const [pickedCustom, setPickedCustom] = useState<CustomOrder | null>(null);
@@ -77,46 +99,76 @@ export default function HouseFind() {
 
   const custom = useQuery({
     queryKey: ["alts-custom-orders"],
-    queryFn: () => api.get<CustomOrder[]>("/api/custom-orders?limit=80"),
+    queryFn: () => api.get<CustomOrder[]>("/api/custom-orders?limit=200"),
     refetchInterval: 90_000,
   });
 
   const sales = useQuery({
-    queryKey: ["alts-so-search", go],
+    queryKey: ["alts-so-browse", go],
     queryFn: () =>
       api.get<SalesOrder[]>(
-        `/api/intake-alterations/sales-orders/search?q=${encodeURIComponent(go)}&limit=20`,
+        `/api/intake-alterations/sales-orders/search?q=${encodeURIComponent(go)}&limit=80`,
       ),
     refetchInterval: 90_000,
   });
 
+  const tickets = useQuery({
+    queryKey: ["alts-house-tickets"],
+    queryFn: () => api.get<AltTicket[]>("/api/intake-alterations/tickets?limit=500&origin=ALL"),
+    refetchInterval: 90_000,
+  });
+
+  const needle = go.toLowerCase();
+
   const customRows = useMemo(() => {
     const rows = custom.data ?? [];
-    if (!go) return rows;
-    const s = go.toLowerCase();
-    return rows.filter((o) => {
-      const blob = [o.id, o.erpName, o.customer?.name, o.customerId, o.garmentType, o.status]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return blob.includes(s);
-    });
-  }, [custom.data, go]);
+    return rows.filter((o) =>
+      matches(
+        [o.id, o.erpName, o.customer?.name, o.customerId, o.garmentType, o.status].filter(Boolean).join(" "),
+        needle,
+      ),
+    );
+  }, [custom.data, needle]);
 
-  const soRows = sales.data ?? [];
+  const soRows = useMemo(() => {
+    const rows = sales.data ?? [];
+    if (!needle) return rows;
+    return rows.filter((o) =>
+      matches(
+        [o.name, o.id, o.customer_name, o.customer, o.make_type, o.status].filter(Boolean).join(" "),
+        needle,
+      ),
+    );
+  }, [sales.data, needle]);
+
+  const rtwRows = soRows.filter((o) => !isMtmMake(o.make_type));
+  const mtmSoRows = soRows.filter((o) => isMtmMake(o.make_type));
+
+  const altRows = useMemo(() => {
+    const rows = tickets.data ?? [];
+    return rows.filter((t) =>
+      matches(
+        [t.name, t.customer_name, t.customer, t.workflow_state, t.linked_sales_order, t.origin_location]
+          .filter(Boolean)
+          .join(" "),
+        needle,
+      ),
+    );
+  }, [tickets.data, needle]);
+
   const live = syncLabel(
-    tab === "custom" ? custom.dataUpdatedAt : sales.dataUpdatedAt,
-    tab === "custom" ? custom.isFetching : sales.isFetching,
+    tab === "rtw" ? sales.dataUpdatedAt : tab === "alts" ? tickets.dataUpdatedAt : custom.dataUpdatedAt,
+    tab === "rtw" ? sales.isFetching : tab === "alts" ? tickets.isFetching : custom.isFetching,
   );
-  const err = tab === "custom" ? custom : sales;
+  const err = tab === "rtw" ? sales : tab === "alts" ? tickets : custom;
 
   return (
     <div className="alts-root min-h-dvh flex flex-col overflow-x-hidden">
       <header className="flex items-center gap-3 px-4 sm:px-5 py-4 border-b border-brass/20 flex-wrap">
         <BrandSeal />
         <div className="min-w-0">
-          <div className="display text-[28px] leading-none">House orders</div>
-          <div className="caps mt-1">Custom · sales orders</div>
+          <div className="display text-[32px] leading-none">House orders</div>
+          <div className="caps mt-1">Ready-to-wear · alterations · MTM Pro</div>
         </div>
         <div className="flex-1" />
         <div className={cn("sf-live", err.isFetching && "is-sync", err.isError && "is-down")}>
@@ -129,14 +181,15 @@ export default function HouseFind() {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Name, SO, or order…"
+          placeholder="Name, ticket, SO, or MTM Pro…"
           className="w-full rounded-full border border-brass/25 bg-black/30 px-4 py-3 text-base text-cream placeholder:text-cream-dim"
         />
         <div className="flex flex-wrap gap-2">
           {(
             [
-              ["custom", "Custom", customRows.length],
-              ["sales", "Sales orders", soRows.length],
+              ["rtw", "Ready-to-wear", rtwRows.length],
+              ["alts", "Alterations", altRows.length],
+              ["mtm", "MTM Pro / custom", customRows.length + mtmSoRows.length],
             ] as const
           ).map(([k, lab, n]) => (
             <button
@@ -164,38 +217,8 @@ export default function HouseFind() {
           />
         )}
 
-        {tab === "custom" &&
-          customRows.map((o) => {
-            const name = o.customer?.name || o.customerId || "Client";
-            return (
-              <button
-                key={o.id}
-                type="button"
-                onClick={() => setPickedCustom(o)}
-                className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
-              >
-                <span className="sf-avatar" aria-hidden>
-                  {clientInitials(name)}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="chip">{prettyStatus(o.status)}</span>
-                    {o.garmentType && <span className="text-[11px] text-cream-dim">{o.garmentType}</span>}
-                    {money(o.quotedPrice) && <span className="text-[11px] text-brass-light">{money(o.quotedPrice)}</span>}
-                  </div>
-                  <div className="display text-[22px] leading-none mt-1 truncate">{name}</div>
-                  <div className="text-xs text-cream-dim mt-1 truncate">
-                    {o.erpName || o.id}
-                    {day(o.createdAt) ? ` · ${day(o.createdAt)}` : ""}
-                  </div>
-                </div>
-                <div className="text-cream-dim">→</div>
-              </button>
-            );
-          })}
-
-        {tab === "sales" &&
-          soRows.map((o) => (
+        {tab === "rtw" &&
+          rtwRows.map((o) => (
             <button
               key={o.name}
               type="button"
@@ -207,22 +230,112 @@ export default function HouseFind() {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="chip">{o.status || "Open"}</span>
-                  {o.make_type && <span className="text-[11px] text-cream-dim">{o.make_type}</span>}
-                  {money(o.grand_total) && <span className="text-[11px] text-brass-light">{money(o.grand_total)}</span>}
+                  <StatusBadge status={o.status || "Open"} size="sm" />
+                  {o.make_type && <span className="text-[12px] text-cream-dim">{o.make_type}</span>}
+                  {money(o.grand_total) && <span className="text-[12px] text-brass-light">{money(o.grand_total)}</span>}
                 </div>
-                <div className="display text-[22px] leading-none mt-1 truncate">{o.customer_name || "Client"}</div>
-                <div className="text-xs text-cream-dim mt-1 truncate">
-                  {o.name}
-                  {o.delivery_date ? ` · due ${day(o.delivery_date)}` : ""}
+                <div className="font-mono text-[15px] text-brass-light mt-1.5 tracking-wide">{o.name}</div>
+                <div className="display text-[24px] leading-none mt-1 truncate">{o.customer_name || "Client"}</div>
+                <div className="text-sm text-cream-dim mt-1 truncate">
+                  {o.delivery_date ? `Due ${day(o.delivery_date)}` : day(o.transaction_date)}
                 </div>
               </div>
               <div className="text-cream-dim">→</div>
             </button>
           ))}
 
+        {tab === "alts" &&
+          altRows.map((t) => (
+            <Link
+              key={t.name}
+              to={`/orders/alterations/${encodeURIComponent(t.name)}`}
+              className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
+            >
+              <span className="sf-avatar" aria-hidden>
+                {clientInitials(t.customer_name || t.customer)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <StatusBadge status={t.workflow_state || "Open"} size="sm" />
+                  {t.origin_location && <span className="text-[12px] text-cream-dim">{t.origin_location}</span>}
+                  {money(t.ticket_total) && <span className="text-[12px] text-brass-light">{money(t.ticket_total)}</span>}
+                </div>
+                <div className="font-mono text-[15px] text-brass-light mt-1.5 tracking-wide">{t.name}</div>
+                <div className="display text-[24px] leading-none mt-1 truncate">{t.customer_name || "Client"}</div>
+                <div className="text-sm text-cream-dim mt-1 truncate">
+                  {t.due_date ? `Due ${day(t.due_date)}` : day(t.ticket_date)}
+                  {t.linked_sales_order ? ` · ${t.linked_sales_order}` : ""}
+                </div>
+              </div>
+              <div className="text-cream-dim">→</div>
+            </Link>
+          ))}
+
+        {tab === "mtm" && (
+          <>
+            {customRows.map((o) => {
+              const name = o.customer?.name || o.customerId || "Client";
+              const orderNo = o.erpName || o.id;
+              return (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => setPickedCustom(o)}
+                  className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
+                >
+                  <span className="sf-avatar" aria-hidden>
+                    {clientInitials(name)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <StatusBadge status={prettyStatus(o.status) || "Custom"} size="sm" />
+                      {o.garmentType && <span className="text-[12px] text-cream-dim">{o.garmentType}</span>}
+                      {money(o.quotedPrice) && <span className="text-[12px] text-brass-light">{money(o.quotedPrice)}</span>}
+                    </div>
+                    <div className="font-mono text-[15px] text-brass-light mt-1.5 tracking-wide">{orderNo}</div>
+                    <div className="display text-[24px] leading-none mt-1 truncate">{name}</div>
+                    <div className="text-sm text-cream-dim mt-1 truncate">
+                      MTM Pro / custom
+                      {day(o.createdAt) ? ` · ${day(o.createdAt)}` : ""}
+                    </div>
+                  </div>
+                  <div className="text-cream-dim">→</div>
+                </button>
+              );
+            })}
+            {mtmSoRows.map((o) => (
+              <button
+                key={o.name}
+                type="button"
+                onClick={() => setPickedSo(o)}
+                className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
+              >
+                <span className="sf-avatar" aria-hidden>
+                  {clientInitials(o.customer_name || o.customer)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <StatusBadge status={o.status || "Open"} size="sm" />
+                    {o.make_type && <span className="text-[12px] text-cream-dim">{o.make_type}</span>}
+                    {money(o.grand_total) && <span className="text-[12px] text-brass-light">{money(o.grand_total)}</span>}
+                  </div>
+                  <div className="font-mono text-[15px] text-brass-light mt-1.5 tracking-wide">{o.name}</div>
+                  <div className="display text-[24px] leading-none mt-1 truncate">{o.customer_name || "Client"}</div>
+                  <div className="text-sm text-cream-dim mt-1 truncate">
+                    Sales order
+                    {o.delivery_date ? ` · due ${day(o.delivery_date)}` : ""}
+                  </div>
+                </div>
+                <div className="text-cream-dim">→</div>
+              </button>
+            ))}
+          </>
+        )}
+
         {!err.isLoading &&
-          ((tab === "custom" && !customRows.length) || (tab === "sales" && !soRows.length)) &&
+          ((tab === "rtw" && !rtwRows.length) ||
+            (tab === "alts" && !altRows.length) ||
+            (tab === "mtm" && !customRows.length && !mtmSoRows.length)) &&
           !err.isError && <div className="sf-empty">{go ? "Nothing matches." : "No open house orders."}</div>}
       </div>
 
@@ -235,14 +348,13 @@ export default function HouseFind() {
             <div className="flex justify-center pb-2" aria-hidden>
               <i className="block w-10 h-1 rounded-full bg-brass/40" />
             </div>
-            <div className="caps text-brass-light">{prettyStatus(pickedCustom.status)}</div>
-            <h2 className="display text-[28px] leading-none mt-1">
+            <StatusBadge status={prettyStatus(pickedCustom.status) || "Custom"} />
+            <h2 className="display text-[28px] leading-none mt-2">
               {pickedCustom.customer?.name || "Client"}
             </h2>
+            <p className="font-mono text-sm text-brass-light mt-2">{pickedCustom.erpName || pickedCustom.id}</p>
             <p className="text-sm text-cream-dim mt-2">
-              {[pickedCustom.garmentType, money(pickedCustom.quotedPrice), pickedCustom.erpName || pickedCustom.id]
-                .filter(Boolean)
-                .join(" · ")}
+              {[pickedCustom.garmentType, money(pickedCustom.quotedPrice)].filter(Boolean).join(" · ")}
             </p>
             {pickedCustom.notes && <p className="text-sm text-cream mt-3">{pickedCustom.notes}</p>}
             <div className="flex flex-col gap-2 mt-5">
@@ -279,10 +391,11 @@ export default function HouseFind() {
             <div className="flex justify-center pb-2" aria-hidden>
               <i className="block w-10 h-1 rounded-full bg-brass/40" />
             </div>
-            <div className="caps text-brass-light">{pickedSo.status || "Sales order"}</div>
-            <h2 className="display text-[28px] leading-none mt-1">{pickedSo.customer_name || "Client"}</h2>
+            <StatusBadge status={pickedSo.status || "Sales order"} />
+            <h2 className="display text-[28px] leading-none mt-2">{pickedSo.customer_name || "Client"}</h2>
+            <p className="font-mono text-sm text-brass-light mt-2">{pickedSo.name}</p>
             <p className="text-sm text-cream-dim mt-2">
-              {[pickedSo.name, money(pickedSo.grand_total), pickedSo.delivery_date ? `due ${day(pickedSo.delivery_date)}` : ""]
+              {[pickedSo.make_type, money(pickedSo.grand_total), pickedSo.delivery_date ? `due ${day(pickedSo.delivery_date)}` : ""]
                 .filter(Boolean)
                 .join(" · ")}
             </p>

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import StatusBadge from "@alts/components/StatusBadge";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -13,7 +14,6 @@ import {
 import { toast } from "sonner";
 import { api, ApiError } from "@ls/api-client";
 import { GlassCard } from "@ls/design";
-import { StatusPill } from "@ls/design";
 import { Button } from "@ls/design/ui/button";
 import { Skeleton } from "@ls/design/ui/skeleton";
 import { GarmentDetailsCard } from "@alts/components/garment/GarmentDetailsCard";
@@ -25,7 +25,6 @@ import {
   isTruthyFlag,
   isInProgress,
   isCompleted,
-  statusVariant,
 } from "@alts/components/garment/garmentFormat";
 import type { GarmentJobCard, GarmentActionResult } from "@ls/types";
 
@@ -34,6 +33,7 @@ export default function GarmentJobCardPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [completeOpen, setCompleteOpen] = useState(false);
+  const [notes, setNotes] = useState("");
 
   const jobCardKey = ["garment-job-card", ticket, garmentId];
 
@@ -52,6 +52,22 @@ export default function GarmentJobCardPage() {
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: jobCardKey });
+
+  useEffect(() => {
+    const n = String((data as { garment?: { notes?: string }; notes?: string } | undefined)?.garment?.notes
+      ?? (data as { notes?: string } | undefined)?.notes
+      ?? "");
+    setNotes(n);
+  }, [data]);
+
+  const notesMutation = useMutation({
+    mutationFn: (text: string) =>
+      api.patch(`/api/alterations/${encodeURIComponent(ticket!)}/garments/${encodeURIComponent(garmentId!)}/status`, {
+        notes: text,
+      }),
+    onSuccess: () => toast.success("Notes saved"),
+    onError: (e: Error) => toast.error(e.message || "Could not save notes"),
+  });
 
   const statusMutation = useMutation({
     mutationFn: (status: "In Progress" | "Pending") =>
@@ -174,6 +190,7 @@ export default function GarmentJobCardPage() {
   }, 0);
 
   return (
+    <div className="alts-root min-h-dvh px-4 py-4">
     <div className="mx-auto max-w-lg space-y-5 pb-28 animate-fade-up">
       {/* Header */}
       <GlassCard variant="strong" className="p-5 space-y-4">
@@ -194,11 +211,7 @@ export default function GarmentJobCardPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           {data.ticket_state ? (
-            <StatusPill
-              status={data.ticket_state}
-              variant={statusVariant(data.ticket_state)}
-              label={data.ticket_state}
-            />
+            <StatusBadge status={data.ticket_state} />
           ) : null}
           {data.due_date ? (
             <span className="inline-flex items-center gap-1.5 text-xs text-cream-muted">
@@ -219,6 +232,25 @@ export default function GarmentJobCardPage() {
       </GlassCard>
 
       <GarmentDetailsCard garment={data.garment} fallbackId={garmentId} />
+
+      <GlassCard className="p-5 space-y-3">
+        <div className="ui-label">Floor notes</div>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={4}
+          placeholder="Fit notes, fabric issues, who has the piece…"
+          className="w-full rounded-xl bg-black/35 border border-brass/25 px-3.5 py-3 text-[15px] text-cream outline-none focus:border-brass"
+        />
+        <Button
+          type="button"
+          onClick={() => notesMutation.mutate(notes)}
+          disabled={notesMutation.isPending}
+          className="btn-brass min-h-[44px] w-full"
+        >
+          Save notes
+        </Button>
+      </GlassCard>
 
       <WorkToDoList lines={data.lines} />
 
@@ -271,6 +303,7 @@ export default function GarmentJobCardPage() {
           completeMutation.mutate({ worker, actual_minutes: actualMinutes })
         }
       />
+    </div>
     </div>
   );
 }

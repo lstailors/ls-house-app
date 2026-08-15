@@ -7,6 +7,7 @@ import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
+import StatusBadge from "@alts/components/StatusBadge";
 import { clientInitials, syncLabel } from "@alts/lib/ticketDisplay";
 import { storeToday } from "@alts/lib/storeDate";
 import "@alts/styles/alts-pos.css";
@@ -50,12 +51,23 @@ type HouseEvent = {
 };
 
 const FEED_LABEL: Record<string, string> = {
-  nyc_appointments: "Appointment",
-  houston_appointments: "HOU",
-  production_alterations: "Due",
-  yz_ship: "Ship",
-  app_deliveries: "Delivery",
-  pickups_deliveries: "Pickup",
+  nyc_appointments: "NYC appointments",
+  houston_appointments: "Houston",
+  production_alterations: "Alterations due",
+  yz_ship: "Shipping / YZ",
+  app_deliveries: "Deliveries",
+  pickups_deliveries: "Pickups",
+  birthdays: "Birthdays",
+};
+
+const FEED_TONES: Record<string, "pickup" | "qc" | "tasks" | "shop" | "neutral"> = {
+  nyc_appointments: "shop",
+  houston_appointments: "shop",
+  production_alterations: "qc",
+  yz_ship: "shop",
+  app_deliveries: "pickup",
+  pickups_deliveries: "pickup",
+  birthdays: "tasks",
 };
 
 function isoDay(d: Date) {
@@ -94,13 +106,24 @@ export default function AppointmentsGlass() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const today = storeToday();
-  const [tab, setTab] = useState<"today" | "week" | "house">("today");
+  const [tab, setTab] = useState<"cal" | "today" | "week" | "house">("cal");
   const [cursor, setCursor] = useState(today);
   const [picked, setPicked] = useState<Appt | null>(null);
+  const [feedsOn, setFeedsOn] = useState<Record<string, boolean>>({
+    nyc_appointments: true,
+    houston_appointments: true,
+    production_alterations: true,
+    yz_ship: true,
+    app_deliveries: true,
+    pickups_deliveries: true,
+    birthdays: true,
+  });
 
+  const monthStart = `${cursor.slice(0, 7)}-01`;
+  const monthEnd = addDays(addDays(monthStart, 32).slice(0, 8) + "01", -1);
   const weekEnd = addDays(cursor, 6);
-  const rangeFrom = tab === "today" ? cursor : cursor;
-  const rangeTo = tab === "today" ? cursor : weekEnd;
+  const rangeFrom = tab === "today" ? cursor : tab === "cal" ? monthStart : cursor;
+  const rangeTo = tab === "today" ? cursor : tab === "cal" ? monthEnd : weekEnd;
 
   const book = useQuery({
     queryKey: ["alts-appointments", rangeFrom, rangeTo],
@@ -113,7 +136,7 @@ export default function AppointmentsGlass() {
 
   const house = useQuery({
     queryKey: ["alts-house-cal", rangeFrom, rangeTo],
-    enabled: tab === "house",
+    enabled: tab === "house" || tab === "cal",
     queryFn: () => api.get<HouseEvent[]>(`/api/calendar/events?start=${rangeFrom}&end=${rangeTo}`),
     refetchInterval: 60_000,
   });
@@ -154,12 +177,13 @@ export default function AppointmentsGlass() {
   const houseByDay = useMemo(() => {
     const map = new Map<string, HouseEvent[]>();
     for (const ev of houseRows) {
+      if (feedsOn[ev.feed] === false) continue;
       const day = String(ev.start || "").slice(0, 10);
       if (!map.has(day)) map.set(day, []);
       map.get(day)!.push(ev);
     }
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [houseRows]);
+  }, [houseRows, feedsOn]);
 
   const live = syncLabel(book.dataUpdatedAt, book.isFetching);
   const counts = {
@@ -169,8 +193,29 @@ export default function AppointmentsGlass() {
   };
 
   const shift = (dir: number) => {
+    if (tab === "cal") {
+      const [y, m] = cursor.split("-").map(Number);
+      const d = new Date(y, m - 1 + dir, 1);
+      setCursor(isoDay(d));
+      return;
+    }
     setCursor((c) => addDays(c, tab === "today" ? dir : dir * 7));
   };
+
+  const monthCells = useMemo(() => {
+    const start = new Date(monthStart + "T12:00:00");
+    const pad = start.getDay();
+    const daysIn = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+    const cells: Array<{ iso: string | null; label: string }> = [];
+    for (let i = 0; i < pad; i++) cells.push({ iso: null, label: "" });
+    for (let d = 1; d <= daysIn; d++) {
+      const iso = `${monthStart.slice(0, 7)}-${String(d).padStart(2, "0")}`;
+      cells.push({ iso, label: String(d) });
+    }
+    return cells;
+  }, [monthStart]);
+
+  const houseVisible = houseRows.filter((ev) => feedsOn[ev.feed] !== false);
 
   const openHouse = (ev: HouseEvent) => {
     if (ev.feed === "production_alterations" && ev.erpName) {
@@ -187,8 +232,8 @@ export default function AppointmentsGlass() {
       <header className="flex items-center gap-3 px-4 sm:px-5 py-4 border-b border-brass/20 flex-wrap">
         <BrandSeal />
         <div className="min-w-0">
-          <div className="display text-[28px] leading-none">Appointments</div>
-          <div className="caps mt-1">Fitting room · house calendar</div>
+          <div className="display text-[32px] leading-none">Calendar</div>
+          <div className="caps mt-1">House · fittings · shipping</div>
         </div>
         <div className="flex-1" />
         <div className={cn("sf-live", book.isFetching && "is-sync", book.isError && "is-down")}>
@@ -200,9 +245,10 @@ export default function AppointmentsGlass() {
       <div className="px-4 sm:px-5 pt-3 flex flex-wrap gap-2">
         {(
           [
+            ["cal", "Calendar", houseVisible.length],
             ["today", "Today", counts.today],
             ["week", "Week", counts.week],
-            ["house", "House", counts.house],
+            ["house", "List", counts.house],
           ] as const
         ).map(([k, lab, n]) => (
           <button
@@ -235,6 +281,26 @@ export default function AppointmentsGlass() {
         </div>
       </div>
 
+      {(tab === "cal" || tab === "house") && (
+        <div className="px-4 sm:px-5 pt-3 flex flex-wrap gap-2">
+          {Object.keys(FEED_LABEL).map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setFeedsOn((prev) => ({ ...prev, [id]: !prev[id] }))}
+              className={cn(
+                "h-11 px-3 rounded-full border text-[11px] font-bold uppercase tracking-widest",
+                feedsOn[id]
+                  ? "bg-brass/20 border-brass text-cream"
+                  : "border-brass/20 text-cream-dim opacity-60",
+              )}
+            >
+              {FEED_LABEL[id]}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-4 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))]">
         {book.isError && (
           <QueryErrorPanel
@@ -244,7 +310,98 @@ export default function AppointmentsGlass() {
           />
         )}
 
-        {tab !== "house" &&
+        {tab === "cal" && (
+          <div>
+            <div className="display text-[28px] mb-3">
+              {new Date(monthStart + "T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+            </div>
+            <div className="grid grid-cols-7 gap-1 mb-1">
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                <div key={d} className="caps text-center text-[10px] py-1">
+                  {d}
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {monthCells.map((cell, i) => {
+                const events = cell.iso
+                  ? houseVisible.filter((ev) => String(ev.start).slice(0, 10) === cell.iso)
+                  : [];
+                const apptN = cell.iso
+                  ? appts.filter((a) => String(a.scheduledTime).slice(0, 10) === cell.iso).length
+                  : 0;
+                return (
+                  <button
+                    key={cell.iso || `pad-${i}`}
+                    type="button"
+                    disabled={!cell.iso}
+                    onClick={() => cell.iso && setCursor(cell.iso)}
+                    className={cn(
+                      "min-h-[88px] rounded-xl border p-1.5 text-left align-top",
+                      cell.iso === today && "border-brass bg-brass/15",
+                      cell.iso && cell.iso !== today && "border-brass/15 bg-black/20",
+                      !cell.iso && "border-transparent",
+                    )}
+                  >
+                    <div className="text-[13px] font-bold tabular-nums">{cell.label}</div>
+                    <div className="mt-1 space-y-0.5">
+                      {events.slice(0, 3).map((ev) => (
+                        <div key={ev.id} className="truncate">
+                          <StatusBadge status={FEED_LABEL[ev.feed] || ev.feed} tone={FEED_TONES[ev.feed]} size="sm" />
+                        </div>
+                      ))}
+                      {apptN > 0 && <StatusBadge status={`${apptN} fitting`} tone="shop" size="sm" />}
+                      {events.length > 3 && (
+                        <div className="text-[10px] text-cream-dim">+{events.length - 3}</div>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-4">
+              <div className="caps mb-2">{cursor === today ? "Today" : dayLabel(cursor)}</div>
+              {houseVisible
+                .filter((ev) => String(ev.start).slice(0, 10) === cursor)
+                .map((ev) => (
+                  <button
+                    key={ev.id}
+                    type="button"
+                    onClick={() => openHouse(ev)}
+                    className="og-row sf-card w-full text-left card-glass px-4 py-3.5 mb-2"
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <StatusBadge status={FEED_LABEL[ev.feed] || ev.feed} tone={FEED_TONES[ev.feed]} size="sm" />
+                      {!ev.allDay && <span className="font-mono text-xs text-brass-light">{fmtClock(ev.start)}</span>}
+                    </div>
+                    <div className="display text-[22px] leading-none mt-1 truncate">{ev.customer || ev.title}</div>
+                  </button>
+                ))}
+              {appts
+                .filter((a) => String(a.scheduledTime).slice(0, 10) === cursor)
+                .map((a) => (
+                  <button
+                    key={a.name}
+                    type="button"
+                    onClick={() => setPicked(a)}
+                    className="og-row sf-card w-full text-left card-glass px-4 py-3.5 mb-2"
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-xs text-brass-light">{fmtClock(a.scheduledTime)}</span>
+                      <StatusBadge status={a.status} size="sm" />
+                    </div>
+                    <div className="display text-[22px] leading-none mt-1 truncate">{a.customerName}</div>
+                  </button>
+                ))}
+              {!houseVisible.some((ev) => String(ev.start).slice(0, 10) === cursor) &&
+                !appts.some((a) => String(a.scheduledTime).slice(0, 10) === cursor) && (
+                  <div className="sf-empty">Nothing on this day.</div>
+                )}
+            </div>
+          </div>
+        )}
+
+        {(tab === "today" || tab === "week") &&
           byDay.map(([day, rows]) => (
             <section key={day}>
               <div className="caps mb-2">{day === today ? "Today" : dayLabel(day)}</div>
@@ -273,7 +430,7 @@ export default function AppointmentsGlass() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-xs text-brass-light">{fmtClock(a.scheduledTime) || "—"}</span>
-                      <span className="chip">{a.status}</span>
+                      <StatusBadge status={a.status} size="sm" />
                       {a.appointmentType && <span className="text-[11px] text-cream-dim">{a.appointmentType}</span>}
                     </div>
                     <div className="display text-[22px] leading-none mt-1 truncate">{a.customerName || "Client"}</div>
@@ -309,9 +466,9 @@ export default function AppointmentsGlass() {
                   className="og-row sf-card w-full text-left card-glass px-4 py-3.5 mb-2"
                 >
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="chip">{FEED_LABEL[ev.feed] || ev.feed}</span>
+                    <StatusBadge status={FEED_LABEL[ev.feed] || ev.feed} tone={FEED_TONES[ev.feed]} size="sm" />
                     {!ev.allDay && <span className="font-mono text-xs text-brass-light">{fmtClock(ev.start)}</span>}
-                    {ev.status && <span className="text-[11px] text-cream-dim">{ev.status}</span>}
+                    {ev.status && <StatusBadge status={ev.status} size="sm" />}
                   </div>
                   <div className="display text-[22px] leading-none mt-1 truncate">{ev.customer || ev.title}</div>
                   <div className="text-xs text-cream-dim mt-1 truncate">

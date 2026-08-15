@@ -19,6 +19,7 @@ import ParkedTray from "@alts/pages/ParkedTray";
 import Transfers from "@alts/pages/Transfers";
 import OrdersGlass from "@alts/pages/OrdersGlass";
 import Lookup from "@alts/pages/Lookup";
+import ProgressBoard from "@alts/pages/ProgressBoard";
 import TicketPhotos from "@alts/pages/TicketPhotos";
 import Dispatch from "@alts/pages/Dispatch";
 import QuoteComposer from "@alts/pages/QuoteComposer";
@@ -132,6 +133,14 @@ export default function App() {
                 element={
                   <RoleGuard allow={[...FOH]}>
                     <FloorPerformance />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/progress"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <ProgressBoard />
                   </RoleGuard>
                 }
               />

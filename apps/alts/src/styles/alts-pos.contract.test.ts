@@ -105,8 +105,8 @@ describe("iPhone scale contract", () => {
     expect(app).toContain('path="/tasks"');
     expect(app).toContain("MessagesGlass");
     expect(app).toContain('path="/messages"');
-    expect(app).toContain("HouseFind");
-    expect(app).toContain('path="/house"');
+    expect(app).toContain("ProgressBoard");
+    expect(app).toContain('path="/progress"');
     expect(app).toContain("QcGlass");
     expect(app).toContain('path="/qc"');
     expect(app).toContain("QcInspection");

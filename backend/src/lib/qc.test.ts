@@ -138,7 +138,6 @@ describe("QC routes are mounted", () => {
   test("waiting list is inspections, not an MTMPro / sales-order dump", () => {
     const src = readFileSync(new URL("../routes/qc.ts", import.meta.url), "utf8");
     expect(src).not.toContain("listMtmInQueue");
-    expect(src).not.toContain("DT.MTM_PRO_ORDER");
     expect(src).not.toContain("need_by_date");
     expect(src).toContain("qc_result");
     expect(src).toContain("date_received");
@@ -146,6 +145,8 @@ describe("QC routes are mounted", () => {
     expect(src).toContain("requireAdmin");
     expect(src).toContain("dedupeByInspectionName");
     expect(src).not.toContain("setMtmStatus");
+    expect(src).toContain("DT.MTM_PRO_ORDER");
+    expect(src).toContain('qcRouter.get("/:id/pdf"');
   });
 
   test("settings is registered before /:id so it is not treated as an inspection", () => {

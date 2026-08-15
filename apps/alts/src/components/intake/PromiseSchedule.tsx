@@ -104,36 +104,34 @@ export default function PromiseSchedule({
   const canConfirm = !!selectedDate && !!selectedTime;
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 max-w-3xl mx-auto w-full relative">
-      {/* Scrollable body — never clip the finish CTA */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-28">
+    <div className="flex flex-col flex-1 min-h-0 w-full relative">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-28 px-1">
         <div className="shrink-0 mb-4">
           <button
             type="button"
             onClick={onBack}
-            className="text-[11px] font-bold tracking-widest uppercase text-brass-light mb-2"
+            className="text-[12px] font-bold tracking-widest uppercase text-brass-light mb-2 min-h-[44px]"
           >
             ← Back to review
           </button>
-          <h2 className="display text-[32px] md:text-[36px] leading-none italic">
+          <h2 className="display text-[36px] md:text-[44px] leading-none italic">
             When is it promised?
           </h2>
-          <p className="text-[12.5px] text-cream-dim mt-2 leading-relaxed max-w-xl">
+          <p className="text-[15px] text-cream-dim mt-2 leading-relaxed max-w-2xl">
             Last step before the ticket. Pick due date and time
             {clientLabel ? ` for ${clientLabel.split(" ")[0]}` : ""}. Bars show how full{" "}
-            {origin} already is that day — like a flight load chart.
+            {origin} already is that day.
           </p>
         </div>
 
-        {/* Airline-style day strip */}
-        <div className="mb-4">
-          <div className="text-[9px] font-bold tracking-[0.16em] uppercase text-brass-light mb-2">
+        <div className="mb-5">
+          <div className="text-[11px] font-bold tracking-[0.16em] uppercase text-brass-light mb-3">
             Next 14 shop days · {origin}
           </div>
           {loading ? (
-            <div className="h-28 rounded-2xl border border-brass/20 bg-black/25 animate-pulse" />
+            <div className="h-40 rounded-2xl border border-brass/20 bg-black/25 animate-pulse" />
           ) : (
-            <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 snap-x">
+            <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
               {days.map((d) => {
                 const level = loadLevel(d.count);
                 const lab = fmtDayLabel(d.date);
@@ -144,25 +142,24 @@ export default function PromiseSchedule({
                     type="button"
                     onClick={() => onSelectDate(d.date)}
                     className={cn(
-                      "snap-start flex-none w-[72px] rounded-2xl border px-1.5 pt-2 pb-2 transition-all",
-                      "flex flex-col items-center min-h-[112px]",
+                      "rounded-2xl border px-1.5 pt-2 pb-2 transition-all",
+                      "flex flex-col items-center min-h-[108px] w-full",
                       sel
                         ? "border-brass bg-brass/18 shadow-[0_0_0_1px_rgba(176,141,87,0.35)]"
                         : "border-brass/20 bg-black/25 hover:border-brass/45",
                     )}
                   >
-                    <span className="text-[9px] font-bold tracking-wider uppercase text-cream-dim">
+                    <span className="text-[10px] font-bold tracking-wider uppercase text-cream-dim">
                       {lab.weekday}
                     </span>
-                    <span className="display text-[22px] leading-none mt-0.5">{lab.day}</span>
-                    <span className="text-[9px] text-cream-dim">{lab.month}</span>
-                    {/* redesign v2 — 6-cap load segments */}
+                    <span className="display text-[26px] leading-none mt-0.5">{lab.day}</span>
+                    <span className="text-[10px] text-cream-dim">{lab.month}</span>
                     <div className="flex gap-[2.5px] justify-center mt-2 mb-1 px-1 w-full">
                       {Array.from({ length: 6 }).map((_, i) => (
                         <span
                           key={i}
                           className={cn(
-                            "h-[5px] flex-1 max-w-[8px] rounded-full",
+                            "h-[6px] flex-1 max-w-[8px] rounded-full",
                             i < Math.min(d.count, 6)
                               ? level === "open"
                                 ? "bg-[var(--em,#4FBF8E)]"
@@ -176,36 +173,35 @@ export default function PromiseSchedule({
                     </div>
                     <span
                       className={cn(
-                        "text-[10px] font-bold tabular-nums",
+                        "text-[11px] font-bold tabular-nums",
                         level === "open" && "text-[var(--em,#4FBF8E)]",
                         level === "busy" && "text-[var(--am,#E8A85C)]",
                         level === "full" && "text-[var(--ro,#D97B6C)]",
                       )}
                     >
-                      {d.count} due
-                      {d.rush ? ` · ${d.rush}★` : ""}
+                      {d.count}
+                      {d.rush ? `★` : ""}
                     </span>
                   </button>
                 );
               })}
             </div>
           )}
-          <div className="flex gap-3 mt-1 text-[10px] text-cream-dim">
+          <div className="flex gap-4 mt-2 text-[12px] text-cream-dim">
             <span className="inline-flex items-center gap-1">
-              <i className="w-2.5 h-2.5 rounded-sm bg-[var(--em,#4FBF8E)]" /> Open (0–2)
+              <i className="w-2.5 h-2.5 rounded-sm bg-[var(--em,#4FBF8E)]" /> Open
             </span>
             <span className="inline-flex items-center gap-1">
-              <i className="w-2.5 h-2.5 rounded-sm bg-[var(--am,#E8A85C)]" /> Busy (3–5)
+              <i className="w-2.5 h-2.5 rounded-sm bg-[var(--am,#E8A85C)]" /> Busy
             </span>
             <span className="inline-flex items-center gap-1">
-              <i className="w-2.5 h-2.5 rounded-sm bg-[var(--ro,#D97B6C)]" /> Heavy (6+)
+              <i className="w-2.5 h-2.5 rounded-sm bg-[var(--ro,#D97B6C)]" /> Heavy
             </span>
           </div>
         </div>
 
-        {/* Day detail + time — auto height on mobile so nothing is clipped */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-2">
-          <div className="rounded-2xl border border-brass/20 bg-black/25 flex flex-col max-h-[280px] md:max-h-none md:min-h-[280px] overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pb-2 min-h-[280px]">
+          <div className="rounded-2xl border border-brass/20 bg-black/25 flex flex-col min-h-[260px] overflow-hidden">
             <div className="px-3.5 py-2.5 border-b border-brass/15 shrink-0">
               <div className="text-[9px] font-bold tracking-[0.14em] uppercase text-brass-light">
                 Already on this day
