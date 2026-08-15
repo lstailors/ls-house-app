@@ -281,7 +281,7 @@ for (const path of ROUTES) {
 test("home overdue chip matches metrics API and links to filter", async ({ page }) => {
   await mockApis(page);
   await page.goto("/");
-  const chip = page.locator('a[href="/shop-floor?filter=overdue"]');
+  const chip = page.getByTestId("overdue-chip");
   await expect(chip).toBeVisible();
   await expect(chip).toContainText("7");
   await expect(chip).toContainText("OVERDUE");

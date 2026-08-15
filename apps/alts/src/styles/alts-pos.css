@@ -796,6 +796,10 @@ body {
   font-weight: 600;
   color: var(--cr);
   line-height: 1;
+  font-variant-numeric: tabular-nums;
+  min-width: 1.2em;
+  display: inline-block;
+  text-align: center;
 }
 
 .home-040-strip .pill.rd b {
