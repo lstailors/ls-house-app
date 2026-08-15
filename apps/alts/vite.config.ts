@@ -5,40 +5,6 @@ import path from "path";
 
 const pkgs = path.resolve(__dirname, "../../packages");
 
-/**  POS shell + phone-tier routes — precache so floor / iPhone survive wifi drops */
-const POS_ROUTES = [
-  "/",
-  "/login",
-  "/lookup",
-  "/scanner",
-  "/shop-floor",
-  "/pickup",
-  "/parked",
-  "/orders/alterations",
-  "/intake/kind",
-  "/intake/alterations",
-  "/dispatch",
-  "/quote",
-  "/transfers",
-  "/e-ticket",
-  "/pay",
-  "/customers",
-  "/deliveries",
-];
-
-const NAV_EXTRA = [
-  /^\/e-ticket\/[^/]+\/?$/,
-  /^\/t\/[^/]+\/?$/,
-  /^\/orders\/alterations\/[^/]+\/photos\/?$/,
-  /^\/g\/[^/]+\/[^/]+\/?$/,
-  /^\/garments\/[^/]+\/?$/,
-  /^\/garments\/[^/]+\/[^/]+\/?$/,
-  /^\/scanner\/?$/,
-  /^\/pay\/[^/]+\/?$/,
-  /^\/customers\/[^/]+\/?$/,
-  /^\/deliveries\/[^/]+\/?$/,
-];
-
 export default defineConfig({
   define: {
     "import.meta.env.VITE_COMMIT": JSON.stringify(
@@ -86,15 +52,23 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: "/index.html",
-        navigateFallbackAllowlist: [
-          ...POS_ROUTES.map(
-            (r) => new RegExp(`^${r === "/" ? "/" : r.replace(/\//g, "\\/")}(\\/?|\\?.*)?$`),
-          ),
-          ...NAV_EXTRA,
-        ],
+        navigateFallbackAllowlist: [/^\/(?!api\/).*/],
         // Shell + hashed assets always; POS navigations via navigateFallback
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,webp}"],
         runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: "StaleWhileRevalidate",
+            options: { cacheName: "google-fonts-stylesheets" },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "google-fonts-webfonts",
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
+            },
+          },
           {
             urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
             handler: "NetworkOnly",

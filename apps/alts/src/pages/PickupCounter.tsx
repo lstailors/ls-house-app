@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
+import { localFirstInvoices, localFirstReadyTickets, localFirstRow } from "@alts/offline/localFirst";
 import { cn } from "@ls/design/utils";
 import { billingStatusLabel } from "@alts/lib/billingLabels";
 import { ChargeCardOnFileButton } from "@alts/components/payments/ChargeCardOnFileButton";
@@ -231,18 +232,22 @@ export default function PickupCounter() {
 
   const ready = useQuery({
     queryKey: ["pickup-ready"],
-    queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?status=Ready&limit=100"),
+    queryFn: () =>
+      localFirstReadyTickets(() =>
+        api.get<Ticket[]>("/api/intake-alterations/tickets?status=Ready&limit=100"),
+      ),
     refetchInterval: 30_000,
   });
 
   const openInvoices = useQuery({
     queryKey: ["pickup-open-invoices"],
-    queryFn: async () => {
-      const res = await api.raw("/api/invoices?status=open&limit=300");
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error?.message || `Invoices failed (${res.status})`);
-      return (Array.isArray(json?.data) ? json.data : []) as InvoiceRow[];
-    },
+    queryFn: async () =>
+      localFirstInvoices<InvoiceRow>(async () => {
+        const res = await api.raw("/api/invoices?status=open&limit=300");
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json?.error?.message || `Invoices failed (${res.status})`);
+        return (Array.isArray(json?.data) ? json.data : []) as InvoiceRow[];
+      }),
     refetchInterval: 45_000,
   });
 
@@ -506,7 +511,10 @@ export default function PickupCounter() {
   const detail = useQuery({
     queryKey: ["pickup-ticket", focusItem?.kind === "ticket" ? focusItem.id : null],
     enabled: focusItem?.kind === "ticket",
-    queryFn: () => api.get<Ticket>(`/api/intake-alterations/tickets/${focusItem!.id}`),
+    queryFn: () =>
+      localFirstRow("tickets", focusItem!.id, () =>
+        api.get<Ticket>(`/api/intake-alterations/tickets/${focusItem!.id}`),
+      ),
   });
 
   const board = useQuery({

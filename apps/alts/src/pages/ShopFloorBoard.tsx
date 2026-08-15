@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
+import { localFirstTickets } from "@alts/offline/localFirst";
 import { cn } from "@ls/design/utils";
 import { billingStatusLabel } from "@alts/lib/billingLabels";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
@@ -216,7 +217,8 @@ export default function ShopFloorBoard() {
 
   const tickets = useQuery({
     queryKey: ["shop-floor-tickets"],
-    queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=500"),
+    queryFn: () =>
+      localFirstTickets(() => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=500")),
     refetchInterval: 60_000,
   });
 

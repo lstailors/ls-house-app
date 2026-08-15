@@ -15,6 +15,7 @@ import {
   writeLiveCache,
   type LiveFeedStatus,
 } from "@alts/lib/liveDashboard";
+import { useShopLink } from "@alts/offline/status";
 
 type SocketLike = {
   close?: () => void;
@@ -29,6 +30,7 @@ type SocketLike = {
  */
 export function useLiveMetrics() {
   const cached = useMemo(() => readLiveCache(), []);
+  const shop = useShopLink();
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [pulsed, setPulsed] = useState<Record<string, boolean>>({});
   const prevFp = useRef<Record<string, string>>(liveFingerprint(cached));
@@ -45,9 +47,9 @@ export function useLiveMetrics() {
     },
     placeholderData: cached,
     staleTime: LIVE_METRICS_MS,
-    refetchInterval: LIVE_METRICS_MS,
-    refetchIntervalInBackground: true,
-    retry: 2,
+    refetchInterval: shop === "offline" ? false : LIVE_METRICS_MS,
+    refetchIntervalInBackground: shop !== "offline",
+    retry: shop === "offline" ? false : 2,
     retryDelay: (n) => Math.min(8_000, 1_000 * 2 ** n),
   });
 
@@ -106,7 +108,7 @@ export function useLiveMetrics() {
   }, [query.data]);
 
   const updatedAt = query.dataUpdatedAt || (query.data?.syncedAt ?? null);
-  const status: LiveFeedStatus = liveFeedStatus(updatedAt || null, query.isError);
+  const status: LiveFeedStatus = liveFeedStatus(updatedAt || null, query.isError, shop === "offline");
   const ageMs = updatedAt ? nowTick - updatedAt : null;
 
   return {

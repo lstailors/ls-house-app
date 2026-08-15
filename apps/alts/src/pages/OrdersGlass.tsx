@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
+import { localFirstTickets } from "@alts/offline/localFirst";
 import { cn } from "@ls/design/utils";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import ErpStatusBanner from "@alts/components/ErpStatusBanner";
@@ -64,7 +65,8 @@ export default function OrdersGlass() {
 
   const tickets = useQuery({
     queryKey: ["orders-glass"],
-    queryFn: () => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=500"),
+    queryFn: () =>
+      localFirstTickets(() => api.get<Ticket[]>("/api/intake-alterations/tickets?limit=500")),
     refetchInterval: 45_000,
   });
 

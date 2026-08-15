@@ -3,6 +3,7 @@ import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
+import { localFirstCustomerSearch, localFirstTicketSearch } from "@alts/offline/localFirst";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import StatusBadge from "@alts/components/StatusBadge";
 import { clientInitials } from "@alts/lib/ticketDisplay";
@@ -54,27 +55,29 @@ export default function Lookup() {
   const tickets = useQuery({
     queryKey: ["lookup-t", go],
     enabled,
-    queryFn: async () => {
-      const rows = await api.get<any[]>(`/api/intake-alterations/tickets?limit=500`);
-      const s = go.toLowerCase();
-      return (rows ?? []).filter(
-        (t) =>
-          t.name?.toLowerCase().includes(s) ||
-          t.customer_name?.toLowerCase().includes(s) ||
-          (t.customer_phone || "").includes(s),
-      );
-    },
+    queryFn: async () =>
+      localFirstTicketSearch(go, async () => {
+        const rows = await api.get<any[]>(`/api/intake-alterations/tickets?limit=500`);
+        const s = go.toLowerCase();
+        return (rows ?? []).filter(
+          (t) =>
+            t.name?.toLowerCase().includes(s) ||
+            t.customer_name?.toLowerCase().includes(s) ||
+            (t.customer_phone || "").includes(s),
+        );
+      }),
   });
 
   const customers = useQuery({
     queryKey: ["lookup-c", go],
     enabled,
-    queryFn: async () => {
-      const rows = await api.get<any[]>(
-        `/api/intake-alterations/customers/search?q=${encodeURIComponent(go)}`,
-      );
-      return rows ?? [];
-    },
+    queryFn: async () =>
+      localFirstCustomerSearch(go, async () => {
+        const rows = await api.get<any[]>(
+          `/api/intake-alterations/customers/search?q=${encodeURIComponent(go)}`,
+        );
+        return rows ?? [];
+      }),
   });
 
   const uni = universal.data ?? [];

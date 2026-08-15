@@ -153,6 +153,23 @@ async function mockApis(page: Page, opts: { authed?: boolean } = { authed: true 
     if (path === "/api/dashboard/alts-home") return json(HOME);
     if (path === "/api/metrics/live-home" || path === "/api/metrics/exceptions") return json(LIVE_HOME);
     if (path === "/api/metrics") return json(LIVE_HOME.metrics);
+    if (path === "/api/offline/snapshot") {
+      const now = new Date().toISOString();
+      return json({
+        generated_at: now,
+        today: "2026-08-15",
+        since: null,
+        collections: {
+          tickets: { lastSyncedAt: now, rows: [] },
+          houseOrders: { lastSyncedAt: now, rows: [] },
+          appointments: { lastSyncedAt: now, rows: [] },
+          customers: { lastSyncedAt: now, rows: [] },
+          invoices: { lastSyncedAt: now, rows: [] },
+          catalog: { lastSyncedAt: now, rows: [] },
+          qc: { lastSyncedAt: now, rows: [] },
+        },
+      });
+    }
     if (path === "/api/tasks/open-count") return json({ count: 2, overdue: 1 });
     if (path === "/api/qc/count") return json({ waiting: 0, open: 0 });
     if (path === "/api/qc/rates") {

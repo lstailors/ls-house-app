@@ -3,15 +3,37 @@
 
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@ls/api-client";
+import { api, ApiError } from "@ls/api-client";
 import type { Profile } from "@ls/types";
 import { refreshSession } from "./authClient";
 
 export const ME_KEY = ["me"];
+const ME_CACHE = "ls.me.cache";
+
+function readCachedMe(): Profile | null {
+  try {
+    const raw = sessionStorage.getItem(ME_CACHE);
+    if (!raw) return null;
+    return JSON.parse(raw) as Profile;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedMe(user: Profile | null) {
+  try {
+    if (!user) sessionStorage.removeItem(ME_CACHE);
+    else sessionStorage.setItem(ME_CACHE, JSON.stringify(user));
+  } catch {
+    /* private mode */
+  }
+}
 
 export function useMe() {
+  const cached = readCachedMe();
   const query = useQuery<Profile | null>({
     queryKey: ME_KEY,
+    initialData: cached ?? undefined,
     queryFn: async () => {
       try {
         const controller = new AbortController();
@@ -19,12 +41,17 @@ export function useMe() {
         try {
           const result = await api.get<Profile>("/api/me");
           clearTimeout(timer);
-          return result ?? null;
+          if (result) writeCachedMe(result);
+          return result ?? readCachedMe();
         } finally {
           clearTimeout(timer);
         }
-      } catch {
-        return null;
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) {
+          writeCachedMe(null);
+          return null;
+        }
+        return readCachedMe();
       }
     },
     staleTime: 10_000,

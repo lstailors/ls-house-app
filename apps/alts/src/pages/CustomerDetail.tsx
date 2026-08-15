@@ -9,6 +9,7 @@ import {
   TrendingUp, History,
 } from "lucide-react";
 import { api } from "@ls/api-client";
+import { localFirstCustomerRow } from "@alts/offline/localFirst";
 import { Button } from "@ls/design/ui/button";
 import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
@@ -874,7 +875,10 @@ export default function CustomerDetail() {
 
   const { data: customer, isLoading, error } = useQuery({
     queryKey: ["customer", id],
-    queryFn: () => api.get<Customer>(`/api/customers/${encodeURIComponent(id!)}`),
+    queryFn: () =>
+      localFirstCustomerRow<Customer>(id!, () =>
+        api.get<Customer>(`/api/customers/${encodeURIComponent(id!)}`),
+      ),
     enabled: !!id && id !== "new",
   });
 

@@ -12,6 +12,7 @@ describe("live dashboard clock", () => {
     expect(liveFeedStatus(now - 12_000, false)).toBe("live");
     expect(liveFeedStatus(now - 120_000, false)).toBe("stale");
     expect(liveFeedStatus(null, true)).toBe("down");
+    expect(liveFeedStatus(now, false, true)).toBe("offline");
   });
 
   test("age label is seconds then minutes", () => {

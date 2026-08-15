@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, Lock, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
+import { localFirstCatalog, localFirstRow } from "@alts/offline/localFirst";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
@@ -124,13 +125,17 @@ export default function AddWork() {
 
   const ticketQ = useQuery({
     queryKey: ["ticket", ticketName],
-    queryFn: () => api.get<TicketDoc>(`/api/intake-alterations/tickets/${encodeURIComponent(ticketName)}`),
+    queryFn: () =>
+      localFirstRow("tickets", ticketName, () =>
+        api.get<TicketDoc>(`/api/intake-alterations/tickets/${encodeURIComponent(ticketName)}`),
+      ),
     enabled: !!ticketName,
   });
 
   const presetsQ = useQuery({
     queryKey: ["presets", "NYC"],
-    queryFn: () => api.get<Preset[]>("/api/intake-alterations/presets?origin=NYC"),
+    queryFn: () =>
+      localFirstCatalog(() => api.get<Preset[]>("/api/intake-alterations/presets?origin=NYC")),
   });
 
   const ticket = ticketQ.data;

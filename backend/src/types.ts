@@ -1758,3 +1758,25 @@ export const LiveHome = z.object({
   activity: z.array(LiveActivity),
 });
 export type LiveHome = z.infer<typeof LiveHome>;
+
+export const OfflineCollection = z.object({
+  lastSyncedAt: z.string(),
+  rows: z.array(z.record(z.string(), z.unknown())),
+});
+export type OfflineCollection = z.infer<typeof OfflineCollection>;
+
+export const OfflineSnapshot = z.object({
+  generated_at: z.string(),
+  today: z.string(),
+  since: z.string().nullable(),
+  collections: z.object({
+    tickets: OfflineCollection,
+    houseOrders: OfflineCollection,
+    appointments: OfflineCollection,
+    customers: OfflineCollection,
+    invoices: OfflineCollection,
+    catalog: OfflineCollection,
+    qc: OfflineCollection,
+  }),
+});
+export type OfflineSnapshot = z.infer<typeof OfflineSnapshot>;

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
+import { localFirstInvoiceBook } from "@alts/offline/localFirst";
 import { cn } from "@ls/design/utils";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
@@ -58,28 +59,29 @@ export default function Invoices() {
 
   const query = useQuery({
     queryKey: ["alts-invoices", tab, q],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      params.set("limit", "300");
-      if (tab === "open") params.set("status", "open");
-      else if (tab === "paid") params.set("status", "paid");
-      else params.set("status", "all");
-      if (tab === "custom") params.set("kind", "custom");
-      if (tab === "alteration") params.set("kind", "alteration");
-      if (q.trim().length >= 2) params.set("q", q.trim());
+    queryFn: async () =>
+      localFirstInvoiceBook<InvoiceRow>(async () => {
+        const params = new URLSearchParams();
+        params.set("limit", "300");
+        if (tab === "open") params.set("status", "open");
+        else if (tab === "paid") params.set("status", "paid");
+        else params.set("status", "all");
+        if (tab === "custom") params.set("kind", "custom");
+        if (tab === "alteration") params.set("kind", "alteration");
+        if (q.trim().length >= 2) params.set("q", q.trim());
 
-      const res = await api.raw(`/api/invoices?${params.toString()}`);
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error?.message ?? `Invoices failed (${res.status})`);
-      const rows: InvoiceRow[] = Array.isArray(json?.data) ? json.data : [];
-      const summary: Summary = json?.summary ?? {
-        paid: 0,
-        outstanding: 0,
-        openCount: rows.filter((r) => r.outstandingAmount > 0.005).length,
-        count: rows.length,
-      };
-      return { rows, summary };
-    },
+        const res = await api.raw(`/api/invoices?${params.toString()}`);
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json?.error?.message ?? `Invoices failed (${res.status})`);
+        const rows: InvoiceRow[] = Array.isArray(json?.data) ? json.data : [];
+        const summary: Summary = json?.summary ?? {
+          paid: 0,
+          outstanding: 0,
+          openCount: rows.filter((r) => r.outstandingAmount > 0.005).length,
+          count: rows.length,
+        };
+        return { rows, summary };
+      }),
     staleTime: 20_000,
     refetchInterval: 60_000,
   });

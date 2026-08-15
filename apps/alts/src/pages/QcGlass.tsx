@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
+import { localFirstQc } from "@alts/offline/localFirst";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
@@ -62,9 +63,11 @@ export default function QcGlass() {
   const list = useQuery({
     queryKey: ["alts-qc", tab, pipeline],
     queryFn: () =>
-      pipeline
-        ? api.get<QcRow[]>(`/api/qc/orders?status=${encodeURIComponent(pipeline)}`)
-        : api.get<QcRow[]>(`/api/qc?tab=${tab}`),
+      localFirstQc(() =>
+        pipeline
+          ? api.get<QcRow[]>(`/api/qc/orders?status=${encodeURIComponent(pipeline)}`)
+          : api.get<QcRow[]>(`/api/qc?tab=${tab}`),
+      ),
     refetchInterval: 45_000,
   });
   const rates = useQuery({

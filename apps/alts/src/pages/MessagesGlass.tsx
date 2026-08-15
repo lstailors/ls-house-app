@@ -1,6 +1,8 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
+import { useShopLink } from "@alts/offline/status";
+import { NeedsConnection } from "@alts/components/NeedsConnection";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
@@ -97,6 +99,7 @@ function fmtClock(raw?: string | null) {
 }
 
 export default function MessagesGlass() {
+  const shop = useShopLink();
   const [tab, setTab] = useState<Tab>("all");
   const [threadPhone, setThreadPhone] = useState<string | null>(null);
   const [call, setCall] = useState<CallRow | null>(null);
@@ -179,7 +182,13 @@ export default function MessagesGlass() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))]">
-        {feed.isError && (
+        {shop === "offline" && (
+          <NeedsConnection
+            title="Messages need a connection"
+            detail="Texts and the inbox will be available when you're back online."
+          />
+        )}
+        {feed.isError && shop !== "offline" && (
           <QueryErrorPanel
             title="Could not load messages"
             message={feed.error instanceof Error ? feed.error.message : "Retry — an empty inbox is not the same as an outage."}

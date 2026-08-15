@@ -10,6 +10,8 @@ import { STATUS_TONES, toneFor, type StatusTone } from "@alts/lib/statusTone";
 import { useActiveLocation } from "@alts/lib/locationContext";
 import { useMe } from "@ls/auth";
 import { formatMoney } from "@alts/lib/money";
+import { useShopLink } from "@alts/offline/status";
+import { NeedsConnection } from "@alts/components/NeedsConnection";
 import { syncLabel } from "@alts/lib/ticketDisplay";
 import "@alts/styles/alts-pos.css";
 
@@ -271,6 +273,7 @@ function useFloor(loc: string) {
 
 export default function Reports() {
   const { data: me } = useMe();
+  const shop = useShopLink();
   const { activeLocationId } = useActiveLocation();
   const [params] = useSearchParams();
   const kiosk = params.get("kiosk") === "1";
@@ -339,8 +342,25 @@ export default function Reports() {
   void nowTick;
   const live = syncLabel(floor.dataUpdatedAt, floor.isFetching);
 
+  if (shop === "offline" && !data) {
+    return (
+      <div className={cn("alts-root space-y-6 animate-fade-up", kiosk && "p-5 min-h-dvh")}>
+        <NeedsConnection
+          title="Reports need a connection"
+          detail="Live floor reports will be available when you're back online."
+        />
+      </div>
+    );
+  }
+
   return (
     <div className={cn("alts-root space-y-6 animate-fade-up", kiosk && "p-5 min-h-dvh")}>
+      {shop === "offline" && (
+        <NeedsConnection
+          title="Reports need a connection"
+          detail="Showing the last snapshot we have on this device."
+        />
+      )}
       {kiosk && (
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>

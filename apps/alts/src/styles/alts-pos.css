@@ -1146,6 +1146,10 @@ body {
   background: var(--ro);
   box-shadow: 0 0 8px rgba(232, 80, 80, 0.7);
 }
+.home-040-strip .dot.is-offline {
+  background: #8a9188;
+  box-shadow: none;
+}
 
 .live-band-skel {
   display: flex;
@@ -1965,5 +1969,41 @@ body {
   .lux-intake-drawer {
     transition: none !important;
   }
+}
+
+.offline-banner {
+  position: sticky;
+  top: 0;
+  z-index: 80;
+  padding: 0.55rem 1rem;
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: #f3ead6;
+  background: linear-gradient(90deg, #1a3326 0%, #243d2c 50%, #1a3326 100%);
+  border-bottom: 1px solid rgba(212, 175, 88, 0.45);
+  box-shadow: 0 8px 24px rgba(8, 16, 10, 0.35);
+}
+
+.needs-connection {
+  margin: 0.75rem 0;
+  padding: 1rem 1.1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(212, 175, 88, 0.28);
+  background: rgba(20, 40, 28, 0.72);
+  color: #f3ead6;
+}
+.needs-connection b {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #d4af58;
+  margin-bottom: 0.35rem;
+}
+.needs-connection p {
+  margin: 0;
+  font-size: 14px;
+  color: rgba(243, 234, 214, 0.78);
 }
 

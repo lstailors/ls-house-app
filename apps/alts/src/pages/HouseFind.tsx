@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
+import { localFirstHouseOrders, localFirstTickets } from "@alts/offline/localFirst";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
@@ -103,7 +104,8 @@ export default function HouseFind() {
 
   const custom = useQuery({
     queryKey: ["alts-custom-orders"],
-    queryFn: () => api.get<CustomOrder[]>("/api/custom-orders?limit=200"),
+    queryFn: () =>
+      localFirstHouseOrders(() => api.get<CustomOrder[]>("/api/custom-orders?limit=200")),
     refetchInterval: 90_000,
   });
 
@@ -118,7 +120,10 @@ export default function HouseFind() {
 
   const tickets = useQuery({
     queryKey: ["alts-house-tickets"],
-    queryFn: () => api.get<AltTicket[]>("/api/intake-alterations/tickets?limit=500&origin=ALL"),
+    queryFn: () =>
+      localFirstTickets(() =>
+        api.get<AltTicket[]>("/api/intake-alterations/tickets?limit=500&origin=ALL"),
+      ),
     refetchInterval: 90_000,
   });
 

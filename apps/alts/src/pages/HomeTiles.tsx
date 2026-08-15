@@ -21,6 +21,8 @@ import { MoneyStrip } from "@alts/components/live/MoneyStrip";
 import { ActivityTicker } from "@alts/components/live/ActivityTicker";
 import { TickNumber } from "@alts/components/live/TickNumber";
 import { EMPTY_LIVE_HOME } from "@alts/lib/liveDashboard";
+import { useShopLink } from "@alts/offline/status";
+import { NeedsConnection } from "@alts/components/NeedsConnection";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
@@ -496,7 +498,9 @@ export default function HomeTiles() {
   }, []);
 
   const home = live;
+  const shop = useShopLink();
   const erpDown = live.isError || (erpHealth.data ? !erpHealth.data.erp.reachable : false);
+  const offline = shop === "offline" || live.status === "offline";
 
   type FloorBrief = {
     body: string;
@@ -1186,21 +1190,22 @@ export default function HomeTiles() {
         <button
           type="button"
           onClick={() => void live.refetch()}
-          className={cn("seg refresh border-0 bg-transparent cursor-pointer", `is-${live.status}`)}
+          className={cn("seg refresh border-0 bg-transparent cursor-pointer", `is-${offline ? "offline" : live.status}`)}
           data-testid="live-chip"
         >
           <span
             className={cn(
               "dot",
-              live.status === "stale" && "is-stale",
-              (live.status === "down" || erpDown) && "is-down",
+              live.status === "stale" && !offline && "is-stale",
+              (live.status === "down" || erpDown) && !offline && "is-down",
+              offline && "is-offline",
             )}
           />
           <span className="leading-tight text-left">
-            {live.status === "down" || erpDown ? "LIVE · retry" : "LIVE"}
+            {offline ? "OFFLINE" : live.status === "down" || erpDown ? "LIVE · retry" : "LIVE"}
             <br />
             <span className="normal-case tracking-normal opacity-80">
-              {live.status === "down" ? "feed down" : `updated ${syncAge}`}
+              {offline ? "shop cache" : live.status === "down" ? "feed down" : `updated ${syncAge}`}
             </span>
           </span>
         </button>
@@ -1291,7 +1296,7 @@ export default function HomeTiles() {
         </Link>
       </div>
 
-      {(home.isError || erpDown) && !kiosk && (
+      {(home.isError || erpDown) && !kiosk && !offline && (
         <div className="shrink-0">
           <QueryErrorPanel
             title="Could not load the shop board"
@@ -1375,7 +1380,14 @@ export default function HomeTiles() {
         })}
       </div>
       ))}
-      <ActivityTicker items={board.activity} />
+      {offline ? (
+        <NeedsConnection
+          title="Activity needs connection"
+          detail="The live ticker will resume when you're back online. Last cached snapshot stays on the tiles."
+        />
+      ) : (
+        <ActivityTicker items={board.activity} />
+      )}
     </div>
   );
 }

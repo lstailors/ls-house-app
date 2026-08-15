@@ -130,6 +130,23 @@ async function mockApis(page: Page, state: { rev: number; overdue: number }) {
       return json(liveHome(state.rev, state.overdue));
     }
     if (path === "/api/metrics") return json(liveHome(state.rev, state.overdue).metrics);
+    if (path === "/api/offline/snapshot") {
+      const now = new Date().toISOString();
+      return json({
+        generated_at: now,
+        today: "2026-08-15",
+        since: null,
+        collections: {
+          tickets: { lastSyncedAt: now, rows: [] },
+          houseOrders: { lastSyncedAt: now, rows: [] },
+          appointments: { lastSyncedAt: now, rows: [] },
+          customers: { lastSyncedAt: now, rows: [] },
+          invoices: { lastSyncedAt: now, rows: [] },
+          catalog: { lastSyncedAt: now, rows: [] },
+          qc: { lastSyncedAt: now, rows: [] },
+        },
+      });
+    }
     if (path === "/api/dashboard/floor-brief") {
       return json({ body: "Quiet floor.", title: "Espresso", createdAt: new Date().toISOString(), fromCache: true });
     }

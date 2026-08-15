@@ -6,9 +6,14 @@ export const LIVE_FRESH_MS = 90_000;
 export const LIVE_METRICS_MS = 30_000;
 export const LIVE_EXCEPTIONS_MS = 60_000;
 
-export type LiveFeedStatus = "live" | "stale" | "down";
+export type LiveFeedStatus = "live" | "stale" | "down" | "offline";
 
-export function liveFeedStatus(updatedAt: number | null, isError: boolean): LiveFeedStatus {
+export function liveFeedStatus(
+  updatedAt: number | null,
+  isError: boolean,
+  shopOffline = false,
+): LiveFeedStatus {
+  if (shopOffline) return "offline";
   if (isError && !updatedAt) return "down";
   if (!updatedAt) return "stale";
   const age = Date.now() - updatedAt;

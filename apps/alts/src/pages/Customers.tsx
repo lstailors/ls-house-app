@@ -8,6 +8,7 @@ import { SectionHeader } from "@ls/design";
 import { EmptyState } from "@ls/design";
 import { Button } from "@ls/design/ui/button";
 import { api } from "@ls/api-client";
+import { localFirstCustomerBookTotal, localFirstCustomers } from "@alts/offline/localFirst";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@ls/design/utils";
 
@@ -145,19 +146,20 @@ export default function Customers() {
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ["customers", statusFilter, vipFilter, debouncedQ, browseLimit],
-    queryFn: async () => {
-      const res = await api.raw(`/api/customers?${params.toString()}`);
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json?.error?.message ?? `Customers failed (${res.status})`);
-      }
-      const rows: Customer[] = Array.isArray(json?.data) ? json.data : [];
-      return {
-        customers: rows,
-        total: typeof json?.total === "number" ? json.total : rows.length,
-        mode: (json?.mode as string) || (isSearching ? "search" : "browse"),
-      };
-    },
+    queryFn: async () =>
+      localFirstCustomers<Customer>(async () => {
+        const res = await api.raw(`/api/customers?${params.toString()}`);
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(json?.error?.message ?? `Customers failed (${res.status})`);
+        }
+        const rows: Customer[] = Array.isArray(json?.data) ? json.data : [];
+        return {
+          customers: rows,
+          total: typeof json?.total === "number" ? json.total : rows.length,
+          mode: (json?.mode as string) || (isSearching ? "search" : "browse"),
+        };
+      }, isSearching ? debouncedQ : ""),
     staleTime: isSearching ? 15_000 : 60_000,
     placeholderData: (prev) => prev,
   });
@@ -169,12 +171,13 @@ export default function Customers() {
   // Book-wide count for KPI header
   const { data: bookMeta } = useQuery({
     queryKey: ["customers-book-total"],
-    queryFn: async () => {
-      const res = await api.raw(`/api/customers?status=Active&limit=1`);
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) return { total: 0 };
-      return { total: typeof json?.total === "number" ? json.total : 0 };
-    },
+    queryFn: async () =>
+      localFirstCustomerBookTotal(async () => {
+        const res = await api.raw(`/api/customers?status=Active&limit=1`);
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return { total: 0 };
+        return { total: typeof json?.total === "number" ? json.total : 0 };
+      }),
     staleTime: 5 * 60_000,
   });
   const bookTotal: number = bookMeta?.total || total;
