@@ -6,6 +6,7 @@ import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
+import { useErpHealth } from "@alts/components/ErpStatusBanner";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
@@ -495,6 +496,7 @@ export default function HomeTiles() {
   const { data: me } = useMe();
   const nav = useNavigate();
   const qc = useQueryClient();
+  const erpHealth = useErpHealth();
   const [espressoOpen, setEspressoOpen] = useState(readEspressoOpenDefault);
   const [askThread, setAskThread] = useState<AskMsg[]>([]);
   const [askInput, setAskInput] = useState("");
@@ -525,6 +527,7 @@ export default function HomeTiles() {
     refetchInterval: 60_000,
     retry: 2,
   });
+  const erpDown = home.isError || (erpHealth.data ? !erpHealth.data.erp.reachable : false);
 
   type FloorBrief = {
     body: string;
@@ -1106,11 +1109,11 @@ export default function HomeTiles() {
           <span
             className={cn(
               "dot",
-              home.isError && "bg-[var(--am)] shadow-[0_0_8px_rgba(232,168,92,0.7)]",
+              erpDown && "bg-[var(--am)] shadow-[0_0_8px_rgba(232,168,92,0.7)]",
             )}
           />
           <span className="leading-tight text-left">
-            {home.isError ? "ERPNext down" : "ERPNext live"}
+            {erpDown ? "ERPNext down" : "ERPNext live"}
             <br />
             <span className="normal-case tracking-normal opacity-80">{home.isFetching ? "…" : syncAge}</span>
           </span>
@@ -1181,12 +1184,15 @@ export default function HomeTiles() {
         </Link>
       </div>
 
-      {home.isError && (
+      {(home.isError || erpDown) && (
         <div className="shrink-0">
           <QueryErrorPanel
             title="Could not load the shop board"
             message="ERPNext stats failed — an outage must never look like an empty day. Tiles still work; counts may be stale."
-            onRetry={() => home.refetch()}
+            onRetry={() => {
+              void home.refetch();
+              void erpHealth.refetch();
+            }}
           />
         </div>
       )}

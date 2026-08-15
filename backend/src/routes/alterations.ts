@@ -324,17 +324,23 @@ alterationsRouter.get("/", async (c) => {
     filters.push(["customer", "=", filterCustomer]);
   }
 
-  const tickets = await erpList<ErpTicket>("Alteration Ticket", {
-    filters,
-    fields: LIST_FIELDS,
-    limit,
-    order_by: "modified desc",
-  });
+  try {
+    const tickets = await erpList<ErpTicket>("Alteration Ticket", {
+      filters,
+      fields: LIST_FIELDS,
+      limit,
+      order_by: "modified desc",
+      throwOnError: true,
+    });
 
-  const linesByTicket = await fetchLinesByTicket(tickets.map((t) => t.name));
-  const withLines = tickets.map((t) => ({ ...t, lines: linesByTicket.get(t.name) ?? [] }));
+    const linesByTicket = await fetchLinesByTicket(tickets.map((t) => t.name));
+    const withLines = tickets.map((t) => ({ ...t, lines: linesByTicket.get(t.name) ?? [] }));
 
-  return c.json({ data: withLines.map(serialize) });
+    return c.json({ data: withLines.map(serialize) });
+  } catch (e: any) {
+    console.error("[alterations] list failed:", e?.message);
+    return c.json({ error: { message: e?.message || "ERPNext alteration list failed" } }, 502);
+  }
 });
 
 alterationsRouter.get("/:id/transitions", async (c) => {

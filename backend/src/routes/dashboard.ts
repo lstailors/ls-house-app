@@ -3,7 +3,7 @@
 
 import { Hono } from "hono";
 import { canSeeFinancials, getAuthedUser, resolveLocationCode } from "../lib/scope";
-import { erpList, erpGet, erpUpdate } from "../lib/erp";
+import { erpList, erpGet, erpUpdate, isAltsOrigin } from "../lib/erp";
 import { YZProductionStatus } from "../types";
 import {
   listSmsMessagesFiltered,
@@ -1150,7 +1150,6 @@ dashboardRouter.get("/alts-home", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
   // Alts FOH is NYC-only (same as intake tickets).
-  const origin = "NYC";
   const today = new Date().toISOString().slice(0, 10);
 
   try {
@@ -1160,7 +1159,7 @@ dashboardRouter.get("/alts-home", async (c) => {
     window7.setDate(window7.getDate() + 7);
     const window7Str = window7.toISOString().slice(0, 10);
 
-    const [tickets, deliveries, invoices, lastGarment, lastCustomer, appointments] = await Promise.all([
+    const [ticketsRaw, deliveries, invoices, lastGarment, lastCustomer, appointments] = await Promise.all([
       erpList<{
         name: string;
         customer_name?: string;
@@ -1175,7 +1174,6 @@ dashboardRouter.get("/alts-home", async (c) => {
       }>("Alteration Ticket", {
         filters: [
           ["workflow_state", "!=", "Cancelled"],
-          ["origin_location", "=", origin],
         ],
         fields: [
           "name",
@@ -1191,7 +1189,8 @@ dashboardRouter.get("/alts-home", async (c) => {
         ],
         limit: 400,
         order_by: "modified desc",
-      }).catch(() => []),
+        throwOnError: true,
+      }),
       erpList<{ name: string; lsh_status?: string; lsh_delivered_at?: string | null }>("LSH Delivery", {
         filters: [["lsh_origin_location", "=", "NYC"]],
         fields: ["name", "lsh_status", "lsh_delivered_at"],
@@ -1257,6 +1256,8 @@ dashboardRouter.get("/alts-home", async (c) => {
         order_by: "starts_on asc",
       }).catch(() => []),
     ]);
+
+    const tickets = ticketsRaw.filter((t) => isAltsOrigin(t.origin_location));
 
     let open = 0;
     let ready = 0;

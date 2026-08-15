@@ -59,6 +59,7 @@ import { sofiaBridgeRouter } from "./routes/sofia-bridge";
 import { dispatchRouter } from "./routes/dispatch";
 import { deliveryZonesRouter } from "./routes/delivery-zones";
 import { placesRouter } from "./routes/places";
+import { healthRouter } from "./routes/health";
 
 const app = new Hono();
 
@@ -99,6 +100,7 @@ app.use(
 );
 
 app.get("/health", (c) => c.json({ status: "ok" }));
+app.route("/api/health", healthRouter);
 
 // Serve Apple Pay domain association directly from the edge function so
 // Vercel does NOT apply Brotli compression (which breaks Square's crawler).

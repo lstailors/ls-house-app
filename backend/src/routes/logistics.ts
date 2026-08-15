@@ -45,7 +45,7 @@ function weekStart(dateStr: string): string {
   const day = d.getDay(); // 0=Sun
   const diff = day === 0 ? -6 : 1 - day; // adjust to Monday
   d.setDate(d.getDate() + diff);
-  return d.toISOString().split("T")[0];
+  return d.toISOString().slice(0, 10);
 }
 
 // ─── GET /api/logistics/cycle-times ───────────────────────────────────────────
@@ -131,7 +131,9 @@ logisticsRouter.get("/cycle-times", async (c) => {
     const trend = (arr: (number | null)[]) => {
       const vals = arr.filter((v): v is number => v !== null);
       if (vals.length < 2) return 0;
-      return Math.round((vals[vals.length - 1] - vals[0]) * 10) / 10;
+      const first = vals[0] ?? 0;
+      const last = vals[vals.length - 1] ?? first;
+      return Math.round((last - first) * 10) / 10;
     };
 
     return c.json({

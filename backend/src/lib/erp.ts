@@ -47,6 +47,42 @@ function erpErrorMessage(err: any, fallback: string): string {
   return fallback
 }
 
+const FIELD_NOT_PERMITTED_RE = [
+  /Field not permitted in query:\s*['"`]?([A-Za-z0-9_]+)['"`]?/i,
+  /Unknown column[:\s]+['"`]([A-Za-z0-9_]+)['"`]/i,
+  /['"`]([A-Za-z0-9_]+)['"`] is not a valid fieldname/i,
+  /invalid fieldname:\s*['"`]?([A-Za-z0-9_]+)/i,
+  /Fieldname\s+['"`]?([A-Za-z0-9_]+)['"`]?\s+not found/i,
+]
+
+function flattenErpErrorText(body: string): string {
+  const chunks = [body]
+  try {
+    const j = JSON.parse(body)
+    chunks.push(erpErrorMessage(j, ''))
+    if (typeof j?._server_messages === 'string') chunks.push(j._server_messages)
+    if (typeof j?.exception === 'string') chunks.push(j.exception)
+    if (typeof j?.message === 'string') chunks.push(j.message)
+  } catch { /* raw body is enough */ }
+  return chunks.filter(Boolean).join('\n')
+}
+
+/** Parse the unknown/forbidden field name from a Frappe 417 list error. */
+export function extractFieldNotPermitted(body: string): string | null {
+  const text = flattenErpErrorText(body)
+  for (const re of FIELD_NOT_PERMITTED_RE) {
+    const m = text.match(re)
+    if (m?.[1]) return m[1]
+  }
+  return null
+}
+
+export function isAltsOrigin(origin?: string | null): boolean {
+  const v = String(origin ?? '').trim().toUpperCase()
+  if (!v) return true
+  return v === 'NYC' || v === 'NY' || v === 'NEW YORK' || v === 'NEW YORK CITY'
+}
+
 export async function erpList<T = unknown>(
   doctype: string,
   opts: {
@@ -72,18 +108,32 @@ export async function erpList<T = unknown>(
     return []
   }
 
-  const url = new URL(`${base}/api/resource/${encodeURIComponent(doctype)}`)
-  if (opts.filters)    url.searchParams.set('filters',           JSON.stringify(opts.filters))
-  if (opts.or_filters) url.searchParams.set('or_filters',        JSON.stringify(opts.or_filters))
-  if (opts.fields)   url.searchParams.set('fields',            JSON.stringify(opts.fields))
-  if (opts.limit)    url.searchParams.set('limit_page_length', String(opts.limit))
-  if (opts.start)    url.searchParams.set('limit_start',       String(opts.start))
-  if (opts.order_by) url.searchParams.set('order_by',          opts.order_by)
-  if (opts.parent)   url.searchParams.set('parent',            opts.parent)
+  let fields = opts.fields ? [...opts.fields] : undefined
 
-  const res = await fetch(url.toString(), { headers: authHeaders(key, secret) })
-  if (!res.ok) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const url = new URL(`${base}/api/resource/${encodeURIComponent(doctype)}`)
+    if (opts.filters)    url.searchParams.set('filters',           JSON.stringify(opts.filters))
+    if (opts.or_filters) url.searchParams.set('or_filters',        JSON.stringify(opts.or_filters))
+    if (fields)          url.searchParams.set('fields',            JSON.stringify(fields))
+    if (opts.limit !== undefined) url.searchParams.set('limit_page_length', String(opts.limit))
+    if (opts.start)               url.searchParams.set('limit_start',       String(opts.start))
+    if (opts.order_by)   url.searchParams.set('order_by',          opts.order_by)
+    if (opts.parent)     url.searchParams.set('parent',            opts.parent)
+
+    const res = await fetch(url.toString(), { headers: authHeaders(key, secret) })
+    if (res.ok) {
+      const json = await res.json() as { data: T[] }
+      return json.data ?? []
+    }
+
     const body = await res.text().catch(() => "")
+    const badField = extractFieldNotPermitted(body)
+    if (badField && fields?.includes(badField) && fields.length > 1) {
+      console.warn(`erpList ${doctype}: dropping unknown field "${badField}" and retrying`)
+      fields = fields.filter((f) => f !== badField)
+      continue
+    }
+
     console.error(`erpList ${doctype} failed ${res.status}:`, body.slice(0, 300))
     if (opts.throwOnError) {
       let msg = `ERP list ${doctype} failed: ${res.status}`
@@ -95,8 +145,47 @@ export async function erpList<T = unknown>(
     }
     return []
   }
-  const json = await res.json() as { data: T[] }
-  return json.data ?? []
+
+  if (opts.throwOnError) throw new Error(`ERP list ${doctype} failed: too many unknown fields`)
+  return []
+}
+
+export type ErpPing = {
+  configured: boolean
+  reachable: boolean
+  latencyMs: number | null
+  error: string | null
+}
+
+/** Lightweight ERPNext credential + reachability check. Does not leak secrets. */
+export async function erpPing(): Promise<ErpPing> {
+  const { base, key, secret } = creds()
+  if (!base || !key || !secret) {
+    return { configured: false, reachable: false, latencyMs: null, error: 'ERPNext credentials missing' }
+  }
+  const started = Date.now()
+  try {
+    const url = new URL(`${base}/api/method/frappe.auth.get_logged_user`)
+    const res = await fetch(url.toString(), { headers: authHeaders(key, secret) })
+    const latencyMs = Date.now() - started
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      return {
+        configured: true,
+        reachable: false,
+        latencyMs,
+        error: `ERPNext ping failed: ${res.status}${body ? ` ${body.slice(0, 120)}` : ''}`,
+      }
+    }
+    return { configured: true, reachable: true, latencyMs, error: null }
+  } catch (e: any) {
+    return {
+      configured: true,
+      reachable: false,
+      latencyMs: Date.now() - started,
+      error: e?.message || 'ERPNext unreachable',
+    }
+  }
 }
 
 /** Total row count for a doctype under the given `filters` (AND) — used for pagination. */
