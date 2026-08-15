@@ -1550,12 +1550,28 @@ body {
   min-height: 0;
 }
 
-/* Intake drawers — same luxury ease, still dock at the cart rail */
+/* Intake drawers — same luxury ease, still dock at the cart rail.
+   Closed tablet drawers must travel PAST the 340px cart (100% + 340px),
+   not land on top of it as an empty box. */
 .lux-intake-scrim,
 .lux-intake-sheet,
 .lux-intake-drawer {
   transition-duration: var(--lux-ms);
   transition-timing-function: var(--lux-ease);
+}
+
+.lux-intake-drawer {
+  transform: translateX(calc(100% + 340px));
+  transition: transform var(--lux-ms) var(--lux-ease);
+  will-change: transform;
+}
+
+.lux-intake-drawer.is-in {
+  transform: translateX(0);
+}
+
+.lux-intake-drawer.is-out {
+  transform: translateX(calc(100% + 340px));
 }
 
 /* Radix dialogs / sheets portaled to body */

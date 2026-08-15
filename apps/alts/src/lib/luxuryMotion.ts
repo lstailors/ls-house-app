@@ -8,6 +8,21 @@ const escapeStack: Array<() => void> = [];
 let bodyLocks = 0;
 let priorOverflow = "";
 
+/** Live min-width match — used to pick sheet vs right drawer. */
+export function useMinWidth(px: number) {
+  const [ok, setOk] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(`(min-width: ${px}px)`).matches,
+  );
+  useEffect(() => {
+    const m = window.matchMedia(`(min-width: ${px}px)`);
+    const fn = () => setOk(m.matches);
+    fn();
+    m.addEventListener("change", fn);
+    return () => m.removeEventListener("change", fn);
+  }, [px]);
+  return ok;
+}
+
 export function usePresence(open: boolean, ms = LUX_MS) {
   const [shown, setShown] = useState(open);
   const [entered, setEntered] = useState(open);

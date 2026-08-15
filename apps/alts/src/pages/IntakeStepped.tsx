@@ -2288,7 +2288,7 @@ export default function IntakeStepped() {
       </div>
       )}
 
-      {/* SPEC 057b — phone cart bottom sheet (cart step + peek from other steps) */}
+      {/* Ticket cart: phone bottom sheet, desktop right slide-out */}
       <TicketCartSheet
         open={cartOpen}
         onClose={() => setCartOpen(false)}

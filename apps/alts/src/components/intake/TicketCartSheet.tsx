@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { cn } from "@ls/design/utils";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
+import { useMinWidth } from "@alts/lib/luxuryMotion";
 
 function money(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -45,7 +46,7 @@ type Props = {
   showContinue?: boolean;
 };
 
-/** SPEC 057b — phone cart bottom sheet (full lines + continue). */
+/** Phone: bottom sheet. Desktop: right slide-out cart (never an empty overlay box). */
 export default function TicketCartSheet({
   open,
   onClose,
@@ -62,24 +63,34 @@ export default function TicketCartSheet({
   icon,
   showContinue = true,
 }: Props) {
+  const desk = useMinWidth(768);
   const pieceCount = garments.length + sellItems.length;
   const ticketTotal = workTotal + itemsTotal;
 
   return (
-    <LuxuryLayer open={open} onClose={onClose} variant="sheet" label="Ticket cart" z={50}>
+    <LuxuryLayer
+      open={open}
+      onClose={onClose}
+      variant={desk ? "drawer" : "sheet"}
+      label="Ticket cart"
+      z={80}
+    >
       <div
         className={cn(
-          "w-full md:max-w-lg md:mx-auto max-h-[86dvh] flex flex-col rounded-t-[22px] border border-brass/30 border-b-0",
-          "shadow-[0_-20px_60px_rgba(0,0,0,0.5)]",
-          "pb-[env(safe-area-inset-bottom,0px)]",
+          "flex flex-col border-brass/30",
+          desk
+            ? "h-full w-[min(380px,100vw)] border-l shadow-[-24px_0_60px_rgba(0,0,0,0.5)]"
+            : "w-full max-h-[86dvh] rounded-t-[22px] border border-b-0 shadow-[0_-20px_60px_rgba(0,0,0,0.5)] pb-[env(safe-area-inset-bottom,0px)]",
         )}
         style={{ background: "linear-gradient(180deg,#15291E,#0D1A10)" }}
       >
-        <div className="flex-none flex justify-center pt-2.5 pb-1" aria-hidden>
-          <i className="block w-10 h-1 rounded-full bg-brass/40" />
-        </div>
+        {!desk && (
+          <div className="flex-none flex justify-center pt-2.5 pb-1" aria-hidden>
+            <i className="block w-10 h-1 rounded-full bg-brass/40" />
+          </div>
+        )}
 
-        <div className="flex-none px-4 pb-3 border-b border-brass/15 flex items-start gap-3">
+        <div className={cn("flex-none px-4 pb-3 border-b border-brass/15 flex items-start gap-3", desk && "pt-4")}>
           <div className="min-w-0 flex-1">
             <div className="text-[9px] font-bold tracking-[0.16em] uppercase text-brass-light">
               Ticket cart
@@ -101,7 +112,7 @@ export default function TicketCartSheet({
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto p-3 overscroll-contain">
+        <div className="flex-1 min-h-[140px] overflow-y-auto p-3 overscroll-contain">
           {pieceCount === 0 ? (
             <div className="px-4 py-10 text-center text-cream-dim">
               <b className="display block text-xl italic font-semibold text-cream-muted mb-1.5">
