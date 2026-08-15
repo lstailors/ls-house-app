@@ -10,6 +10,10 @@
     "seed:erpnext": "bun run src/scripts/seed-erpnext-lsh.ts",
     "verify:erpnext": "bun run src/scripts/verify-erpnext-setup.ts",
     "set:alts-print-url": "bun run src/scripts/set-alts-print-base-url.ts",
+    "scan:customer-pci": "bun run src/scripts/scan-customer-pci.ts",
+    "scan:customer-pci:apply": "bun run src/scripts/scan-customer-pci.ts --apply",
+    "cleanup:auto-todos": "bun run src/scripts/cleanup-auto-assignment-todos.ts",
+    "cleanup:auto-todos:apply": "bun run src/scripts/cleanup-auto-assignment-todos.ts --apply",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

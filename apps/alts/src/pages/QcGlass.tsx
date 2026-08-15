@@ -13,6 +13,7 @@ import { MTM_STATUSES, type MtmStatusKey } from "@alts/lib/mtmStatus";
 import { clientInitials, syncLabel } from "@alts/lib/ticketDisplay";
 import { AltsSearchField } from "@alts/components/AltsSearchField";
 import { ListSkeleton } from "@alts/components/skeletons";
+import { withShowTest } from "@alts/lib/showTestData";
 import "@alts/styles/alts-pos.css";
 
 type Tab = "waiting" | "open" | "passed" | "failed";
@@ -65,8 +66,8 @@ export default function QcGlass() {
     queryFn: () =>
       localFirstQc(() =>
         pipeline
-          ? api.get<QcRow[]>(`/api/qc/orders?status=${encodeURIComponent(pipeline)}`)
-          : api.get<QcRow[]>(`/api/qc?tab=${tab}`),
+          ? api.get<QcRow[]>(withShowTest(`/api/qc/orders?status=${encodeURIComponent(pipeline)}`))
+          : api.get<QcRow[]>(withShowTest(`/api/qc?tab=${tab}`)),
       ),
     refetchInterval: 45_000,
   });

@@ -3,6 +3,8 @@ import { upsertCustomerWithAddress } from "./customer";
 import { DT } from "./doctypes";
 import { storeFindOne, storeUpsert } from "./store";
 import { erpFileAbsoluteUrl } from "./files";
+import { assertNoPanInCustomerFields, containsPan, stripPan } from "../pci-guard";
+import { flagsForCustomer, safeDisplayName } from "../customer-quality";
 
 /** Fields safe for Customer list queries (live ERP schema — not invented custom_*). */
 const CUSTOMER_LIST_FIELDS = [
@@ -30,11 +32,15 @@ const CUSTOMER_LIST_FIELDS = [
 export function serializeCustomer(row: any) {
   const vip = !!row.vip_flag;
   const imageRaw = row.image || null;
-  const notes =
+  const rawName = row.customer_name ?? row.name;
+  const displayName = safeDisplayName(rawName);
+  const notesRaw =
     row.custom_client_notes ||
     row.customer_details ||
     row.lifestyle_notes ||
     null;
+  const notes =
+    typeof notesRaw === "string" && containsPan(notesRaw) ? stripPan(notesRaw) || null : notesRaw;
 
   // Inline measurements from Customer L&S fields (detail get always has these)
   const measurements: Record<string, number | null> = {};
@@ -52,10 +58,10 @@ export function serializeCustomer(row: any) {
   return {
     id: row.name,
     customerNumber: row.legacy_customer_number ?? row.name,
-    name: row.customer_name ?? row.name,
-    preferredName: row.preferred_name ?? null,
-    firstName: row.first_name ?? null,
-    lastName: row.last_name ?? null,
+    name: displayName,
+    preferredName: containsPan(row.preferred_name) ? null : row.preferred_name ?? null,
+    firstName: containsPan(row.first_name) ? null : row.first_name ?? null,
+    lastName: containsPan(row.last_name) ? null : row.last_name ?? null,
     phone: row.mobile_no || null,
     email: row.email_id || null,
     company: row.home_company ?? null,
@@ -104,6 +110,14 @@ export function serializeCustomer(row: any) {
     emails: [] as any[],
     addresses: [] as any[],
     people: [] as any[],
+    reviewFlags: flagsForCustomer({
+      id: row.name,
+      customer_name: row.customer_name,
+      email_id: row.email_id,
+      mobile_no: row.mobile_no,
+      customer_details: row.customer_details,
+    }),
+    displayName,
   };
 }
 
@@ -902,6 +916,7 @@ async function enrichExistingCustomerContact(
 }
 
 export async function createCustomer(body: any, defaults: { division?: string } = {}) {
+  assertNoPanInCustomerFields(body);
   const doc = bodyToCustomerDoc(body, defaults);
   if (!doc.customer_name) throw new Error("Customer name is required");
   if (!doc.customer_group) doc.customer_group = "MTM";
@@ -1162,6 +1177,7 @@ export async function updateCustomerContactBook(
 }
 
 export async function updateCustomer(id: string, body: any) {
+  assertNoPanInCustomerFields(body);
   const doc = bodyToCustomerDoc(body);
   // erpUpdate merges; drop empty customer_type-only shells
   delete doc.customer_type;

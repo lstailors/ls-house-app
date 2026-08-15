@@ -375,7 +375,8 @@ export async function listPlaudCaptures(opts: {
     fields: [
       "name", "title", "recorded_at", "status", "duration_sec",
       "transcript", "summary", "outline", "extraction_json",
-      "tagged_garment_ids", "customer", "external_id",
+      "tagged_garment_ids", "customer", "external_id", "visibility", "owner",
+      "reference_doctype", "reference_name",
     ],
     order_by: "recorded_at desc",
     limit: opts.limit ?? 50,

@@ -8,6 +8,7 @@ import { signOut } from "@ls/auth/authClient";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { clearAltsPrivateStorage } from "@alts/lib/logoutPrivacy";
+import { getShowTestData, setShowTestData } from "@alts/lib/showTestData";
 import "@alts/styles/alts-pos.css";
 
 type SettingsData = {
@@ -23,6 +24,7 @@ export default function AltsSettings() {
   const isAdmin = me?.role === "super_admin";
   const [apiKey, setApiKey] = useState("");
   const [url, setUrl] = useState("");
+  const [showTest, setShowTest] = useState(getShowTestData);
 
   const settings = useQuery({
     queryKey: ["alts-qc-settings"],
@@ -71,6 +73,32 @@ export default function AltsSettings() {
           <div className="display text-2xl mt-1">{me?.name || "Staff"}</div>
           <p className="text-sm text-cream-dim mt-1">{me?.email}</p>
         </div>
+
+        {isAdmin && (
+          <div className="card-glass px-4 py-4 space-y-3">
+            <div className="caps text-brass-light">Operations</div>
+            <p className="text-sm text-cream-dim">
+              This server is in {me?.opsMode === "live" ? "LIVE" : "TEST"} mode.
+              LIVE hides TEST-prefix orders from the floor. Turn this on only when you need to see those records.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !showTest;
+                setShowTestData(next);
+                setShowTest(next);
+                qc.invalidateQueries();
+                toast.success(next ? "Test records visible" : "Test records hidden");
+              }}
+              className={cn(
+                "h-12 w-full rounded-xl border text-[12px] font-bold uppercase tracking-widest",
+                showTest ? "border-brass bg-brass/20 text-cream" : "border-brass/35 text-cream-dim",
+              )}
+            >
+              {showTest ? "Showing test data" : "Show test data"}
+            </button>
+          </div>
+        )}
 
         {isAdmin && (
           <div className="card-glass px-4 py-4 space-y-3">

@@ -110,7 +110,9 @@ mcpRouter.post("/tickets/:id/ready", async (c) => {
     const store = ticket.origin_location === "HOU" ? "Houston" : "New York";
     await sendSms(
       ticket.customer_phone,
-      `Hi ${ticket.customer_name || "there"}, your alterations are ready for pickup at our ${store} location! — L&S Custom Tailors`
+      `Hi ${ticket.customer_name || "there"}, your alterations are ready for pickup at our ${store} location! — L&S Custom Tailors`,
+      undefined,
+      "mcp.markReady",
     );
   }
 
@@ -123,7 +125,7 @@ mcpRouter.post("/tickets/:id/ready", async (c) => {
 mcpRouter.post("/sms", async (c) => {
   const { to, message } = await c.req.json() as { to: string; message: string };
   if (!to || !message) return c.json({ error: "to and message required" }, 400);
-  const sid = await sendSms(to, message);
+  const sid = await sendSms(to, message, undefined, "mcp.sms");
   if (!sid) return c.json({ error: "SMS failed — check Twilio config" }, 502);
 
   await insertSmsMessage({

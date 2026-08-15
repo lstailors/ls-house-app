@@ -13,6 +13,7 @@ import { AltsSearchField } from "@alts/components/AltsSearchField";
 import { ListSkeleton } from "@alts/components/skeletons";
 import { clientInitials, sortShopTickets, syncLabel } from "@alts/lib/ticketDisplay";
 import { formatMoney } from "@alts/lib/money";
+import { withShowTest } from "@alts/lib/showTestData";
 import "@alts/styles/alts-pos.css";
 
 type Tab = "rtw" | "alts" | "mtm";
@@ -105,7 +106,7 @@ export default function HouseFind() {
   const custom = useQuery({
     queryKey: ["alts-custom-orders"],
     queryFn: () =>
-      localFirstHouseOrders(() => api.get<CustomOrder[]>("/api/custom-orders?limit=200")),
+      localFirstHouseOrders(() => api.get<CustomOrder[]>(withShowTest("/api/custom-orders?limit=200"))),
     refetchInterval: 90_000,
   });
 
@@ -113,7 +114,7 @@ export default function HouseFind() {
     queryKey: ["alts-so-browse", go],
     queryFn: () =>
       api.get<SalesOrder[]>(
-        `/api/intake-alterations/sales-orders/search?q=${encodeURIComponent(go)}&limit=80`,
+        withShowTest(`/api/intake-alterations/sales-orders/search?q=${encodeURIComponent(go)}&limit=80`),
       ),
     refetchInterval: 90_000,
   });
@@ -122,7 +123,7 @@ export default function HouseFind() {
     queryKey: ["alts-house-tickets"],
     queryFn: () =>
       localFirstTickets(() =>
-        api.get<AltTicket[]>("/api/intake-alterations/tickets?limit=500&origin=ALL"),
+        api.get<AltTicket[]>(withShowTest("/api/intake-alterations/tickets?limit=500&origin=ALL")),
       ),
     refetchInterval: 90_000,
   });

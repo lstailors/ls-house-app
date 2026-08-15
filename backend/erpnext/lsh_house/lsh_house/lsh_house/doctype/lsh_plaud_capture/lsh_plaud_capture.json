@@ -8,6 +8,8 @@
  "field_order": [
   "recorded_at",
   "title",
+  "visibility",
+  "customer",
   "transcript",
   "summary"
  ],
@@ -22,6 +24,19 @@
    "fieldname": "title",
    "fieldtype": "Data",
    "label": "Title"
+  },
+  {
+   "fieldname": "visibility",
+   "fieldtype": "Select",
+   "label": "Visibility",
+   "options": "private\nhouse",
+   "default": "private"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer"
   },
   {
    "fieldname": "transcript",

@@ -1,3 +1,4 @@
+import os
 import re
 
 import frappe
@@ -21,6 +22,27 @@ def normalize_log_status(status):
     if value in TWILIO_ACCEPTED_STATUSES:
         return "sent"
     return "failed"
+
+
+def _ops_mode():
+    raw = cstr(os.environ.get("OPS_MODE") or os.environ.get("LST_OPS_MODE") or "").strip().lower()
+    if raw in ("test", "dev", "development"):
+        return "test"
+    return "live"
+
+
+def _phone_key(phone):
+    digits = re.sub(r"\D", "", cstr(phone))
+    if len(digits) == 11 and digits.startswith("1"):
+        return digits[1:]
+    return digits[-10:] if len(digits) > 10 else digits
+
+
+def _sms_allowlisted(phone):
+    extra = cstr(os.environ.get("SMS_ALLOWLIST") or "")
+    owner = cstr(os.environ.get("OWNER_MOBILE") or "+16319260917")
+    allow = { _phone_key(p) for p in (extra.split(",") + [owner, "+16319260917"]) if p.strip() }
+    return _phone_key(phone) in allow
 
 
 def normalize_e164(phone):
@@ -136,6 +158,25 @@ def send_and_log(
         if not settings.sms_enabled:
             frappe.logger("lsh_house.sms").info("Customer SMS is disabled in LSH SMS Settings")
             return None
+
+        if _ops_mode() == "test" and not _sms_allowlisted(phone):
+            frappe.logger("lsh_house.sms").info(
+                "TEST mode held SMS to non-allowlisted number (source=%s)",
+                context_tag or "lsh_house.sms.send_and_log",
+            )
+            return _log_sms_message(
+                phone=cstr(phone),
+                message=message,
+                status="failed",
+                customer=customer,
+                reference_doctype=reference_doctype,
+                reference_name=reference_name,
+                context_tag=f"held:{context_tag or 'send_and_log'}",
+                client_name=client_name,
+                sender=from_number,
+                twilio_sid=f"held_{frappe.utils.now_datetime().strftime('%Y%m%d%H%M%S')}",
+                error_message="TEST mode — not allowlisted; not sent",
+            )
 
         normalized_phone = normalize_e164(phone)
         if not normalized_phone:

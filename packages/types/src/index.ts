@@ -88,6 +88,7 @@ export const Profile = z.object({
   location: Location.nullable().optional(),
   image: z.string().nullable(),
   isActive: z.boolean(),
+  opsMode: z.enum(["live", "test"]).optional(),
 });
 export type Profile = z.infer<typeof Profile>;
 

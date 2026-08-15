@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
 import { erpList, erpGet, erpCreate, erpUpdate, erpCount } from "../lib/erp";
 import { grokChat, grokJSON } from "../lib/grok";
+import { isAutoAssignmentTodo, upsertOpenAssignment } from "../lib/todo-assign";
+import { canShowTestData, filterTestRows } from "../lib/ops-mode";
 
 export const tasksRouter = new Hono();
 
@@ -91,6 +93,7 @@ function serialize(t: ErpTodo) {
     reference_name: t.reference_name ?? null,
     lsh_context: t.lsh_context ?? null,
     lsh_agent: t.lsh_agent ?? null,
+    auto: isAutoAssignmentTodo(t.description),
   };
 }
 
@@ -103,6 +106,7 @@ tasksRouter.get("/", async (c) => {
   const status = (c.req.query("status") ?? "open").toLowerCase();
   const assignee = c.req.query("assignee") ?? "all";
   const context = c.req.query("context");
+  const source = (c.req.query("source") ?? "all").toLowerCase();
   const house = (c.req.query("scope") ?? "").toLowerCase() === "house";
   const overdueOnly = c.req.query("overdue") === "1" || c.req.query("overdue") === "true";
   const mgmt = isMgmt(user.role);
@@ -142,8 +146,19 @@ tasksRouter.get("/", async (c) => {
       }),
       erpCount("ToDo", filters),
     ]);
+    const showTest = canShowTestData({
+      role: user.role,
+      showTest: c.req.query("showTest") === "1",
+    });
+    let data = rows.map(serialize);
+    if (source === "auto") data = data.filter((t) => t.auto);
+    if (source === "human") data = data.filter((t) => !t.auto);
+    data = filterTestRows(data, (t) => [t.description, t.reference_name], {
+      role: user.role,
+      showTest,
+    });
     return c.json({
-      data: rows.map(serialize),
+      data,
       meta: { total, start, limit, hasMore: start + rows.length < total },
     });
   } catch (e: any) {
@@ -389,11 +404,34 @@ tasksRouter.post("/", async (c) => {
   if (typeof body.reference_name === "string" && body.reference_name) doc.reference_name = body.reference_name;
 
   try {
-    const created = await erpCreate<ErpTodo>("ToDo", doc);
-    return c.json({ data: created ? serialize(created) : {} });
+    const created = await upsertOpenAssignment(doc);
+    return c.json({ data: created ? serialize(created as ErpTodo) : {} });
   } catch (e: any) {
     return c.json({ error: { message: e?.message ?? "ERP error" } }, 500);
   }
+});
+
+// POST /api/tasks/bulk-close { names: string[] }
+tasksRouter.post("/bulk-close", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  const names = Array.isArray(body.names) ? body.names.map(String).filter(Boolean).slice(0, 200) : [];
+  if (!names.length) return c.json({ error: { message: "names required" } }, 400);
+  const mgmt = isMgmt(user.role);
+  let closed = 0;
+  for (const name of names) {
+    try {
+      const existing = await erpGet<ErpTodo>("ToDo", name);
+      if (!existing) continue;
+      if (!mgmt && existing.allocated_to !== user.email) continue;
+      await erpUpdate("ToDo", name, { status: "Closed" });
+      closed += 1;
+    } catch {
+      /* skip */
+    }
+  }
+  return c.json({ data: { closed } });
 });
 
 // ── Update ────────────────────────────────────────────────────────────────────

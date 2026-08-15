@@ -18,6 +18,7 @@ import { findCustomerByPhone } from "../lib/erpnext/customers";
 import { approveEmailDraft, discardEmailDraft } from "../lib/erpnext/email-drafts";
 import { getAuthedUser } from "../lib/scope";
 import { requireCronOrSession } from "../lib/require-secret";
+import { dispatchSms } from "../lib/outbound";
 // sendSms and alertCarl defined locally below
 
 // ── Constants ──
@@ -100,29 +101,9 @@ async function twilioSend(
   body: string,
   mediaUrl?: string
 ): Promise<{ ok: boolean; sid?: string; error?: string; status?: number }> {
-  const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID ?? "";
-  const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? "";
-  const TWILIO_MSG_SVC = process.env.TWILIO_MSG_SERVICE_SID ?? "MG9221599972ec362cb5e2f051430e0421";
-  const twilioAuth = btoa(`${TWILIO_SID}:${TWILIO_TOKEN}`);
-  const params = new URLSearchParams({ To: to, Body: body, MessagingServiceSid: TWILIO_MSG_SVC });
-  if (mediaUrl) params.append("MediaUrl", mediaUrl);
-  const r = await fetch(
-    `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${twilioAuth}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: params.toString(),
-    }
-  );
-  let data: any = null;
-  try {
-    data = await r.json();
-  } catch {}
-  if (r.status >= 200 && r.status < 300 && data?.sid) return { ok: true, sid: data.sid, status: r.status };
-  return { ok: false, error: data?.message ?? `HTTP ${r.status}`, status: r.status };
+  const result = await dispatchSms({ to, body, mediaUrl, source: "sofia.twilioSend" });
+  if (result.sid) return { ok: true, sid: result.sid, status: 200 };
+  return { ok: false, error: result.reason ?? "send_failed" };
 }
 
 // legacy wrapper for non-SMS parts of the file

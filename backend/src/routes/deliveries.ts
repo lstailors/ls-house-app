@@ -168,7 +168,7 @@ async function notifyCustomer(doc: any, event: "out_for_delivery" | "delivered" 
     ? `Hi ${first}, great news — your garments from L&S Custom Tailors are ready for pickup at 138 E 61st St, Suite 201, New York. We're open Mon–Fri 9–5:30 and Sat 9–4. Questions? Call (212) 752-1638. See you soon!`
     : `Hi ${first}, your garments from L&S Custom Tailors have been delivered. Thank you — enjoy!`;
   try {
-    const sid = await sendSms(phone, msg);
+    const sid = await sendSms(phone, msg, undefined, "deliveries.notifyCustomer");
     if (sid && doc.name) {
       // Log to ERPNext notification log (best-effort)
       await erpCreate("LSH Notification Log", {

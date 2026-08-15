@@ -80,6 +80,8 @@ interface Customer {
   people?: Array<{ id?: string; name: string; role?: string; phone?: string; email?: string; isPrimary?: boolean }>;
   erpnextCustomerId: string | null;
   dossier: any | null;
+  reviewFlags?: string[];
+  displayName?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -923,7 +925,8 @@ export default function CustomerDetail() {
   );
 
   const c = customer as Customer;
-  const initials = (c.name || "?")
+  const shownName = c.displayName || c.name;
+  const initials = (shownName || "?")
     .split(" ")
     .map(p => p[0])
     .join("")
@@ -932,7 +935,7 @@ export default function CustomerDetail() {
 
   const startEdit = () => {
     setDraft({
-      full_name: c.name,
+      full_name: shownName,
       preferred_name: c.preferredName,
       first_name: c.firstName,
       last_name: c.lastName,
@@ -1071,7 +1074,7 @@ export default function CustomerDetail() {
 
           <div className="min-w-0">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <h1 className="font-display italic text-3xl text-cream truncate">{c.name}</h1>
+              <h1 className="font-display italic text-3xl text-cream truncate">{c.displayName || c.name}</h1>
               {isVip && <Star className="w-4 h-4 text-brass fill-brass shrink-0" />}
               {c.casaTier && (
                 <span className="text-[9px] tracking-widest font-bold uppercase px-2 py-1 rounded border border-brass/30 text-brass-light bg-brass/5">
@@ -1133,6 +1136,25 @@ export default function CustomerDetail() {
           )}
         </div>
       </div>
+
+      {(c.reviewFlags?.length ?? 0) > 0 && (
+        <div className={cn(
+          "glass-panel p-4 rounded-xl border",
+          c.reviewFlags?.includes("track_or_pan") ? "border-signal-rose/40 bg-signal-rose/5" : "border-brass/30 bg-brass/5",
+        )}>
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-signal-rose mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm text-cream font-semibold">Needs review</p>
+              <p className="text-xs text-cream-dim mt-1">
+                {c.reviewFlags?.includes("track_or_pan")
+                  ? "Card data was removed from display. Enter the person's real name and save."
+                  : "This record looks incomplete or unusual. Fix the name or contact details."}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Live spend KPIs from ERP Sales Invoices */}
       <SpendStrip customerId={c.id} />
@@ -1454,7 +1476,7 @@ export default function CustomerDetail() {
       <CustomerEditSheet
           open={contactEditOpen}
           customerId={c.id}
-          customerName={c.name}
+          customerName={shownName}
           onClose={() => setContactEditOpen(false)}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ["customer", id] });

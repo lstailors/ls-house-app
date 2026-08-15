@@ -19,4 +19,7 @@ doc_events = {
         "on_update": "lsh_house.notifications.delivery.on_delivery_update",
         "on_update_after_submit": "lsh_house.notifications.delivery.on_delivery_update",
     },
+    "ToDo": {
+        "after_insert": "lsh_house.todo_guard.todo_after_insert",
+    },
 }

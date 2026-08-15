@@ -292,7 +292,13 @@ export default function MessagesGlass() {
             (tab === "calls" && !calls.length) ||
             (tab === "voice" && !recordings.length) ||
             (tab === "fittings" && !appts.length)) &&
-          !feed.isError && <div className="sf-empty">The line is quiet.</div>}
+          !feed.isError && (
+            <div className="sf-empty">
+              {tab === "voice"
+                ? "Personal voice notes stay private unless tagged to a client or order."
+                : "The line is quiet."}
+            </div>
+          )}
       </div>
 
       <LuxuryLayer open={!!threadPhone} onClose={() => setThreadPhone(null)} variant="sheet" label="Text thread" z={70}>
