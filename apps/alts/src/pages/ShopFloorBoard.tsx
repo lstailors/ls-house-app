@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -11,6 +11,17 @@ import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { storeToday } from "@alts/lib/storeDate";
 import { TailorTallyStrip } from "@alts/components/TailorTallyStrip";
+import {
+  clientInitials,
+  daysLate,
+  fmtDue,
+  fmtTime,
+  hoursLeft,
+  isRush,
+  sortShopTickets,
+  storeHour,
+  syncLabel,
+} from "@alts/lib/ticketDisplay";
 
 type Ticket = {
   name: string;
@@ -39,52 +50,8 @@ const NEXT: Record<string, { status: string; label: string } | null> = {
   "Picked Up": null,
 };
 
-function daysLate(due?: string) {
-  if (!due) return 0;
-  const d = new Date(due + "T12:00:00");
-  const today = new Date();
-  today.setHours(12, 0, 0, 0);
-  return Math.floor((today.getTime() - d.getTime()) / 86400000);
-}
-
-function fmtDue(due?: string): { text: string; kind: "late" | "soon" | "ok"; label: string } {
-  if (!due) return { text: "—", kind: "ok", label: "—" };
-  const late = daysLate(due);
-  const d = new Date(due + "T12:00:00");
-  const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  if (late > 0) return { text: `${late}d late`, kind: "late", label };
-  if (late === 0) return { text: "Due today", kind: "soon", label };
-  return { text: `Due ${label}`, kind: "ok", label };
-}
-
-function fmtTime(raw?: string): string {
-  const m = String(raw ?? "").trim().match(/^(\d{1,2}):(\d{2})/);
-  if (!m) return "";
-  let h = Number(m[1]);
-  const min = m[2];
-  if (!Number.isFinite(h)) return "";
-  const ap = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
-  return `${h}:${min} ${ap}`;
-}
-
-function isRush(t: Ticket) {
-  return Number(t.is_rush) === 1;
-}
-
 function needsReadyText(t: Ticket) {
   return t.workflow_state === "Ready" && !String(t.notified_ready_at ?? "").trim();
-}
-
-function sortShopTickets(a: Ticket, b: Ticket) {
-  const lateA = daysLate(a.due_date);
-  const lateB = daysLate(b.due_date);
-  if (lateA > 0 !== lateB > 0) return lateA > 0 ? -1 : 1;
-  if (isRush(a) !== isRush(b)) return isRush(a) ? -1 : 1;
-  const da = a.due_date || "9999-99-99";
-  const db = b.due_date || "9999-99-99";
-  if (da !== db) return da.localeCompare(db);
-  return String(a.due_time || "99:99").localeCompare(String(b.due_time || "99:99"));
 }
 
 function money(n?: number) {
@@ -112,27 +79,34 @@ function TicketCard({
 }) {
   const due = fmtDue(t.due_date);
   const time = fmtTime(t.due_time);
+  const left = hoursLeft(t.due_date, t.due_time);
   const nonBill =
     t.billing_status === "Warranty" || t.billing_status === "Included in Custom Order";
   const textReady = col === "Ready" && needsReadyText(t);
   return (
     <div
       className={cn(
-        "w-full text-left rounded-xl border border-brass/20 bg-black/25 p-3 transition-colors",
-        due.kind === "late" && "border-l-2 border-l-signal-rose",
+        "sf-card w-full text-left rounded-xl border border-brass/20 bg-black/25 p-3",
+        due.kind === "late" && "is-late border-l-2 border-l-signal-rose",
         due.kind === "soon" && "border-l-2 border-l-signal-amber",
         isRush(t) && due.kind === "ok" && "border-l-2 border-l-brass",
+        !t.assigned_tailor && col !== "Picked Up" && "border-brass/35",
         col === "Picked Up" && "opacity-55",
       )}
     >
       <button type="button" onClick={onOpen} className="w-full text-left">
+        <div className="flex items-start gap-2.5">
+          <span className="sf-avatar" aria-hidden>
+            {clientInitials(t.customer_name)}
+          </span>
+          <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 mb-1 flex-wrap">
           <span className="text-[12px] font-mono text-brass-light truncate">{t.name}</span>
           {isRush(t) && <span className="badge-rush">Rush</span>}
           {due.kind === "late" && <span className="badge-late">{due.text}</span>}
           {due.kind === "soon" && <span className="badge-soon">{due.text}</span>}
         </div>
-        <div className="font-semibold text-sm truncate">{t.customer_name || "—"}</div>
+        <div className="display text-[22px] leading-none truncate">{t.customer_name || "—"}</div>
         <div className="flex items-center gap-2 mt-2 text-[12px] text-cream-dim">
           <span>
             {t.assigned_tailor ? (
@@ -146,6 +120,7 @@ function TicketCard({
           <span className="ml-auto">
             {due.label}
             {time ? ` · ${time}` : ""}
+            {left ? ` · ${left}` : ""}
           </span>
         </div>
         {nonBill && (
@@ -163,6 +138,8 @@ function TicketCard({
         {textReady && (
           <div className="text-[12px] text-signal-amber mt-1">Ready — customer not texted</div>
         )}
+          </div>
+        </div>
       </button>
       {textReady && onTextReady && (
         <button
@@ -198,8 +175,17 @@ export default function ShopFloorBoard() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "today" | "unassigned" | "unpaid" | "text">("all");
+  const [filter, setFilter] = useState<
+    "all" | "morning" | "today" | "unassigned" | "unpaid" | "text" | "ready"
+  >(storeHour() < 12 ? "morning" : "all");
   const [view, setView] = useState<ViewMode>("board");
+  const [showPickedUp, setShowPickedUp] = useState(false);
+  const [nowTick, setNowTick] = useState(0);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick((n) => n + 1), 15_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const tickets = useQuery({
     queryKey: ["shop-floor-tickets"],
@@ -251,6 +237,17 @@ export default function ShopFloorBoard() {
     if (filter === "today") {
       const today = storeToday();
       rows = rows.filter((t) => t.due_date === today);
+    }
+    if (filter === "morning") {
+      const today = storeToday();
+      rows = rows.filter(
+        (t) =>
+          t.workflow_state !== "Picked Up" &&
+          (t.due_date === today || daysLate(t.due_date) > 0 || isRush(t)),
+      );
+    }
+    if (filter === "ready") {
+      rows = rows.filter((t) => t.workflow_state === "Ready");
     }
     if (filter === "unassigned") {
       rows = rows.filter((t) => !t.assigned_tailor && t.workflow_state !== "Picked Up");
@@ -319,19 +316,46 @@ export default function ShopFloorBoard() {
     const unassigned = open.filter((t) => !t.assigned_tailor).length;
     const ready = list.filter((t) => t.workflow_state === "Ready").length;
     const needsText = list.filter((t) => needsReadyText(t)).length;
-    return { overdue, dueToday, inShop: open.length, unassigned, ready, needsText };
+    const rush = open.filter((t) => isRush(t)).length;
+    return { overdue, dueToday, inShop: open.length, unassigned, ready, needsText, rush };
   }, [list]);
+
+  const eyes = useMemo(() => {
+    const raw = (tickets.data ?? []).filter(
+      (t) =>
+        t.workflow_state !== "Picked Up" &&
+        t.workflow_state !== "Cancelled" &&
+        (daysLate(t.due_date) > 0 || isRush(t) || needsReadyText(t)),
+    );
+    return [...raw].sort(sortShopTickets).slice(0, 8);
+  }, [tickets.data]);
+
+  const live = syncLabel(tickets.dataUpdatedAt, tickets.isFetching);
+  void nowTick;
+
+  const visibleCols = showPickedUp ? COLS : (["Received", "In Progress", "Ready"] as const);
 
   return (
     <div className="alts-root flex flex-col min-h-dvh">
-      <header className="flex items-center gap-3 px-5 py-4 border-b border-brass/20">
+      <header className="flex items-center gap-3 px-5 py-4 border-b border-brass/20 flex-wrap">
         <BrandSeal />
         <div>
-          <div className="display text-xl">Shop Floor</div>
-          <div className="caps">Alterations workload</div>
+          <div className="display text-[28px] leading-none">Shop Floor</div>
+          <div className="caps mt-1">
+            {storeHour() < 12 ? "Morning bench" : "Alterations workload"}
+          </div>
         </div>
         <div className="flex-1" />
-        <div className="hidden md:flex items-center gap-2 rounded-full border border-brass/20 bg-black/30 px-3 h-11 min-w-[220px]">
+        <div
+          className={cn("sf-live", tickets.isFetching && "is-sync", tickets.isError && "is-down")}
+        >
+          <span className="dot" />
+          {tickets.isError ? "ERPNext down" : live}
+        </div>
+        <div className="flex items-center rounded-full border border-brass/20 bg-black/30 px-3 py-2 text-[12px] font-bold tracking-widest uppercase text-brass-light">
+          NYC
+        </div>
+        <div className="flex items-center gap-2 rounded-full border border-brass/20 bg-black/30 px-3 h-11 min-w-[180px] w-full md:w-auto md:min-w-[240px]">
           <span className="text-cream-dim">⌕</span>
           <input
             value={q}
@@ -340,39 +364,67 @@ export default function ShopFloorBoard() {
             className="bg-transparent outline-none text-sm flex-1 text-cream placeholder:text-cream-dim"
           />
         </div>
-        <div className="flex items-center rounded-full border border-brass/20 bg-black/30 px-3 py-2 text-[12px] font-bold tracking-widest uppercase text-brass-light">
-          NYC
-        </div>
       </header>
 
+      {eyes.length > 0 && (
+        <div className="px-5 pt-4">
+          <div className="caps mb-2">Needs eyes</div>
+          <div className="sf-eyes">
+            {eyes.map((t) => {
+              const late = daysLate(t.due_date) > 0;
+              const kind = late ? "late" : needsReadyText(t) ? "text" : "rush";
+              return (
+                <button
+                  key={t.name}
+                  type="button"
+                  className={cn("sf-eye", `is-${kind}`)}
+                  onClick={() => nav(`/orders/alterations/${t.name}`)}
+                >
+                  <div className="font-mono text-[11px] text-brass-light">{t.name}</div>
+                  <div className="display text-lg truncate">{t.customer_name || "—"}</div>
+                  <div className="text-[11px] text-cream-dim mt-0.5">
+                    {late ? `${daysLate(t.due_date)}d late` : isRush(t) ? "Rush" : "Text ready"}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-6 gap-2 px-5 py-4">
-        {[
-          { v: kpis.overdue, l: "Overdue", alert: true },
-          { v: kpis.dueToday, l: "Due today", warn: true },
-          { v: kpis.inShop, l: "In the shop" },
-          { v: kpis.unassigned, l: "Unassigned", warn: true },
-          { v: kpis.ready, l: "Ready" },
-          { v: kpis.needsText, l: "Needs text", warn: true },
-        ].map((k) => (
-          <div
+        {(
+          [
+            { v: kpis.overdue, l: "Overdue", key: "morning" as const, alert: true },
+            { v: kpis.dueToday, l: "Due today", key: "today" as const, warn: true },
+            { v: kpis.inShop, l: "In the shop", key: "all" as const },
+            { v: kpis.unassigned, l: "Unassigned", key: "unassigned" as const, warn: true },
+            { v: kpis.ready, l: "Ready", key: "ready" as const },
+            { v: kpis.needsText, l: "Needs text", key: "text" as const, warn: true },
+          ] as const
+        ).map((k) => (
+          <button
             key={k.l}
+            type="button"
+            onClick={() => setFilter(k.key)}
             className={cn(
-              "card-glass px-4 py-3",
-              k.alert && k.v > 0 && "border-signal-rose/40",
-              k.warn && k.v > 0 && "border-signal-amber/40",
+              "sf-kpi card-glass px-4 py-3",
+              filter === k.key && "is-on",
+              "alert" in k && k.alert && k.v > 0 && "border-signal-rose/40",
+              "warn" in k && k.warn && k.v > 0 && "border-signal-amber/40",
             )}
           >
             <div
               className={cn(
                 "display text-3xl",
-                k.alert && k.v > 0 && "text-signal-rose",
-                k.warn && k.v > 0 && "text-signal-amber",
+                "alert" in k && k.alert && k.v > 0 && "text-signal-rose",
+                "warn" in k && k.warn && k.v > 0 && "text-signal-amber",
               )}
             >
               {k.v}
             </div>
             <div className="caps mt-1">{k.l}</div>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -406,9 +458,11 @@ export default function ShopFloorBoard() {
       <div className="flex gap-2 px-5 pb-3 flex-wrap">
         {(
           [
+            ["morning", "Morning"],
             ["all", "All work"],
             ["today", "Due today"],
             ["unassigned", "Unassigned"],
+            ["ready", "Ready"],
             ["unpaid", "Ready unpaid"],
             ["text", "Needs text"],
           ] as const
@@ -425,6 +479,16 @@ export default function ShopFloorBoard() {
             {lab}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => setShowPickedUp((v) => !v)}
+          className={cn(
+            "px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide border",
+            showPickedUp ? "bg-brass/20 border-brass text-cream" : "border-brass/25 text-cream-dim",
+          )}
+        >
+          {showPickedUp ? "Hide picked up" : "Show picked up"}
+        </button>
         <Link to="/pickup" className="ml-auto btn-brass h-10 px-4 text-[12px] inline-flex items-center">
           Pickup counter
         </Link>
@@ -447,8 +511,17 @@ export default function ShopFloorBoard() {
 
         {view === "board" && (
           <div className="shop-floor-board-cols flex gap-3 min-w-[900px] h-full min-h-[420px]">
-            {COLS.map((col) => (
-              <div key={col} className="flex-1 min-w-[210px] flex flex-col card-glass overflow-hidden">
+            {visibleCols.map((col) => (
+              <div
+                key={col}
+                className={cn(
+                  "sf-col flex-1 min-w-[210px] flex flex-col card-glass overflow-hidden",
+                  col === "Received" && "is-received",
+                  col === "In Progress" && "is-progress",
+                  col === "Ready" && "is-ready",
+                  col === "Picked Up" && "is-done",
+                )}
+              >
                 <div className="flex items-center gap-2 px-3 py-3 border-b border-brass/15">
                   <span
                     className={cn(
@@ -480,7 +553,9 @@ export default function ShopFloorBoard() {
                   ))}
                   {tickets.isLoading && <div className="text-cream-dim text-sm p-3">Loading…</div>}
                   {!tickets.isLoading && !(byCol[col]?.length) && (
-                    <div className="text-cream-dim text-sm p-3 italic">Empty</div>
+                    <div className="sf-empty">
+                      {col === "Ready" ? "Nothing waiting at the counter." : "Clear — nothing here."}
+                    </div>
                   )}
                 </div>
               </div>
@@ -545,12 +620,13 @@ export default function ShopFloorBoard() {
                         className="w-full text-left px-4 py-3 hover:bg-brass/10 flex items-center gap-3 min-h-11"
                       >
                         <span className="font-mono text-[12px] text-brass-light shrink-0">{t.name}</span>
-                        <span className="font-semibold text-sm truncate flex-1">
+                        <span className="display text-lg truncate flex-1">
                           {t.customer_name || "—"}
                         </span>
+                        {isRush(t) && <span className="badge-rush">Rush</span>}
                         <span className="chip shrink-0">{t.workflow_state}</span>
                         <span className="text-[12px] text-cream-dim shrink-0 hidden sm:inline">
-                          {t.assigned_tailor || "Unassigned"}
+                          {fmtTime(t.due_time) || t.assigned_tailor || "Unassigned"}
                         </span>
                       </button>
                     ))}

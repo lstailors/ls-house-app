@@ -11,6 +11,7 @@ import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
 import { clearAltsPrivateStorage } from "@alts/lib/logoutPrivacy";
+import { clientInitials, storeHour } from "@alts/lib/ticketDisplay";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
@@ -45,15 +46,19 @@ function greetingName(name?: string | null) {
 }
 
 function timeGreeting() {
-  const h = new Date().getHours();
+  const h = storeHour();
   if (h < 12) return "Good morning";
   if (h < 17) return "Good afternoon";
   return "Good evening";
 }
 
 function storeHoursLine() {
-  const d = new Date();
-  const day = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const day = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(new Date());
   return `${day} · East 61st Street · open until 6:00 PM`;
 }
 
@@ -639,12 +644,7 @@ export default function HomeTiles() {
     nav("/login", { replace: true });
   };
 
-  const initials = (me?.name ?? "LS")
-    .split(" ")
-    .map((p) => p[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  const initials = clientInitials(me?.name ?? "LS");
 
   const lastTicketLive = (() => {
     const t = feeds?.lastTicket;
