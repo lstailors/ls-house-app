@@ -5,6 +5,7 @@ import { api } from "@ls/api-client";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import { formatMoney } from "@alts/lib/money";
 
 type Parked = {
   id?: string;
@@ -23,8 +24,8 @@ type Parked = {
   cart?: any;
 };
 
-function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 export default function ParkedTray() {

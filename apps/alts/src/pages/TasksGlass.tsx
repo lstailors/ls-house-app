@@ -196,7 +196,13 @@ export default function TasksGlass() {
           );
         })}
         {!list.isLoading && !shown.length && !list.isError && (
-          <div className="sf-empty">{tab === "overdue" ? "Nothing late." : tab === "done" ? "Nothing closed yet." : "The list is clear."}</div>
+          <div className="sf-empty">
+            {tab === "overdue"
+              ? "Nothing late."
+              : tab === "done"
+                ? "Nothing closed yet."
+                : "The list is clear. Take a bow — every task is done."}
+          </div>
         )}
       </div>
 

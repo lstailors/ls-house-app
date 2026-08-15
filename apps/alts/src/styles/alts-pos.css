@@ -730,6 +730,7 @@ body {
 
 .home-040-hd {
   flex: 0 0 auto;
+  min-width: 0;
 }
 
 .home-040-hd .seal,

@@ -22,6 +22,7 @@ import {
 } from "../lib/qc";
 import { createQcSignatureSubmission, docusealEnabled } from "../lib/docuseal";
 import { loadDocusealSettings, maskKey, saveDocusealSettings } from "../lib/qc-settings";
+import { sendSms, alertCarl } from "../lib/twilio";
 
 export const qcRouter = new Hono();
 
@@ -71,6 +72,8 @@ const QC_FIELDS = [
   "condition",
   "fit_ready",
   "checks_json",
+  "garment_summary",
+  "fail_reason",
   "signed_at",
   "signature_url",
   "docuseal_submission_id",
@@ -294,7 +297,9 @@ function serializeListRow(doc: any, extras: Record<string, unknown> = {}) {
     result: qcResult,
     orderStatus: extras.orderStatus || null,
     garmentSummary: extras.garmentSummary || doc.garment_summary || null,
+    fulfillmentMode: extras.fulfillmentMode || doc.fulfillment_mode || null,
     dateReceived: dateReceivedLabel(doc.date_received),
+    createdAt: doc.creation || extras.createdAt || null,
     scanUrl: `https://alts.lstailors.com/qc/${encodeURIComponent(doc.name)}`,
   };
 }
@@ -305,6 +310,123 @@ function isMakeOrderRow(row: any): boolean {
   const kind = String(row?.order_type || row?.kind || row?.ticket_type || "").toLowerCase();
   if (kind && /alter/.test(kind)) return false;
   return true;
+}
+
+function isoWeekKey(raw?: string | null): string {
+  const s = String(raw || "").slice(0, 10);
+  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T12:00:00` : raw || "");
+  if (!Number.isFinite(d.getTime())) return "unknown";
+  const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = tmp.getUTCDay() || 7;
+  tmp.setUTCDate(tmp.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((tmp.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${tmp.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+function garmentKey(doc: any): string {
+  const raw = String(doc.garment_summary || doc.garment_type || doc.order_type || "Unspecified").trim();
+  return raw || "Unspecified";
+}
+
+function sourceKey(doc: any): string {
+  const mode = String(doc.fulfillment_mode || "").toLowerCase();
+  if (/store|walk.?in|alter/.test(mode)) return "store";
+  if (/make|mtm|factory|custom/.test(mode)) return "make";
+  if (doc.custom_order) return "make";
+  if (/^ALT-/i.test(String(doc.sales_order || ""))) return "store";
+  return doc.sales_order ? "make" : "store";
+}
+
+function rateBuckets(rows: any[], keyFn: (d: any) => string) {
+  const map = new Map<string, { pass: number; fail: number }>();
+  for (const r of rows) {
+    const k = keyFn(r);
+    const cur = map.get(k) || { pass: 0, fail: 0 };
+    if (qcResultOf(r) === "Pass") cur.pass += 1;
+    else cur.fail += 1;
+    map.set(k, cur);
+  }
+  return [...map.entries()]
+    .map(([key, v]) => {
+      const decided = v.pass + v.fail;
+      return { key, pass: v.pass, fail: v.fail, rate: decided ? Math.round((v.pass / decided) * 100) : 0 };
+    })
+    .sort((a, b) => a.key.localeCompare(b.key));
+}
+
+async function notifyQcFail(doc: any, notes: string) {
+  const customer = doc.customer_name || "Client";
+  const garment = garmentKey(doc);
+  const order = doc.custom_order || doc.sales_order || doc.name;
+  const body =
+    `QC FAIL · ${customer}` +
+    (garment && garment !== "Unspecified" ? ` · ${garment}` : "") +
+    ` · ${order}` +
+    (notes ? ` — ${notes.slice(0, 180)}` : "");
+
+  let tailorName = "";
+  let tailorPhone = "";
+  let tailorEmail = "";
+  let location = "";
+
+  const customName = doc.custom_order;
+  if (customName) {
+    const co = await erpGet<any>(DT_CUSTOM, customName).catch(() => null);
+    tailorName = String(co?.assigned_tailor || co?.tailor || "").trim();
+    location = String(co?.origin_location || co?.location || "").trim();
+  }
+  const so = String(doc.sales_order || "");
+  if (!tailorName && /^ALT-/i.test(so)) {
+    const t = await erpGet<any>("Alteration Ticket", so).catch(() => null);
+    tailorName = String(t?.assigned_tailor || "").trim();
+    location = location || String(t?.origin_location || "").trim();
+  }
+
+  if (tailorName) {
+    const emps = await erpList<any>(DT.EMPLOYEE, {
+      filters: [
+        ["name", "=", tailorName],
+      ],
+      fields: ["name", "employee_name", "cell_number", "personal_mobile", "company_email"],
+      limit: 1,
+    }).catch(() => []);
+    let emp = emps[0];
+    if (!emp) {
+      const byName = await erpList<any>(DT.EMPLOYEE, {
+        filters: [["employee_name", "like", `%${tailorName}%`]],
+        fields: ["name", "employee_name", "cell_number", "personal_mobile", "company_email"],
+        limit: 1,
+      }).catch(() => []);
+      emp = byName[0];
+    }
+    if (emp) {
+      tailorPhone = String(emp.cell_number || emp.personal_mobile || "").trim();
+      tailorEmail = String(emp.company_email || "").trim();
+      tailorName = emp.employee_name || tailorName;
+    }
+  }
+
+  try {
+    await erpCreate("ToDo", {
+      description: body,
+      status: "Open",
+      priority: "High",
+      date: new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date()),
+      allocated_to: tailorEmail || undefined,
+      reference_type: DT_QC,
+      reference_name: doc.name,
+      lsh_context: "qc.fail",
+    });
+  } catch (e) {
+    console.warn("[qc.fail] ToDo", (e as Error)?.message);
+  }
+
+  if (tailorPhone) {
+    await sendSms(tailorPhone, body).catch(() => null);
+  }
+  const locBit = location ? ` @ ${location}` : "";
+  await alertCarl(`QC fail${locBit}: ${body}`).catch(() => undefined);
 }
 
 async function waitingRows() {
@@ -470,6 +592,45 @@ qcRouter.get("/count", async (c) => {
     return c.json({ data: { waiting: waiting.length, open: waiting.length } });
   } catch (e: any) {
     return c.json({ error: { message: e?.message || "Could not count QC" } }, 502);
+  }
+});
+
+// GET /api/qc/rates — pass/fail by week, garment, store vs make
+qcRouter.get("/rates", async (c) => {
+  const gate = await requireFloor(c);
+  if (gate.res) return gate.res;
+  try {
+    const inspections = (await listInspections()).filter(
+      (r) => isQcInspectionName(r.name) && !isSalesOrderName(r.name),
+    );
+    const decided = inspections.filter((r) => {
+      const q = qcResultOf(r);
+      return q === "Pass" || q === "Fail";
+    });
+    const passed = decided.filter((r) => qcResultOf(r) === "Pass");
+    const failed = decided.filter((r) => qcResultOf(r) === "Fail");
+    const pending = inspections.filter((r) => qcResultOf(r) === "Pending");
+    const weekAgo = Date.now() - 7 * 86_400_000;
+    const passedThisWeek = passed.filter((r) => {
+      const t = Date.parse(r.modified || r.creation || "");
+      return Number.isFinite(t) && t >= weekAgo;
+    }).length;
+    const decidedN = decided.length;
+    return c.json({
+      data: {
+        passed: passed.length,
+        failed: failed.length,
+        pending: pending.length,
+        passRate: decidedN ? Math.round((passed.length / decidedN) * 100) : 0,
+        passedThisWeek,
+        byWeek: rateBuckets(decided, (d) => isoWeekKey(d.modified || d.creation)),
+        byGarment: rateBuckets(decided, garmentKey),
+        bySource: rateBuckets(decided, sourceKey),
+      },
+    });
+  } catch (e: any) {
+    console.error("GET /api/qc/rates", e);
+    return c.json({ error: { message: e?.message || "Could not load QC rates" } }, 502);
   }
 });
 
@@ -772,6 +933,11 @@ qcRouter.patch("/:id", async (c) => {
 
     const saved = await updateDroppingFields(existing.name, update);
     const fresh = (await erpGet<any>(DT_QC, existing.name).catch(() => null)) || saved || { ...existing, ...update };
+    if (want === "Fail") {
+      void notifyQcFail(fresh, String(update.notes || "")).catch((e) =>
+        console.warn("[qc.fail] notify", e?.message),
+      );
+    }
     return c.json({ data: serializeInspection(fresh) });
   } catch (e: any) {
     console.error("PATCH /api/qc/:id", e);

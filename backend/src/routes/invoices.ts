@@ -3,6 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { getAuthedUser, canSeeFinancials } from "../lib/scope";
 import { erpList, erpGet, erpCreate, erpSubmit, erpUpdate } from "../lib/erp";
+import { sendSms } from "../lib/twilio";
 
 export const invoicesRouter = new Hono();
 
@@ -328,4 +329,37 @@ invoicesRouter.get("/:id/pdf", async (c) => {
   const erpBase = process.env.ERPNEXT_BASE_URL ?? "";
   const pdfUrl = `${erpBase}/api/method/frappe.utils.print_format.download_pdf?doctype=Sales%20Invoice&name=${encodeURIComponent(id)}&format=Standard`;
   return c.json({ data: { url: pdfUrl } });
+});
+
+// POST /api/invoices/:id/text-receipt — SMS a short receipt to the client
+invoicesRouter.post("/:id/text-receipt", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  if (!canAccessInvoices(user.role)) return c.json({ error: { message: "Forbidden" } }, 403);
+  const id = decodeURIComponent(c.req.param("id"));
+  const body = await c.req.json().catch(() => ({}));
+  try {
+    const doc = await erpGet<any>("Sales Invoice", id);
+    if (!doc) return c.json({ error: { message: "Not found" } }, 404);
+    let phone = String(body.phone || doc.contact_mobile || doc.contact_mobile_no || "").trim();
+    if (!phone && doc.customer) {
+      const cust = await erpGet<any>("Customer", doc.customer).catch(() => null);
+      phone = String(cust?.mobile_no || cust?.phone || "").trim();
+    }
+    if (!phone) {
+      return c.json({ error: { message: "No phone on this invoice or client" } }, 400);
+    }
+    const paid = Number(doc.grand_total ?? 0) - Number(doc.outstanding_amount ?? 0);
+    const amt = Number(doc.outstanding_amount ?? 0) < 0.01
+      ? Number(doc.grand_total ?? 0)
+      : paid;
+    const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amt || Number(doc.grand_total ?? 0));
+    const who = doc.customer_name || "there";
+    const msg = `L&S Tailors — receipt for ${id}: ${money}. Thank you, ${who}.`;
+    const sid = await sendSms(phone, msg);
+    return c.json({ data: { sent: !!sid, phone } });
+  } catch (e: any) {
+    console.error("text-receipt", e?.message);
+    return c.json({ error: { message: e?.message || "Could not text receipt" } }, 502);
+  }
 });

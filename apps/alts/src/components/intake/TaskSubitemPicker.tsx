@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@ls/design/utils";
 import { GarmentZoneIcon, type BodyZoneId } from "@alts/components/intake/GarmentZoneIcon";
+import { formatMoney } from "@alts/lib/money";
 import {
   isGroup as isGroupFn,
   labelOfPreset,
@@ -37,12 +38,8 @@ export type HierarchyPreset = {
   sort_order?: number;
 };
 
-function money(n: number) {
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 export function labelOf(p: HierarchyPreset) {

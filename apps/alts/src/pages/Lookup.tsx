@@ -7,10 +7,10 @@ import { BrandSeal } from "@alts/components/BrandSeal";
 import StatusBadge from "@alts/components/StatusBadge";
 import { clientInitials } from "@alts/lib/ticketDisplay";
 import "@alts/styles/alts-pos.css";
+import { formatMoney } from "@alts/lib/money";
 
-function money(n?: number) {
-  if (n == null || Number.isNaN(Number(n))) return "";
-  return Number(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 function day(iso?: string | null) {

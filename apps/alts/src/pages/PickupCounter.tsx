@@ -14,9 +14,14 @@ import {
   clearPickupBag,
   invoiceBagKey,
   readPickupBagKeys,
+  shouldRestorePickupBag,
   ticketBagKey,
   writePickupBagKeys,
 } from "@alts/lib/pickupBag";
+import { formatMoney } from "@alts/lib/money";
+import { ConfirmDialog } from "@alts/components/ConfirmDialog";
+import { ListSkeleton } from "@alts/components/skeletons";
+import { AltsSearchField } from "@alts/components/AltsSearchField";
 import "@alts/styles/alts-pos.css";
 
 type Ticket = {
@@ -88,7 +93,7 @@ type QueueItem = {
 };
 
 function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  return formatMoney(n);
 }
 
 function ticketKey(name: string) {
@@ -157,11 +162,26 @@ export default function PickupCounter() {
   const [scanBusy, setScanBusy] = useState(false);
 
   const [selected, setSelected] = useState<Set<string>>(() => {
-    const s = new Set(readPickupBagKeys());
+    const s = new Set<string>();
+    if (shouldRestorePickupBag(params)) {
+      for (const k of readPickupBagKeys()) s.add(k);
+    } else {
+      clearPickupBag();
+    }
     if (preTicket) s.add(ticketKey(preTicket));
     if (preInvoice) s.add(invoiceKey(preInvoice));
     return s;
   });
+  const [multiClientOk, setMultiClientOk] = useState(false);
+  const [pendingAdd, setPendingAdd] = useState<QueueItem | null>(null);
+  const [chargeIntent, setChargeIntent] = useState<"card" | "terminal" | "link" | null>(null);
+  const [chargeArmed, setChargeArmed] = useState<"card" | "terminal" | "link" | null>(null);
+  const [receipt, setReceipt] = useState<{
+    client: string;
+    invoices: string[];
+    amount: number;
+    method: string;
+  } | null>(null);
   /** Last tapped row — drives detail / charge focus */
   const [focusKey, setFocusKey] = useState<string | null>(
     preTicket ? ticketKey(preTicket) : preInvoice ? invoiceKey(preInvoice) : null,
@@ -517,21 +537,37 @@ export default function PickupCounter() {
     );
   }, [focusItem, queue, selected]);
 
+  function addToBag(row: QueueItem) {
+    setSelected((prev) => new Set(prev).add(row.key));
+    setFocusKey(row.key);
+    setConfirmWho(true);
+    if (!collector.trim()) setCollector(row.customerName || "");
+  }
+
   function toggleKey(key: string, row?: QueueItem) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
+    if (selected.has(key)) {
+      setSelected((prev) => {
+        const next = new Set(prev);
         next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-    setFocusKey(key);
-    if (row) {
-      setConfirmWho(true);
-      if (!collector.trim()) setCollector(row.customerName || "");
+        return next;
+      });
+      return;
     }
+    const incoming = row || catalog.get(key);
+    if (incoming) {
+      const existingClients = new Set(
+        selectedItems.map((i) => customerMatchKey(i)).filter(Boolean),
+      );
+      const nextClient = customerMatchKey(incoming);
+      if (existingClients.size > 0 && nextClient && !existingClients.has(nextClient) && !multiClientOk) {
+        setPendingAdd(incoming);
+        return;
+      }
+      addToBag(incoming);
+      return;
+    }
+    setSelected((prev) => new Set(prev).add(key));
+    setFocusKey(key);
   }
 
   function selectOnly(key: string, row: QueueItem) {
@@ -685,6 +721,21 @@ export default function PickupCounter() {
       ? bagUnpaid[0]
       : null;
 
+  const textReceipt = useMutation({
+    mutationFn: (invoiceId: string) =>
+      api.post<{ sent: boolean; phone: string | null }>(
+        `/api/invoices/${encodeURIComponent(invoiceId)}/text-receipt`,
+        {},
+      ),
+    onSuccess: (d) => toast.success(d?.sent ? `Receipt texted${d.phone ? ` · ${d.phone}` : ""}` : "Queued"),
+    onError: (e: Error) => toast.error(e.message || "Could not text receipt"),
+  });
+
+  const chargeInvoiceIds = bagInvoices.map((i) => i.id);
+  if (chargeTarget?.kind === "invoice" && !chargeInvoiceIds.includes(chargeTarget.id)) {
+    chargeInvoiceIds.push(chargeTarget.id);
+  }
+
   return (
     <div className="alts-root flex flex-col min-h-dvh">
       {loadError && (
@@ -733,15 +784,12 @@ export default function PickupCounter() {
             aria-label="Scan to add to pickup bag"
           />
         </form>
-        <div className="hidden md:flex items-center gap-2 rounded-full border border-brass/20 bg-black/30 px-3 h-11 min-w-[160px]">
-          <span className="text-cream-dim">⌕</span>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Filter name / phone…"
-            className="bg-transparent outline-none text-sm flex-1 text-cream placeholder:text-cream-dim"
-          />
-        </div>
+        <AltsSearchField
+          value={q}
+          onChange={setQ}
+          scope="this bag"
+          className="hidden md:block w-[220px]"
+        />
         <Link
           to="/invoices"
           className="hidden sm:inline-flex items-center gap-2 h-11 px-4 rounded-full border border-brass/30 text-sm font-semibold text-brass-light hover:border-brass/50"
@@ -877,9 +925,7 @@ export default function PickupCounter() {
           {!list.length && !ready.isLoading && !openInvoices.isLoading && !loadError && (
             <p className="text-cream-dim text-sm p-4 italic">Nothing in this filter</p>
           )}
-          {(ready.isLoading || openInvoices.isLoading) && (
-            <p className="text-cream-dim text-sm p-4">Loading queue…</p>
-          )}
+          {(ready.isLoading || openInvoices.isLoading) && <ListSkeleton rows={5} />}
         </aside>
 
         <main className="overflow-y-auto p-5">
@@ -905,10 +951,8 @@ export default function PickupCounter() {
                       <div className="caps">Pickup bag · {selected.size}</div>
                       <div className="display text-2xl mt-1">
                         {selectedItems[0]?.customerName}
-                        {selectedItems.some(
-                          (i) => customerMatchKey(i) !== customerMatchKey(selectedItems[0]),
-                        )
-                          ? " +"
+                        {new Set(selectedItems.map((i) => customerMatchKey(i)).filter(Boolean)).size > 1
+                          ? " · multi-client bag"
                           : ""}
                       </div>
                       <div className="text-xs text-cream-dim mt-1">
@@ -980,6 +1024,27 @@ export default function PickupCounter() {
                       </li>
                     ))}
                   </ul>
+                  {(() => {
+                    const groups = new Map<string, { name: string; due: number }>();
+                    for (const item of selectedItems) {
+                      const k = customerMatchKey(item) || item.customerName;
+                      const cur = groups.get(k) || { name: item.customerName, due: 0 };
+                      cur.due += item.unpaid ? item.outstanding || item.total : 0;
+                      groups.set(k, cur);
+                    }
+                    if (groups.size < 2) return null;
+                    return (
+                      <div className="rounded-xl border border-brass/20 bg-black/20 px-3 py-2 space-y-1">
+                        <div className="caps">Per-client due</div>
+                        {[...groups.values()].map((g) => (
+                          <div key={g.name} className="flex justify-between text-sm">
+                            <span className="truncate">{g.name}</span>
+                            <span className="tabular-nums text-brass-light">{money(g.due)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Confirm collector */}
@@ -1111,13 +1176,67 @@ export default function PickupCounter() {
                   </p>
                 </div>
 
-                {chargeTarget && chargeAmount > 0 && (
+                {receipt && (
+                  <div className="rounded-2xl border border-signal-emerald/40 bg-signal-emerald/10 p-4 space-y-3">
+                    <div className="caps text-signal-emerald">Receipt</div>
+                    <div className="display text-2xl">{receipt.client}</div>
+                    <div className="text-sm text-cream-dim">
+                      {receipt.invoices.length ? receipt.invoices.join(" · ") : "Counter charge"}
+                    </div>
+                    <div className="display text-3xl text-brass-light">{money(receipt.amount)}</div>
+                    <div className="text-xs uppercase tracking-widest text-cream-dim">{receipt.method}</div>
+                    <button
+                      type="button"
+                      disabled={textReceipt.isPending || !receipt.invoices[0]}
+                      onClick={() => receipt.invoices[0] && textReceipt.mutate(receipt.invoices[0])}
+                      className="btn-brass w-full h-12 text-[12px]"
+                    >
+                      {textReceipt.isPending ? "Sending…" : "Text receipt"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReceipt(null)}
+                      className="btn-ghost w-full h-11 text-[12px]"
+                    >
+                      New charge
+                    </button>
+                  </div>
+                )}
+
+                {chargeTarget && chargeAmount > 0 && !receipt && (
                   <div className="space-y-2">
                     <div className="caps text-signal-amber">
                       Charge · {chargeTarget.id}
                     </div>
+                    {!chargeArmed && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setChargeIntent("card")}
+                          className="btn-brass w-full h-12 text-[12px]"
+                        >
+                          Charge card on file · {money(chargeAmount)}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setChargeIntent("terminal")}
+                          className="w-full h-12 rounded-xl border border-brass/40 text-[12px] font-bold uppercase tracking-widest"
+                        >
+                          Charge terminal · {money(chargeAmount)}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setChargeIntent("link")}
+                          className="btn-ghost w-full h-12 text-[12px]"
+                        >
+                          Create pay link
+                        </button>
+                      </>
+                    )}
+                    {chargeArmed === "card" && (
                     <ChargeCardOnFileButton
                       fullWidth
+                      autoStart
                       ticketId={
                         chargeTarget.kind === "ticket"
                           ? chargeTarget.id
@@ -1132,13 +1251,24 @@ export default function PickupCounter() {
                       amountDisplay={money(chargeAmount)}
                       customerLabel={chargeTarget.customerName}
                       onSuccess={() => {
-                        toast.success("Card on file charged — refreshing…");
+                        setReceipt({
+                          client: chargeTarget.customerName,
+                          invoices: bagInvoices.map((i) => i.id).concat(
+                            chargeTarget.kind === "invoice" ? [chargeTarget.id] : [],
+                          ).filter((v, i, a) => a.indexOf(v) === i),
+                          amount: chargeAmount,
+                          method: "Card on file",
+                        });
+                        setChargeArmed(null);
                         refreshAll();
                       }}
                       onRefresh={refreshAll}
                       onError={(msg) => toast.error(msg)}
                     />
+                    )}
+                    {chargeArmed === "terminal" && (
                     <ChargeTerminalButton
+                      autoStart
                       invoiceId={
                         chargeTarget.kind === "invoice"
                           ? chargeTarget.id
@@ -1150,24 +1280,18 @@ export default function PickupCounter() {
                       amountCents={Math.round(chargeAmount * 100)}
                       amountDisplay={money(chargeAmount)}
                       onSuccess={() => {
-                        toast.success("Payment captured — refreshing…");
+                        setReceipt({
+                          client: chargeTarget.customerName,
+                          invoices: bagInvoices.map((i) => i.id),
+                          amount: chargeAmount,
+                          method: "Terminal",
+                        });
+                        setChargeArmed(null);
                         refreshAll();
                       }}
                       onError={(msg) => toast.error(msg)}
                     />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        payLink.mutate(
-                          chargeTarget.kind === "invoice"
-                            ? chargeTarget.id
-                            : chargeInvoiceId || chargeTarget.id,
-                        )
-                      }
-                      className="btn-brass w-full h-12 text-[12px]"
-                    >
-                      {payLink.isPending ? "…" : "Create pay link"}
-                    </button>
+                    )}
                     {bagUnpaid.length > 1 && (
                       <p className="text-[11px] text-cream-dim leading-snug">
                         {bagUnpaid.length} unpaid in bag — charge one at a time (tap row to focus),
@@ -1275,6 +1399,78 @@ export default function PickupCounter() {
           )}
         </main>
       </div>
+
+      <ConfirmDialog
+        open={!!pendingAdd}
+        onClose={() => setPendingAdd(null)}
+        title="Multi-client bag?"
+        tone="amber"
+        confirmLabel="Make multi-client"
+        body={
+          <p>
+            This bag is for one client. Add{" "}
+            <strong className="text-cream">{pendingAdd?.customerName}</strong> as a second client?
+            Per-client subtotals will show.
+          </p>
+        }
+        onConfirm={() => {
+          if (!pendingAdd) return;
+          setMultiClientOk(true);
+          addToBag(pendingAdd);
+          setPendingAdd(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!chargeIntent}
+        onClose={() => setChargeIntent(null)}
+        title="Confirm charge"
+        tone="brass"
+        confirmLabel={
+          chargeIntent === "card"
+            ? "Charge card"
+            : chargeIntent === "terminal"
+              ? "Send to terminal"
+              : "Create link"
+        }
+        body={
+          <div className="space-y-1.5">
+            <p>
+              <span className="text-cream-dim">Client · </span>
+              {chargeTarget?.customerName || selectedItems[0]?.customerName || "—"}
+            </p>
+            <p>
+              <span className="text-cream-dim">Invoices · </span>
+              {chargeInvoiceIds.length ? chargeInvoiceIds.join(", ") : chargeTarget?.id || "—"}
+            </p>
+            <p>
+              <span className="text-cream-dim">Amount · </span>
+              {money(chargeAmount)}
+            </p>
+            <p>
+              <span className="text-cream-dim">Method · </span>
+              {chargeIntent === "card"
+                ? "Card on file"
+                : chargeIntent === "terminal"
+                  ? "Square Terminal"
+                  : "Pay link"}
+            </p>
+          </div>
+        }
+        onConfirm={() => {
+          const method = chargeIntent;
+          setChargeIntent(null);
+          if (method === "link" && chargeTarget) {
+            payLink.mutate(
+              chargeTarget.kind === "invoice"
+                ? chargeTarget.id
+                : chargeInvoiceId || chargeTarget.id,
+            );
+            return;
+          }
+          setChargeArmed(method);
+        }}
+      />
     </div>
   );
 }

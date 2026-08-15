@@ -758,7 +758,7 @@ export default function Scanner() {
   const handleClose = useCallback(() => {
     stopCamera();
     if (pickupMode) {
-      navigate("/pickup", { replace: true });
+      navigate("/pickup?scanned=1", { replace: true });
       return;
     }
     if (progressMode) {
@@ -770,7 +770,7 @@ export default function Scanner() {
 
   const openPickupBag = useCallback(() => {
     stopCamera();
-    navigate("/pickup", { replace: true });
+    navigate("/pickup?scanned=1", { replace: true });
   }, [navigate, stopCamera]);
 
   return (

@@ -6,6 +6,7 @@ import {
   fmtTime,
   hoursLeft,
   isRush,
+  isTerminalStatus,
   sortShopTickets,
   syncLabel,
 } from "./ticketDisplay";
@@ -45,7 +46,14 @@ describe("ticketDisplay", () => {
     expect(fmtDue(iso).kind).toBe("soon");
     expect(fmtDue(iso).text).toBe("Due today");
     expect(fmtDue("2000-01-01").kind).toBe("late");
+    expect(fmtDue("2000-01-01").text).toMatch(/^OVERDUE · \d+d$/);
     expect(fmtDue().kind).toBe("ok");
+  });
+
+  test("terminal statuses skip overdue", () => {
+    expect(isTerminalStatus("Picked Up")).toBe(true);
+    expect(isTerminalStatus("In Progress")).toBe(false);
+    expect(isTerminalStatus("Cancelled")).toBe(true);
   });
 
   test("sort puts late, then rush, then due date", () => {

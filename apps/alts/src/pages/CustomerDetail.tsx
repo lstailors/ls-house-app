@@ -13,6 +13,7 @@ import { Button } from "@ls/design/ui/button";
 import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
 import { CustomerEditSheet } from "@alts/components/CustomerEditSheet";
+import { formatMoney } from "@alts/lib/money";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface AddressRow {
@@ -383,13 +384,8 @@ function MeasurementsTab({ customer }: { customer: any }) {
 }
 
 // ── Money helpers ─────────────────────────────────────────────────────────────
-function money(n: number, cents = true) {
-  return Number(n || 0).toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: cents ? 2 : 0,
-    maximumFractionDigits: cents ? 2 : 0,
-  });
+function money(n?: number | string | null, _cents?: boolean) {
+  return formatMoney(n);
 }
 
 interface SpendStats {

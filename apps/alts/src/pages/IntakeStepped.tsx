@@ -36,6 +36,7 @@ import IntakeConfirm, {
   type IntakeConfirmResult,
 } from "@alts/components/intake/IntakeConfirm";
 import { enqueueIntakeTicket } from "@alts/lib/offlineQueue";
+import { formatMoney } from "@alts/lib/money";
 
 const GARMENT_TYPES = [
   "Jacket",
@@ -117,8 +118,8 @@ type Preset = {
 
 type Remind = "eod" | "3d" | "2w" | "never";
 
-function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 function uid() {

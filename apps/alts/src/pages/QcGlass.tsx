@@ -10,6 +10,8 @@ import StatusBadge from "@alts/components/StatusBadge";
 import MtmStatusRail from "@alts/components/MtmStatusRail";
 import { MTM_STATUSES, type MtmStatusKey } from "@alts/lib/mtmStatus";
 import { clientInitials, syncLabel } from "@alts/lib/ticketDisplay";
+import { AltsSearchField } from "@alts/components/AltsSearchField";
+import { ListSkeleton } from "@alts/components/skeletons";
 import "@alts/styles/alts-pos.css";
 
 type Tab = "waiting" | "open" | "passed" | "failed";
@@ -64,6 +66,12 @@ export default function QcGlass() {
         ? api.get<QcRow[]>(`/api/qc/orders?status=${encodeURIComponent(pipeline)}`)
         : api.get<QcRow[]>(`/api/qc?tab=${tab}`),
     refetchInterval: 45_000,
+  });
+  const rates = useQuery({
+    queryKey: ["alts-qc-rates"],
+    enabled: tab === "waiting" && !pipeline,
+    queryFn: () => api.get<{ passedThisWeek: number }>("/api/qc/rates"),
+    staleTime: 60_000,
   });
 
   const setStatus = useMutation({
@@ -164,12 +172,7 @@ export default function QcGlass() {
       </div>
 
       <div className="px-4 sm:px-5 pt-3">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Client, MTMPro, sales order…"
-          className="w-full h-[52px] rounded-xl bg-black/35 border border-brass/25 px-3.5 text-[15px] text-cream outline-none focus:border-brass"
-        />
+        <AltsSearchField value={q} onChange={setQ} scope="QC" />
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-2 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))]">
@@ -238,12 +241,13 @@ export default function QcGlass() {
           );
         })}
 
+        {list.isLoading && <ListSkeleton rows={6} />}
         {!list.isLoading && !shown.length && !list.isError && (
           <div className="sf-empty">
             {pipeline
               ? `No MTM orders in ${pipeline}.`
               : tab === "waiting"
-                ? "Nothing waiting for QC."
+                ? `All caught up — ${rates.data?.passedThisWeek ?? 0} passed this week`
                 : "No inspections in this list."}
           </div>
         )}

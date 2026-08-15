@@ -2,9 +2,10 @@ import type { ReactNode } from "react";
 import { cn } from "@ls/design/utils";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
 import { useMinWidth } from "@alts/lib/luxuryMotion";
+import { formatMoney } from "@alts/lib/money";
 
-function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 export type CartSheetGarment = {

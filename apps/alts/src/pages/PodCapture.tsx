@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { api } from "@ls/api-client";
 import { StatusPill } from "@ls/design";
 import { cn } from "@ls/design/utils";
+import { formatMoney } from "@alts/lib/money";
 import "@alts/styles/alts-pos.css";
 
 type BoardDelivery = {
@@ -38,7 +39,7 @@ type TicketGarment = {
 };
 
 function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  return formatMoney(n);
 }
 
 async function uploadDeliveryFile(file: File | Blob, filename: string, deliveryId: string): Promise<string> {
@@ -100,9 +101,8 @@ export default function PodCapture() {
       : Array.from({ length: Math.max(d?.garmentCount || 0, 1) }, (_, i) => `G${i + 1}`);
 
   useEffect(() => {
-    // default all checked when list loads
     const next: Record<string, boolean> = {};
-    for (const k of garmentKeys) next[k] = true;
+    for (const k of garmentKeys) next[k] = false;
     setChecked(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [d?.id, garmentKeys.join("|")]);

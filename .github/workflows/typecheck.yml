@@ -50,3 +50,37 @@ jobs:
       - name: Typecheck alts
         working-directory: apps/alts
         run: bun run typecheck
+
+  test-alts:
+    name: "test: apps/alts"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install all deps
+        run: bun install
+      - name: Unit tests
+        working-directory: apps/alts
+        run: bun test src
+
+  e2e-alts:
+    name: "playwright: apps/alts smoke"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install all deps
+        run: bun install
+      - name: Install Chromium
+        working-directory: apps/alts
+        run: bunx playwright install --with-deps chromium
+      - name: Smoke suite
+        working-directory: apps/alts
+        env:
+          CI: "1"
+          VITE_COMMIT: ${{ github.sha }}
+        run: bunx playwright test

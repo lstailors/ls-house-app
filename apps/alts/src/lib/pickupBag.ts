@@ -48,3 +48,14 @@ export function clearPickupBag() {
     /* ignore */
   }
 }
+
+/** Restore the bag only after a scanner round-trip or an explicit add. */
+export function shouldRestorePickupBag(params: URLSearchParams): boolean {
+  return (
+    params.get("scanned") === "1" ||
+    !!params.get("addTicket") ||
+    !!params.get("addInvoice") ||
+    !!params.get("ticket") ||
+    !!params.get("invoice")
+  );
+}

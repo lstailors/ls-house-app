@@ -75,6 +75,8 @@ interface ChargeCardOnFileButtonProps {
    * If omitted, recovery only closes the sheet (no false "charged" toast).
    */
   onRefresh?: () => void;
+  /** Start the card picker immediately (after a bag-level confirm). */
+  autoStart?: boolean;
 }
 
 function brandLabel(brand: string): string {
@@ -97,6 +99,7 @@ export function ChargeCardOnFileButton({
   onSuccess,
   onError,
   onRefresh,
+  autoStart,
 }: ChargeCardOnFileButtonProps) {
   const [stage, setStage] = useState<Stage>("idle");
   const [cards, setCards] = useState<PublicCard[]>([]);
@@ -162,7 +165,10 @@ export function ChargeCardOnFileButton({
     }
   }, [ticketId, invoiceId, onError]);
 
-  // Prefetch nothing on mount — only when staff opens the flow.
+  useEffect(() => {
+    if (autoStart && stage === "idle") void loadCards();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
 
   const handleCharge = useCallback(async () => {
     if (!selected) return;

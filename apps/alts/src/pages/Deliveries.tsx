@@ -23,6 +23,7 @@ import { api } from "@ls/api-client";
 import type { Delivery } from "@ls/types";
 import StatusBadge from "@alts/components/StatusBadge";
 import type { StatusTone } from "@alts/lib/statusTone";
+import { KanbanSkeleton } from "@alts/components/skeletons";
 
 const FILTERS = [
   { value: "all", label: "All" },
@@ -361,12 +362,17 @@ export default function Deliveries() {
       />
 
       {isLoading ? (
-        <div className="text-cream-muted text-sm">Loading…</div>
+        <KanbanSkeleton cols={4} />
       ) : boardColumns.every((c) => c.items.length === 0) ? (
         <EmptyState
           icon={Truck}
-          title="No deliveries"
-          description="Queued hand-delivery and FedEx jobs land here after intake confirm."
+          title="No deliveries queued"
+          description="Build a run from ready tickets and sales orders."
+          action={
+            <Button className="btn-brass" onClick={() => setNewDeliveryOpen(true)}>
+              Build a run
+            </Button>
+          }
         />
       ) : (
         <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x">

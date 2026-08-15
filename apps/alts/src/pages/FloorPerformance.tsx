@@ -6,6 +6,7 @@ import { cn } from "@ls/design/utils";
 import { storeToday } from "@alts/lib/storeDate";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
 import "@alts/styles/alts-pos.css";
+import { formatMoney } from "@alts/lib/money";
 
 /** SPEC_061 Floor Performance — Lucia mockups in ~/ls-design/mockups/tailor-productivity/ */
 
@@ -58,8 +59,8 @@ type Tab = "dashboard" | "week";
 type LocFilter = "all" | "shop" | "home";
 type WeekMetric = "hours" | "pieces";
 
-function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 function fmtMins(m: number) {

@@ -1,5 +1,6 @@
 import { cn } from "@ls/design/utils";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
+import { formatMoney } from "@alts/lib/money";
 
 export type ParkDrawerProps = {
   open: boolean;
@@ -26,8 +27,8 @@ export type ParkDrawerProps = {
   submitting?: boolean;
 };
 
-function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 const CHIPS = ["waiting on pieces", "quote only", "back this afternoon", "needs C to price"] as const;

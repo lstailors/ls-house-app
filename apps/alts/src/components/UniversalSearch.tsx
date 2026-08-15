@@ -5,6 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { Search, X, Loader2, CornerDownLeft, Command } from "lucide-react";
+import { ALTS_SEARCH_PLACEHOLDER } from "@alts/components/AltsSearchField";
+import { formatMoney } from "@alts/lib/money";
 
 export type SearchHit = {
   type: string;
@@ -42,7 +44,7 @@ const TYPE_TONE: Record<string, string> = {
 
 function money(n?: number | null) {
   if (n == null || Number.isNaN(Number(n))) return "";
-  return Number(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
+  return formatMoney(n);
 }
 
 function useDebounced<T>(value: T, ms = 220): T {
@@ -85,7 +87,7 @@ export function UniversalSearchInline({ className }: { className?: string }) {
       >
         <Search className="h-4 w-4 text-brass-light shrink-0" />
         <span className="truncate text-[12.5px] sm:text-[13px]">
-          Search tickets, clients, deliveries…
+          {ALTS_SEARCH_PLACEHOLDER}
         </span>
         <kbd className="hidden sm:inline-flex ml-auto items-center gap-0.5 rounded-md border border-brass/20 bg-black/30 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-cream-dim">
           <Command className="h-3 w-3" />K
@@ -334,7 +336,7 @@ function UniversalSearchPalette({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Ticket · client · phone · delivery · invoice · SO…"
+            placeholder={ALTS_SEARCH_PLACEHOLDER}
             className="flex-1 h-14 bg-transparent text-[16px] text-cream outline-none placeholder:text-cream-dim"
             autoComplete="off"
             autoCorrect="off"

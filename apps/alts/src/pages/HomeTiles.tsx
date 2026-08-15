@@ -10,6 +10,8 @@ import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
 import { clientInitials, storeHour } from "@alts/lib/ticketDisplay";
+import { formatCompactMoney } from "@alts/lib/money";
+import { TileSkeleton } from "@alts/components/skeletons";
 import { usePresence } from "@alts/lib/luxuryMotion";
 import type { StatusTone } from "@alts/lib/statusTone";
 
@@ -89,19 +91,6 @@ function shortName(full?: string | null) {
   if (parts.length <= 1) return parts[0] || "Client";
   if (parts.length === 2) return parts.join(" ");
   return `${parts[0]} ${parts[parts.length - 1]}`;
-}
-
-function formatCompactMoney(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "$0";
-  if (n >= 1_000_000) {
-    const v = n / 1_000_000;
-    return `$${v >= 10 ? Math.round(v) : v.toFixed(1).replace(/\.0$/, "")}M`;
-  }
-  if (n >= 1000) {
-    const v = n / 1000;
-    return `$${v >= 100 ? Math.round(v) : v.toFixed(1).replace(/\.0$/, "")}k`;
-  }
-  return `$${Math.round(n)}`;
 }
 
 /** Render Daily Espresso lines — icon column + action brass wash. */
@@ -434,6 +423,7 @@ type AltsHomeFeed = {
     openInvoices: number;
     openInvoicesAmount: number;
     oldestUnpaidDays: number | null;
+    oldestUnpaidInvoiceId?: string | null;
     lateTransferCount: number;
     stalledCount: number;
     doubleBookedSlots: number;
@@ -835,7 +825,7 @@ export default function HomeTiles() {
   const invLive = (() => {
     const n = c?.openInvoices ?? 0;
     const oldest = c?.oldestUnpaidDays;
-    if (n <= 0) return { text: "All clear", tone: "cd" as LiveTone };
+    if (n <= 0) return { text: "All clear", tone: "cd" as LiveTone, href: "/invoices" };
     return {
       text: (
         <>
@@ -844,6 +834,9 @@ export default function HomeTiles() {
         </>
       ),
       tone: n > 0 ? ("am" as LiveTone) : ("em" as LiveTone),
+      href: c?.oldestUnpaidInvoiceId
+        ? `/invoices/${encodeURIComponent(c.oldestUnpaidInvoiceId)}`
+        : "/invoices",
     };
   })();
 
@@ -998,7 +991,9 @@ export default function HomeTiles() {
     },
     {
       key: "invoices",
-      to: "/invoices",
+      to: c?.oldestUnpaidInvoiceId
+        ? `/invoices/${encodeURIComponent(c.oldestUnpaidInvoiceId)}`
+        : "/invoices",
       title: "Invoices",
       sub: "Custom + alts AR",
       badge: moneyBadge,
@@ -1130,18 +1125,18 @@ export default function HomeTiles() {
   return (
     <div className="alts-root home-040 flex flex-col min-h-dvh overflow-x-hidden px-[14px] sm:px-[22px] pt-[max(10px,env(safe-area-inset-top))] pb-[max(5.5rem,env(safe-area-inset-bottom))] gap-2.5">
       {/* Header — seal, brand, search, loc, weather, avatar */}
-      <header className="home-040-hd flex items-center gap-3 shrink-0">
+      <header className="home-040-hd flex items-center gap-2 sm:gap-3 shrink-0 min-w-0 flex-wrap">
         <BrandSeal className="shrink-0" size={34} />
         <div className="min-w-0 hidden sm:block shrink-0">
           <div className="display text-[24px] leading-tight">L&S House</div>
           <div className="text-[11px] tracking-[0.16em] uppercase text-[var(--cd)]">Alterations</div>
         </div>
-        <UniversalSearchInline className="mx-0.5 sm:mx-1 flex-1 max-w-[320px]" />
-        <div className="flex-1" />
-        <div className="hidden md:flex items-center rounded-full border border-brass/35 px-3 py-1.5 text-[10.5px] font-bold tracking-[0.1em] text-brass-light shrink-0">
+        <UniversalSearchInline className="mx-0.5 sm:mx-1 flex-1 min-w-0 max-w-[min(100%,280px)]" />
+        <div className="flex-1 min-w-0 hidden lg:block" />
+        <div className="hidden xl:flex items-center rounded-full border border-brass/35 px-3 py-1.5 text-[10.5px] font-bold tracking-[0.1em] text-brass-light shrink-0">
           NYC
         </div>
-        <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-[var(--cd)] shrink-0">
+        <div className="hidden xl:flex items-center gap-1.5 text-[11px] text-[var(--cd)] shrink-0 max-w-[140px] truncate">
           {weather.data ? (
             <>
               <span aria-hidden>{weatherEmoji(weather.data.weathercode)}</span>
@@ -1191,11 +1186,11 @@ export default function HomeTiles() {
         </button>
 
         <Link
-          to="/shop-floor"
+          to="/shop-floor?filter=overdue"
           className={cn("seg pill", (strip?.overdue ?? 0) > 0 && "rd")}
         >
           <b className="display tabular-nums">{strip?.overdue ?? "—"}</b>
-          <span>overdue</span>
+          <span>OVERDUE</span>
         </Link>
         <Link to="/deliveries" className="seg pill">
           <b className="display tabular-nums">{strip?.outForDelivery ?? "—"}</b>
@@ -1206,7 +1201,11 @@ export default function HomeTiles() {
           <span>delivered today</span>
         </Link>
         <Link
-          to="/invoices"
+          to={
+            c?.oldestUnpaidInvoiceId
+              ? `/invoices/${encodeURIComponent(c.oldestUnpaidInvoiceId)}`
+              : "/invoices"
+          }
           className={cn("seg pill", (c?.openInvoices ?? 0) > 0 && "am")}
         >
           <b className="display tabular-nums">
@@ -1318,6 +1317,9 @@ export default function HomeTiles() {
       )}
 
       {/* 5×2 tile grid — fills remaining height */}
+      {home.isLoading ? (
+        <TileSkeleton count={10} />
+      ) : (
       <div className="home-040-grid flex-1 min-h-0">
         {tiles
           .filter((t) => t.key !== "qc" || canQc)
@@ -1383,6 +1385,7 @@ export default function HomeTiles() {
           );
         })}
       </div>
+      )}
     </div>
   );
 }

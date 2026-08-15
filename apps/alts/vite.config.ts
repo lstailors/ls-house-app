@@ -40,6 +40,11 @@ const NAV_EXTRA = [
 ];
 
 export default defineConfig({
+  define: {
+    "import.meta.env.VITE_COMMIT": JSON.stringify(
+      process.env.VITE_COMMIT || process.env.GITHUB_SHA || "alts-dev",
+    ),
+  },
   server: {
     host: "0.0.0.0",
     port: Number(process.env.PORT) || 8010,

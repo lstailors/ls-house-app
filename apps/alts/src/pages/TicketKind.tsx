@@ -12,6 +12,7 @@ import {
 import { REDO_DISPLAY } from "@alts/lib/billingLabels";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
+import { formatMoney } from "@alts/lib/money";
 
 type Kind = "walk_in" | "on_order" | "redo";
 
@@ -25,13 +26,8 @@ type SoHit = {
   customerName?: string;
 };
 
-function money(n?: number) {
-  if (n == null || Number.isNaN(n)) return "—";
-  return Number(n).toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 function mapSoRow(r: any): SoHit {

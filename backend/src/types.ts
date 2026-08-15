@@ -1491,3 +1491,34 @@ export const UpdateQcInspectionInput = z.object({
   signatureUrl: z.string().optional(),
 });
 export type UpdateQcInspectionInput = z.infer<typeof UpdateQcInspectionInput>;
+
+export const QcRateBucket = z.object({
+  key: z.string(),
+  pass: z.number(),
+  fail: z.number(),
+  rate: z.number(),
+});
+export type QcRateBucket = z.infer<typeof QcRateBucket>;
+
+export const QcRates = z.object({
+  passed: z.number(),
+  failed: z.number(),
+  pending: z.number(),
+  passRate: z.number(),
+  passedThisWeek: z.number(),
+  byWeek: z.array(QcRateBucket),
+  byGarment: z.array(QcRateBucket),
+  bySource: z.array(QcRateBucket),
+});
+export type QcRates = z.infer<typeof QcRates>;
+
+export const InvoiceTextReceiptInput = z.object({
+  phone: z.string().optional(),
+});
+export type InvoiceTextReceiptInput = z.infer<typeof InvoiceTextReceiptInput>;
+
+export const InvoiceTextReceiptResult = z.object({
+  sent: z.boolean(),
+  phone: z.string().nullable(),
+});
+export type InvoiceTextReceiptResult = z.infer<typeof InvoiceTextReceiptResult>;

@@ -7,6 +7,9 @@ import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import ErpStatusBanner from "@alts/components/ErpStatusBanner";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import { AltsSearchField } from "@alts/components/AltsSearchField";
+import { ListSkeleton } from "@alts/components/skeletons";
+import { formatMoney } from "@alts/lib/money";
 import { storeToday } from "@alts/lib/storeDate";
 import {
   clientInitials,
@@ -35,7 +38,7 @@ type Ticket = {
 };
 
 function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  return formatMoney(n);
 }
 
 function emptyCopy(tab: string) {
@@ -158,12 +161,7 @@ export default function OrdersGlass() {
             <span className="og-count">{n}</span>
           </button>
         ))}
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Ticket, name, tailor…"
-          className="ml-auto h-11 rounded-full bg-black/30 border border-brass/25 px-4 text-sm text-cream outline-none min-w-[180px] w-full md:w-auto"
-        />
+        <AltsSearchField value={q} onChange={setQ} scope="orders" className="ml-auto w-full md:w-[280px]" />
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-8 space-y-2">
@@ -175,7 +173,7 @@ export default function OrdersGlass() {
             onRetry={() => tickets.refetch()}
           />
         )}
-        {tickets.isLoading && <p className="text-cream-dim p-4">Loading…</p>}
+        {tickets.isLoading && <ListSkeleton rows={6} />}
         {!tickets.isError &&
           rows.map((t) => {
             const due = fmtDue(t.due_date);

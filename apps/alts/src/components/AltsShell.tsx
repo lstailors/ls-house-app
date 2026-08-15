@@ -9,6 +9,15 @@ export default function AltsShell() {
   const { data: me } = useMe();
   const loc = useLocation();
   const isHome = loc.pathname === "/";
+  const kiosk = new URLSearchParams(loc.search).get("kiosk") === "1";
+
+  if (kiosk) {
+    return (
+      <div className="min-h-dvh overflow-x-hidden overflow-y-auto bg-forest-deep text-cream">
+        <Outlet />
+      </div>
+    );
+  }
 
   if (isHome) {
     return (

@@ -17,6 +17,7 @@ import TaskSubitemPicker, {
   isGroupPreset,
 } from "@alts/components/intake/TaskSubitemPicker";
 import "@alts/styles/alts-pos.css";
+import { formatMoney } from "@alts/lib/money";
 
 type Preset = HierarchyPreset;
 
@@ -59,8 +60,8 @@ function isDone(status?: string | null) {
   return s === "done" || s === "ready" || s === "complete" || s === "completed";
 }
 
-function money(n: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n || 0);
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 function addDays(iso: string | undefined, days: number): string {

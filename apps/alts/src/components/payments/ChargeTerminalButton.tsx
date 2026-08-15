@@ -36,6 +36,7 @@ interface ChargeTerminalButtonProps {
   ticketId?: string;
   onSuccess: () => void;
   onError: (msg: string) => void;
+  autoStart?: boolean;
 }
 
 export function ChargeTerminalButton({
@@ -45,6 +46,7 @@ export function ChargeTerminalButton({
   ticketId,
   onSuccess,
   onError,
+  autoStart,
 }: ChargeTerminalButtonProps) {
   const [stage, setStage] = useState<Stage>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
@@ -63,6 +65,11 @@ export function ChargeTerminalButton({
   };
 
   useEffect(() => () => cleanup(), []);
+
+  useEffect(() => {
+    if (autoStart && stage === "idle") setStage("confirming");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
 
   const pollCheckoutStatus = (checkoutId: string) => {
     pollRef.current = setInterval(async () => {

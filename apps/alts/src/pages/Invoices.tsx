@@ -1,11 +1,15 @@
-import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import { AltsSearchField } from "@alts/components/AltsSearchField";
+import { ListSkeleton } from "@alts/components/skeletons";
+import { formatMoney } from "@alts/lib/money";
+import { AGING_BUCKETS, agingBucket, invoiceAgeDays, type AgingBucket } from "@alts/lib/invoiceAging";
 
 type InvoiceRow = {
   id: string;
@@ -32,7 +36,7 @@ type Summary = {
 };
 
 function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  return formatMoney(n);
 }
 
 function statusClass(st: string) {
@@ -46,8 +50,11 @@ function statusClass(st: string) {
 
 export default function Invoices() {
   const nav = useNavigate();
+  const [params, setParams] = useSearchParams();
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<"open" | "all" | "custom" | "alteration" | "paid">("open");
+  const aging = (params.get("aging") as AgingBucket | null) || null;
+  const focusId = params.get("focus");
 
   const query = useQuery({
     queryKey: ["alts-invoices", tab, q],
@@ -88,8 +95,27 @@ export default function Invoices() {
           (i.customerName ?? i.customer?.name ?? "").toLowerCase().includes(s),
       );
     }
+    if (aging) {
+      list = list.filter((i) => agingBucket(invoiceAgeDays(i.postingDate, i.dueDate)) === aging);
+    }
     return list;
-  }, [query.data, q]);
+  }, [query.data, q, aging]);
+
+  const agingCounts = useMemo(() => {
+    const src = (query.data?.rows ?? []).filter((i) => Number(i.outstandingAmount) > 0.005);
+    const counts: Record<AgingBucket, number> = { "0-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
+    for (const i of src) {
+      const b = agingBucket(invoiceAgeDays(i.postingDate, i.dueDate));
+      if (b) counts[b] += 1;
+    }
+    return counts;
+  }, [query.data]);
+
+  useEffect(() => {
+    if (!focusId) return;
+    const el = document.getElementById(`inv-${focusId}`);
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [focusId, rows]);
 
   const summary = query.data?.summary;
 
@@ -143,14 +169,31 @@ export default function Invoices() {
           </div>
         </div>
 
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search invoice #, client, ticket, SO…"
-          className="w-full h-12 rounded-xl bg-forest-deep border border-brass/25 px-4 text-cream text-sm placeholder:text-cream-dim/60 focus:border-brass/50 focus:outline-none"
-          autoCapitalize="off"
-          autoCorrect="off"
-        />
+        <AltsSearchField value={q} onChange={setQ} scope="invoices" />
+
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          {AGING_BUCKETS.map((b) => (
+            <button
+              key={b}
+              type="button"
+              onClick={() => {
+                const next = new URLSearchParams(params);
+                if (aging === b) next.delete("aging");
+                else next.set("aging", b);
+                setParams(next, { replace: true });
+              }}
+              className={cn(
+                "shrink-0 px-3.5 py-2 rounded-full text-[11px] font-bold uppercase tracking-widest border transition-colors",
+                aging === b
+                  ? "bg-signal-rose/20 border-signal-rose/50 text-signal-rose"
+                  : "border-brass/15 text-cream-dim hover:border-brass/30",
+              )}
+            >
+              {b}
+              <span className="ml-1 tabular-nums opacity-80">{agingCounts[b]}</span>
+            </button>
+          ))}
+        </div>
 
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {tabs.map((t) => (
@@ -179,11 +222,7 @@ export default function Invoices() {
             onRetry={() => query.refetch()}
           />
         ) : query.isLoading ? (
-          <div className="space-y-2 animate-pulse">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-20 rounded-xl bg-brass/5 border border-brass/10" />
-            ))}
-          </div>
+          <ListSkeleton rows={6} />
         ) : rows.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-cream-muted text-sm">No invoices match.</p>
@@ -201,9 +240,13 @@ export default function Invoices() {
               return (
                 <button
                   key={inv.id}
+                  id={`inv-${inv.id}`}
                   type="button"
                   onClick={() => nav(`/invoices/${encodeURIComponent(inv.id)}`)}
-                  className="w-full text-left rounded-xl border border-brass/15 bg-black/25 hover:border-brass/40 px-4 py-3.5 transition-colors"
+                  className={cn(
+                    "w-full text-left rounded-xl border bg-black/25 hover:border-brass/40 px-4 py-3.5 transition-colors",
+                    focusId === inv.id ? "border-signal-rose/60" : "border-brass/15",
+                  )}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">

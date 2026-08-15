@@ -7,6 +7,7 @@ import { cn } from "@ls/design/utils";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import { formatMoney } from "@alts/lib/money";
 
 type Ticket = {
   name: string;
@@ -20,8 +21,8 @@ type Ticket = {
   due_date?: string;
 };
 
-function money(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+function money(n?: number | string | null) {
+  return formatMoney(n);
 }
 
 export default function QuoteComposer() {
