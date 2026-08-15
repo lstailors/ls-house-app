@@ -1,6 +1,7 @@
 import { erpList, erpGet, erpCreate, erpUpdate } from "../erp";
 import { findCustomerByPhone, createCustomer, getCustomersByIds } from "./customers";
 import { DT } from "./doctypes";
+import { isMtmStatus } from "../qc";
 
 function toAppStatus(dbStatus: string): string {
   if (["Submitted", "Consultation", "Draft"].includes(dbStatus)) return "quote";
@@ -51,6 +52,7 @@ export function serializeOrder(order: any, garments: any[], customerRow: any) {
     priceTbd: false,
     depositAmount: Number(order.deposit_amount ?? 0),
     status: toAppStatus(order.status ?? "Submitted"),
+    orderStatus: order.order_status || (isMtmStatus(order.status) ? order.status : null),
     notes: order.special_instructions ?? null,
     spec: {
       yzOrderNumber: order.yz_order_number ?? null,
@@ -192,6 +194,7 @@ async function listCustomOrdersFromSalesOrders(opts: {
       createdAt: o.creation ?? o.transaction_date,
       updatedAt: o.modified,
       erpName: o.name,
+      orderStatus: null,
     };
   });
 }
@@ -210,7 +213,7 @@ export async function listCustomOrders(opts: {
   const rows = await erpList<any>(DT.CUSTOM_ORDER, {
     filters,
     fields: [
-      "name", "customer", "customer_name", "origin_location", "status", "order_total",
+      "name", "customer", "customer_name", "origin_location", "status", "order_status", "order_total",
       "deposit_amount", "special_instructions", "yz_order_number", "erp_sales_order",
       "sales_rep", "garment_type", "creation", "modified",
     ],
@@ -306,6 +309,7 @@ export async function getCustomOrder(id: string) {
     createdAt: so.creation,
     updatedAt: so.modified,
     erpName: so.name,
+    orderStatus: null,
     erp: so,
     grandTotal: Number(so.grand_total ?? 0),
     advancePaid: Number(so.advance_paid ?? 0),

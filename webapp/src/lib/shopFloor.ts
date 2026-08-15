@@ -49,13 +49,14 @@ export function statusMeta(status: string): StatusMeta {
   return STATUS_META[status as YZProductionStatus] ?? STATUS_META["In Production"];
 }
 
-// Kanban columns — active statuses only (Canceled excluded), in workflow order.
+// Kanban columns — every live shop-floor status, including Canceled.
 export const KANBAN_STATUSES: YZProductionStatus[] = [
   "Fabric Not Received",
   "In Production",
   "Rush",
   "On Pause",
   "Shipped",
+  "Canceled",
 ];
 
 export const ALL_STATUSES: YZProductionStatus[] = [

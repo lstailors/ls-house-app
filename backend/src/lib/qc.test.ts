@@ -135,7 +135,7 @@ describe("QC routes are mounted", () => {
     expect(existsSync(new URL("../routes/qc.ts", import.meta.url))).toBe(true);
   });
 
-  test("waiting list is inspections, not an MTMPro / sales-order dump", () => {
+  test("waiting list is inspections, not an unfiltered MTMPro dump", () => {
     const src = readFileSync(new URL("../routes/qc.ts", import.meta.url), "utf8");
     expect(src).not.toContain("listMtmInQueue");
     expect(src).not.toContain("need_by_date");
@@ -145,8 +145,30 @@ describe("QC routes are mounted", () => {
     expect(src).toContain("requireAdmin");
     expect(src).toContain("dedupeByInspectionName");
     expect(src).not.toContain("setMtmStatus");
+    expect(src).toContain("listMakeOrdersInQcQueue");
     expect(src).toContain("DT.MTM_PRO_ORDER");
     expect(src).toContain('qcRouter.get("/:id/pdf"');
+  });
+
+  test("live MTM pipeline routes are registered before /:id", () => {
+    const src = readFileSync(new URL("../routes/qc.ts", import.meta.url), "utf8");
+    expect(src.indexOf('qcRouter.get("/orders"')).toBeLessThan(src.indexOf('qcRouter.get("/:id"'));
+    expect(src.indexOf('qcRouter.patch("/orders/:name/status"')).toBeLessThan(src.indexOf('qcRouter.patch("/:id"'));
+    expect(src).toContain("setMtmOrderStatus");
+    expect(src).toContain("listMtmPipeline");
+    expect(src).toContain("DT.MTM_PRO_ORDER");
+  });
+
+  test("frontends ship the same 16 live MTM statuses, including Cancelled", () => {
+    const keys = MTM_STATUSES.map((s) => s.key);
+    expect(keys).toHaveLength(16);
+    expect(keys).toContain("Cancelled");
+    const alts = readFileSync(new URL("../../../apps/alts/src/lib/mtmStatus.ts", import.meta.url), "utf8");
+    const web = readFileSync(new URL("../../../webapp/src/lib/mtmStatus.ts", import.meta.url), "utf8");
+    for (const key of keys) {
+      expect(alts).toContain(`"${key}"`);
+      expect(web).toContain(`"${key}"`);
+    }
   });
 
   test("settings is registered before /:id so it is not treated as an inspection", () => {

@@ -9,7 +9,7 @@ import { GlassCard } from "@ls/design";
 import { StatusPill } from "@ls/design";
 import { Button } from "@ls/design/ui/button";
 import { useCustomOrder } from "@/lib/queries";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import type { CustomOrder } from "@ls/types";
 import { GARMENT_LABEL } from "@/lib/pricing";
@@ -18,6 +18,7 @@ import { cn } from "@ls/design/utils";
 import { ChargeTerminalButton } from "@/components/payments/ChargeTerminalButton";
 import { ChargeCardOnFileButton } from "@/components/payments/ChargeCardOnFileButton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@ls/design/ui/dialog";
+import MtmStatusRail from "@/components/MtmStatusRail";
 
 const STAGES: CustomOrder["status"][] = [
   "quote",
@@ -25,6 +26,7 @@ const STAGES: CustomOrder["status"][] = [
   "in_production",
   "ready",
   "delivered",
+  "cancelled",
 ];
 
 const STAGE_LABELS: Record<CustomOrder["status"], string> = {
@@ -44,6 +46,14 @@ export default function CustomOrderDetail() {
   const [paymentLinkOpen, setPaymentLinkOpen] = useState(false);
   const [paymentLink, setPaymentLink] = useState("");
   const [copied, setCopied] = useState(false);
+  const [pendingLive, setPendingLive] = useState<string | null>(null);
+
+  const factoryKey = (order as any)?.erpName ?? (order as any)?.erpnextName ?? order?.id ?? id;
+  const { data: factoryOrders = [] } = useQuery<any[]>({
+    queryKey: ["sales-order-factory", factoryKey],
+    queryFn: () => api.get<any[]>(`/api/sales-orders/${factoryKey}/factory`),
+    enabled: Boolean(factoryKey),
+  });
 
   const createDelivery = useMutation({
     mutationFn: async () => {
@@ -78,6 +88,19 @@ export default function CustomOrderDetail() {
       toast.success("Status updated");
     },
     onError: (e: Error) => toast.error(e.message),
+  });
+
+  const updateLiveStatus = useMutation({
+    mutationFn: ({ name, status }: { name: string; status: string }) =>
+      api.patch(`/api/qc/orders/${encodeURIComponent(name)}/status`, { status }),
+    onMutate: ({ name }) => setPendingLive(name),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["custom-orders"] });
+      qc.invalidateQueries({ queryKey: ["sales-order-factory"] });
+      toast.success("Status updated");
+    },
+    onError: (e: Error) => toast.error(e.message || "Could not update status"),
+    onSettled: () => setPendingLive(null),
   });
 
   const printTicket = useMutation({
@@ -211,7 +234,7 @@ export default function CustomOrderDetail() {
         />
       </div>
 
-      {/* Stage stepper */}
+      {/* Stage stepper — simplified bookkeeping, including Cancelled */}
       <GlassCard variant="strong" className="p-5">
         <div className="ui-label mb-4">Production Stage</div>
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -225,7 +248,7 @@ export default function CustomOrderDetail() {
                   onClick={() => updateStatus.mutate(s)}
                   disabled={updateStatus.isPending}
                   className={cn(
-                    "rounded-full px-3 py-1.5 text-xs border transition-all",
+                    "rounded-full px-3 py-1.5 text-xs border transition-all min-h-[44px]",
                     done
                       ? "border-brass/30 bg-brass/10 text-brass-light"
                       : active
@@ -240,6 +263,38 @@ export default function CustomOrderDetail() {
             );
           })}
         </div>
+      </GlassCard>
+
+      <GlassCard variant="strong" className="p-5">
+        <div className="ui-label mb-3">Live MTM status</div>
+        <p className="text-xs text-cream-dim mb-3">
+          Full factory list — tap to change. Includes Cancelled.
+        </p>
+        <MtmStatusRail
+          current={(order as CustomOrder & { orderStatus?: string | null }).orderStatus}
+          pending={pendingLive === order.id ? updateLiveStatus.variables?.status : null}
+          onChange={(status) => updateLiveStatus.mutate({ name: order.id, status })}
+        />
+        {factoryOrders.filter((fo) => fo?.name && fo.name !== order.id).length > 0 ? (
+          <div className="mt-4 space-y-3">
+            {factoryOrders
+              .filter((fo) => fo?.name && fo.name !== order.id)
+              .map((fo: any) => (
+                <div key={fo.name} className="rounded-lg border border-brass/15 bg-brass/5 px-3 py-3">
+                  <div className="font-mono text-[10px] text-cream-dim mb-2">
+                    {fo.name}
+                    {fo.order_type ? ` · ${fo.order_type}` : ""}
+                  </div>
+                  <MtmStatusRail
+                    compact
+                    current={fo.order_status}
+                    pending={pendingLive === fo.name ? updateLiveStatus.variables?.status : null}
+                    onChange={(status) => updateLiveStatus.mutate({ name: fo.name, status })}
+                  />
+                </div>
+              ))}
+          </div>
+        ) : null}
       </GlassCard>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">

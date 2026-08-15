@@ -20,6 +20,12 @@ export const MTM_STATUSES = [
 
 export type MtmStatus = (typeof MTM_STATUSES)[number]["key"];
 
+export const MTM_STATUS_KEYS: readonly MtmStatus[] = MTM_STATUSES.map((s) => s.key);
+
+export function isMtmStatus(value: string | null | undefined): value is MtmStatus {
+  return !!value && MTM_STATUS_KEYS.includes(value as MtmStatus);
+}
+
 export const QC_QUEUE_STATUSES = ["Quality Control", "Received at Store", "At QC"] as const;
 export const QC_PASS_STATUSES = ["Awaiting Fitting", "Awaiting Shipment"] as const;
 export const QC_FAIL_STATUS = "Alterations";

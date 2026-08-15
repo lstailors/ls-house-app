@@ -322,9 +322,7 @@ export function OrderDrawer({ orders, order, onClose, onNavigate }: Props) {
                 </button>
                 {/* Quick-status buttons (all valid next states, current excluded) */}
                 <div className="flex flex-wrap gap-1.5 pt-1">
-                  {ALL_STATUSES.filter(
-                    (s) => s !== order.production_status && s !== "Canceled",
-                  ).map((s) => (
+                  {ALL_STATUSES.filter((s) => s !== order.production_status).map((s) => (
                     <button
                       key={s}
                       type="button"

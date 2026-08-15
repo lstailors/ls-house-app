@@ -83,7 +83,7 @@ export default function TicketCartRail({
             <b className="display block text-xl italic font-semibold text-cream-muted mb-1.5">Nothing yet</b>
             <p className="text-[11.5px] leading-relaxed">
               {showSellChrome
-                ? "Use Alter for client pieces, Sell for stock / special-order."
+                ? "Use Alter for client pieces, Sell for MTM / stock / special-order."
                 : "Select pieces from the catalog."}
             </p>
           </div>

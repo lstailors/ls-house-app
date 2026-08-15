@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import StatusBadge from "@alts/components/StatusBadge";
+import MtmStatusRail from "@alts/components/MtmStatusRail";
+import { MTM_STATUSES, type MtmStatusKey } from "@alts/lib/mtmStatus";
 import { clientInitials, syncLabel } from "@alts/lib/ticketDisplay";
 import "@alts/styles/alts-pos.css";
 
@@ -15,6 +18,7 @@ type QcRow = {
   id: string;
   name?: string | null;
   inspectionId?: string | null;
+  orderName?: string | null;
   salesOrder?: string | null;
   customOrder?: string | null;
   customerName?: string | null;
@@ -47,13 +51,31 @@ function day(iso?: string | null) {
 
 export default function QcGlass() {
   const nav = useNavigate();
+  const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("waiting");
+  const [pipeline, setPipeline] = useState<MtmStatusKey | "">("");
   const [q, setQ] = useState("");
+  const [pendingName, setPendingName] = useState<string | null>(null);
 
   const list = useQuery({
-    queryKey: ["alts-qc", tab],
-    queryFn: () => api.get<QcRow[]>(`/api/qc?tab=${tab}`),
+    queryKey: ["alts-qc", tab, pipeline],
+    queryFn: () =>
+      pipeline
+        ? api.get<QcRow[]>(`/api/qc/orders?status=${encodeURIComponent(pipeline)}`)
+        : api.get<QcRow[]>(`/api/qc?tab=${tab}`),
     refetchInterval: 45_000,
+  });
+
+  const setStatus = useMutation({
+    mutationFn: ({ name, status }: { name: string; status: string }) =>
+      api.patch(`/api/qc/orders/${encodeURIComponent(name)}/status`, { status }),
+    onMutate: ({ name }) => setPendingName(name),
+    onSuccess: () => {
+      toast.success("Status updated");
+      void qc.invalidateQueries({ queryKey: ["alts-qc"] });
+    },
+    onError: (e: Error) => toast.error(e.message || "Could not update status"),
+    onSettled: () => setPendingName(null),
   });
 
   const rows = list.data ?? [];
@@ -61,7 +83,7 @@ export default function QcGlass() {
   const shown = useMemo(() => {
     if (!needle) return rows;
     return rows.filter((r) =>
-      [r.customerName, r.customOrder, r.salesOrder, r.garmentSummary, r.id, r.inspectionId]
+      [r.customerName, r.customOrder, r.salesOrder, r.garmentSummary, r.id, r.inspectionId, r.orderStatus]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
@@ -72,9 +94,9 @@ export default function QcGlass() {
   const live = syncLabel(list.dataUpdatedAt, list.isFetching);
 
   const openRow = (row: QcRow) => {
-    const inspection = row.inspectionId || row.name || row.id;
-    if (!inspection) return;
-    nav(`/qc/${encodeURIComponent(inspection)}`);
+    const target = row.inspectionId || row.orderName || row.customOrder || row.name || row.id;
+    if (!target) return;
+    nav(`/qc/${encodeURIComponent(target)}`);
   };
 
   return (
@@ -83,7 +105,7 @@ export default function QcGlass() {
         <BrandSeal />
         <div className="min-w-0">
           <div className="display text-[28px] leading-none">Quality Control</div>
-          <div className="caps mt-1">MTM only · after the garment is in store</div>
+          <div className="caps mt-1">MTM pipeline · every live status</div>
         </div>
         <div className="flex-1" />
         <Link
@@ -103,16 +125,42 @@ export default function QcGlass() {
           <button
             key={k}
             type="button"
-            onClick={() => setTab(k)}
+            onClick={() => {
+              setPipeline("");
+              setTab(k);
+            }}
             className={cn(
-              "px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide border",
-              tab === k ? "bg-brass/20 border-brass text-cream" : "border-brass/25 text-cream-dim",
+              "px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide border min-h-[44px]",
+              !pipeline && tab === k
+                ? "bg-brass/20 border-brass text-cream"
+                : "border-brass/25 text-cream-dim",
             )}
           >
             {lab}
-            {tab === k && <span className="og-count">{shown.length}</span>}
+            {!pipeline && tab === k ? <span className="og-count">{shown.length}</span> : null}
           </button>
         ))}
+      </div>
+
+      <div className="px-4 sm:px-5 pt-3">
+        <div className="caps text-brass-light mb-2">Live order status</div>
+        <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-0.5 px-0.5">
+          {MTM_STATUSES.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              onClick={() => setPipeline(s.key)}
+              className={cn(
+                "h-11 min-h-[44px] px-3 rounded-full border text-[9px] font-bold tracking-[0.08em] uppercase whitespace-nowrap",
+                pipeline === s.key
+                  ? "bg-brass/22 border-brass text-brass-light"
+                  : "border-brass/22 bg-black/25 text-cream-dim",
+              )}
+            >
+              {s.key}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="px-4 sm:px-5 pt-3">
@@ -127,56 +175,76 @@ export default function QcGlass() {
       <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-2 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))]">
         {list.isError && (
           <QueryErrorPanel
-            title="Could not load QC"
+            title="Could not load orders"
             message={list.error instanceof Error ? list.error.message : "Retry — an empty rack is not the same as an outage."}
             onRetry={() => list.refetch()}
           />
         )}
 
-        {shown.map((row) => (
-          <button
-            key={row.inspectionId || row.id}
-            type="button"
-            onClick={() => openRow(row)}
-            className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3"
-          >
-            <span className="sf-avatar" aria-hidden>
-              {clientInitials(row.customerName || "QC")}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <StatusBadge
-                  status={row.qcResult || row.result || row.orderStatus || "Quality Control"}
-                  tone={
-                    tab === "waiting"
-                      ? "qc"
-                      : tab === "open"
-                        ? "shop"
-                        : tab === "passed"
-                          ? "pickup"
-                          : "tasks"
+        {shown.map((row) => {
+          const orderName = row.orderName || row.customOrder || null;
+          return (
+            <div key={row.inspectionId || row.id} className="og-row sf-card card-glass px-4 py-3.5">
+              <button
+                type="button"
+                onClick={() => openRow(row)}
+                className="w-full text-left flex items-center gap-3"
+              >
+                <span className="sf-avatar" aria-hidden>
+                  {clientInitials(row.customerName || "QC")}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <StatusBadge
+                      status={row.qcResult || row.result || row.orderStatus || "Quality Control"}
+                      tone={
+                        tab === "waiting"
+                          ? "qc"
+                          : tab === "open"
+                            ? "shop"
+                            : tab === "passed"
+                              ? "pickup"
+                              : "tasks"
+                      }
+                    />
+                    {day(row.dateReceived) ? (
+                      <span className="font-mono text-xs text-brass-light">{day(row.dateReceived)}</span>
+                    ) : null}
+                  </div>
+                  <div className="display text-[22px] leading-none mt-1 truncate">
+                    {row.customerName || "Client"}
+                  </div>
+                  <div className="text-xs text-cream-dim mt-1 truncate">
+                    {[row.inspectionId || row.id, row.salesOrder, row.garmentSummary]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+                </div>
+                <div className="text-cream-dim">→</div>
+              </button>
+              <div className="mt-3">
+                <MtmStatusRail
+                  compact
+                  current={row.orderStatus || row.qcResult || row.result}
+                  pending={pendingName === orderName ? setStatus.variables?.status : null}
+                  onChange={
+                    orderName
+                      ? (status) => setStatus.mutate({ name: orderName, status })
+                      : undefined
                   }
                 />
-                {day(row.dateReceived) && (
-                  <span className="font-mono text-xs text-brass-light">{day(row.dateReceived)}</span>
-                )}
-              </div>
-              <div className="display text-[22px] leading-none mt-1 truncate">
-                {row.customerName || "Client"}
-              </div>
-              <div className="text-xs text-cream-dim mt-1 truncate">
-                {[row.inspectionId || row.id, row.salesOrder, row.garmentSummary]
-                  .filter(Boolean)
-                  .join(" · ")}
               </div>
             </div>
-            <div className="text-cream-dim">→</div>
-          </button>
-        ))}
+          );
+        })}
 
         {!list.isLoading && !shown.length && !list.isError && (
           <div className="sf-empty">
-            {tab === "waiting" ? "Nothing waiting for QC." : "No inspections in this list."}
+            {pipeline
+              ? `No MTM orders in ${pipeline}.`
+              : tab === "waiting"
+                ? "Nothing waiting for QC."
+                : "No inspections in this list."}
           </div>
         )}
       </div>

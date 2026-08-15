@@ -245,6 +245,7 @@ export const CustomOrder = z.object({
   garments: z.array(z.record(z.string(), z.unknown())).optional(),
   erpName: z.string().nullable().optional(),
   erpnextName: z.string().nullable().optional(),
+  orderStatus: z.string().nullable().optional(),
 });
 export type CustomOrder = z.infer<typeof CustomOrder>;
 

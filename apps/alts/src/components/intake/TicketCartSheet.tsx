@@ -120,7 +120,7 @@ export default function TicketCartSheet({
               </b>
               <p className="text-[12px] leading-relaxed">
                 {showSellChrome
-                  ? "Use Alter for client pieces, Sell for stock / special-order."
+                  ? "Use Alter for client pieces, Sell for MTM / stock / special-order."
                   : "Select pieces from the catalog."}
               </p>
             </div>

@@ -13,6 +13,7 @@ import { GARMENT_LABEL } from "@/lib/pricing";
 import { formatUSD, formatDate, statusToLabel } from "@ls/design/format";
 import type { CustomOrder } from "@ls/types";
 import { cn } from "@ls/design/utils";
+import { MTM_STATUSES } from "@/lib/mtmStatus";
 
 const FILTERS = [
   { value: "all", label: "All" },
@@ -21,6 +22,7 @@ const FILTERS = [
   { value: "in_production", label: "In Production" },
   { value: "ready", label: "Ready" },
   { value: "delivered", label: "Delivered" },
+  { value: "cancelled", label: "Cancelled" },
 ];
 
 const STAGES: CustomOrder["status"][] = [
@@ -29,6 +31,7 @@ const STAGES: CustomOrder["status"][] = [
   "in_production",
   "ready",
   "delivered",
+  "cancelled",
 ];
 
 export default function OrdersCustom() {
@@ -44,10 +47,21 @@ export default function OrdersCustom() {
     return counts;
   }, [orders]);
 
+  const liveCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const s of MTM_STATUSES) counts[s.key] = 0;
+    for (const o of orders) {
+      const live = (o as CustomOrder & { orderStatus?: string | null }).orderStatus;
+      if (live) counts[live] = (counts[live] ?? 0) + 1;
+    }
+    return counts;
+  }, [orders]);
+
   const rows = useMemo(() => {
     const s = search.toLowerCase();
     return orders.filter((o) => {
-      if (filter !== "all" && o.status !== filter) return false;
+      const live = (o as CustomOrder & { orderStatus?: string | null }).orderStatus;
+      if (filter !== "all" && o.status !== filter && live !== filter) return false;
       if (!s) return true;
       return (
         o.customer?.name.toLowerCase().includes(s) ||
@@ -95,7 +109,9 @@ export default function OrdersCustom() {
       key: "status",
       header: "Status",
       accessor: (o) => o.status ?? "",
-      cell: (o) => <StatusPill status={o.status} />,
+      cell: (o) => (
+        <StatusPill status={(o as CustomOrder & { orderStatus?: string | null }).orderStatus || o.status} />
+      ),
     },
     {
       key: "deposit",
@@ -147,7 +163,7 @@ export default function OrdersCustom() {
       {/* Pipeline mini-board */}
       <GlassCard variant="strong" className="p-5">
         <div className="ui-label mb-3">Pipeline</div>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
           {STAGES.map((s) => {
             const active = filter === s;
             return (
@@ -164,6 +180,28 @@ export default function OrdersCustom() {
               >
                 <div className="kpi-number text-2xl">{stageCounts[s] ?? 0}</div>
                 <div className="ui-label text-[9px] mt-1">{statusToLabel(s)}</div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="ui-label mt-4 mb-2">Live MTM status</div>
+        <div className="flex flex-wrap gap-1.5">
+          {MTM_STATUSES.map((s) => {
+            const active = filter === s.key;
+            return (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setFilter(active ? "all" : s.key)}
+                className={cn(
+                  "h-11 min-h-[44px] px-3 rounded-full border text-[9px] font-semibold tracking-[0.06em] uppercase whitespace-nowrap",
+                  active
+                    ? "bg-brass/20 border-brass text-brass-light"
+                    : "border-brass/20 bg-forest-raised/40 text-cream-dim hover:border-brass/45",
+                )}
+              >
+                {s.key}
+                {liveCounts[s.key] ? ` · ${liveCounts[s.key]}` : ""}
               </button>
             );
           })}

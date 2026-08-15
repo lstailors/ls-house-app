@@ -124,8 +124,13 @@ describe("iPhone scale contract", () => {
     expect(shell).toContain('to="/settings"');
     expect(shell).not.toMatch(/onClick=\{logout\}/);
     const qc = readFileSync(new URL("../pages/QcGlass.tsx", import.meta.url), "utf8");
-    expect(qc).toContain("nav(`/qc/${encodeURIComponent(inspection)}`)");
-    expect(qc).not.toContain('api.post');
+    expect(qc).toContain("nav(`/qc/${encodeURIComponent(target)}`)");
+    expect(qc).toContain("MtmStatusRail");
+    expect(qc).toContain("/api/qc/orders");
+    expect(qc).not.toContain("api.post");
+    const item = readFileSync(new URL("../pages/QcInspection.tsx", import.meta.url), "utf8");
+    expect(item).toContain("MtmStatusRail");
+    expect(item).toContain("/api/qc/orders/");
   });
 
   test("home never locks to one viewport — iPhone landscape must scroll", () => {
@@ -138,5 +143,15 @@ describe("iPhone scale contract", () => {
   test("short-height chrome compress stays off iPhone landscape", () => {
     expect(css).toContain("@media (min-width: 1200px) and (min-height: 700px) and (max-height: 900px)");
     expect(css).not.toMatch(/@media \(min-width:\s*900px\) and \(max-height:\s*900px\)/);
+  });
+
+  test("sell catalog puts MTM on the floor for walk-in invoices", () => {
+    const catalog = readFileSync(
+      new URL("../components/intake/SellItemCatalog.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(catalog).toContain('{ id: "mtm", label: "MTM" }');
+    expect(catalog).toContain("Stock, MTM, and special-order");
+    expect(catalog).toContain("MTM-SUIT");
   });
 });
