@@ -1403,6 +1403,20 @@ body {
   min-height: 100%;
 }
 
+/* Camera / scan — always a corner circle. Never inherit page min-height
+   (that stretched it into a sideways rail on iPhone). */
+.scan-fab {
+  box-sizing: border-box;
+  width: 56px !important;
+  height: 56px !important;
+  min-width: 56px !important;
+  min-height: 56px !important;
+  max-width: 56px !important;
+  max-height: 56px !important;
+  border-radius: 999px !important;
+  transform: none;
+}
+
 .lux-layer {
   position: fixed;
   inset: 0;

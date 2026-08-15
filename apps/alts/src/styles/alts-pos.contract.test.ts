@@ -50,6 +50,14 @@ describe("iPhone scale contract", () => {
     expect(html).toContain("viewport-fit=cover");
   });
 
+  test("the scan camera stays a corner circle, not a sideways rail", () => {
+    expect(css).toMatch(/\.scan-fab\s*\{[^}]*width:\s*56px\s*!important/s);
+    expect(css).toMatch(/\.scan-fab\s*\{[^}]*height:\s*56px\s*!important/s);
+    expect(css).toMatch(/\.scan-fab\s*\{[^}]*max-height:\s*56px\s*!important/s);
+    const fab = readFileSync(new URL("../components/ScanFab.tsx", import.meta.url), "utf8");
+    expect(fab).not.toContain("lux-page-enter");
+  });
+
   test("the L&S seal is the tab icon and the iPhone home-screen icon", () => {
     expect(html).toContain('href="/favicon.ico"');
     expect(html).toContain('href="/apple-touch-icon.png"');
