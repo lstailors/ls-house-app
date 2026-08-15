@@ -289,6 +289,7 @@ export default function ShopFloorBoard() {
       if (!m.has(key)) m.set(key, []);
       m.get(key)!.push(t);
     }
+    for (const rows of m.values()) rows.sort(sortShopTickets);
     return [...m.entries()].sort((a, b) => {
       if (a[0] === "Unassigned") return -1;
       if (b[0] === "Unassigned") return 1;
