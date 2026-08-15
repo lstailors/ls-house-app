@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { SectionHeader } from "@ls/design";
 import { api } from "@ls/api-client";
@@ -10,6 +9,8 @@ import { STATUS_TONES, toneFor, type StatusTone } from "@alts/lib/statusTone";
 import { useActiveLocation } from "@alts/lib/locationContext";
 import { useAltsMetrics } from "@alts/lib/useAltsMetrics";
 import { useMe } from "@ls/auth";
+import { useKioskMode } from "@alts/lib/kiosk";
+import NotFound from "@alts/pages/NotFound";
 import "@alts/styles/alts-pos.css";
 
 type FloorReports = {
@@ -49,14 +50,35 @@ type View = "snapshot" | "nyc" | "hou" | "throughput" | "aging" | "qc";
 
 type QcRow = { id: string; qcResult?: string | null; result?: string | null };
 
-const VIEWS: Array<[View, string]> = [
-  ["snapshot", "Snapshot"],
-  ["nyc", "NYC"],
-  ["hou", "Houston"],
-  ["throughput", "Throughput"],
-  ["aging", "Aging"],
-  ["qc", "QC rates"],
+const TAB_VIEWS: Array<{ slug: string; view: View; label: string }> = [
+  { slug: "snapshot", view: "snapshot", label: "Snapshot" },
+  { slug: "nyc", view: "nyc", label: "NYC" },
+  { slug: "houston", view: "hou", label: "Houston" },
+  { slug: "throughput", view: "throughput", label: "Throughput" },
+  { slug: "aging", view: "aging", label: "Aging" },
+  { slug: "qc-rates", view: "qc", label: "QC rates" },
 ];
+
+const SLUG_TO_VIEW: Record<string, View> = {
+  snapshot: "snapshot",
+  nyc: "nyc",
+  houston: "hou",
+  hou: "hou",
+  throughput: "throughput",
+  aging: "aging",
+  "qc-rates": "qc",
+  qc: "qc",
+};
+
+function viewFromSlug(slug?: string): View | null {
+  if (!slug) return "snapshot";
+  return SLUG_TO_VIEW[slug] ?? null;
+}
+
+function reportsHref(slug: string, kiosk: boolean) {
+  const path = slug === "snapshot" ? "/reports" : `/reports/${slug}`;
+  return kiosk ? `${path}?kiosk=1` : path;
+}
 
 function money(n: number) {
   return n.toLocaleString("en-US", {
@@ -272,7 +294,9 @@ export default function Reports() {
   const { activeLocationId } = useActiveLocation();
   const rawLoc = activeLocationId || me?.locationId || "";
   const loc = locCode(rawLoc);
-  const [view, setView] = useState<View>("snapshot");
+  const { tab } = useParams<{ tab?: string }>();
+  const kiosk = useKioskMode();
+  const view = viewFromSlug(tab);
 
   const metrics = useAltsMetrics();
   const reportLoc = view === "nyc" ? "NYC" : view === "hou" ? "HOU" : loc;
@@ -309,21 +333,22 @@ export default function Reports() {
   const decided = passN + failN;
   const passRate = decided ? Math.round((passN / decided) * 100) : 0;
 
+  if (!view) return <NotFound />;
+
   return (
     <div className="alts-root space-y-6 animate-fade-up">
       <div className="flex flex-wrap gap-2">
-        {VIEWS.map(([k, lab]) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => setView(k)}
+        {TAB_VIEWS.map((t) => (
+          <Link
+            key={t.slug}
+            to={reportsHref(t.slug, kiosk)}
             className={cn(
               "px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide border",
-              view === k ? "bg-brass/20 border-brass text-cream" : "border-brass/25 text-cream-dim",
+              view === t.view ? "bg-brass/20 border-brass text-cream" : "border-brass/25 text-cream-dim",
             )}
           >
-            {lab}
-          </button>
+            {t.label}
+          </Link>
         ))}
       </div>
 

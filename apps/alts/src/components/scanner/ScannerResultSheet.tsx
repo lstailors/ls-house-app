@@ -8,6 +8,7 @@ import {
 } from "@ls/design/ui/sheet";
 import { Button } from "@ls/design/ui/button";
 import { cn } from "@ls/design/utils";
+import TimedSpinner from "@alts/components/TimedSpinner";
 import type { ScannerResult, ScannerType } from "@ls/types";
 
 // ── Icon + accent per scanner type ──────────────────────────────────────────
@@ -141,13 +142,10 @@ export function ScannerResultSheet({
         className="border-t border-brass/25 bg-forest-deep/97 backdrop-blur-2xl rounded-t-3xl max-h-[85vh] overflow-y-auto p-5 pb-8"
       >
         {resolving ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-10">
-            <Loader2 className="h-8 w-8 text-brass animate-spin" />
-            <SheetTitle className="text-cream text-base font-medium">Looking up…</SheetTitle>
-            <SheetDescription className="text-cream-dim text-xs">
-              Resolving the scanned code
-            </SheetDescription>
-          </div>
+          <>
+            <SheetTitle className="sr-only">Looking up</SheetTitle>
+            <TimedSpinner label="Looking up…" onRetry={onScanAgain} />
+          </>
         ) : unrecognized ? (
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-3">

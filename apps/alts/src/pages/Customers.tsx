@@ -10,6 +10,7 @@ import { Button } from "@ls/design/ui/button";
 import { api } from "@ls/api-client";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@ls/design/utils";
+import TimedSpinner from "@alts/components/TimedSpinner";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface Customer {
@@ -143,7 +144,7 @@ export default function Customers() {
   params.set("limit", String(pageSize));
   params.set("offset", "0");
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["customers", statusFilter, vipFilter, debouncedQ, browseLimit],
     queryFn: async () => {
       const res = await api.raw(`/api/customers?${params.toString()}`);
@@ -168,12 +169,20 @@ export default function Customers() {
 
   // Book-wide count for KPI header
   const { data: bookMeta } = useQuery({
-    queryKey: ["customers-book-total"],
+    queryKey: ["customers-book-kpis"],
     queryFn: async () => {
-      const res = await api.raw(`/api/customers?status=Active&limit=1`);
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) return { total: 0 };
-      return { total: typeof json?.total === "number" ? json.total : 0 };
+      const pull = async (qs: string) => {
+        const res = await api.raw(`/api/customers?${qs}`);
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json?.error?.message ?? "Book count failed");
+        return typeof json?.total === "number" ? json.total : 0;
+      };
+      const [total, vip, casa] = await Promise.all([
+        pull("status=Active&limit=1"),
+        pull("status=Active&vip=1&limit=1"),
+        pull("status=Active&casa=1&limit=1"),
+      ]);
+      return { total, vip, casa };
     },
     staleTime: 5 * 60_000,
   });
@@ -181,9 +190,9 @@ export default function Customers() {
 
   const kpis = useMemo(() => ({
     total: bookTotal,
-    vip: customers.filter(c => c.vipFlag || (c.vipTier && c.vipTier !== "Standard")).length,
-    casa: customers.filter(c => !!c.casaTier).length,
-  }), [customers, bookTotal]);
+    vip: bookMeta?.vip ?? 0,
+    casa: bookMeta?.casa ?? 0,
+  }), [bookMeta, bookTotal]);
 
   const canLoadMore = !isSearching && mode === "browse" && customers.length < total && browseLimit < 500;
 
@@ -205,8 +214,8 @@ export default function Customers() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
             { label: "Total Clients", value: kpis.total.toLocaleString() },
-            { label: "VIP (page)", value: kpis.vip.toLocaleString(), gold: true },
-            { label: "Casa (page)", value: kpis.casa.toLocaleString(), gold: kpis.casa > 0 },
+            { label: "VIP", value: bookMeta ? kpis.vip.toLocaleString() : "…", gold: true },
+            { label: "Casa", value: bookMeta ? kpis.casa.toLocaleString() : "…", gold: kpis.casa > 0 },
           ].map(({ label, value, gold }) => (
             <div key={label} className="glass-panel p-4">
               <div className="ui-label mb-1">{label}</div>
@@ -308,9 +317,7 @@ export default function Customers() {
 
       {/* List */}
       {isLoading && customers.length === 0 ? (
-        <div className="text-cream-muted text-sm flex items-center gap-2">
-          <Loader2 className="w-4 h-4 animate-spin" /> Loading clients…
-        </div>
+        <TimedSpinner label="Loading clients…" onRetry={() => void refetch()} />
       ) : customers.length === 0 ? (
         <EmptyState
           icon={Users}

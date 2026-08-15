@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { Search, X, Loader2, CornerDownLeft, Command } from "lucide-react";
+import { kioskFromSearch } from "@alts/lib/kiosk";
 
 export type SearchHit = {
   type: string;
@@ -54,7 +55,8 @@ function useDebounced<T>(value: T, ms = 220): T {
   return v;
 }
 
-function shouldHide(pathname: string): boolean {
+function shouldHide(pathname: string, search = ""): boolean {
+  if (kioskFromSearch(search)) return true;
   if (/^\/(login)(\/|$)/i.test(pathname)) return true;
   if (/^\/(e-ticket|t)\//i.test(pathname)) return true;
   if (/^\/pay\//i.test(pathname)) return true;
@@ -101,12 +103,12 @@ export function UniversalSearchInline({ className }: { className?: string }) {
  * that don't embed UniversalSearchInline (most FOH routes outside shell home).
  */
 export default function UniversalSearchHost() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (shouldHide(pathname)) return;
+      if (shouldHide(pathname, search)) return;
       const isModK = (e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K");
       if (isModK) {
         e.preventDefault();
@@ -130,14 +132,14 @@ export default function UniversalSearchHost() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pathname]);
+  }, [pathname, search]);
 
   // Close palette on navigate
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
 
-  if (shouldHide(pathname)) return null;
+  if (shouldHide(pathname, search)) return null;
 
   // Home + shell already show inline search in their headers — only ⌘K host needed there.
   // Still show a thin fixed trigger on dense pages without the inline control.
@@ -147,6 +149,7 @@ export default function UniversalSearchHost() {
     !pathname.startsWith("/invoices") &&
     !pathname.startsWith("/deliveries") &&
     !pathname.startsWith("/orders/alterations") &&
+    !pathname.startsWith("/reports") &&
     !pathname.startsWith("/shop-floor") &&
     !pathname.startsWith("/pickup") &&
     !pathname.startsWith("/intake") &&

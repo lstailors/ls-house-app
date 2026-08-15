@@ -18,6 +18,7 @@ import {
   FileText,
 } from "lucide-react";
 import { formatUSD, formatDate } from "@ls/design/format";
+import TimedSpinner from "@alts/components/TimedSpinner";
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || "";
 
@@ -244,11 +245,7 @@ export default function PayInvoice() {
   const payHref = invoice?.square_payment_link || null;
 
   if (pageState === "loading") {
-    return (
-      <div className="min-h-dvh bg-forest-deep flex items-center justify-center">
-        <Loader2 className="h-8 w-8 text-brass animate-spin" />
-      </div>
-    );
+    return <TimedSpinner fullscreen label="Loading invoice…" />;
   }
 
   if (pageState === "not_found") {

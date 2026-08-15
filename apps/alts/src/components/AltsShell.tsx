@@ -3,12 +3,30 @@ import { useMe } from "@ls/auth/session";
 import { cn } from "@ls/design/utils";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import { useKioskMode } from "@alts/lib/kiosk";
 
 /** Minimal chrome for FOH — tile home owns its own header; nested pages get a slim top bar + universal search. */
 export default function AltsShell() {
   const { data: me } = useMe();
   const loc = useLocation();
   const isHome = loc.pathname === "/";
+  const kiosk = useKioskMode();
+
+  if (isHome) {
+    return (
+      <div className="min-h-dvh overflow-x-hidden overflow-y-auto bg-forest-deep text-cream">
+        <Outlet />
+      </div>
+    );
+  }
+
+  if (kiosk) {
+    return (
+      <div className="min-h-dvh bg-forest-deep text-cream">
+        <Outlet />
+      </div>
+    );
+  }
 
   if (isHome) {
     return (

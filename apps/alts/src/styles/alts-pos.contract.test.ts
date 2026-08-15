@@ -125,12 +125,36 @@ describe("iPhone scale contract", () => {
     expect(shell).not.toMatch(/onClick=\{logout\}/);
     const qc = readFileSync(new URL("../pages/QcGlass.tsx", import.meta.url), "utf8");
     expect(qc).toContain("nav(`/qc/${encodeURIComponent(target)}`)");
-    expect(qc).toContain("MtmStatusRail");
+    expect(qc).toContain("OrderStatusChips");
+    expect(qc).not.toContain("MtmStatusRail");
+    expect(qc).toContain('variant="legend"');
+    expect(qc).toContain('variant="badge"');
     expect(qc).toContain("/api/qc/orders");
     expect(qc).not.toContain("api.post");
     const item = readFileSync(new URL("../pages/QcInspection.tsx", import.meta.url), "utf8");
     expect(item).toContain("MtmStatusRail");
     expect(item).toContain("/api/qc/orders/");
+    expect(app).toContain("NotFound");
+    expect(app).toContain('path="/reports/:tab?"');
+    expect(app).not.toContain('Navigate to="/"');
+    expect(home).not.toContain("app.lstailors.com/owner");
+    expect(home).not.toContain("Store QC · makes only");
+    const reports = readFileSync(new URL("../pages/Reports.tsx", import.meta.url), "utf8");
+    expect(reports).toContain('slug: "houston"');
+    expect(reports).toContain('slug: "qc-rates"');
+    expect(reports).toContain("kiosk=1");
+    const search = readFileSync(new URL("../components/UniversalSearch.tsx", import.meta.url), "utf8");
+    expect(search).toContain('!pathname.startsWith("/reports")');
+    const kind = readFileSync(new URL("../pages/TicketKind.tsx", import.meta.url), "utf8");
+    expect(kind).toContain("useState<Kind | null>(null)");
+    expect(kind).not.toContain("Opening client & cart");
+    const customers = readFileSync(new URL("../pages/Customers.tsx", import.meta.url), "utf8");
+    expect(customers).not.toContain("VIP (page)");
+    expect(customers).not.toContain("Casa (page)");
+    const chips = readFileSync(new URL("../components/OrderStatusChips.tsx", import.meta.url), "utf8");
+    expect(chips).toContain("flex-wrap");
+    expect(chips).toContain("shrink-0");
+    expect(app).toContain("TimedSpinner");
   });
 
   test("home never locks to one viewport — iPhone landscape must scroll", () => {

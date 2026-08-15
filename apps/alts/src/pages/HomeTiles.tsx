@@ -1082,14 +1082,29 @@ export default function HomeTiles() {
       badge: qcWaiting || null,
       badgeKind: "qc",
       live:
-        qcWaiting > 0 ? (
-          <>
-            <b>{qcWaiting}</b> waiting
-          </>
+        metrics.isError && !m ? (
+          <button
+            type="button"
+            className="underline decoration-brass/50 underline-offset-2"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void metrics.refetch();
+            }}
+          >
+            Retry counts
+          </button>
+        ) : !m ? (
+          <span
+            className="inline-block h-3 w-[8.5rem] rounded bg-brass/20 animate-pulse"
+            aria-label="Loading QC counts"
+          />
         ) : (
-          "Store QC · makes only"
+          <>
+            <b>{m.qc.waiting}</b> waiting · <b>{m.qc.open}</b> open
+          </>
         ),
-      liveTone: qcWaiting > 0 ? "am" : "em",
+      liveTone: !m ? "cd" : qcWaiting > 0 ? "am" : "em",
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="26" cy="26" r="18" />
@@ -1116,7 +1131,8 @@ export default function HomeTiles() {
       to: "/reports",
       title: "Floor Reports",
       sub: "Pipeline · tally · $",
-      admin: true,
+      live: "Snapshot · NYC · Houston · aging",
+      liveTone: "em",
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 44h40" strokeWidth="1.6" />
@@ -1351,17 +1367,7 @@ export default function HomeTiles() {
                 <h2>{t.title}</h2>
                 <div className="sub">{t.sub}</div>
               </div>
-              {t.admin ? (
-                <a
-                  href="https://app.lstailors.com/owner"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="host"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  app.lstailors.com/owner
-                </a>
-              ) : t.live != null ? (
+              {t.live != null ? (
                 <div className={cn("live", t.liveTone === "am" && "am", t.liveTone === "ro" && "ro")}>
                   <LiveDot tone={t.liveTone} />
                   <span className="truncate min-w-0">{t.live}</span>

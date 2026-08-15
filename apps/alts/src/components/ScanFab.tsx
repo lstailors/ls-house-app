@@ -1,12 +1,14 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@ls/design/utils";
+import { kioskFromSearch } from "@alts/lib/kiosk";
 
 /**
  * Global corner scan control for alts FOH.
  * Hides on the scanner itself, auth, print surfaces, and public e-ticket.
  * Opens the in-app scanner (ERP resolve_qr under the hood) — not the Frappe desk.
  */
-function shouldHide(pathname: string): boolean {
+function shouldHide(pathname: string, search = ""): boolean {
+  if (kioskFromSearch(search)) return true;
   // Home owns the full viewport — FAB steals bottom-right tile space
   if (pathname === "/" || pathname === "") return true;
   if (/^\/(login|scanner)(\/|$)/i.test(pathname)) return true;
@@ -23,8 +25,8 @@ function shouldHide(pathname: string): boolean {
 }
 
 export default function ScanFab() {
-  const { pathname } = useLocation();
-  if (shouldHide(pathname)) return null;
+  const { pathname, search } = useLocation();
+  if (shouldHide(pathname, search)) return null;
 
   return (
     <Link

@@ -8,7 +8,6 @@ import {
   Camera,
   Navigation,
   Package,
-  Loader2,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
@@ -28,6 +27,7 @@ import type { Delivery } from "@ls/types";
 import { useUpdateDelivery } from "@alts/lib/queries";
 import { formatDateTime } from "@ls/design/format";
 import { cn } from "@ls/design/utils";
+import TimedSpinner from "@alts/components/TimedSpinner";
 
 interface Props {
   deliveries: Delivery[];
@@ -102,9 +102,7 @@ export function DriverRoute({ deliveries, isLoading, driverName }: Props) {
       </div>
 
       {isLoading ? (
-        <div className="text-cream-muted text-sm py-12 flex items-center justify-center">
-          <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading route…
-        </div>
+        <TimedSpinner label="Loading route…" />
       ) : sorted.length === 0 ? (
         <EmptyState
           icon={Truck}
