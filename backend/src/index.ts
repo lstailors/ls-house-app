@@ -58,6 +58,7 @@ import { bookingRouter, publicBookingRouter } from "./routes/booking";
 import { deliveryZonesRouter } from "./routes/delivery-zones";
 import { placesRouter } from "./routes/places";
 import { healthRouter } from "./routes/health";
+import { qcRouter } from "./routes/qc";
 
 const app = new Hono();
 
@@ -145,6 +146,7 @@ app.route("/api/sofia-bridge", sofiaBridgeRouter);
 app.route("/api/dispatch", dispatchRouter);
 app.route("/api/booking", bookingRouter);
 app.route("/api/public/booking", publicBookingRouter);
+app.route("/api/qc", qcRouter);
 
 const port = Number(process.env.PORT) || 3000;
 

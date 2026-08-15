@@ -60,6 +60,7 @@ import { dispatchRouter } from "./routes/dispatch";
 import { deliveryZonesRouter } from "./routes/delivery-zones";
 import { placesRouter } from "./routes/places";
 import { healthRouter } from "./routes/health";
+import { qcRouter } from "./routes/qc";
 
 const app = new Hono();
 
@@ -168,5 +169,6 @@ app.route("/api/booking", bookingRouter);
 app.route("/api/public/booking", publicBookingRouter);
 app.route("/api/delivery-zones", deliveryZonesRouter);
 app.route("/api/places", placesRouter);
+app.route("/api/qc", qcRouter);
 
 export default app;

@@ -295,6 +295,12 @@ export default function Scanner() {
         navigate(fast.path, { replace: !!fast.replace });
         return;
       }
+      if (fast.kind === "path" && fast.path.startsWith("/qc/")) {
+        stopCamera();
+        toast.message("Opening QC");
+        navigate(fast.path, { replace: !!fast.replace });
+        return;
+      }
       void resolveToken(value);
     },
     [resolveToken, navigate, stopCamera, pickupMode, progressMode, progressOpen, progressSaving],

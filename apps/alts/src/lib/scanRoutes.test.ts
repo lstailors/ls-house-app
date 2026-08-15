@@ -9,6 +9,7 @@ import {
   parsePayUrl,
   parsePickupScanTarget,
   parseProgressScanTarget,
+  parseQcUrl,
   routeForScannerResult,
   openPathForResult,
   routeFromRawScan,
@@ -46,6 +47,25 @@ assert(parsePayUrl("https://app.lstailors.com/pay/SINV-1") === "SINV-1", "pay ur
 assert(parsePayUrl("https://alts.lstailors.com/pay/SINV-2") === "SINV-2", "pay url alts");
 assert(parsePayUrl("SINV-NYC-1") === "SINV-NYC-1", "bare sinv");
 assert(parsePayUrl("LSTNY-SINV-2026-00165") === "LSTNY-SINV-2026-00165", "lstny sinv");
+
+// MTM QC (not alteration tickets)
+assert(parseQcUrl("https://alts.lstailors.com/qc/QC-2026-0001") === "QC-2026-0001", "qc url");
+assert(parseQcUrl("QC-2026-0001") === "QC-2026-0001", "bare QC");
+assert(parseQcUrl("LST-122470-1") === "LST-122470-1", "mtmpro LST");
+assert(parseQcUrl("ALT-NYC-2026-00061") === null, "alts ticket is not QC");
+const qcFast = routeFromRawScan("https://alts.lstailors.com/qc/LST-122470-1");
+assert(qcFast.kind === "path" && qcFast.path === "/qc/LST-122470-1", "fast qc → /qc/");
+const mtm: ScannerResult = {
+  ok: true,
+  type: "custom_order",
+  name: "LST-122470-1",
+  doctype: "MTMPro Order",
+};
+assert(
+  routeForScannerResult(mtm).kind === "path" &&
+    (routeForScannerResult(mtm) as { path: string }).path === "/qc/LST-122470-1",
+  "mtmpro → qc",
+);
 
 // pickup scan target
 assert(

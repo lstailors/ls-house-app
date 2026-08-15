@@ -934,6 +934,60 @@ export const ScannerActionResult = z.object({
 });
 export type ScannerActionResult = z.infer<typeof ScannerActionResult>;
 
+// ─── MTM Quality Control (store-side, after Received at Store) ───────────
+
+export const QcCheckResult = z.object({
+  id: z.string(),
+  group: z.string(),
+  label: z.string(),
+  hint: z.string().optional(),
+  pass: z.boolean().nullable(),
+});
+export type QcCheckResult = z.infer<typeof QcCheckResult>;
+
+export const QcInspection = z.object({
+  id: z.string().nullable(),
+  name: z.string().nullable().optional(),
+  salesOrder: z.string().nullable().optional(),
+  mtmproOrder: z.string().nullable().optional(),
+  customer: z.string().nullable().optional(),
+  customerName: z.string().nullable().optional(),
+  inspector: z.string().nullable().optional(),
+  inspectorEmail: z.string().nullable().optional(),
+  result: z.string().optional(),
+  status: z.string().optional(),
+  notes: z.string().optional(),
+  failReason: z.string().optional(),
+  nextStatus: z.string().nullable().optional(),
+  checks: z.array(QcCheckResult).optional(),
+  summary: z
+    .object({
+      total: z.number(),
+      passed: z.number(),
+      failed: z.number(),
+      open: z.number(),
+    })
+    .optional(),
+  signedAt: z.string().nullable().optional(),
+  signatureUrl: z.string().nullable().optional(),
+  docusealEmbedSrc: z.string().nullable().optional(),
+  scanUrl: z.string().optional(),
+  photos: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string().optional(),
+        url: z.string(),
+        createdAt: z.string().optional(),
+      }),
+    )
+    .optional(),
+  docuseal: z.boolean().optional(),
+  orderStatus: z.string().nullable().optional(),
+  garmentSummary: z.string().nullable().optional(),
+});
+export type QcInspection = z.infer<typeof QcInspection>;
+
 // ─── Garment Job Card (scan → /g/:ticket/:garmentId) ─────────────────────
 // Backed by Frappe Server Scripts (API type), called by bare name:
 //   /api/method/get_garment_job_card | update_garment_status | complete_garment

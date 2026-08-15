@@ -1386,3 +1386,107 @@ export const ApiHealth = z.object({
   erp: ErpHealth,
 });
 export type ApiHealth = z.infer<typeof ApiHealth>;
+
+// ─── MTM Quality Control (store-side, after Received at Store) ───────────
+
+export const MtmStatusKey = z.enum([
+  "Consultation",
+  "Order Submitted",
+  "Fabric PO Raised",
+  "Fabric In Transit",
+  "Received at Facility",
+  "Cutting",
+  "Production",
+  "Shipped to Store",
+  "Received at Store",
+  "Quality Control",
+  "Awaiting Fitting",
+  "Awaiting Shipment",
+  "Alterations",
+  "Fitting",
+  "Delivered",
+  "Cancelled",
+]);
+export type MtmStatusKey = z.infer<typeof MtmStatusKey>;
+
+export const QcCheckResult = z.object({
+  id: z.string(),
+  group: z.string(),
+  label: z.string(),
+  hint: z.string().optional(),
+  pass: z.boolean().nullable(),
+});
+export type QcCheckResult = z.infer<typeof QcCheckResult>;
+
+export const QcInspection = z.object({
+  id: z.string().nullable(),
+  name: z.string().nullable().optional(),
+  salesOrder: z.string().nullable().optional(),
+  mtmproOrder: z.string().nullable().optional(),
+  customer: z.string().nullable().optional(),
+  customerName: z.string().nullable().optional(),
+  inspector: z.string().nullable().optional(),
+  inspectorEmail: z.string().nullable().optional(),
+  result: z.string().optional(),
+  status: z.string().optional(),
+  notes: z.string().optional(),
+  failReason: z.string().optional(),
+  nextStatus: z.string().nullable().optional(),
+  checks: z.array(QcCheckResult).optional(),
+  summary: z
+    .object({
+      total: z.number(),
+      passed: z.number(),
+      failed: z.number(),
+      open: z.number(),
+    })
+    .optional(),
+  signedAt: z.string().nullable().optional(),
+  signatureUrl: z.string().nullable().optional(),
+  docusealSubmissionId: z.string().nullable().optional(),
+  docusealEmbedSrc: z.string().nullable().optional(),
+  orderPdfUrl: z.string().nullable().optional(),
+  scanUrl: z.string().optional(),
+  createdAt: z.string().nullable().optional(),
+  modifiedAt: z.string().nullable().optional(),
+  photos: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string().optional(),
+        url: z.string(),
+        createdAt: z.string().optional(),
+      }),
+    )
+    .optional(),
+  docuseal: z.boolean().optional(),
+  orderStatus: z.string().nullable().optional(),
+  orderType: z.string().nullable().optional(),
+  factory: z.string().nullable().optional(),
+  needBy: z.string().nullable().optional(),
+  garmentSummary: z.string().nullable().optional(),
+  links: z
+    .object({
+      customer: z.string().nullable().optional(),
+      salesOrder: z.string().nullable().optional(),
+      mtmproOrder: z.string().nullable().optional(),
+    })
+    .optional(),
+});
+export type QcInspection = z.infer<typeof QcInspection>;
+
+export const CreateQcInspectionInput = z.object({
+  mtmproOrder: z.string().optional(),
+  salesOrder: z.string().optional(),
+});
+export type CreateQcInspectionInput = z.infer<typeof CreateQcInspectionInput>;
+
+export const UpdateQcInspectionInput = z.object({
+  checks: z.array(QcCheckResult).optional(),
+  notes: z.string().optional(),
+  failReason: z.string().optional(),
+  nextStatus: z.string().optional(),
+  result: z.enum(["Pass", "Fail"]).optional(),
+  signatureUrl: z.string().optional(),
+});
+export type UpdateQcInspectionInput = z.infer<typeof UpdateQcInspectionInput>;

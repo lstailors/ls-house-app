@@ -120,6 +120,21 @@ export function parsePayUrl(decoded: string): string | null {
   return null;
 }
 
+export function parseQcUrl(decoded: string): string | null {
+  const value = decoded.trim();
+  if (!value) return null;
+  if (/^(QC-|LSH-QC-)/i.test(value) && !/\s/.test(value) && value.length < 80) return value;
+  if (/^LST-\d{4,}-\d+$/i.test(value)) return value;
+  try {
+    const path = new URL(value).pathname;
+    const m = path.match(/^\/qc\/([^/]+)\/?$/i);
+    return m ? decodeURIComponent(m[1]) : null;
+  } catch {
+    const m = value.match(/\/qc\/([^/?#]+)/i);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+}
+
 /**
  * Destination after a successful resolve.
  * Auto-navigate types load the working page immediately; others keep the sheet.
@@ -168,9 +183,15 @@ export function routeForScannerResult(result: ScannerResult): ScanNav {
     }
 
     case "custom_order":
+      if (result.doctype === "MTMPro Order") {
+        return { kind: "external", url: `https://alts.lstailors.com/qc/${encodeURIComponent(name)}` };
+      }
       return { kind: "none" };
 
     default:
+      if (result.doctype === "LSH QC Inspection" || result.doctype === "MTMPro Order") {
+        return { kind: "external", url: `https://alts.lstailors.com/qc/${encodeURIComponent(name)}` };
+      }
       if (type === ("customer" as ScannerType) || result.doctype === "Customer") {
         return { kind: "path", path: `/customers/${encodeURIComponent(name)}`, replace: true };
       }
@@ -205,6 +226,14 @@ export function routeFromRawScan(decoded: string): ScanNav {
       kind: "path",
       path: `/g/${encodeURIComponent(garment.ticket)}/${encodeURIComponent(garment.garment)}`,
       replace: true,
+    };
+  }
+
+  const qc = parseQcUrl(decoded);
+  if (qc) {
+    return {
+      kind: "external",
+      url: `https://alts.lstailors.com/qc/${encodeURIComponent(qc)}`,
     };
   }
 

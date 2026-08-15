@@ -559,6 +559,14 @@ export default function HomeTiles() {
     retry: 1,
   });
 
+  const qcCount = useQuery({
+    queryKey: ["alts-qc-count"],
+    queryFn: () => api.get<{ waiting: number; open: number }>("/api/qc/count"),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+
   type FloorBrief = {
     body: string;
     title: string;
@@ -1067,6 +1075,30 @@ export default function HomeTiles() {
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <rect x="6" y="12" width="40" height="28" rx="4" />
           <path d="M6 16l20 14L46 16" />
+        </svg>
+      ),
+    },
+    {
+      key: "qc",
+      to: "/qc",
+      title: "QC",
+      sub: "MTM · photos · sign",
+      badge: qcCount.data?.waiting || null,
+      badgeKind: (qcCount.data?.waiting ?? 0) > 0 ? "warn" : "neutral",
+      live:
+        (qcCount.data?.waiting ?? 0) > 0 ? (
+          <>
+            <b>{qcCount.data!.waiting}</b> waiting
+            {(qcCount.data?.open ?? 0) > 0 ? ` · ${qcCount.data!.open} open` : ""}
+          </>
+        ) : (
+          "Store QC · makes only"
+        ),
+      liveTone: (qcCount.data?.waiting ?? 0) > 0 ? "am" : "em",
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="26" cy="26" r="18" />
+          <path d="M16 27l7 7 14-16" strokeWidth="2" />
         </svg>
       ),
     },

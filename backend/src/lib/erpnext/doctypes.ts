@@ -48,4 +48,6 @@ export const DT = {
   ADDRESS: "Address",
   EMPLOYEE: "Employee",
   FILE: "File",
+  QC_INSPECTION: "LSH QC Inspection",
+  MTM_PRO_ORDER: "MTMPro Order",
 } as const;

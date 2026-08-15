@@ -287,10 +287,16 @@ export default function HouseFind() {
                 .join(" · ")}
             </p>
             <div className="flex flex-col gap-2 mt-5">
+              <Link
+                to={`/qc/${encodeURIComponent(pickedSo.name)}`}
+                className="btn-brass h-12 text-xs inline-flex items-center justify-center"
+              >
+                Open QC
+              </Link>
               {pickedSo.customer && (
                 <Link
                   to={`/customers/${encodeURIComponent(pickedSo.customer)}`}
-                  className="btn-brass h-12 text-xs inline-flex items-center justify-center"
+                  className="h-12 rounded-xl border border-brass/35 text-[11px] font-bold uppercase tracking-widest inline-flex items-center justify-center"
                 >
                   Open client
                 </Link>

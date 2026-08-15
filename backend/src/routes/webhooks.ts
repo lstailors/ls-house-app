@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { logErpCommunication, matchCustomerByPhone } from "./comms";
 import { insertCallLog, updateCallLog, insertSmsMessage } from "../lib/erpnext/agents";
+import { markQcSignedBySubmission } from "./qc";
 
 export const webhooksRouter = new Hono();
 
@@ -141,4 +142,35 @@ webhooksRouter.post("/unifi", async (c) => {
   }
 
   return c.json({ ok: true });
+});
+
+// POST /api/webhooks/docuseal — MTM QC signature completed
+webhooksRouter.post("/docuseal", async (c) => {
+  const secret = (process.env.DOCUSEAL_WEBHOOK_SECRET ?? "").trim();
+  if (secret) {
+    const token =
+      c.req.header("X-Webhook-Secret") ??
+      c.req.header("X-Auth-Token") ??
+      c.req.query("token");
+    if (token !== secret) return c.json({ ok: false }, 403);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  if (!body) return c.json({ ok: false, error: "Invalid JSON" }, 400);
+
+  const event = String(body.event_type || body.event || "").toLowerCase();
+  const data = body.data ?? body;
+  const completed = /complet|signed|finished|closed/.test(event) || data?.status === "completed";
+  if (!completed) return c.json({ ok: true, ignored: true });
+
+  const submissionId = String(
+    data?.submission_id ?? data?.id ?? data?.submission?.id ?? body.submission_id ?? "",
+  );
+  const signedUrl =
+    data?.documents?.[0]?.url ||
+    data?.audit_log_url ||
+    data?.combined_document_url ||
+    null;
+  const name = await markQcSignedBySubmission(submissionId, signedUrl).catch(() => null);
+  return c.json({ ok: true, inspection: name });
 });

@@ -59,6 +59,7 @@ function shouldHide(pathname: string): boolean {
   if (/^\/(e-ticket|t)\//i.test(pathname)) return true;
   if (/^\/pay\//i.test(pathname)) return true;
   if (/\/(tags|thermal|receipt|label)(\/|$)/i.test(pathname)) return true;
+  if (/^\/qc(\/|$)/i.test(pathname)) return true;
   return false;
 }
 

@@ -17,6 +17,7 @@ function shouldHide(pathname: string): boolean {
   // Already on a post-scan garment card — back/home is enough
   if (/^\/g\//i.test(pathname)) return true;
   if (/^\/garments\//i.test(pathname)) return true;
+  if (/^\/qc(\/|$)/i.test(pathname)) return true;
   return false;
 }
 

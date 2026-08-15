@@ -84,6 +84,10 @@ describe("iPhone scale contract", () => {
     expect(app).toContain('path="/messages"');
     expect(app).toContain("HouseFind");
     expect(app).toContain('path="/house"');
+    expect(app).toContain("QcGlass");
+    expect(app).toContain('path="/qc"');
+    expect(app).toContain("QcInspection");
+    expect(app).toContain('path="/qc/:id"');
   });
 
   test("home never locks to one viewport — iPhone landscape must scroll", () => {

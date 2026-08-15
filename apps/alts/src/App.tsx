@@ -26,6 +26,8 @@ import AppointmentsGlass from "@alts/pages/AppointmentsGlass";
 import TasksGlass from "@alts/pages/TasksGlass";
 import MessagesGlass from "@alts/pages/MessagesGlass";
 import HouseFind from "@alts/pages/HouseFind";
+import QcGlass from "@alts/pages/QcGlass";
+import QcInspection from "@alts/pages/QcInspection";
 import TicketDetail from "@alts/pages/intake/TicketDetail";
 import { startOfflineQueueWatcher } from "@alts/lib/offlineQueue";
 import { toast } from "sonner";
@@ -184,6 +186,22 @@ export default function App() {
                 element={
                   <RoleGuard allow={[...FOH]}>
                     <HouseFind />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/qc"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <QcGlass />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/qc/:id"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <QcInspection />
                   </RoleGuard>
                 }
               />

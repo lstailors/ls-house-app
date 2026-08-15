@@ -126,6 +126,36 @@ export function parsePayUrl(decoded: string): string | null {
 }
 
 /**
+ * MTM QC: store-side inspection, not an alteration ticket.
+ *   https://alts.lstailors.com/qc/QC-2026-0001
+ *   https://alts.lstailors.com/qc/LST-122470-1
+ *   bare QC-… / LSH-QC-… / MTMPro LST-######-#
+ */
+export function parseQcUrl(decoded: string): string | null {
+  const value = decoded.trim();
+  if (!value) return null;
+
+  if (/^(QC-|LSH-QC-)/i.test(value) && !/\s/.test(value) && value.length < 80) {
+    return value;
+  }
+  if (/^LST-\d{4,}-\d+$/i.test(value)) {
+    return value;
+  }
+
+  let path: string;
+  try {
+    path = new URL(value).pathname;
+  } catch {
+    const m = value.match(/\/qc\/([^/?#]+)/i);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
+  const m = path.match(/^\/qc\/([^/]+)\/?$/i);
+  if (m) return decodeURIComponent(m[1]);
+  return null;
+}
+
+/**
  * What a pickup counter scan should add to the bag.
  * Prefer ticket (garment tag / thermal / bare ALT) over invoice when both parse.
  */
@@ -215,9 +245,15 @@ export function routeForScannerResult(result: ScannerResult): ScanNav {
     }
 
     case "custom_order":
+      if (result.doctype === "MTMPro Order") {
+        return { kind: "path", path: `/qc/${encodeURIComponent(name)}`, replace: true };
+      }
       return { kind: "none" };
 
     default:
+      if (result.doctype === "LSH QC Inspection" || result.doctype === "MTMPro Order") {
+        return { kind: "path", path: `/qc/${encodeURIComponent(name)}`, replace: true };
+      }
       if (type === ("customer" as ScannerType) || result.doctype === "Customer") {
         return { kind: "path", path: `/customers/${encodeURIComponent(name)}`, replace: true };
       }
@@ -251,6 +287,15 @@ export function routeFromRawScan(decoded: string): ScanNav {
     return {
       kind: "path",
       path: `/g/${encodeURIComponent(garment.ticket)}/${encodeURIComponent(garment.garment)}`,
+      replace: true,
+    };
+  }
+
+  const qc = parseQcUrl(decoded);
+  if (qc) {
+    return {
+      kind: "path",
+      path: `/qc/${encodeURIComponent(qc)}`,
       replace: true,
     };
   }
