@@ -1301,6 +1301,23 @@ body {
   transform: translateX(-50%);
 }
 
+.live-today-legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--cd);
+}
+.live-today-legend i {
+  font-style: normal;
+  margin-right: 4px;
+}
+.live-today-legend .is-appointment { color: var(--bl); }
+.live-today-legend .is-due_out { color: var(--cm); }
+.live-today-legend .is-delivery { color: var(--cr); }
+
 .live-today-chips {
   display: flex;
   gap: 8px;
@@ -1373,6 +1390,12 @@ body {
 .live-pipe .is-nyc { background: var(--bl); }
 .live-pipe .is-hou { background: rgba(176, 141, 87, 0.55); }
 .live-pipe-legend { font-size: 9px; color: var(--cd); letter-spacing: 0.08em; }
+.live-money-covered {
+  margin: 0;
+  font-size: 12px;
+  color: var(--cd);
+  letter-spacing: 0.04em;
+}
 
 .live-ticker {
   display: none;
@@ -1381,9 +1404,22 @@ body {
   border-top: 1px solid rgba(176, 141, 87, 0.16);
   margin-top: 4px;
   cursor: pointer;
+  position: relative;
 }
 @media (min-width: 1280px) {
-  .live-ticker { display: block; }
+  .live-ticker { display: flex; align-items: center; }
+}
+.live-ticker-label {
+  flex: none;
+  z-index: 1;
+  padding: 0 10px 0 2px;
+  margin-right: 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cd);
+  background: #0b1a14;
 }
 .live-ticker-track {
   display: flex;
