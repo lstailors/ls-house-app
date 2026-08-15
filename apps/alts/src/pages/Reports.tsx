@@ -8,6 +8,7 @@ import { TailorTallyStrip } from "@alts/components/TailorTallyStrip";
 import StatusBadge from "@alts/components/StatusBadge";
 import { STATUS_TONES, toneFor, type StatusTone } from "@alts/lib/statusTone";
 import { useActiveLocation } from "@alts/lib/locationContext";
+import { useAltsMetrics } from "@alts/lib/useAltsMetrics";
 import { useMe } from "@ls/auth";
 import "@alts/styles/alts-pos.css";
 
@@ -90,10 +91,16 @@ function SnapshotBody({
   data,
   isLoading,
   loc,
+  openHd,
+  deliveriesQueued,
+  openAlts,
 }: {
   data?: FloorReports;
   isLoading: boolean;
   loc: string;
+  openHd?: number;
+  deliveriesQueued?: number;
+  openAlts?: number;
 }) {
   const maxPipe = Math.max(...(data?.pipeline?.map((p) => p.count) ?? [1]), 1);
   const maxTailor = Math.max(...(data?.tailorWorkload?.map((t) => t.count) ?? [1]), 1);
@@ -112,12 +119,12 @@ function SnapshotBody({
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         {[
-          { label: "Open alts", v: data?.snapshot.openAlts ?? "—" },
+          { label: "Open alts", v: openAlts ?? data?.snapshot.openAlts ?? "—" },
           { label: "Alts today", v: data?.snapshot.altsToday ?? "—" },
           { label: "Rev today", v: data ? money(data.snapshot.revenueToday) : "—" },
           { label: "Rev 7d", v: data ? money(data.snapshot.revenueWeek) : "—" },
-          { label: "Open HD", v: data?.snapshot.openHd ?? "—" },
-          { label: "Deliveries", v: data?.snapshot.deliveriesQueued ?? "—" },
+          { label: "Open HD", v: openHd ?? data?.snapshot.openHd ?? "—" },
+          { label: "Deliveries", v: deliveriesQueued ?? data?.snapshot.deliveriesQueued ?? "—" },
         ].map((c) => (
           <div key={c.label} className="glass-panel rounded-xl p-4 border border-brass/15">
             <div className="ui-label mb-1">{c.label}</div>
@@ -267,6 +274,7 @@ export default function Reports() {
   const loc = locCode(rawLoc);
   const [view, setView] = useState<View>("snapshot");
 
+  const metrics = useAltsMetrics();
   const reportLoc = view === "nyc" ? "NYC" : view === "hou" ? "HOU" : loc;
   const floor = useFloor(reportLoc);
 
@@ -294,10 +302,10 @@ export default function Reports() {
   const data = floor.data;
   const aging = data?.aging;
   const maxThru = Math.max(...(data?.throughput?.map((d) => d.count) ?? [1]), 1);
-  const passN = qcPass.data?.length ?? 0;
-  const failN = qcFail.data?.length ?? 0;
-  const openN = qcOpen.data?.length ?? 0;
-  const waitN = qcWait.data?.length ?? 0;
+  const passN = metrics.data?.qc.passed ?? qcPass.data?.length ?? 0;
+  const failN = metrics.data?.qc.failed ?? qcFail.data?.length ?? 0;
+  const openN = metrics.data?.qc.open ?? qcOpen.data?.length ?? 0;
+  const waitN = metrics.data?.qc.waiting ?? qcWait.data?.length ?? 0;
   const decided = passN + failN;
   const passRate = decided ? Math.round((passN / decided) * 100) : 0;
 
@@ -320,7 +328,18 @@ export default function Reports() {
       </div>
 
       {(view === "snapshot" || view === "nyc" || view === "hou") && (
-        <SnapshotBody data={data} isLoading={floor.isLoading} loc={reportLoc} />
+        <SnapshotBody
+          data={data}
+          isLoading={floor.isLoading}
+          loc={reportLoc}
+          openHd={metrics.data?.hd_tickets_open}
+          openAlts={view === "snapshot" ? metrics.data?.open_alterations : undefined}
+          deliveriesQueued={
+            view === "snapshot" && metrics.data
+              ? metrics.data.deliveries.queued + metrics.data.deliveries.out
+              : undefined
+          }
+        />
       )}
 
       {view === "throughput" && (
@@ -446,7 +465,7 @@ export default function Reports() {
                 Pass <span className="text-brass-shimmer">rates</span>
               </>
             }
-            description="Store QC on MTM makes · last 200 inspections"
+            description="Store QC on MTM makes · house COUNTs"
           />
           {qcPass.isError || qcFail.isError ? (
             <div className="glass-panel rounded-2xl p-5 border border-brass/15 text-sm text-cream-dim">

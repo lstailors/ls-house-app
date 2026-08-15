@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
@@ -7,6 +7,7 @@ import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
 import { syncLabel } from "@alts/lib/ticketDisplay";
+import { useAltsMetrics } from "@alts/lib/useAltsMetrics";
 import "@alts/styles/alts-pos.css";
 
 type Todo = {
@@ -63,11 +64,19 @@ export default function TasksGlass() {
   const [picked, setPicked] = useState<Todo | null>(null);
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState("");
+  const [start, setStart] = useState(0);
+  const pageSize = 100;
+  const metrics = useAltsMetrics();
+
+  const status = tab === "done" ? "closed" : "open";
+  const overdue = tab === "overdue";
 
   const list = useQuery({
-    queryKey: ["alts-tasks", tab === "done" ? "closed" : "open"],
+    queryKey: ["alts-tasks", status, overdue, start],
     queryFn: () =>
-      api.get<Todo[]>(`/api/tasks?status=${tab === "done" ? "closed" : "open"}&limit=200`),
+      api.get<Todo[]>(
+        `/api/tasks?status=${status}&scope=house&limit=${pageSize}&start=${start}${overdue ? "&overdue=1" : ""}`,
+      ),
     refetchInterval: 60_000,
   });
 
@@ -77,7 +86,7 @@ export default function TasksGlass() {
       toast.success("Done");
       setPicked(null);
       qc.invalidateQueries({ queryKey: ["alts-tasks"] });
-      qc.invalidateQueries({ queryKey: ["alts-tasks-count"] });
+      qc.invalidateQueries({ queryKey: ["alts-metrics"] });
     },
     onError: (e: Error) => toast.error(e.message || "Could not close"),
   });
@@ -89,25 +98,25 @@ export default function TasksGlass() {
       setDraft("");
       setComposing(false);
       qc.invalidateQueries({ queryKey: ["alts-tasks"] });
-      qc.invalidateQueries({ queryKey: ["alts-tasks-count"] });
+      qc.invalidateQueries({ queryKey: ["alts-metrics"] });
     },
     onError: (e: Error) => toast.error(e.message || "Could not add"),
   });
 
   const rows = list.data ?? [];
-  const openRows = rows.filter((t) => t.status === "Open");
-  const overdueRows = openRows.filter((t) => isOverdue(t.date));
-  const shown = tab === "done" ? rows : tab === "overdue" ? overdueRows : openRows;
+  const [acc, setAcc] = useState<Todo[]>([]);
+  useEffect(() => {
+    if (!list.data) return;
+    setAcc((prev) => (start === 0 ? list.data! : [...prev, ...list.data!]));
+  }, [list.data, start]);
+  const shown = acc;
   const live = syncLabel(list.dataUpdatedAt, list.isFetching);
+  const hasMore = rows.length === pageSize;
 
-  const counts = useMemo(
-    () => ({
-      open: tab === "done" ? openRows.length : openRows.length,
-      overdue: overdueRows.length,
-      done: tab === "done" ? rows.length : 0,
-    }),
-    [openRows.length, overdueRows.length, rows.length, tab],
-  );
+  const counts = {
+    open: metrics.data?.tasks.open ?? 0,
+    overdue: metrics.data?.tasks.overdue ?? 0,
+  };
 
   return (
     <div className="alts-root min-h-dvh flex flex-col overflow-x-hidden">
@@ -127,22 +136,26 @@ export default function TasksGlass() {
       <div className="px-4 sm:px-5 pt-3 flex flex-wrap gap-2">
         {(
           [
-            ["open", "Open", tab === "done" ? "—" : counts.open],
-            ["overdue", "Overdue", tab === "done" ? "—" : counts.overdue],
-            ["done", "Done", tab === "done" ? counts.done : ""],
+            ["open", "Open", counts.open],
+            ["overdue", "Overdue", counts.overdue],
+            ["done", "Done", ""] as const,
           ] as const
         ).map(([k, lab, n]) => (
           <button
             key={k}
             type="button"
-            onClick={() => setTab(k)}
+            onClick={() => {
+              setTab(k);
+              setStart(0);
+              setAcc([]);
+            }}
             className={cn(
               "px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide border",
               tab === k ? "bg-brass/20 border-brass text-cream" : "border-brass/25 text-cream-dim",
             )}
           >
             {lab}
-            {n !== "" && n !== "—" ? <span className="og-count">{n}</span> : null}
+            {n !== "" ? <span className="og-count">{n}</span> : null}
           </button>
         ))}
         <button
@@ -197,6 +210,15 @@ export default function TasksGlass() {
         })}
         {!list.isLoading && !shown.length && !list.isError && (
           <div className="sf-empty">{tab === "overdue" ? "Nothing late." : tab === "done" ? "Nothing closed yet." : "The list is clear."}</div>
+        )}
+        {hasMore && (
+          <button
+            type="button"
+            onClick={() => setStart((s) => s + pageSize)}
+            className="w-full h-12 rounded-xl border border-brass/30 text-xs font-bold uppercase tracking-wide text-cream-dim"
+          >
+            Load more
+          </button>
         )}
       </div>
 

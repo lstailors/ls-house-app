@@ -22,6 +22,7 @@ import {
 } from "../lib/qc";
 import { createQcSignatureSubmission, docusealEnabled } from "../lib/docuseal";
 import { loadDocusealSettings, maskKey, saveDocusealSettings } from "../lib/qc-settings";
+import { getAltsMetrics } from "../lib/metrics";
 
 export const qcRouter = new Hono();
 
@@ -130,6 +131,24 @@ async function listInspections() {
     limit: 200,
     order_by: "modified desc",
   }).catch(() => [] as any[]);
+}
+
+/** Pending / Pass / Fail — filter in ERPNext, never list-all-then-JS. */
+async function listInspectionsByResult(result: "Pending" | "Pass" | "Fail") {
+  for (const field of ["qc_result", "result"] as const) {
+    try {
+      return await erpList<any>(DT_QC, {
+        filters: [[field, "=", result]],
+        fields: QC_FIELDS,
+        limit: 200,
+        order_by: "date_received desc",
+        throwOnError: true,
+      });
+    } catch {
+      continue;
+    }
+  }
+  return [] as any[];
 }
 
 /** MTM make orders in the QC queue — never walk-in alteration tickets, never an unfiltered dump. */
@@ -307,66 +326,6 @@ function isMakeOrderRow(row: any): boolean {
   return true;
 }
 
-async function waitingRows() {
-  const [inspections, orders] = await Promise.all([listInspections(), listMakeOrdersInQcQueue()]);
-  const pending = inspections.filter(
-    (r) => isQcInspectionName(r.name) && !isSalesOrderName(r.name) && qcResultOf(r) === "Pending",
-  );
-
-  const makes = orders.filter(isMakeOrderRow);
-  const orderKeys = new Set<string>();
-  const orderByKey = new Map<string, any>();
-  for (const o of makes) {
-    for (const key of [o.name, o.erp_sales_order, o.sales_order]) {
-      if (key) {
-        orderKeys.add(String(key));
-        orderByKey.set(String(key), o);
-      }
-    }
-  }
-
-  // Cards are inspections. Keep every pending inspection — never hide the rack.
-  const rows = pending;
-
-  const inspectionRows = dedupeByInspectionName(rows).map((doc) => {
-    const order = orderByKey.get(String(doc.custom_order || "")) || orderByKey.get(String(doc.sales_order || ""));
-    return serializeListRow(doc, {
-      customOrder: order?.name || doc.custom_order,
-      salesOrder: order?.erp_sales_order || order?.sales_order || doc.sales_order,
-      customerName: doc.customer_name || order?.customer_name,
-      orderStatus: order?.order_status || order?.status || "Quality Control",
-      garmentSummary: order?.garment_summary || order?.garment_type,
-      orderName: order?.name || doc.custom_order,
-    });
-  });
-
-  const covered = new Set<string>();
-  for (const r of inspectionRows) {
-    for (const k of [r.customOrder, r.salesOrder, r.id, r.inspectionId]) {
-      if (k) covered.add(String(k));
-    }
-  }
-  const extras = makes
-    .filter((o) => !covered.has(String(o.name || "")) && !covered.has(String(o.erp_sales_order || o.sales_order || "")))
-    .slice(0, 40)
-    .map((o) => ({
-      id: o.name,
-      name: o.name,
-      inspectionId: null,
-      salesOrder: o.erp_sales_order || o.sales_order || null,
-      customOrder: o.name,
-      customerName: o.customer_name || "Client",
-      qcResult: "Pending",
-      result: "Pending",
-      orderStatus: o.order_status || o.status || "Quality Control",
-      garmentSummary: o.garment_summary || o.garment_type || null,
-      dateReceived: dateReceivedLabel(o.date_received),
-      scanUrl: `https://alts.lstailors.com/qc/${encodeURIComponent(o.name)}`,
-    }));
-
-  return [...inspectionRows, ...extras];
-}
-
 async function resolveInspection(id: string) {
   const direct = await erpGet<any>(DT_QC, id).catch(() => null);
   if (direct?.name) return direct;
@@ -461,13 +420,20 @@ qcRouter.patch("/settings", async (c) => {
   }
 });
 
-// GET /api/qc/count
+// GET /api/qc/count — same Pending COUNT as WAITING tab + home tile
 qcRouter.get("/count", async (c) => {
-  const gate = await requireQc(c);
+  const gate = await requireFloor(c);
   if (gate.res) return gate.res;
   try {
-    const waiting = await waitingRows();
-    return c.json({ data: { waiting: waiting.length, open: waiting.length } });
+    const metrics = await getAltsMetrics();
+    return c.json({
+      data: {
+        waiting: metrics.qc.waiting,
+        open: metrics.qc.open,
+        passed: metrics.qc.passed,
+        failed: metrics.qc.failed,
+      },
+    });
   } catch (e: any) {
     return c.json({ error: { message: e?.message || "Could not count QC" } }, 502);
   }
@@ -513,20 +479,9 @@ qcRouter.get("/", async (c) => {
   const tab = (c.req.query("tab") || "waiting").toLowerCase();
 
   try {
-    if (tab === "waiting") {
-      return c.json({ data: await waitingRows() });
-    }
-
-    const want = tabToQcResult(tab);
-    const inspections = await listInspections();
-    const rows = dedupeByInspectionName(
-      inspections.filter(
-        (r) =>
-          isQcInspectionName(r.name) &&
-          !isSalesOrderName(r.name) &&
-          (want ? qcResultOf(r) === want : true),
-      ),
-    ).map((r) => serializeListRow(r));
+    const want = tabToQcResult(tab) ?? "Pending";
+    const inspections = await listInspectionsByResult(want);
+    const rows = dedupeByInspectionName(inspections).map((r) => serializeListRow(r));
     return c.json({ data: rows });
   } catch (e: any) {
     console.error("GET /api/qc", e);

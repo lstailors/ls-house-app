@@ -1,5 +1,7 @@
 // Shared formatting + status helpers for the garment job card.
 
+import { formatDateTime as formatShopDateTime } from "@ls/design/format";
+
 export function formatCurrency(amount?: number | null): string {
   if (amount === null || amount === undefined || Number.isNaN(amount)) return "—";
   return new Intl.NumberFormat("en-US", {
@@ -21,15 +23,7 @@ export function formatDueDate(d?: string | null): string {
 }
 
 export function formatDateTime(d?: string | null): string {
-  if (!d) return "—";
-  const parsed = new Date(d);
-  if (Number.isNaN(parsed.getTime())) return d;
-  return parsed.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return formatShopDateTime(d);
 }
 
 export function isTruthyFlag(v?: boolean | number | null): boolean {

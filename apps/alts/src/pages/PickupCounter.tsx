@@ -13,6 +13,7 @@ import {
   addPickupBagKey,
   clearPickupBag,
   invoiceBagKey,
+  pickupBagStats,
   readPickupBagKeys,
   ticketBagKey,
   writePickupBagKeys,
@@ -502,10 +503,22 @@ export default function PickupCounter() {
   const t = detail.data;
   const boardRow = (board.data ?? [])[0] ?? null;
 
-  const bagTotal = selectedItems.reduce((s, i) => s + i.total, 0);
-  const bagOutstanding = selectedItems.reduce((s, i) => s + i.outstanding, 0);
-  const bagTickets = selectedItems.filter((i) => i.kind === "ticket");
-  const bagInvoices = selectedItems.filter((i) => i.kind === "invoice");
+  const bag = pickupBagStats(selectedItems);
+  const bagTotal = bag.bagTotal;
+  const bagOutstanding = bag.bagDue;
+  const bagPaid = bag.bagPaid;
+  const bagTickets = (() => {
+    const seen = new Set<string>();
+    const out: typeof selectedItems = [];
+    for (const i of selectedItems) {
+      const id = i.kind === "ticket" ? i.id : i.ticketRef || "";
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(i.kind === "ticket" ? i : { ...i, id });
+    }
+    return out;
+  })();
+  const bagInvoices = selectedItems.filter((i) => i.kind === "invoice" && !i.ticketRef);
   const bagUnpaid = selectedItems.filter((i) => i.unpaid);
 
   const sameCustomerOthers = useMemo(() => {
@@ -912,20 +925,25 @@ export default function PickupCounter() {
                           : ""}
                       </div>
                       <div className="text-xs text-cream-dim mt-1">
-                        {bagTickets.length} ticket{bagTickets.length === 1 ? "" : "s"}
+                        {bag.ticketCount} ticket{bag.ticketCount === 1 ? "" : "s"}
                         {" · "}
-                        {bagInvoices.length} invoice{bagInvoices.length === 1 ? "" : "s"}
+                        {bag.invoiceCount} invoice{bag.invoiceCount === 1 ? "" : "s"}
                         {bagUnpaid.length ? ` · ${bagUnpaid.length} unpaid` : ""}
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="text-xs text-cream-dim">Bag total</div>
                       <div className="display text-3xl text-brass-light">{money(bagTotal)}</div>
-                      {bagOutstanding > 0 && (
+                      {bagOutstanding > 0 && Math.abs(bagTotal - bagOutstanding) > 0.005 ? (
+                        <div className="text-sm text-cream-dim">
+                          {money(bagPaid)} paid ·{" "}
+                          <span className="text-signal-amber font-semibold">{money(bagOutstanding)} due</span>
+                        </div>
+                      ) : bagOutstanding > 0 ? (
                         <div className="text-sm text-signal-amber font-semibold">
                           {money(bagOutstanding)} due
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   </div>
 
@@ -1098,7 +1116,12 @@ export default function PickupCounter() {
                 <div>
                   <div className="caps">Bag total</div>
                   <div className="display text-4xl text-brass-light my-2">{money(bagTotal)}</div>
-                  {bagOutstanding > 0 ? (
+                  {bagOutstanding > 0 && Math.abs(bagTotal - bagOutstanding) > 0.005 ? (
+                    <div className="text-sm text-cream-dim mb-1">
+                      {money(bagPaid)} paid ·{" "}
+                      <span className="text-signal-amber font-semibold">Collect {money(bagOutstanding)}</span>
+                    </div>
+                  ) : bagOutstanding > 0 ? (
                     <div className="text-sm text-signal-amber font-semibold mb-1">
                       Collect {money(bagOutstanding)}
                     </div>

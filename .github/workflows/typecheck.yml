@@ -50,3 +50,23 @@ jobs:
       - name: Typecheck alts
         working-directory: apps/alts
         run: bun run typecheck
+
+  test-metrics-drift:
+    name: "test: metrics + format"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install root + backend deps
+        run: bun install && cd backend && bun install
+      - name: Backend unit tests (metrics drift + QC)
+        working-directory: backend
+        run: bun test src/lib/metrics.test.ts src/lib/metrics.drift.test.ts src/lib/qc.test.ts
+      - name: Date format tests
+        working-directory: packages/design
+        run: bun test src/format.test.ts
+      - name: Pickup bag math
+        working-directory: apps/alts
+        run: bun test src/lib/pickupBag.test.ts

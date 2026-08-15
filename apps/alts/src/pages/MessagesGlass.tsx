@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
@@ -8,9 +8,10 @@ import LuxuryLayer from "@alts/components/LuxuryLayer";
 import StatusBadge from "@alts/components/StatusBadge";
 import { clientInitials, syncLabel } from "@alts/lib/ticketDisplay";
 import { storeToday } from "@alts/lib/storeDate";
+import { useAltsMetrics } from "@alts/lib/useAltsMetrics";
 import "@alts/styles/alts-pos.css";
 
-type Tab = "all" | "sms" | "calls" | "voice" | "fittings";
+type Tab = "all" | "sms" | "calls" | "voice" | "fittings" | "other";
 
 type SmsThread = {
   phone: string;
@@ -126,12 +127,19 @@ export default function MessagesGlass() {
       }>(`/api/comms/thread/${encodeURIComponent(threadPhone!)}`),
   });
 
+  const metrics = useAltsMetrics();
   const calls = feed.data?.calls ?? [];
   const sms = feed.data?.smsThreads ?? [];
   const recordings = feed.data?.recordings ?? [];
   const appts = fittings.data?.appointments ?? [];
-  const counts = feed.data?.counts;
   const live = syncLabel(feed.dataUpdatedAt, feed.isFetching);
+
+  const textsN = metrics.data?.messages.texts ?? sms.length;
+  const callsN = metrics.data?.messages.calls ?? calls.length;
+  const voiceN = metrics.data?.messages.voice ?? recordings.length;
+  const fittingsN = metrics.data?.messages.fittings ?? appts.length;
+  const otherN = metrics.data?.messages.other ?? 0;
+  const allN = metrics.data?.messages.all ?? textsN + callsN + voiceN + fittingsN + otherN;
 
   const unreadSms = sms.filter((t) => t.unread > 0);
   const otherSms = sms.filter((t) => t.unread <= 0);
@@ -156,13 +164,16 @@ export default function MessagesGlass() {
       <div className="px-4 sm:px-5 pt-3 flex flex-wrap gap-2">
         {(
           [
-            ["all", "All", sms.length + calls.length + recordings.length + appts.length],
-            ["sms", "Texts", counts?.unreadSms ?? unreadSms.length],
-            ["calls", "Calls", counts?.missedCalls ?? missed.length],
-            ["voice", "Voice", counts?.totalRecordings ?? recordings.length],
-            ["fittings", "Fittings", appts.length],
-          ] as const
-        ).map(([k, lab, n]) => (
+            ["all", "All", allN],
+            ["sms", "Texts", textsN],
+            ["calls", "Calls", callsN],
+            ["voice", "Voice", voiceN],
+            ["fittings", "Fittings", fittingsN],
+            ["other", "Other", otherN],
+          ] as Array<[Tab, string, number]>
+        )
+          .filter((row) => row[0] !== "other" || otherN > 0)
+          .map(([k, lab, n]) => (
           <button
             key={k}
             type="button"

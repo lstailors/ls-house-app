@@ -10,6 +10,7 @@ import StatusBadge from "@alts/components/StatusBadge";
 import MtmStatusRail from "@alts/components/MtmStatusRail";
 import { MTM_STATUSES, type MtmStatusKey } from "@alts/lib/mtmStatus";
 import { clientInitials, syncLabel } from "@alts/lib/ticketDisplay";
+import { useAltsMetrics } from "@alts/lib/useAltsMetrics";
 import "@alts/styles/alts-pos.css";
 
 type Tab = "waiting" | "open" | "passed" | "failed";
@@ -65,6 +66,13 @@ export default function QcGlass() {
         : api.get<QcRow[]>(`/api/qc?tab=${tab}`),
     refetchInterval: 45_000,
   });
+  const metrics = useAltsMetrics();
+  const qcCounts = {
+    waiting: metrics.data?.qc.waiting ?? 0,
+    open: metrics.data?.qc.open ?? 0,
+    passed: metrics.data?.qc.passed ?? 0,
+    failed: metrics.data?.qc.failed ?? 0,
+  };
 
   const setStatus = useMutation({
     mutationFn: ({ name, status }: { name: string; status: string }) =>
@@ -137,7 +145,7 @@ export default function QcGlass() {
             )}
           >
             {lab}
-            {!pipeline && tab === k ? <span className="og-count">{shown.length}</span> : null}
+            <span className="og-count">{qcCounts[k]}</span>
           </button>
         ))}
       </div>

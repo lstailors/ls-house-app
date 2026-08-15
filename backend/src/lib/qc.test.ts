@@ -90,10 +90,10 @@ describe("QC list helpers", () => {
     expect(qcResultOf({ qc_result: "Pending" })).toBe("Pending");
     expect(qcResultOf({ qc_result: "Pass" })).toBe("Pass");
     expect(qcResultOf({ qc_result: "Fail" })).toBe("Fail");
+    expect(tabToQcResult("waiting")).toBe("Pending");
     expect(tabToQcResult("open")).toBe("Pending");
     expect(tabToQcResult("passed")).toBe("Pass");
     expect(tabToQcResult("failed")).toBe("Fail");
-    expect(tabToQcResult("waiting")).toBeNull();
   });
 
   test("dedupes on inspection name", () => {
@@ -145,6 +145,7 @@ describe("QC routes are mounted", () => {
     expect(src).toContain("requireAdmin");
     expect(src).toContain("dedupeByInspectionName");
     expect(src).not.toContain("setMtmStatus");
+    expect(src).toContain("listInspectionsByResult");
     expect(src).toContain("listMakeOrdersInQcQueue");
     expect(src).toContain("DT.MTM_PRO_ORDER");
     expect(src).toContain('qcRouter.get("/:id/pdf"');

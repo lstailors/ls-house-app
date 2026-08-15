@@ -23,6 +23,7 @@ import {
   needsBackdateNote,
   normalizeZip,
 } from "../lib/delivery";
+import { nyTodayIso, addDaysIso } from "../lib/shop-time";
 
 // Web Crypto API — works in both Edge and Node runtimes
 function generateToken(): string {
@@ -315,7 +316,8 @@ deliveriesRouter.get("/", async (c) => {
   // Fetch active deliveries first (not Delivered/Cancelled/Failed), then recent history
   // Two-pass so the board never misses a Queued delivery due to the 200-row limit
   const activeFilters = [...filters, ["lsh_status", "not in", ["Delivered", "Cancelled", "Failed"]]];
-  const [activeRows, recentRows] = await Promise.all([
+  const weekStart = addDaysIso(nyTodayIso(), -6);
+  const [activeRows, recentDelivered, recentHold] = await Promise.all([
     erpList("LSH Delivery", {
       filters: activeFilters,
       fields: LIST_FIELDS,
@@ -323,16 +325,30 @@ deliveriesRouter.get("/", async (c) => {
       order_by: "creation desc",
     }),
     erpList("LSH Delivery", {
-      filters: [...filters, ["lsh_status", "in", ["Delivered", "Cancelled", "Failed"]]],
+      filters: [
+        ...filters,
+        ["lsh_status", "=", "Delivered"],
+        ["lsh_delivered_at", ">=", `${weekStart} 00:00:00`],
+      ],
       fields: LIST_FIELDS,
-      limit: 50,
+      limit: 500,
       order_by: "lsh_delivered_at desc",
     }),
+    erpList("LSH Delivery", {
+      filters: [
+        ...filters,
+        ["lsh_status", "in", ["Cancelled", "Failed"]],
+        ["modified", ">=", `${weekStart} 00:00:00`],
+      ],
+      fields: LIST_FIELDS,
+      limit: 200,
+      order_by: "modified desc",
+    }),
   ]);
-  // Deduplicate and merge: active first, then recent history
+  // Deduplicate and merge: active first, then 7d history
   const seen = new Set<string>();
   const rows: unknown[] = [];
-  for (const r of [...(activeRows as any[]), ...(recentRows as any[])]) {
+  for (const r of [...(activeRows as any[]), ...(recentDelivered as any[]), ...(recentHold as any[])]) {
     if (!seen.has(r.name)) { seen.add(r.name); rows.push(r); }
   }
 

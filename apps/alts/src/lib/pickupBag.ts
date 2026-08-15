@@ -48,3 +48,26 @@ export function clearPickupBag() {
     /* ignore */
   }
 }
+
+/** Bag total, due, and ticket count from the same line items. */
+export type PickupBagLine = {
+  kind: "ticket" | "invoice" | string;
+  ticketRef?: string | null;
+  total: number;
+  outstanding: number;
+};
+
+export function pickupBagStats(items: PickupBagLine[]) {
+  const bagTotal = items.reduce((s, i) => s + (Number(i.total) || 0), 0);
+  const bagDue = items.reduce((s, i) => s + (Number(i.outstanding) || 0), 0);
+  const bagPaid = Math.max(0, Math.round((bagTotal - bagDue) * 100) / 100);
+  const ticketCount = items.filter((i) => i.kind === "ticket" || Boolean(i.ticketRef)).length;
+  const invoiceCount = items.filter((i) => i.kind === "invoice" && !i.ticketRef).length;
+  return {
+    bagTotal: Math.round(bagTotal * 100) / 100,
+    bagDue: Math.round(bagDue * 100) / 100,
+    bagPaid,
+    ticketCount,
+    invoiceCount,
+  };
+}

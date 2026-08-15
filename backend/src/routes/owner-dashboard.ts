@@ -4,7 +4,8 @@
 
 import { Hono } from "hono";
 import { canSeeFinancials, getAuthedUser } from "../lib/scope";
-import { erpList } from "../lib/erp";
+import { erpList, erpCount } from "../lib/erp";
+import { metricFilters } from "../lib/metrics";
 
 export const ownerDashboardRouter = new Hono();
 
@@ -153,6 +154,7 @@ ownerDashboardRouter.get("/owner", async (c) => {
     invoices,
     altTickets,
     openHd,
+    hdOpenCount,
   ] = await Promise.all([
     erpList<SiRow>("Sales Invoice", {
       filters: [
@@ -208,6 +210,7 @@ ownerDashboardRouter.get("/owner", async (c) => {
       limit: 500,
       order_by: "modified desc",
     }).catch(() => []),
+    erpCount("HD Ticket", metricFilters(nycDateISO()).hdOpen),
   ]);
 
   // ── Period SI slices ────────────────────────────────────────────────────
@@ -650,7 +653,7 @@ ownerDashboardRouter.get("/owner", async (c) => {
           href: "/invoices",
         },
         openTickets: {
-          value: openHd.length,
+          value: hdOpenCount,
           deltaPct: 0,
           sparkline: ticketPriority.map((p) => p.count),
           href: "/helpdesk",
@@ -686,7 +689,7 @@ ownerDashboardRouter.get("/owner", async (c) => {
       meta: {
         invoiceCountPeriod: inPeriod.length,
         openArCount: openAr.length,
-        openHdCount: openHd.length,
+        openHdCount: hdOpenCount,
       },
       placeholders,
     },
@@ -715,7 +718,8 @@ ownerDashboardRouter.get("/floor-reports", async (c) => {
 
   const siCompanyLike = loc === "HOU" ? "%TX%" : loc === "NYC" ? "%NY%" : null;
 
-  const [alts, hd, openDels, failedDels, deliveredToday, siToday, siWeek] = await Promise.all([
+  const hdFilters = metricFilters(today).hdOpen;
+  const [alts, hdOpenCount, hdPri, openDels, failedDels, deliveredToday, siToday, siWeek] = await Promise.all([
     erpList<{
       name: string;
       workflow_state: string;
@@ -742,11 +746,13 @@ ownerDashboardRouter.get("/floor-reports", async (c) => {
       limit: 2000,
       order_by: "modified desc",
     }).catch(() => []),
-    erpList<{ name: string; priority: string; status: string; _assign: string }>("HD Ticket", {
-      filters: [["status", "not in", ["Closed", "Resolved"]]],
-      fields: ["name", "priority", "status", "_assign"],
-      limit: 300,
-    }).catch(() => []),
+    erpCount("HD Ticket", hdFilters),
+    Promise.all([
+      erpCount("HD Ticket", [...hdFilters, ["priority", "=", "Urgent"]]),
+      erpCount("HD Ticket", [...hdFilters, ["priority", "=", "High"]]),
+      erpCount("HD Ticket", [...hdFilters, ["priority", "=", "Medium"]]),
+      erpCount("HD Ticket", [...hdFilters, ["priority", "=", "Low"]]),
+    ]),
     erpList<{ name: string; lsh_status: string }>("LSH Delivery", {
       filters: [
         ["lsh_status", "in", ["Queued", "Out for Delivery"]],
@@ -808,12 +814,12 @@ ownerDashboardRouter.get("/floor-reports", async (c) => {
     }
   }
 
-  const priMap: Record<string, number> = { Urgent: 0, High: 0, Medium: 0, Low: 0 };
-  for (const t of hd) {
-    const p = (t.priority || "Medium").trim();
-    priMap[p in priMap ? p : "Medium"] =
-      (priMap[p in priMap ? p : "Medium"] ?? 0) + 1;
-  }
+  const priMap: Record<string, number> = {
+    Urgent: hdPri[0] ?? 0,
+    High: hdPri[1] ?? 0,
+    Medium: hdPri[2] ?? 0,
+    Low: hdPri[3] ?? 0,
+  };
 
   const del = {
     queued: openDels.filter((d) => d.lsh_status === "Queued").length,
@@ -885,7 +891,7 @@ ownerDashboardRouter.get("/floor-reports", async (c) => {
         altsToday,
         revenueToday: Math.round(revToday * 100) / 100,
         revenueWeek: Math.round(revWeek * 100) / 100,
-        openHd: hd.length,
+        openHd: hdOpenCount,
         deliveriesQueued: del.queued + del.outForDelivery,
       },
       pipeline: PIPELINE_ORDER.map((stage) => ({

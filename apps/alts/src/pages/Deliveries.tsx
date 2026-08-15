@@ -23,6 +23,7 @@ import { api } from "@ls/api-client";
 import type { Delivery } from "@ls/types";
 import StatusBadge from "@alts/components/StatusBadge";
 import type { StatusTone } from "@alts/lib/statusTone";
+import { useAltsMetrics } from "@alts/lib/useAltsMetrics";
 
 const FILTERS = [
   { value: "all", label: "All" },
@@ -42,6 +43,7 @@ const BOARD_COLS = [
 export default function Deliveries() {
   const { data: me } = useMe();
   const { data: deliveries = [], isLoading } = useDeliveries();
+  const metrics = useAltsMetrics();
   const update = useUpdateDelivery();
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -85,12 +87,12 @@ export default function Deliveries() {
 
   const counts = useMemo(() => {
     return {
-      scheduled: deliveries.filter((d) => d.status === "scheduled").length,
-      out: deliveries.filter((d) => d.status === "out_for_delivery").length,
-      done: deliveries.filter((d) => d.status === "delivered").length,
-      failed: deliveries.filter((d) => d.status === "failed" || d.status === "cancelled").length,
+      scheduled: metrics.data?.deliveries.queued ?? deliveries.filter((d) => d.status === "scheduled").length,
+      out: metrics.data?.deliveries.out ?? deliveries.filter((d) => d.status === "out_for_delivery").length,
+      done: metrics.data?.deliveries.delivered_today ?? deliveries.filter((d) => d.status === "delivered").length,
+      failed: metrics.data?.deliveries.on_hold ?? deliveries.filter((d) => d.status === "failed" || d.status === "cancelled").length,
     };
-  }, [deliveries]);
+  }, [deliveries, metrics.data]);
 
   const boardColumns = useMemo(() => {
     const s = search.toLowerCase();
@@ -172,7 +174,7 @@ export default function Deliveries() {
           active={filter === "scheduled"}
         />
         <KpiCard
-          label="Out for Delivery"
+          label="Out"
           value={counts.out}
           icon={<Truck className="h-4 w-4" />}
           accent="amber"
@@ -180,7 +182,7 @@ export default function Deliveries() {
           active={filter === "out_for_delivery"}
         />
         <KpiCard
-          label="Delivered"
+          label="Delivered · today"
           value={counts.done}
           icon={<CheckCircle2 className="h-4 w-4" />}
           accent="emerald"
@@ -188,7 +190,7 @@ export default function Deliveries() {
           active={filter === "delivered"}
         />
         <KpiCard
-          label="On hold"
+          label="On hold · 7d"
           value={counts.failed}
           icon={<Package className="h-4 w-4" />}
           accent="amber"
@@ -382,9 +384,19 @@ export default function Deliveries() {
               )}
             >
               <div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-3 py-2.5 border-b border-brass/10 bg-forest-deep/90 backdrop-blur rounded-t-2xl">
-                <StatusBadge status={col.label} tone={col.tone} />
+                <StatusBadge
+                  status={
+                    col.key === "delivered"
+                      ? "Delivered · 7d"
+                      : col.key === "failed"
+                        ? "On hold · 7d"
+                        : col.label
+                  }
+                  tone={col.tone}
+                />
                 <span className="text-[11px] font-mono text-brass-light/80 tabular-nums">
                   {col.items.length}
+                  <span className="text-cream-dim/70 font-sans font-normal"> · this view</span>
                 </span>
               </div>
               <div className="flex-1 overflow-y-auto p-2 space-y-2">

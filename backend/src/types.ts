@@ -1491,3 +1491,39 @@ export const UpdateQcInspectionInput = z.object({
   signatureUrl: z.string().optional(),
 });
 export type UpdateQcInspectionInput = z.infer<typeof UpdateQcInspectionInput>;
+
+export const AltsMetrics = z.object({
+  generated_at: z.string(),
+  today: z.string(),
+  open_alterations: z.number(),
+  tasks: z.object({
+    open: z.number(),
+    overdue: z.number(),
+  }),
+  qc: z.object({
+    waiting: z.number(),
+    open: z.number(),
+    passed: z.number(),
+    failed: z.number(),
+  }),
+  invoices: z.object({
+    unpaid_count: z.number(),
+    unpaid_total: z.number(),
+  }),
+  deliveries: z.object({
+    queued: z.number(),
+    out: z.number(),
+    delivered_today: z.number(),
+    on_hold: z.number(),
+  }),
+  hd_tickets_open: z.number(),
+  messages: z.object({
+    texts: z.number(),
+    calls: z.number(),
+    voice: z.number(),
+    fittings: z.number(),
+    other: z.number(),
+    all: z.number(),
+  }),
+});
+export type AltsMetrics = z.infer<typeof AltsMetrics>;
