@@ -1,9 +1,9 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMe } from "@ls/auth/session";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
-import { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { useErpHealth } from "@alts/components/ErpStatusBanner";
 import "@alts/styles/alts-pos.css";
@@ -14,6 +14,13 @@ import { formatCompactMoney } from "@alts/lib/money";
 import { TileSkeleton } from "@alts/components/skeletons";
 import { usePresence } from "@alts/lib/luxuryMotion";
 import type { StatusTone } from "@alts/lib/statusTone";
+import { useLiveMetrics } from "@alts/lib/useLiveMetrics";
+import { NeedsYouNow } from "@alts/components/live/NeedsYouNow";
+import { TodayRail } from "@alts/components/live/TodayRail";
+import { MoneyStrip } from "@alts/components/live/MoneyStrip";
+import { ActivityTicker } from "@alts/components/live/ActivityTicker";
+import { TickNumber } from "@alts/components/live/TickNumber";
+import { EMPTY_LIVE_HOME } from "@alts/lib/liveDashboard";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
@@ -403,46 +410,6 @@ function AskRoccoComposer({
   );
 }
 
-type AltsHomeFeed = {
-  location: string;
-  syncedAt: number;
-  strip: {
-    overdue: number;
-    dueToday: number;
-    outForDelivery: number;
-    deliveredToday: number;
-  };
-  counts: {
-    open: number;
-    ready: number;
-    inProgress: number;
-    atHome: number;
-    readyNotTexted: number;
-    pendingBoard: number;
-    openGarments: number;
-    openInvoices: number;
-    openInvoicesAmount: number;
-    oldestUnpaidDays: number | null;
-    oldestUnpaidInvoiceId?: string | null;
-    lateTransferCount: number;
-    stalledCount: number;
-    doubleBookedSlots: number;
-  };
-  feeds: {
-    lastTicket: { name: string; customerName: string; createdAt: string | null } | null;
-    lastProgress: {
-      workerName: string;
-      garmentLabel: string;
-      completedAt: string;
-      ticket?: string;
-    } | null;
-    lastTouchedCustomer: { name: string; modified: string | null } | null;
-    lateTransferNames: string[];
-    stalledReasons: Record<string, number>;
-    conflictDetails: Array<{ a: string; b: string; tailor: string; at: string }>;
-  };
-};
-
 type LiveTone = "em" | "am" | "ro" | "cd" | null;
 
 type TileDef = {
@@ -492,6 +459,9 @@ export default function HomeTiles() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const erpHealth = useErpHealth();
+  const [params] = useSearchParams();
+  const kiosk = params.get("kiosk") === "1";
+  const live = useLiveMetrics();
   const [espressoOpen, setEspressoOpen] = useState(readEspressoOpenDefault);
   const espressoMotion = usePresence(espressoOpen);
   const [askThread, setAskThread] = useState<AskMsg[]>([]);
@@ -525,37 +495,8 @@ export default function HomeTiles() {
     });
   }, []);
 
-  // Key stays "alts-home-stats" so intake/scanner/pod invalidations still refresh this feed.
-  const home = useQuery({
-    queryKey: ["alts-home-stats"],
-    queryFn: async (): Promise<AltsHomeFeed> => {
-      const res = await api.raw("/api/dashboard/alts-home");
-      const j = await res.json().catch(() => ({} as any));
-      if (!res.ok) throw new Error(j?.error?.message || "Home feed failed");
-      return (j?.data ?? j) as AltsHomeFeed;
-    },
-    staleTime: 30_000,
-    refetchInterval: 60_000,
-    retry: 2,
-  });
-  const erpDown = home.isError || (erpHealth.data ? !erpHealth.data.erp.reachable : false);
-
-  const taskCount = useQuery({
-    queryKey: ["alts-tasks-count"],
-    queryFn: () => api.get<{ count: number; overdue: number }>("/api/tasks/open-count"),
-    staleTime: 30_000,
-    refetchInterval: 60_000,
-    retry: 1,
-  });
-
-  const qcCount = useQuery({
-    queryKey: ["alts-qc-count"],
-    enabled: me?.role === "super_admin" || me?.role === "tailor",
-    queryFn: () => api.get<{ waiting: number; open: number }>("/api/qc/count"),
-    staleTime: 30_000,
-    refetchInterval: 60_000,
-    retry: 1,
-  });
+  const home = live;
+  const erpDown = live.isError || (erpHealth.data ? !erpHealth.data.erp.reachable : false);
 
   type FloorBrief = {
     body: string;
@@ -652,16 +593,14 @@ export default function HomeTiles() {
   const conflictCount = c?.doubleBookedSlots ?? 0;
   const firstConflict = feeds?.conflictDetails?.[0];
 
-  const syncAge = useMemo(() => {
-    const ts = feed?.syncedAt ?? Date.now();
-    const sec = Math.max(0, Math.round((Date.now() - ts) / 1000));
-    if (sec < 5) return "just now";
-    if (sec < 60) return `${sec}s ago`;
-    return `${Math.floor(sec / 60)}m ago`;
-  }, [feed?.syncedAt, home.dataUpdatedAt]);
+  const syncAge = live.ageLabel;
 
   const initials = clientInitials(me?.name ?? "LS");
   const canQc = me?.role === "super_admin" || me?.role === "tailor";
+  const hour = storeHour();
+  const ambient = kiosk && (hour >= 18 || hour < 9);
+  const board = feed ?? EMPTY_LIVE_HOME;
+  const pulse = live.pulsed;
 
   const lastTicketLive = (() => {
     const t = feeds?.lastTicket;
@@ -883,7 +822,12 @@ export default function HomeTiles() {
       key: "floor",
       to: "/shop-floor",
       title: "Shop Floor",
-      sub: `${c?.openGarments ?? c?.open ?? 0} pcs · ${c?.ready ?? 0} ready`,
+      sub: feed?.glimpses.floor.tailors.length
+        ? feed.glimpses.floor.tailors
+            .slice(0, 4)
+            .map((t) => `${t.name} ${t.inProgress}${t.stalled ? "!" : ""}`)
+            .join(" · ")
+        : `${c?.openGarments ?? c?.open ?? 0} pcs · ${c?.ready ?? 0} ready`,
       badge: c?.open || null,
       badgeKind: "shop",
       live: shopLive.text,
@@ -915,7 +859,9 @@ export default function HomeTiles() {
       key: "pickup",
       to: "/pickup",
       title: "Pickup",
-      sub: "Hand back · settle",
+      sub: feed?.glimpses.pickup.names.length
+        ? feed.glimpses.pickup.names.map((n) => `${n.name}${n.texted ? " ✓" : ""}`).join(" · ")
+        : "Hand back · settle",
       badge: c?.ready || null,
       badgeKind: "pickup",
       live: pickupLive.text,
@@ -960,7 +906,7 @@ export default function HomeTiles() {
       key: "deliveries",
       to: "/deliveries",
       title: "Deliveries",
-      sub: "Board · route · POD",
+      sub: `Queued ${feed?.glimpses.deliveries.queued ?? 0} · Out ${feed?.glimpses.deliveries.out ?? 0} · ✓ ${feed?.glimpses.deliveries.deliveredToday ?? 0}`,
       badge: c?.pendingBoard || null,
       badgeKind: "shop",
       dim: (c?.pendingBoard ?? 0) === 0,
@@ -995,7 +941,7 @@ export default function HomeTiles() {
         ? `/invoices/${encodeURIComponent(c.oldestUnpaidInvoiceId)}`
         : "/invoices",
       title: "Invoices",
-      sub: "Custom + alts AR",
+      sub: `${feed?.glimpses.invoices.unpaid ?? 0} unpaid`,
       badge: moneyBadge,
       badgeKind: "qc",
       live: invLive.text,
@@ -1012,7 +958,11 @@ export default function HomeTiles() {
       key: "appointments",
       to: "/appointments",
       title: "Appointments",
-      sub: conflictCount > 0 ? `${conflictCount} conflict${conflictCount > 1 ? "s" : ""} · 7 days` : "Today · week · house",
+      sub: feed?.glimpses.appointments.next
+        ? `${feed.glimpses.appointments.next.time} · ${feed.glimpses.appointments.next.type} · ${feed.glimpses.appointments.next.client}`
+        : conflictCount > 0
+          ? `${conflictCount} conflict${conflictCount > 1 ? "s" : ""} · 7 days`
+          : "Today · week · house",
       badge: conflictCount > 0 ? conflictCount : null,
       badgeKind: "tasks" as const,
       live: apptLive.text,
@@ -1033,19 +983,22 @@ export default function HomeTiles() {
       key: "tasks",
       to: "/tasks",
       title: "Tasks",
-      sub: (taskCount.data?.overdue ?? 0) > 0 ? `${taskCount.data!.overdue} overdue` : "House list",
-      badge: taskCount.data?.count || null,
+      sub:
+        (feed?.glimpses.tasks.open ?? 0) > 0
+          ? `${feed!.glimpses.tasks.open} open${feed!.glimpses.tasks.trend === "up" ? " ↑" : feed!.glimpses.tasks.trend === "down" ? " ↓" : ""}`
+          : "House list",
+      badge: feed?.glimpses.tasks.open || null,
       badgeKind: "tasks",
       live:
-        (taskCount.data?.count ?? 0) > 0 ? (
+        (feed?.glimpses.tasks.open ?? 0) > 0 ? (
           <>
-            <b>{taskCount.data!.count}</b> open
-            {(taskCount.data?.overdue ?? 0) > 0 ? ` · ${taskCount.data!.overdue} late` : ""}
+            <b>{feed!.glimpses.tasks.open}</b> open
+            {feed!.glimpses.tasks.trend === "up" ? " ↑" : feed!.glimpses.tasks.trend === "down" ? " ↓" : ""}
           </>
         ) : (
           "All clear"
         ),
-      liveTone: (taskCount.data?.overdue ?? 0) > 0 ? "ro" : (taskCount.data?.count ?? 0) > 0 ? "em" : "cd",
+      liveTone: (feed?.metrics.tasks.overdue ?? 0) > 0 ? "ro" : (feed?.glimpses.tasks.open ?? 0) > 0 ? "em" : "cd",
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <rect x="8" y="8" width="36" height="36" rx="4" />
@@ -1057,8 +1010,12 @@ export default function HomeTiles() {
       key: "messages",
       to: "/messages",
       title: "Messages",
-      sub: "Texts · calls",
-      live: "Inbox",
+      sub: feed?.glimpses.messages.preview
+        ? `${feed.glimpses.messages.sender ?? "Inbox"} · ${feed.glimpses.messages.preview}`
+        : "Texts · calls",
+      live: feed?.glimpses.messages.unread
+        ? `${feed.glimpses.messages.unread} unread`
+        : "Inbox",
       liveTone: "em",
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -1071,19 +1028,21 @@ export default function HomeTiles() {
       key: "qc",
       to: "/qc",
       title: "QC",
-      sub: "MTM · photos · sign",
-      badge: qcCount.data?.waiting || null,
+      sub:
+        (feed?.glimpses.qc.waiting ?? 0) > 0
+          ? `${feed!.glimpses.qc.waiting} waiting · ${feed!.glimpses.qc.passRateWeek}% week`
+          : `${feed?.glimpses.qc.passRateWeek ?? 100}% pass this week`,
+      badge: feed?.glimpses.qc.waiting || null,
       badgeKind: "qc",
       live:
-        (qcCount.data?.waiting ?? 0) > 0 ? (
+        (feed?.glimpses.qc.waiting ?? 0) > 0 ? (
           <>
-            <b>{qcCount.data!.waiting}</b> waiting
-            {(qcCount.data?.open ?? 0) > 0 ? ` · ${qcCount.data!.open} open` : ""}
+            <b>{feed!.glimpses.qc.waiting}</b> waiting · {feed!.glimpses.qc.passRateWeek}% week
           </>
         ) : (
-          "Store QC · makes only"
+          `${feed?.glimpses.qc.passRateWeek ?? 100}% pass this week`
         ),
-      liveTone: (qcCount.data?.waiting ?? 0) > 0 ? "am" : "em",
+      liveTone: (feed?.glimpses.qc.waiting ?? 0) > 0 ? "am" : "em",
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="26" cy="26" r="18" />
@@ -1123,7 +1082,13 @@ export default function HomeTiles() {
   ];
 
   return (
-    <div className="alts-root home-040 flex flex-col min-h-dvh overflow-x-hidden px-[14px] sm:px-[22px] pt-[max(10px,env(safe-area-inset-top))] pb-[max(5.5rem,env(safe-area-inset-bottom))] gap-2.5">
+    <div
+      className={cn(
+        "alts-root home-040 flex flex-col min-h-dvh overflow-x-hidden px-[14px] sm:px-[22px] pt-[max(10px,env(safe-area-inset-top))] pb-[max(5.5rem,env(safe-area-inset-bottom))] gap-2.5",
+        kiosk && "is-kiosk",
+        ambient && "is-ambient",
+      )}
+    >
       {/* Header — seal, brand, search, loc, weather, avatar */}
       <header className="home-040-hd flex items-center gap-2 sm:gap-3 shrink-0 min-w-0 flex-wrap">
         <BrandSeal className="shrink-0" size={34} />
@@ -1131,7 +1096,7 @@ export default function HomeTiles() {
           <div className="display text-[24px] leading-tight">L&S House</div>
           <div className="text-[11px] tracking-[0.16em] uppercase text-[var(--cd)]">Alterations</div>
         </div>
-        <UniversalSearchInline className="mx-0.5 sm:mx-1 flex-1 min-w-0 max-w-[min(100%,280px)]" />
+        {!kiosk && <UniversalSearchInline className="mx-0.5 sm:mx-1 flex-1 min-w-0 max-w-[min(100%,280px)]" />}
         <div className="flex-1 min-w-0 hidden lg:block" />
         <div className="hidden xl:flex items-center rounded-full border border-brass/35 px-3 py-1.5 text-[10.5px] font-bold tracking-[0.1em] text-brass-light shrink-0">
           NYC
@@ -1146,6 +1111,7 @@ export default function HomeTiles() {
             "—"
           )}
         </div>
+        {!kiosk && (
         <button
           type="button"
           onClick={() => nav("/settings")}
@@ -1155,6 +1121,7 @@ export default function HomeTiles() {
         >
           {initials}
         </button>
+        )}
       </header>
 
       {/* Status strip — greeting + espresso + counts + live */}
@@ -1187,9 +1154,12 @@ export default function HomeTiles() {
 
         <Link
           to="/shop-floor?filter=overdue"
-          className={cn("seg pill", (strip?.overdue ?? 0) > 0 && "rd")}
+          className={cn("seg pill", (strip?.overdue ?? 0) > 0 && "rd", pulse.overdue && "is-pulse")}
+          data-testid="overdue-chip"
         >
-          <b className="display tabular-nums">{strip?.overdue ?? "—"}</b>
+          <b className="display tabular-nums">
+            {strip?.overdue != null ? <TickNumber value={strip.overdue} /> : "—"}
+          </b>
           <span>OVERDUE</span>
         </Link>
         <Link to="/deliveries" className="seg pill">
@@ -1215,19 +1185,23 @@ export default function HomeTiles() {
         </Link>
         <button
           type="button"
-          onClick={() => home.refetch()}
-          className="seg refresh border-0 bg-transparent cursor-pointer"
+          onClick={() => void live.refetch()}
+          className={cn("seg refresh border-0 bg-transparent cursor-pointer", `is-${live.status}`)}
+          data-testid="live-chip"
         >
           <span
             className={cn(
               "dot",
-              erpDown && "bg-[var(--am)] shadow-[0_0_8px_rgba(232,168,92,0.7)]",
+              live.status === "stale" && "is-stale",
+              (live.status === "down" || erpDown) && "is-down",
             )}
           />
           <span className="leading-tight text-left">
-            {erpDown ? "ERPNext down" : "ERPNext live"}
+            {live.status === "down" || erpDown ? "LIVE · retry" : "LIVE"}
             <br />
-            <span className="normal-case tracking-normal opacity-80">{home.isFetching ? "…" : syncAge}</span>
+            <span className="normal-case tracking-normal opacity-80">
+              {live.status === "down" ? "feed down" : `updated ${syncAge}`}
+            </span>
           </span>
         </button>
       </div>
@@ -1287,8 +1261,22 @@ export default function HomeTiles() {
         </div>
       )}
 
+      {live.isLoading ? (
+        <div className="live-band-skel" aria-busy="true" aria-label="Loading live bands">
+          <div className="h-16 rounded-xl bg-brass/10 border border-brass/10 animate-pulse" />
+          <div className="h-14 rounded-xl bg-brass/10 border border-brass/10 animate-pulse" />
+          <div className="h-16 rounded-xl bg-brass/10 border border-brass/10 animate-pulse" />
+        </div>
+      ) : (
+        <>
+          <NeedsYouNow items={board.exceptions} pulse={pulse.exceptions} />
+          <TodayRail rail={board.todayRail} pulse={pulse.comingIn || pulse.mustLeave || pulse.ready} />
+          <MoneyStrip money={board.money} pulse={pulse.revToday || pulse.ar} />
+        </>
+      )}
+
       {/* Quick actions */}
-      <div className="home-040-qa shrink-0 flex gap-2.5">
+      <div className={cn("home-040-qa shrink-0 flex gap-2.5", kiosk && "hidden")} data-testid="quick-actions">
         <Link to="/dispatch" className="qbtn primary">
           <span aria-hidden>⚡</span> Charge &amp; Dispatch
         </Link>
@@ -1303,7 +1291,7 @@ export default function HomeTiles() {
         </Link>
       </div>
 
-      {(home.isError || erpDown) && (
+      {(home.isError || erpDown) && !kiosk && (
         <div className="shrink-0">
           <QueryErrorPanel
             title="Could not load the shop board"
@@ -1317,10 +1305,10 @@ export default function HomeTiles() {
       )}
 
       {/* 5×2 tile grid — fills remaining height */}
-      {home.isLoading ? (
+      {!kiosk && (home.isLoading ? (
         <TileSkeleton count={10} />
       ) : (
-      <div className="home-040-grid flex-1 min-h-0">
+      <div className="home-040-grid flex-1 min-h-0" data-testid="tile-grid">
         {tiles
           .filter((t) => t.key !== "qc" || canQc)
           .map((t) => {
@@ -1329,6 +1317,7 @@ export default function HomeTiles() {
             t.primary && "pri",
             t.admin && "admin",
             t.dim && "dim",
+            (pulse[t.key] || (t.key === "invoices" && pulse.invoices) || (t.key === "qc" && pulse.qc)) && "is-pulse",
           );
 
           const tileBody = (
@@ -1385,7 +1374,8 @@ export default function HomeTiles() {
           );
         })}
       </div>
-      )}
+      ))}
+      <ActivityTicker items={board.activity} />
     </div>
   );
 }

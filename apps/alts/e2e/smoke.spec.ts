@@ -30,6 +30,86 @@ const HOME = {
   },
 };
 
+const LIVE_HOME = {
+  generated_at: new Date().toISOString(),
+  today: "2026-08-15",
+  syncedAt: Date.now(),
+  location: "NYC",
+  metrics: {
+    generated_at: new Date().toISOString(),
+    today: "2026-08-15",
+    open_alterations: 12,
+    tasks: { open: 2, overdue: 1, yesterday_open: 2, trend: "flat" },
+    qc: { waiting: 0, open: 0, passed: 10, failed: 2 },
+    invoices: { unpaid_count: 4, unpaid_total: 5685 },
+    deliveries: { queued: 1, out: 1, delivered_today: 0, on_hold: 0 },
+    hd_tickets_open: 0,
+    messages: { texts: 3, calls: 0, voice: 0, fittings: 1, other: 0, all: 4 },
+    floor: {
+      overdue: 7,
+      due_today: 2,
+      ready: 3,
+      in_progress: 4,
+      at_home: 2,
+      stalled_48h: 0,
+      ready_not_texted: 1,
+      invoices_90: 1,
+    },
+  },
+  strip: HOME.strip,
+  counts: HOME.counts,
+  feeds: HOME.feeds,
+  exceptions: [
+    {
+      id: "overdue:ALT-1",
+      kind: "overdue",
+      severity: "urgent",
+      name: "Late Client",
+      number: "9d",
+      icon: "⏱",
+      href: "/shop-floor?filter=overdue",
+      action: "open",
+      subtitle: "In Progress",
+      rank: 0,
+    },
+  ],
+  todayRail: {
+    openMin: 540,
+    closeMin: 1080,
+    nowMin: 840,
+    shopOpen: true,
+    appointments: [
+      { id: "EV-1", minutes: 870, label: "Peyser", href: "/appointments", kind: "appointment" },
+    ],
+    dueOuts: [],
+    deliveries: [],
+    chips: { comingIn: 1, mustLeave: 2, readyPickup: 3, readyAllTexted: false },
+  },
+  money: {
+    revToday: 1200,
+    revSpark: [400, 500, 300, 800, 600, 700, 1200],
+    weekRev: 4500,
+    lastWeekRev: 4000,
+    weekDeltaPct: 13,
+    arTotal: 5685,
+    arAging: { "0-30": 800, "31-60": 400, "61-90": 200, "90+": 4285 },
+    pipeline: { nyc: 12000, hou: 4000, total: 16000 },
+  },
+  glimpses: {
+    floor: { tailors: [{ name: "Carl", inProgress: 3, stalled: 0 }], stalled: 0 },
+    pickup: { names: [{ name: "J. Peyser", texted: true, ticket: "ALT-2" }], ready: 3 },
+    messages: { sender: "Dorrian", preview: "Is the jacket ready?", unread: 1 },
+    invoices: { unpaid: 4, aging: { "0-30": 800, "31-60": 400, "61-90": 200, "90+": 4285 } },
+    deliveries: { queued: 1, out: 1, deliveredToday: 0 },
+    appointments: { next: { time: "2:30", type: "Fitting", client: "J. Peyser" } },
+    tasks: { open: 2, yesterdayOpen: 2, trend: "flat" },
+    qc: { waiting: 0, passRateWeek: 83 },
+  },
+  activity: [
+    { id: "a1", at: "4:32", atIso: "2026-08-15T16:32:00", text: "QC passed · C. Dorrian", href: "/qc" },
+  ],
+};
+
 const ME = {
   id: "u1",
   email: "floor@lstailors.com",
@@ -71,6 +151,8 @@ async function mockApis(page: Page, opts: { authed?: boolean } = { authed: true 
       });
     }
     if (path === "/api/dashboard/alts-home") return json(HOME);
+    if (path === "/api/metrics/live-home" || path === "/api/metrics/exceptions") return json(LIVE_HOME);
+    if (path === "/api/metrics") return json(LIVE_HOME.metrics);
     if (path === "/api/tasks/open-count") return json({ count: 2, overdue: 1 });
     if (path === "/api/qc/count") return json({ waiting: 0, open: 0 });
     if (path === "/api/qc/rates") {
@@ -183,6 +265,7 @@ const ROUTES = [
   "/reports",
   "/customers",
   "/reports?kiosk=1",
+  "/?kiosk=1",
 ];
 
 for (const path of ROUTES) {
