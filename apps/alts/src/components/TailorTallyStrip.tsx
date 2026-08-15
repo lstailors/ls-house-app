@@ -50,8 +50,8 @@ export function TailorTallyStrip({ className }: { className?: string }) {
     retry: 1,
   });
 
-  const data = q.data;
-  const empty = !data || data.totals.pieces === 0;
+  const data = q.data && !Array.isArray(q.data) ? q.data : undefined;
+  const empty = !data || !data.totals || data.totals.pieces === 0;
 
   return (
     <section

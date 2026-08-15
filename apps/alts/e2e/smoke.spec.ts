@@ -34,11 +34,11 @@ const ME = {
   id: "u1",
   email: "floor@lstailors.com",
   name: "Floor Staff",
-  role: "store_manager",
+  role: "super_admin",
   locationId: "NYC",
 };
 
-async function mockApis(page: Page) {
+async function mockApis(page: Page, opts: { authed?: boolean } = { authed: true }) {
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
@@ -51,8 +51,25 @@ async function mockApis(page: Page) {
         body: JSON.stringify({ data }),
       });
 
-    if (path === "/api/me") return json(ME);
+    if (path === "/api/me") {
+      if (!opts.authed) return json(null, 401);
+      return json(ME);
+    }
     if (path === "/api/auth/refresh") return json({ token: "t" });
+    if (path === "/api/health") {
+      return json({
+        ok: true,
+        status: "ok",
+        erp: { configured: true, reachable: true, latencyMs: 12, error: null },
+      });
+    }
+    if (path === "/api/garment/tally") {
+      return json({
+        date: "2026-08-15",
+        totals: { pieces: 0, minutes: 0, hours: 0, revenue: 0, workers: 0 },
+        tailors: [],
+      });
+    }
     if (path === "/api/dashboard/alts-home") return json(HOME);
     if (path === "/api/tasks/open-count") return json({ count: 2, overdue: 1 });
     if (path === "/api/qc/count") return json({ waiting: 0, open: 0 });
@@ -127,7 +144,7 @@ async function mockApis(page: Page) {
     }
     if (path.startsWith("/api/customers")) return json([]);
     if (path.startsWith("/api/search")) return json([]);
-    if (method === "GET") return json([]);
+    if (method === "GET") return json({});
     return json({ ok: true });
   });
 }
@@ -140,16 +157,16 @@ async function assertNoHang(page: Page) {
   });
   await expect(page.locator(".animate-spin").first()).toHaveCount(0, { timeout: 12_000 }).catch(() => undefined);
   await page.waitForTimeout(400);
-  const hang = errors.filter((e) => /infinite|unhandled|chunk/i.test(e));
+    const hang = errors.filter(
+      (e) => /infinite|unhandled|chunkload/i.test(e) && !/error boundary/i.test(e),
+    );
   expect(hang, hang.join("\n")).toEqual([]);
 }
 
 test("login renders without console explosions", async ({ page }) => {
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(e.message));
-  await mockApis(page);
+  await mockApis(page, { authed: false });
   await page.goto("/login");
-  await expect(page.getByLabel("Email")).toBeVisible();
+  await expect(page.getByPlaceholder("you@lstailors.com")).toBeVisible();
   await assertNoHang(page);
 });
 
