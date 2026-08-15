@@ -1,7 +1,7 @@
 import { cn } from "@ls/design/utils";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useBodyLock, useOverlayEscape } from "@alts/lib/luxuryMotion";
+import { LUX_MS, useBodyLock, useOverlayEscape, usePresence } from "@alts/lib/luxuryMotion";
 import TaskSubitemPicker, { type HierarchyPreset } from "@alts/components/intake/TaskSubitemPicker";
 
 function money(n: number) {
@@ -56,7 +56,9 @@ type Props = {
 /**
  * SPEC 057b:
  * - Phone: bottom sheet (~88%), grab + scrim
- * - Tablet (≥768): side drawer docked at cart rail (right: 340px) — never covers rail
+ * - Tablet (≥768): side drawer docked at cart rail (right: 340px) — never covers rail.
+ *   Closed state travels past the cart (100% + 340px) so it cannot rest as an empty box
+ *   on top of the ticket cart.
  */
 export default function GarmentOptionsDrawer({
   open,
@@ -81,19 +83,21 @@ export default function GarmentOptionsDrawer({
   photoStrip,
   icon,
 }: Props) {
-  useBodyLock(open);
-  useOverlayEscape(open, onClose);
-  return typeof document === "undefined"
+  const visible = open && !!garment;
+  const { shown, entered } = usePresence(visible, LUX_MS);
+  useBodyLock(shown);
+  useOverlayEscape(shown, onClose);
+  return !shown || typeof document === "undefined"
     ? null
     : createPortal(
     <>
       <div
         className={cn(
           "lux-intake-scrim fixed inset-0 z-[70] bg-[rgba(5,12,8,0.55)] backdrop-blur-[8px] transition-opacity md:right-[340px]",
-          open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
+          entered ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
         )}
         onClick={onClose}
-        aria-hidden={!open}
+        aria-hidden={!entered}
       />
       {/* Phone bottom sheet */}
       <div
@@ -103,12 +107,12 @@ export default function GarmentOptionsDrawer({
           "shadow-[0_-20px_60px_rgba(0,0,0,0.55)]",
           "pb-[env(safe-area-inset-bottom,0px)]",
           "transition-transform will-change-transform",
-          open ? "translate-y-0" : "translate-y-full pointer-events-none",
+          entered ? "translate-y-0" : "translate-y-full pointer-events-none",
         )}
         style={{ background: "linear-gradient(180deg,#152A1E 0%,#0D1A10 100%)" }}
         role="dialog"
         aria-modal="true"
-        aria-hidden={!open}
+        aria-hidden={!entered}
         aria-label={garment ? `Options for ${garment.garmentType}` : "Garment options"}
       >
         <div className="flex-none flex justify-center pt-2.5 pb-1" aria-hidden>
@@ -179,20 +183,19 @@ export default function GarmentOptionsDrawer({
         ) : null}
       </div>
 
-      {/* Tablet side drawer */}
+      {/* Tablet side drawer — exits past the 340px cart, never rests on top of it */}
       <div
         className={cn(
           "lux-intake-drawer fixed inset-y-0 z-[75] hidden md:flex flex-col",
+          entered ? "is-in" : "is-out pointer-events-none",
           "right-[340px] w-[min(480px,calc(100vw-360px))] min-w-[320px]",
           "border-l border-r border-brass/30",
           "shadow-[-24px_0_60px_rgba(0,0,0,0.5)]",
-          "transition-transform will-change-transform",
-          open ? "translate-x-0" : "translate-x-full pointer-events-none",
         )}
         style={{ background: "linear-gradient(180deg,#152A1E 0%,#0D1A10 100%)" }}
         role="dialog"
         aria-modal="true"
-        aria-hidden={!open}
+        aria-hidden={!entered}
         aria-label={garment ? `Options for ${garment.garmentType}` : "Garment options"}
       >
         {garment ? (

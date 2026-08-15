@@ -1,6 +1,6 @@
 import { cn } from "@ls/design/utils";
 import { createPortal } from "react-dom";
-import { useBodyLock, useOverlayEscape } from "@alts/lib/luxuryMotion";
+import { LUX_MS, useBodyLock, useOverlayEscape, usePresence } from "@alts/lib/luxuryMotion";
 
 function money(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -74,9 +74,11 @@ export default function SellItemDrawer({
   onRate,
   onEta,
 }: Props) {
-  useBodyLock(open);
-  useOverlayEscape(open, onClose);
-  if (typeof document === "undefined") return null;
+  const visible = open && !!line;
+  const { shown, entered } = usePresence(visible, LUX_MS);
+  useBodyLock(shown);
+  useOverlayEscape(shown, onClose);
+  if (!shown || typeof document === "undefined") return null;
 
   const finish = onDone || onClose;
   const bodyProps = {
@@ -98,10 +100,10 @@ export default function SellItemDrawer({
       <div
         className={cn(
           "lux-intake-scrim fixed inset-0 z-[70] bg-[rgba(5,12,8,0.55)] backdrop-blur-[8px] transition-opacity md:right-[340px]",
-          open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
+          entered ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
         )}
         onClick={onClose}
-        aria-hidden={!open}
+        aria-hidden={!entered}
       />
 
       {/* Phone bottom sheet */}
@@ -112,12 +114,12 @@ export default function SellItemDrawer({
           "shadow-[0_-20px_60px_rgba(0,0,0,0.55)]",
           "pb-[env(safe-area-inset-bottom,0px)]",
           "transition-transform will-change-transform",
-          open ? "translate-y-0" : "translate-y-full pointer-events-none",
+          entered ? "translate-y-0" : "translate-y-full pointer-events-none",
         )}
         style={{ background: "linear-gradient(180deg,#152A1E 0%,#0D1A10 100%)" }}
         role="dialog"
         aria-modal="true"
-        aria-hidden={!open}
+        aria-hidden={!entered}
         aria-label={line ? `Sell options for ${line.item_name}` : "Sell options"}
       >
         <div className="flex-none flex justify-center pt-2.5 pb-1" aria-hidden>
@@ -126,20 +128,19 @@ export default function SellItemDrawer({
         {line ? <SellBody {...bodyProps} /> : null}
       </div>
 
-      {/* Tablet side drawer */}
+      {/* Tablet side drawer — exits past the 340px cart, never rests on top of it */}
       <div
         className={cn(
           "lux-intake-drawer fixed inset-y-0 z-[75] hidden md:flex flex-col",
+          entered ? "is-in" : "is-out pointer-events-none",
           "right-[340px] w-[min(420px,calc(100vw-340px))]",
           "border-l border-r border-brass/30",
           "shadow-[-24px_0_60px_rgba(0,0,0,0.5)]",
-          "transition-transform will-change-transform",
-          open ? "translate-x-0" : "translate-x-full pointer-events-none",
         )}
         style={{ background: "linear-gradient(180deg,#152A1E 0%,#0D1A10 100%)" }}
         role="dialog"
         aria-modal="true"
-        aria-hidden={!open}
+        aria-hidden={!entered}
         aria-label={line ? `Sell options for ${line.item_name}` : "Sell options"}
       >
         {line ? <SellBody {...bodyProps} /> : null}

@@ -64,7 +64,7 @@ export default function TicketCartRail({
 
   return (
     <aside
-      className="hidden md:flex w-[340px] flex-none flex-col min-h-0 border-l border-brass/20 bg-black/35 relative z-40"
+      className="hidden md:flex w-[340px] h-full flex-none flex-col min-h-0 border-l border-brass/20 bg-black/35 relative z-40 self-stretch"
       aria-label="Ticket cart"
     >
       <div className="flex-none px-4 pt-3.5 pb-3 border-b border-brass/15 bg-gradient-to-b from-brass/15 to-transparent">

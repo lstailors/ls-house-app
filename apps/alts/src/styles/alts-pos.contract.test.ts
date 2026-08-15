@@ -48,6 +48,29 @@ describe("iPhone scale contract", () => {
     expect(html).toContain("viewport-fit=cover");
   });
 
+  test("intake options drawers never use translate-x-full over the cart", () => {
+    expect(css).toContain("calc(100% + 340px)");
+    expect(css).toMatch(/\.lux-intake-drawer\.is-out\s*\{[^}]*translateX\(calc\(100% \+ 340px\)\)/s);
+    expect(css).toMatch(/\.lux-intake-drawer\.is-in\s*\{[^}]*translateX\(0\)/s);
+    const garment = readFileSync(
+      new URL("../components/intake/GarmentOptionsDrawer.tsx", import.meta.url),
+      "utf8",
+    );
+    const sell = readFileSync(
+      new URL("../components/intake/SellItemDrawer.tsx", import.meta.url),
+      "utf8",
+    );
+    const cart = readFileSync(
+      new URL("../components/intake/TicketCartSheet.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(garment).toContain('entered ? "is-in" : "is-out pointer-events-none"');
+    expect(garment).not.toContain("translate-x-full");
+    expect(sell).toContain('entered ? "is-in" : "is-out pointer-events-none"');
+    expect(sell).not.toContain("translate-x-full");
+    expect(cart).toContain('variant={desk ? "drawer" : "sheet"}');
+  });
+
   test("the scan camera stays a corner circle, not a sideways rail", () => {
     expect(css).toMatch(/\.scan-fab\s*\{[^}]*width:\s*56px\s*!important/s);
     expect(css).toMatch(/\.scan-fab\s*\{[^}]*height:\s*56px\s*!important/s);
