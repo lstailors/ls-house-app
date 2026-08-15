@@ -147,5 +147,6 @@ describe("iPhone scale contract", () => {
     );
     expect(catalog).toContain('{ id: "mtm", label: "MTM" }');
     expect(catalog).toContain("Stock, MTM, and special-order");
+    expect(catalog).toContain("MTM-SUIT");
   });
 });

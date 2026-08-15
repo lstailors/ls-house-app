@@ -12,17 +12,17 @@ import { getAuthedUser } from "../lib/scope";
 import { erpList } from "../lib/erp";
 import { grokChat } from "../lib/grok";
 import {
-  applySellableFilters,
   availabilityFrom,
   dedupeByItemCode,
   envAllowGroups,
+  HOUSE_MTM_CODES,
   isDeniedGroup,
   isMtmSellGroup,
   isPreferredGroup,
+  finalizeSellableCatalog,
   MTM_SELL_GROUPS,
   RTW_SELL_GROUPS,
   sellableKind,
-  sortSellableItems,
   uiGroupFrom,
   type SellableAvailability,
   type SellableKind,
@@ -49,7 +49,7 @@ export type SellableItemDto = {
   image?: string | null;
   ui_group?: "tops" | "bottoms" | "accessories" | "other";
   color_label?: string | null;
-  source: "erp" | "seed";
+  source: "erp" | "seed" | "house";
   eta?: string | null;
   kind?: SellableKind;
 };
@@ -311,7 +311,7 @@ altsRouter.get("/sellable-items", async (c) => {
 
   try {
     // Fetch MTM separately so the RTW/Tramarossa 300-row cap cannot hide them.
-    const [mtmRows, mtmLike, rtwRows] = await Promise.all([
+    const [mtmRows, mtmLike, mtmByCode, rtwRows] = await Promise.all([
       listSalesItemsByGroups([...MTM_SELL_GROUPS, ...extraMtm], 200),
       erpList<ErpSellableRow>("Item", {
         fields: [...SELLABLE_ITEM_FIELDS],
@@ -323,9 +323,18 @@ altsRouter.get("/sellable-items", async (c) => {
         limit: 200,
         order_by: "item_name asc",
       }),
+      erpList<ErpSellableRow>("Item", {
+        fields: [...SELLABLE_ITEM_FIELDS],
+        filters: [
+          ["disabled", "=", 0],
+          ["item_code", "in", [...HOUSE_MTM_CODES]],
+        ],
+        limit: 20,
+        order_by: "item_name asc",
+      }),
       listSalesItemsByGroups([...RTW_SELL_GROUPS, ...extraRtw], 300),
     ]);
-    let rows = dedupeByItemCode([...mtmRows, ...mtmLike, ...rtwRows]).filter(
+    let rows = dedupeByItemCode([...mtmRows, ...mtmLike, ...mtmByCode, ...rtwRows]).filter(
       (r) => !isDeniedGroup(r.item_group),
     );
 
@@ -392,7 +401,7 @@ altsRouter.get("/sellable-items", async (c) => {
         const stockQty = isStock ? qtyByCode.get(r.item_code) ?? 0 : null;
         const rate = rateByCode.get(r.item_code) || Number(r.standard_rate) || 0;
         const avail = availabilityFrom(isStock, stockQty);
-        const kind = sellableKind(r.item_group || "");
+        const kind = sellableKind(r.item_group || "", r.item_code);
         const name = r.item_name || r.item_code;
         return {
           item_code: r.item_code,
@@ -416,10 +425,11 @@ altsRouter.get("/sellable-items", async (c) => {
 
     // Seed until RTW catalog exists
     if (!dto.length) {
-      dto = SEED_CATALOG.map((s) => ({ ...s, kind: sellableKind(s.item_group) }));
+      dto = SEED_CATALOG.map((s) => ({ ...s, kind: sellableKind(s.item_group, s.item_code) }));
     }
 
-    dto = sortSellableItems(applySellableFilters(dto, { q, filter })).slice(0, limit);
+    // Always pin house MTM tiles so jeans cannot hide them.
+    dto = finalizeSellableCatalog(dto, { q, filter, limit }) as SellableItemDto[];
 
     return c.json({
       data: dto,
@@ -433,8 +443,8 @@ altsRouter.get("/sellable-items", async (c) => {
   } catch (e: any) {
     console.error("[alts/sellable-items]", e?.message || e);
     // Soft-fail to seed so FOH still works
-    let dto = SEED_CATALOG.map((s) => ({ ...s, kind: sellableKind(s.item_group) }));
-    dto = sortSellableItems(applySellableFilters(dto, { q, filter })).slice(0, limit);
+    let dto = SEED_CATALOG.map((s) => ({ ...s, kind: sellableKind(s.item_group, s.item_code) }));
+    dto = finalizeSellableCatalog(dto, { q, filter, limit }) as SellableItemDto[];
     return c.json({
       data: dto,
       meta: { warehouse, origin, seeded: true, error: String(e?.message || e) },

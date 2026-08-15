@@ -16,7 +16,7 @@ export type SellableItem = {
   image?: string | null;
   ui_group?: "tops" | "bottoms" | "accessories" | "other";
   color_label?: string | null;
-  source: "erp" | "seed";
+  source: "erp" | "seed" | "house";
   eta?: string | null;
   kind?: "mtm" | "rtw";
 };
@@ -33,6 +33,24 @@ const FILTERS: { id: SellFilterId; label: string }[] = [
   { id: "tops", label: "Tops" },
   { id: "bottoms", label: "Bottoms" },
 ];
+
+const HOUSE_MTM_FALLBACK: SellableItem[] = [
+  { item_code: "MTM-JACKET", item_name: "MTM Jacket", item_group: "MTM Jacket", rate: 2400, is_stock_item: false, stock_qty: null, availability: "order", has_variants: false, attributes: { Size: ["36", "38", "40", "42", "44", "46"] }, ui_group: "tops", source: "house", eta: "Made to measure", kind: "mtm" },
+  { item_code: "MTM-SUIT", item_name: "MTM Suit", item_group: "MTM Suit", rate: 4400, is_stock_item: false, stock_qty: null, availability: "order", has_variants: false, attributes: { Size: ["36", "38", "40", "42", "44", "46"] }, ui_group: "other", source: "house", eta: "Made to measure", kind: "mtm" },
+  { item_code: "MTM-TROUSERS", item_name: "MTM Trousers", item_group: "MTM Trouser", rate: 900, is_stock_item: false, stock_qty: null, availability: "order", has_variants: false, attributes: { Size: ["28", "30", "32", "34", "36", "38"] }, ui_group: "bottoms", source: "house", eta: "Made to measure", kind: "mtm" },
+  { item_code: "MTM-VEST", item_name: "MTM Vest", item_group: "MTM Vest", rate: 1100, is_stock_item: false, stock_qty: null, availability: "order", has_variants: false, attributes: { Size: ["36", "38", "40", "42", "44", "46"] }, ui_group: "tops", source: "house", eta: "Made to measure", kind: "mtm" },
+  { item_code: "MTM-OVERCOAT", item_name: "MTM Overcoat", item_group: "MTM Overcoat", rate: 3200, is_stock_item: false, stock_qty: null, availability: "order", has_variants: false, attributes: { Size: ["36", "38", "40", "42", "44", "46"] }, ui_group: "tops", source: "house", eta: "Made to measure", kind: "mtm" },
+  { item_code: "MTM-SHIRT", item_name: "MTM Shirt", item_group: "MTM Shirt", rate: 380, is_stock_item: false, stock_qty: null, availability: "order", has_variants: false, attributes: { Size: ["14.5", "15", "15.5", "16", "16.5", "17"] }, ui_group: "tops", source: "house", eta: "Made to measure", kind: "mtm" },
+];
+
+function isMtmTile(it: SellableItem) {
+  return it.kind === "mtm" || /^mtm[-_]/i.test(it.item_code);
+}
+
+function catalogItems(items: SellableItem[]): SellableItem[] {
+  if (items.some(isMtmTile)) return items;
+  return [...HOUSE_MTM_FALLBACK, ...items];
+}
 
 type Props = {
   firstName: string;
@@ -61,6 +79,16 @@ export default function SellItemCatalog({
   seeded,
   modeSwitch,
 }: Props) {
+  const shown = (() => {
+    const has = items.some(isMtmTile);
+    const base =
+      has || (filter !== "all" && filter !== "mtm")
+        ? items
+        : [...HOUSE_MTM_FALLBACK, ...items];
+    if (filter === "mtm") return base.filter(isMtmTile);
+    return base;
+  })();
+
   return (
     <section className="flex-1 min-w-0 flex flex-col overflow-hidden px-3 pt-3 pb-[calc(88px+env(safe-area-inset-bottom,0px))] md:px-5 md:pt-4 md:pb-3">
       <div className="flex items-end gap-3.5 mb-3 shrink-0">
@@ -102,16 +130,16 @@ export default function SellItemCatalog({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto pr-0.5 md:pr-1">
-        {loading && !items.length ? (
+        {loading && !shown.length ? (
           <p className="text-cream-dim text-sm py-8 text-center">Loading items…</p>
-        ) : !items.length ? (
+        ) : !shown.length ? (
           <p className="text-cream-dim text-sm py-8 text-center">No sellable items match.</p>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-2.5">
-            {items.map((it) => {
+            {shown.map((it) => {
               const count = cartCounts[it.item_code] || 0;
               const out = it.availability === "out";
-              const mtm = it.kind === "mtm" || /^mtm(\s|$)/i.test(it.item_group);
+              const mtm = isMtmTile(it);
               return (
                 <button
                   key={it.item_code}

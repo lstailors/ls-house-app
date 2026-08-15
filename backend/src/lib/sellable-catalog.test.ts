@@ -2,8 +2,11 @@ import { describe, expect, test } from "bun:test";
 import {
   applySellableFilters,
   DENY_SELL_GROUPS,
+  finalizeSellableCatalog,
+  HOUSE_MTM_ITEMS,
   isDeniedGroup,
   isMtmSellGroup,
+  isMtmSellItem,
   isPreferredGroup,
   MTM_SELL_GROUPS,
   sortSellableItems,
@@ -86,5 +89,28 @@ describe("MTM on the Walk-in sell catalog", () => {
     expect(applySellableFilters(items, { filter: "mtm" }).map((d) => d.item_code)).toEqual(["MTM-SUIT"]);
     expect(applySellableFilters(items, { filter: "order" }).map((d) => d.item_code)).toEqual(["TRA-1"]);
     expect(applySellableFilters(items, { filter: "all" })).toHaveLength(2);
+  });
+
+  test("Custom Made and MTM-* codes count as MTM", () => {
+    expect(isDeniedGroup("Custom Made")).toBe(false);
+    expect(isMtmSellGroup("Custom Made")).toBe(true);
+    expect(isMtmSellItem({ item_code: "MTM-SUIT", item_group: "Stock Garments" })).toBe(true);
+    expect(isMtmSellItem({ item_code: "TRA-1", item_group: "Tramarossa Jeans" })).toBe(false);
+  });
+
+  test("house MTM tiles pin first even when ERP only has jeans", () => {
+    const jeans = {
+      item_code: "TRA-1",
+      item_name: "Tramarossa Jeans 5 Tasche",
+      item_group: "Tramarossa Jeans",
+      availability: "order" as const,
+      rate: 379.5,
+    };
+    const out = finalizeSellableCatalog([jeans], { filter: "all", limit: 20 });
+    const codes = out.map((d) => d.item_code);
+    expect(codes.slice(0, HOUSE_MTM_ITEMS.length)).toEqual(HOUSE_MTM_ITEMS.map((h) => h.item_code));
+    expect(codes).toContain("TRA-1");
+    expect(out[0].kind).toBe("mtm");
+    expect(applySellableFilters(out, { filter: "mtm" }).length).toBe(HOUSE_MTM_ITEMS.length);
   });
 });

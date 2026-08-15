@@ -12,7 +12,66 @@ export const MTM_SELL_GROUPS = [
   "MTM Suit",
   "MTM Trouser",
   "MTM Vest",
+  "Custom Made",
 ] as const;
+
+/**
+ * Always-on Walk-in tiles for quick MTM invoices.
+ * Codes match custom-order SO lines (MTM-SUIT, …). Rates are house construction
+ * labor and overlay with ERP Item Price when that SKU exists.
+ */
+export const HOUSE_MTM_ITEMS = [
+  {
+    item_code: "MTM-JACKET",
+    item_name: "MTM Jacket",
+    item_group: "MTM Jacket",
+    rate: 2400,
+    ui_group: "tops" as const,
+    attributes: { Size: ["36", "38", "40", "42", "44", "46"] },
+  },
+  {
+    item_code: "MTM-SUIT",
+    item_name: "MTM Suit",
+    item_group: "MTM Suit",
+    rate: 4400,
+    ui_group: "other" as const,
+    attributes: { Size: ["36", "38", "40", "42", "44", "46"] },
+  },
+  {
+    item_code: "MTM-TROUSERS",
+    item_name: "MTM Trousers",
+    item_group: "MTM Trouser",
+    rate: 900,
+    ui_group: "bottoms" as const,
+    attributes: { Size: ["28", "30", "32", "34", "36", "38"] },
+  },
+  {
+    item_code: "MTM-VEST",
+    item_name: "MTM Vest",
+    item_group: "MTM Vest",
+    rate: 1100,
+    ui_group: "tops" as const,
+    attributes: { Size: ["36", "38", "40", "42", "44", "46"] },
+  },
+  {
+    item_code: "MTM-OVERCOAT",
+    item_name: "MTM Overcoat",
+    item_group: "MTM Overcoat",
+    rate: 3200,
+    ui_group: "tops" as const,
+    attributes: { Size: ["36", "38", "40", "42", "44", "46"] },
+  },
+  {
+    item_code: "MTM-SHIRT",
+    item_name: "MTM Shirt",
+    item_group: "MTM Shirt",
+    rate: 380,
+    ui_group: "tops" as const,
+    attributes: { Size: ["14.5", "15", "15.5", "16", "16.5", "17"] },
+  },
+] as const;
+
+export const HOUSE_MTM_CODES = HOUSE_MTM_ITEMS.map((h) => h.item_code);
 
 /** RTW / stock / Tramarossa — queried alongside MTM. */
 export const RTW_SELL_GROUPS = [
@@ -87,22 +146,39 @@ export const DENY_SELL_GROUPS = [
   "Bespoke Suit",
   "Bespoke Trouser",
   "Bespoke Vest",
-  "Custom Made",
 ] as const;
 
 const DENY = new Set(DENY_SELL_GROUPS.map((s) => s.toLowerCase()));
 const PREFER_RTW = new Set(RTW_SELL_GROUPS.map((s) => s.toLowerCase()));
 
 export type SellableKind = "mtm" | "rtw";
+export type SellableSource = "erp" | "seed" | "house";
 export type SellableAvailability = "in" | "order" | "out";
 export type SellableUiGroup = "tops" | "bottoms" | "accessories" | "other";
+
+export function canonMtmCode(code: string): string {
+  return (code || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, "")
+    .replace(/TROUSERS$/, "TROUSER");
+}
 
 /** Client-invoicable MTM garments. Excludes wholesale MTM Program kits. */
 export function isMtmSellGroup(group: string): boolean {
   const g = (group || "").toLowerCase().trim();
   if (!g) return false;
   if (g.includes("program") || g.includes("wholesale")) return false;
+  if (g === "custom made" || g === "custom-made") return true;
   return g === "mtm" || g.startsWith("mtm ");
+}
+
+export function isMtmSellItem(d: { item_group?: string; item_code?: string; item_name?: string; kind?: SellableKind }): boolean {
+  if (d.kind === "mtm") return true;
+  if (isMtmSellGroup(d.item_group || "")) return true;
+  const code = (d.item_code || "").toUpperCase();
+  if (code.includes("PROGRAM") || code.includes("WHOLESALE")) return false;
+  if (code.startsWith("MTM-") || code.startsWith("MTM_")) return true;
+  return false;
 }
 
 export function isDeniedGroup(group: string): boolean {
@@ -122,8 +198,8 @@ export function isPreferredGroup(group: string, extra: string[] = []): boolean {
   return extra.some((a) => a.toLowerCase() === g);
 }
 
-export function sellableKind(group: string): SellableKind {
-  return isMtmSellGroup(group) ? "mtm" : "rtw";
+export function sellableKind(group: string, itemCode = ""): SellableKind {
+  return isMtmSellItem({ item_group: group, item_code: itemCode }) ? "mtm" : "rtw";
 }
 
 export function uiGroupFrom(itemGroup: string, name: string): SellableUiGroup {
@@ -177,8 +253,8 @@ export function applySellableFilters<T extends Filterable>(
   }
   if (filter === "in") dto = dto.filter((d) => d.availability === "in");
   else if (filter === "order") {
-    dto = dto.filter((d) => d.availability === "order" && !isMtmSellGroup(d.item_group));
-  } else if (filter === "mtm") dto = dto.filter((d) => isMtmSellGroup(d.item_group));
+    dto = dto.filter((d) => d.availability === "order" && !isMtmSellItem(d));
+  } else if (filter === "mtm") dto = dto.filter((d) => isMtmSellItem(d));
   else if (filter === "tops") dto = dto.filter((d) => d.ui_group === "tops");
   else if (filter === "bottoms") dto = dto.filter((d) => d.ui_group === "bottoms");
   return dto;
@@ -195,7 +271,7 @@ export function sortSellableItems<T extends Filterable>(items: T[]): T[] {
 }
 
 function rank(d: Filterable): number {
-  if (isMtmSellGroup(d.item_group) || d.kind === "mtm") return 0;
+  if (isMtmSellItem(d)) return 0;
   if (d.availability === "in") return 1;
   if (d.availability === "order") return 2;
   return 3;
@@ -211,4 +287,103 @@ export function dedupeByItemCode<T extends { item_code: string }>(rows: T[]): T[
     out.push(row);
   }
   return out;
+}
+
+export type HouseMtmDto = {
+  item_code: string;
+  item_name: string;
+  item_group: string;
+  rate: number;
+  is_stock_item: false;
+  stock_qty: null;
+  availability: "order";
+  has_variants: false;
+  attributes: { Size?: string[]; Color?: string[] };
+  image: null;
+  ui_group: SellableUiGroup;
+  color_label: null;
+  source: "house";
+  eta: "Made to measure";
+  kind: "mtm";
+};
+
+export function houseMtmDto(item: (typeof HOUSE_MTM_ITEMS)[number]): HouseMtmDto {
+  return {
+    item_code: item.item_code,
+    item_name: item.item_name,
+    item_group: item.item_group,
+    rate: item.rate,
+    is_stock_item: false,
+    stock_qty: null,
+    availability: "order",
+    has_variants: false,
+    attributes: { Size: [...item.attributes.Size] },
+    image: null,
+    ui_group: item.ui_group,
+    color_label: null,
+    source: "house",
+    eta: "Made to measure",
+    kind: "mtm",
+  };
+}
+
+type Mergeable = Filterable & {
+  rate?: number;
+  source?: SellableSource;
+  eta?: string | null;
+  attributes?: { Size?: string[]; Color?: string[] };
+};
+
+function findHouseMatch<T extends Mergeable>(item: T): (typeof HOUSE_MTM_ITEMS)[number] | undefined {
+  const code = canonMtmCode(item.item_code);
+  const byCode = HOUSE_MTM_ITEMS.find((h) => canonMtmCode(h.item_code) === code);
+  if (byCode) return byCode;
+  const name = (item.item_name || "").toLowerCase();
+  return HOUSE_MTM_ITEMS.find((h) => name === h.item_name.toLowerCase());
+}
+
+/**
+ * Pin the six house MTM tiles first (quick invoice), overlay ERP rates when
+ * the SKU already exists, then the rest of the catalog.
+ */
+export function mergeHouseMtm<T extends Mergeable>(items: T[]): Array<T | HouseMtmDto> {
+  const overlay = new Map<string, T>();
+  const extraMtm: T[] = [];
+  const rtw: T[] = [];
+
+  for (const it of items) {
+    const house = findHouseMatch(it);
+    if (house && !overlay.has(house.item_code)) {
+      overlay.set(house.item_code, it);
+      continue;
+    }
+    if (isMtmSellItem(it)) extraMtm.push({ ...it, kind: "mtm" });
+    else rtw.push(it);
+  }
+
+  const pinned = HOUSE_MTM_ITEMS.map((h) => {
+    const hit = overlay.get(h.item_code);
+    if (!hit) return houseMtmDto(h);
+    return {
+      ...hit,
+      kind: "mtm" as const,
+      eta: hit.eta || "Made to measure",
+      item_name: hit.item_name || h.item_name,
+      rate: Number(hit.rate) > 0 ? hit.rate : h.rate,
+    };
+  });
+
+  return [...pinned, ...extraMtm, ...rtw];
+}
+
+/** House MTM first (stable), then remaining MTM, then sorted RTW. */
+export function finalizeSellableCatalog<T extends Mergeable>(
+  items: T[],
+  opts: { q?: string; filter?: string; limit: number },
+): Array<T | HouseMtmDto> {
+  const merged = mergeHouseMtm(items);
+  const filtered = applySellableFilters(merged, opts);
+  const mtm = filtered.filter((d) => isMtmSellItem(d));
+  const rest = sortSellableItems(filtered.filter((d) => !isMtmSellItem(d)));
+  return [...mtm, ...rest].slice(0, opts.limit);
 }

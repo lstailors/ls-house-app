@@ -93,7 +93,7 @@ type SellItem = {
   rate: number;
   availability: "in" | "order" | "out";
   eta?: string;
-  source?: "erp" | "seed";
+  source?: "erp" | "seed" | "house";
   kind?: "mtm" | "rtw";
   /** attribute options from catalog at add-time */
   sizeOptions?: string[];
