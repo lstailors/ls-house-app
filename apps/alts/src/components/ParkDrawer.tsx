@@ -1,4 +1,5 @@
 import { cn } from "@ls/design/utils";
+import LuxuryLayer from "@alts/components/LuxuryLayer";
 
 export type ParkDrawerProps = {
   open: boolean;
@@ -50,8 +51,6 @@ export default function ParkDrawer({
   onSubmitAnyway,
   submitting,
 }: ParkDrawerProps) {
-  if (!open) return null;
-
   const lineCount = garments.reduce((s, g) => s + g.lines.length, 0);
   const inHand = garments.length;
   const expected = Math.max(expectedGarments, inHand);
@@ -64,12 +63,10 @@ export default function ParkDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center" role="dialog" aria-modal="true">
-      <button type="button" className="absolute inset-0 bg-[rgba(4,10,6,0.72)] backdrop-blur-[7px]" aria-label="Close" onClick={onClose} />
+    <LuxuryLayer open={open} onClose={onClose} variant="sheet" label="Park this ticket" z={60}>
       <div
-        className="relative w-full max-w-[1280px] max-h-[97vh] overflow-y-auto rounded-t-[26px] border border-brass/35 border-b-0 shadow-[var(--sl)]"
+        className="w-full max-w-[1280px] max-h-[97dvh] overflow-y-auto rounded-t-[26px] border border-brass/35 border-b-0 shadow-[var(--sl)]"
         style={{ background: "linear-gradient(170deg,#16301E,#0E1D12)" }}
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="w-[52px] h-1 rounded-full bg-brass/40 mx-auto mt-1.5 mb-3" />
         <div className="px-6 md:px-[30px] pb-5">
@@ -282,6 +279,6 @@ export default function ParkDrawer({
           </div>
         </div>
       </div>
-    </div>
+    </LuxuryLayer>
   );
 }

@@ -1,5 +1,6 @@
 import { cn } from "@ls/design/utils";
 import { createPortal } from "react-dom";
+import { useBodyLock, useOverlayEscape } from "@alts/lib/luxuryMotion";
 
 function money(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -73,6 +74,8 @@ export default function SellItemDrawer({
   onRate,
   onEta,
 }: Props) {
+  useBodyLock(open);
+  useOverlayEscape(open, onClose);
   if (typeof document === "undefined") return null;
 
   const finish = onDone || onClose;
@@ -94,7 +97,7 @@ export default function SellItemDrawer({
     <>
       <div
         className={cn(
-          "fixed inset-0 z-[70] bg-[rgba(5,12,8,0.55)] transition-opacity duration-200 md:right-[340px]",
+          "lux-intake-scrim fixed inset-0 z-[70] bg-[rgba(5,12,8,0.55)] backdrop-blur-[8px] transition-opacity md:right-[340px]",
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
         )}
         onClick={onClose}
@@ -104,11 +107,11 @@ export default function SellItemDrawer({
       {/* Phone bottom sheet */}
       <div
         className={cn(
-          "fixed inset-x-0 bottom-0 z-[75] md:hidden flex flex-col",
+          "lux-intake-sheet fixed inset-x-0 bottom-0 z-[75] md:hidden flex flex-col",
           "max-h-[min(88dvh,88%)] rounded-t-[22px] border border-brass/30 border-b-0",
           "shadow-[0_-20px_60px_rgba(0,0,0,0.55)]",
           "pb-[env(safe-area-inset-bottom,0px)]",
-          "transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] will-change-transform",
+          "transition-transform will-change-transform",
           open ? "translate-y-0" : "translate-y-full pointer-events-none",
         )}
         style={{ background: "linear-gradient(180deg,#152A1E 0%,#0D1A10 100%)" }}
@@ -126,11 +129,11 @@ export default function SellItemDrawer({
       {/* Tablet side drawer */}
       <div
         className={cn(
-          "fixed inset-y-0 z-[75] hidden md:flex flex-col",
+          "lux-intake-drawer fixed inset-y-0 z-[75] hidden md:flex flex-col",
           "right-[340px] w-[min(420px,calc(100vw-340px))]",
           "border-l border-r border-brass/30",
           "shadow-[-24px_0_60px_rgba(0,0,0,0.5)]",
-          "transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] will-change-transform",
+          "transition-transform will-change-transform",
           open ? "translate-x-0" : "translate-x-full pointer-events-none",
         )}
         style={{ background: "linear-gradient(180deg,#152A1E 0%,#0D1A10 100%)" }}

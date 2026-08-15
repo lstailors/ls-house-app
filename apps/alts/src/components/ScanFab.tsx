@@ -10,6 +10,7 @@ function shouldHide(pathname: string): boolean {
   // Home owns the full viewport — FAB steals bottom-right tile space
   if (pathname === "/" || pathname === "") return true;
   if (/^\/(login|scanner)(\/|$)/i.test(pathname)) return true;
+  if (/^\/intake(\/|$)/i.test(pathname)) return true;
   if (/^\/(e-ticket|t)\//i.test(pathname)) return true;
   // Print / label routes — camera FAB would land on paper previews
   if (/\/(tags|thermal|receipt|label)(\/|$)/i.test(pathname)) return true;
@@ -35,7 +36,8 @@ export default function ScanFab() {
         "border border-brass/45 bg-forest-deep/92 text-brass-light",
         "shadow-[0_8px_28px_rgba(0,0,0,0.45)] backdrop-blur-xl",
         "hover:border-brass hover:bg-brass/15 hover:text-cream",
-        "active:scale-95 transition-all",
+        "active:scale-95 transition-all duration-300",
+        "lux-page-enter",
         "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass",
       )}
     >

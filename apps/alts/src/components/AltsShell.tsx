@@ -59,7 +59,9 @@ export default function AltsShell() {
         )}
       </header>
       <main className="flex-1 min-h-0">
-        <Outlet />
+        <div key={loc.pathname} className="lux-page-enter h-full">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

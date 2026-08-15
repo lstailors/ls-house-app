@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { payUrl } from "@alts/lib/printUrls";
+import LuxuryLayer from "@alts/components/LuxuryLayer";
 
 export type DeclineAttempt = {
   at: string;
@@ -64,7 +65,7 @@ export function DeclineRecovery({
   const code = attempt.code || parseCode(attempt.message);
   const history = attempts.length ? attempts : [attempt];
 
-  if (!open) return null;
+  // Stay mounted while the sheet slides back.
 
   async function sendPayLink() {
     if (!invoiceId && !ticketId) {
@@ -133,18 +134,8 @@ export function DeclineRecovery({
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        aria-label="Close"
-        onClick={onClose}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="relative z-[81] w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-signal-amber/40 bg-forest-raised/98 text-cream shadow-glass-lg"
-      >
+    <LuxuryLayer open={open} onClose={onClose} variant="modal" label="Card declined" z={80}>
+      <div className="w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-signal-amber/40 bg-forest-raised/98 text-cream shadow-glass-lg">
         <div className="flex items-start gap-3 p-5 border-b border-brass/15">
           <div className="h-11 w-11 rounded-full bg-signal-amber/15 border border-signal-amber/40 flex items-center justify-center shrink-0">
             <AlertTriangle className="h-5 w-5 text-signal-amber" />
@@ -282,6 +273,6 @@ export function DeclineRecovery({
           </p>
         </div>
       </div>
-    </div>
+    </LuxuryLayer>
   );
 }

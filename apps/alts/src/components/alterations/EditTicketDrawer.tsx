@@ -350,7 +350,7 @@ export function EditTicketDrawer({
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
         side="right"
-        className="w-full sm:max-w-lg bg-forest-deep border-brass/20 text-cream overflow-y-auto p-0"
+        className="w-full sm:max-w-lg bg-forest-deep border-brass/20 text-cream overflow-y-auto p-0 shadow-[-24px_0_60px_rgba(0,0,0,0.5)]"
       >
         <SheetHeader className="px-5 pt-5 pb-4 border-b border-brass/10">
           <SheetTitle className="text-brass-shimmer text-lg font-bold tracking-wide">

@@ -2361,8 +2361,9 @@ export default function IntakeStepped() {
         submitting={create.isPending}
       />
 
-      {editOpen && customer?.id && (
+      {customer?.id && (
         <CustomerEditSheet
+          open={editOpen}
           customerId={customer.id}
           customerName={customer.name}
           onClose={() => setEditOpen(false)}

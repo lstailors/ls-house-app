@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { storeToday } from "@alts/lib/storeDate";
+import LuxuryLayer from "@alts/components/LuxuryLayer";
 import "@alts/styles/alts-pos.css";
 
 /** SPEC_061 Floor Performance — Lucia mockups in ~/ls-design/mockups/tailor-productivity/ */
@@ -176,14 +177,19 @@ export default function FloorPerformance() {
   }, [data?.tailors, sort]);
 
   const selected = sortedTailors.find((t) => t.workerId === selectedId) ?? null;
+  const [held, setHeld] = useState(selected);
+  useEffect(() => {
+    if (selected) setHeld(selected);
+  }, [selected]);
+  const view = selected ?? held;
 
   const selectedPieces = useMemo(() => {
-    if (!selected || !data) return [];
-    let rows = data.garments.filter((g) => (g.workerId || "unassigned") === selected.workerId);
+    if (!view || !data) return [];
+    let rows = data.garments.filter((g) => (g.workerId || "unassigned") === view.workerId);
     if (locFilter === "shop") rows = rows.filter((g) => g.workLocation === "shop");
     if (locFilter === "home") rows = rows.filter((g) => g.workLocation === "home");
     return rows;
-  }, [selected, data, locFilter]);
+  }, [view, data, locFilter]);
 
   const dateChipKind = date === today ? "today" : date === yesterday ? "yesterday" : "custom";
 
@@ -416,29 +422,28 @@ export default function FloorPerformance() {
         )}
       </div>
 
-      {/* Detail drawer / sheet */}
-      {selected && data ? (
-        <div className="fixed inset-0 z-50 flex justify-end">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/55"
-            aria-label="Close drawer"
-            onClick={() => setSelectedId(null)}
-          />
-          <aside className="relative z-10 h-full w-full max-w-[480px] bg-forest-base border-l border-brass/25 shadow-2xl overflow-y-auto">
+      {/* Detail drawer — slides in from the right and slides back */}
+      {view && data ? (
+        <LuxuryLayer
+          open={!!selected}
+          onClose={() => setSelectedId(null)}
+          variant="drawer"
+          label={`${view.workerName} detail`}
+          z={50}
+        >
+          <aside className="h-full w-full max-w-[480px] bg-forest-base border-l border-brass/25 shadow-2xl overflow-y-auto">
             <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-brass/20 bg-forest-base/95 backdrop-blur px-5 py-4">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="h-12 w-12 rounded-full bg-forest-deep border border-brass/30 flex items-center justify-center text-sm font-semibold text-brass-light">
-                  {initials(selected.workerName)}
+                  {initials(view.workerName)}
                 </div>
                 <div className="min-w-0">
-                  <div className="text-lg font-medium text-cream truncate">{selected.workerName}</div>
-                  {/* badge only when real signal exists */}
-                  {selected.workLocation === "shop" ? (
+                  <div className="text-lg font-medium text-cream truncate">{view.workerName}</div>
+                  {view.workLocation === "shop" ? (
                     <span className="inline-block mt-1 text-[9px] uppercase tracking-[0.1em] px-2 py-0.5 rounded-full bg-brass/15 text-brass-light">
                       Shop
                     </span>
-                  ) : selected.workLocation === "home" ? (
+                  ) : view.workLocation === "home" ? (
                     <span className="inline-block mt-1 text-[9px] uppercase tracking-[0.1em] px-2 py-0.5 rounded-full bg-[#9B8BC4]/18 text-[#B7A8DE]">
                       Home
                     </span>
@@ -481,22 +486,22 @@ export default function FloorPerformance() {
 
               <div className="grid grid-cols-3 gap-2 rounded-xl border border-brass/20 bg-forest-deep/50 p-3">
                 <div>
-                  <div className="text-lg font-semibold text-brass-light tabular-nums">{selected.pieces}</div>
+                  <div className="text-lg font-semibold text-brass-light tabular-nums">{view.pieces}</div>
                   <div className="text-[10px] uppercase text-cream-dim">Pieces</div>
                 </div>
                 <div>
-                  <div className="text-lg font-semibold text-cream tabular-nums">{fmtMins(selected.minutes)}</div>
+                  <div className="text-lg font-semibold text-cream tabular-nums">{fmtMins(view.minutes)}</div>
                   <div className="text-[10px] uppercase text-cream-dim">Time</div>
                 </div>
                 <div>
-                  <div className="text-lg font-semibold text-cream tabular-nums">{money(selected.revenue)}</div>
+                  <div className="text-lg font-semibold text-cream tabular-nums">{money(view.revenue)}</div>
                   <div className="text-[10px] uppercase text-cream-dim">Work $</div>
                 </div>
               </div>
 
               {selectedPieces.length === 0 ? (
                 <p className="text-sm text-cream-dim py-6 text-center border border-dashed border-brass/25 rounded-xl">
-                  Nothing logged for {selected.workerName} on {date}.
+                  Nothing logged for {view.workerName} on {date}.
                 </p>
               ) : (
                 <ul className="space-y-2">
@@ -520,7 +525,7 @@ export default function FloorPerformance() {
               )}
             </div>
           </aside>
-        </div>
+        </LuxuryLayer>
       ) : null}
 
       {/* silence unused dateOpen for a11y focus tracking */}

@@ -1425,8 +1425,8 @@ export default function CustomerDetail() {
         )}
       </div>
 
-      {contactEditOpen && (
-        <CustomerEditSheet
+      <CustomerEditSheet
+          open={contactEditOpen}
           customerId={c.id}
           customerName={c.name}
           onClose={() => setContactEditOpen(false)}
@@ -1435,7 +1435,6 @@ export default function CustomerDetail() {
             setContactEditOpen(false);
           }}
         />
-      )}
     </div>
   );
 }

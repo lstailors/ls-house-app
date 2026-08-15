@@ -12,6 +12,7 @@ import { BrandSeal } from "@alts/components/BrandSeal";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
 import { clearAltsPrivateStorage } from "@alts/lib/logoutPrivacy";
 import { clientInitials, storeHour } from "@alts/lib/ticketDisplay";
+import { usePresence } from "@alts/lib/luxuryMotion";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
@@ -503,6 +504,7 @@ export default function HomeTiles() {
   const qc = useQueryClient();
   const erpHealth = useErpHealth();
   const [espressoOpen, setEspressoOpen] = useState(readEspressoOpenDefault);
+  const espressoMotion = usePresence(espressoOpen);
   const [askThread, setAskThread] = useState<AskMsg[]>([]);
   const [askInput, setAskInput] = useState("");
   const [askActiveChip, setAskActiveChip] = useState<string | null>(null);
@@ -1120,12 +1122,14 @@ export default function HomeTiles() {
         </button>
       </div>
 
-      {/* Espresso panel — overlay drawer so grid stays one-screen */}
-      {espressoOpen && (
+      {/* Espresso — unfolds and folds back instead of popping */}
+      {espressoMotion.shown && (
         <div
           id="espresso-body"
-          className="home-040-espresso shrink-0 rounded-[14px] border border-brass/20 bg-black/35 px-3 sm:px-3.5 pt-2.5 pb-3 max-h-[min(42vh,420px)] overflow-y-auto"
+          className={cn("lux-espresso-wrap shrink-0", espressoMotion.entered && "is-in")}
         >
+        <div className="lux-espresso-inner">
+        <div className="home-040-espresso rounded-[14px] border border-brass/20 bg-black/35 px-3 sm:px-3.5 pt-2.5 pb-3 max-h-[min(42vh,420px)] overflow-y-auto">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-brass-light">☕</span>
             <span className="font-semibold text-brass-light tracking-[0.08em] uppercase text-[11px]">
@@ -1168,6 +1172,8 @@ export default function HomeTiles() {
             activeChip={askActiveChip}
             setActiveChip={setAskActiveChip}
           />
+        </div>
+        </div>
         </div>
       )}
 

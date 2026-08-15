@@ -1,6 +1,7 @@
 import { cn } from "@ls/design/utils";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useBodyLock, useOverlayEscape } from "@alts/lib/luxuryMotion";
 import TaskSubitemPicker, { type HierarchyPreset } from "@alts/components/intake/TaskSubitemPicker";
 
 function money(n: number) {
@@ -80,13 +81,15 @@ export default function GarmentOptionsDrawer({
   photoStrip,
   icon,
 }: Props) {
+  useBodyLock(open);
+  useOverlayEscape(open, onClose);
   return typeof document === "undefined"
     ? null
     : createPortal(
     <>
       <div
         className={cn(
-          "fixed inset-0 z-[70] bg-[rgba(5,12,8,0.55)] transition-opacity duration-200 md:right-[340px]",
+          "lux-intake-scrim fixed inset-0 z-[70] bg-[rgba(5,12,8,0.55)] backdrop-blur-[8px] transition-opacity md:right-[340px]",
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
         )}
         onClick={onClose}
@@ -95,11 +98,11 @@ export default function GarmentOptionsDrawer({
       {/* Phone bottom sheet */}
       <div
         className={cn(
-          "fixed inset-x-0 bottom-0 z-[75] md:hidden flex flex-col border border-brass/30 border-b-0",
+          "lux-intake-sheet fixed inset-x-0 bottom-0 z-[75] md:hidden flex flex-col border border-brass/30 border-b-0",
           "max-h-[min(88dvh,88%)] rounded-t-[22px]",
           "shadow-[0_-20px_60px_rgba(0,0,0,0.55)]",
           "pb-[env(safe-area-inset-bottom,0px)]",
-          "transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] will-change-transform",
+          "transition-transform will-change-transform",
           open ? "translate-y-0" : "translate-y-full pointer-events-none",
         )}
         style={{ background: "linear-gradient(180deg,#152A1E 0%,#0D1A10 100%)" }}
@@ -179,11 +182,11 @@ export default function GarmentOptionsDrawer({
       {/* Tablet side drawer */}
       <div
         className={cn(
-          "fixed inset-y-0 z-[75] hidden md:flex flex-col",
+          "lux-intake-drawer fixed inset-y-0 z-[75] hidden md:flex flex-col",
           "right-[340px] w-[min(480px,calc(100vw-360px))] min-w-[320px]",
           "border-l border-r border-brass/30",
           "shadow-[-24px_0_60px_rgba(0,0,0,0.5)]",
-          "transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] will-change-transform",
+          "transition-transform will-change-transform",
           open ? "translate-x-0" : "translate-x-full pointer-events-none",
         )}
         style={{ background: "linear-gradient(180deg,#152A1E 0%,#0D1A10 100%)" }}

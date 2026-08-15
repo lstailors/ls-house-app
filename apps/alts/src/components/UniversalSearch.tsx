@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import LuxuryLayer from "@alts/components/LuxuryLayer";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
@@ -145,7 +145,16 @@ export default function UniversalSearchHost() {
     !pathname.startsWith("/customers") &&
     !pathname.startsWith("/invoices") &&
     !pathname.startsWith("/deliveries") &&
-    !pathname.startsWith("/orders/alterations/");
+    !pathname.startsWith("/orders/alterations") &&
+    !pathname.startsWith("/shop-floor") &&
+    !pathname.startsWith("/pickup") &&
+    !pathname.startsWith("/intake") &&
+    !pathname.startsWith("/lookup") &&
+    !pathname.startsWith("/quote") &&
+    !pathname.startsWith("/dispatch") &&
+    !pathname.startsWith("/transfers") &&
+    !pathname.startsWith("/parked") &&
+    !pathname.startsWith("/floor-performance");
 
   return (
     <>
@@ -298,19 +307,16 @@ function UniversalSearchPalette({
     return m;
   }, [hits]);
 
-  if (!open) return null;
-
-  return createPortal(
-    <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label="Universal search">
-      <button
-        type="button"
-        className="absolute inset-0 bg-[rgba(5,12,8,0.72)] backdrop-blur-[2px]"
-        aria-label="Close search"
-        onClick={() => onOpenChange(false)}
-      />
+  return (
+    <LuxuryLayer
+      open={open}
+      onClose={() => onOpenChange(false)}
+      variant="search"
+      label="Universal search"
+      z={80}
+    >
       <div
         className={cn(
-          "relative mx-auto mt-[max(12vh,env(safe-area-inset-top))] w-[min(640px,calc(100vw-1.25rem))]",
           "rounded-2xl border border-brass/30 overflow-hidden",
           "shadow-[0_32px_80px_rgba(0,0,0,0.55)]",
           "bg-gradient-to-b from-[#152A1E] to-[#0D1A10]",
@@ -472,7 +478,6 @@ function UniversalSearchPalette({
           <span className="ml-auto hidden sm:inline">alts · ERPNext live</span>
         </div>
       </div>
-    </div>,
-    document.body,
+    </LuxuryLayer>
   );
 }

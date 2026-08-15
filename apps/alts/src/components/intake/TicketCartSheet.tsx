@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@ls/design/utils";
+import LuxuryLayer from "@alts/components/LuxuryLayer";
 
 function money(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -61,32 +62,18 @@ export default function TicketCartSheet({
   icon,
   showContinue = true,
 }: Props) {
-  if (!open) return null;
-
   const pieceCount = garments.length + sellItems.length;
   const ticketTotal = workTotal + itemsTotal;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Ticket cart"
-    >
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
-        aria-label="Close cart"
-        onClick={onClose}
-      />
+    <LuxuryLayer open={open} onClose={onClose} variant="sheet" label="Ticket cart" z={50}>
       <div
         className={cn(
-          "relative w-full md:max-w-lg md:mx-auto max-h-[86%] flex flex-col rounded-t-[22px] border border-brass/30 border-b-0",
+          "w-full md:max-w-lg md:mx-auto max-h-[86dvh] flex flex-col rounded-t-[22px] border border-brass/30 border-b-0",
           "shadow-[0_-20px_60px_rgba(0,0,0,0.5)]",
           "pb-[env(safe-area-inset-bottom,0px)]",
         )}
         style={{ background: "linear-gradient(180deg,#15291E,#0D1A10)" }}
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex-none flex justify-center pt-2.5 pb-1" aria-hidden>
           <i className="block w-10 h-1 rounded-full bg-brass/40" />
@@ -303,6 +290,6 @@ export default function TicketCartSheet({
           </button>
         </div>
       </div>
-    </div>
+    </LuxuryLayer>
   );
 }

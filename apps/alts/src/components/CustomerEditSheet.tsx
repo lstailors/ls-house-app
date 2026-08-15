@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "@ls/api-client";
 import { toast } from "sonner";
 import { cn } from "@ls/design/utils";
+import LuxuryLayer from "@alts/components/LuxuryLayer";
 
 export type PhoneRow = { key: string; number: string; label: string; isPrimary: boolean };
 export type EmailRow = { key: string; email: string; isPrimary: boolean };
@@ -32,6 +33,7 @@ export type PersonRow = {
 };
 
 type Props = {
+  open?: boolean;
   customerId: string;
   customerName?: string;
   onClose: () => void;
@@ -110,7 +112,7 @@ function SelectField({
   );
 }
 
-export function CustomerEditSheet({ customerId, customerName, onClose, onSaved }: Props) {
+export function CustomerEditSheet({ open = true, customerId, customerName, onClose, onSaved }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState(customerName || "");
@@ -121,6 +123,7 @@ export function CustomerEditSheet({ customerId, customerName, onClose, onSaved }
   const [people, setPeople] = useState<PersonRow[]>([]);
 
   useEffect(() => {
+    if (!open) return;
     let cancelled = false;
     setLoading(true);
     api
@@ -194,7 +197,7 @@ export function CustomerEditSheet({ customerId, customerName, onClose, onSaved }
     return () => {
       cancelled = true;
     };
-  }, [customerId, customerName]);
+  }, [customerId, customerName, open]);
 
   const save = async () => {
     setSaving(true);
@@ -286,12 +289,10 @@ export function CustomerEditSheet({ customerId, customerName, onClose, onSaved }
   const visiblePeople = people.filter((p) => !p._delete);
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true">
-      <button type="button" className="absolute inset-0 bg-[rgba(4,10,6,0.72)] backdrop-blur-[7px]" aria-label="Close" onClick={onClose} />
+    <LuxuryLayer open={open} onClose={onClose} variant="modal" label="Edit customer" z={70}>
       <div
-        className="relative w-full max-w-2xl max-h-[94vh] overflow-y-auto rounded-t-[26px] sm:rounded-[22px] border border-brass/30 shadow-[var(--sl)]"
+        className="w-full max-w-2xl max-h-[94dvh] overflow-y-auto rounded-t-[26px] sm:rounded-[22px] border border-brass/30 shadow-[var(--sl)]"
         style={{ background: "linear-gradient(170deg,#16301E,#0E1D12)" }}
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="w-[52px] h-1 rounded-full bg-brass/40 mx-auto mt-2 mb-1 sm:hidden" />
         <div className="flex items-start gap-3 px-5 pt-4 pb-3 border-b border-brass/15 sticky top-0 z-10"
@@ -637,7 +638,7 @@ export function CustomerEditSheet({ customerId, customerName, onClose, onSaved }
           </div>
         )}
       </div>
-    </div>
+    </LuxuryLayer>
   );
 }
 

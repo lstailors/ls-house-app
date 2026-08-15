@@ -1334,3 +1334,192 @@
   animation: sf-late-glow 2.8s ease-in-out infinite;
 }
 
+/* ── Luxury flow — one language for every slide / pop ─────────────────────── */
+:root {
+  --lux-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --lux-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --lux-ms: 420ms;
+}
+
+@keyframes lux-page-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+.alts-root {
+  animation: lux-page-in var(--lux-ms) var(--lux-ease) both;
+}
+
+.lux-page-enter {
+  animation: lux-page-in var(--lux-ms) var(--lux-ease) both;
+  min-height: 100%;
+}
+
+.lux-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.lux-layer.is-in {
+  pointer-events: auto;
+}
+
+.lux-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: rgba(5, 12, 8, 0.58);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  transition: opacity var(--lux-ms) var(--lux-ease);
+}
+
+.lux-layer.is-in .lux-scrim {
+  opacity: 1;
+}
+
+.lux-panel {
+  position: absolute;
+  will-change: transform, opacity;
+  transition:
+    transform var(--lux-ms) var(--lux-ease),
+    opacity var(--lux-ms) var(--lux-ease);
+}
+
+/* Bottom sheet — up, then back down */
+.lux-layer[data-variant="sheet"] {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.lux-layer[data-variant="sheet"] .lux-panel {
+  position: relative;
+  width: 100%;
+  transform: translateY(110%);
+}
+
+.lux-layer[data-variant="sheet"].is-in .lux-panel {
+  transform: translateY(0);
+}
+
+/* Right drawer — in from the right, back out the same way */
+.lux-layer[data-variant="drawer"] {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.lux-layer[data-variant="drawer"] .lux-panel {
+  position: relative;
+  height: 100%;
+  transform: translateX(100%);
+}
+
+.lux-layer[data-variant="drawer"].is-in .lux-panel {
+  transform: translateX(0);
+}
+
+/* Centered pop — rise and settle, then sink back */
+.lux-layer[data-variant="modal"] {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.lux-layer[data-variant="modal"] .lux-panel {
+  position: relative;
+  width: 100%;
+  transform: translateY(32px);
+  opacity: 0;
+}
+
+.lux-layer[data-variant="modal"].is-in .lux-panel {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+@media (min-width: 640px) {
+  .lux-layer[data-variant="modal"] {
+    align-items: center;
+    padding: 1.25rem;
+  }
+}
+
+/* Search — drops from the ceiling, lifts away */
+.lux-layer[data-variant="search"] {
+  display: block;
+}
+
+.lux-layer[data-variant="search"] .lux-panel {
+  position: relative;
+  margin: max(12vh, env(safe-area-inset-top)) auto 0;
+  width: min(640px, calc(100vw - 1.25rem));
+  transform: translateY(-18px);
+  opacity: 0;
+}
+
+.lux-layer[data-variant="search"].is-in .lux-panel {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.lux-espresso-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition:
+    grid-template-rows var(--lux-ms) var(--lux-ease),
+    opacity 280ms var(--lux-ease),
+    transform var(--lux-ms) var(--lux-ease);
+}
+
+.lux-espresso-wrap.is-in {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: none;
+}
+
+.lux-espresso-wrap > .lux-espresso-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Intake drawers — same luxury ease, still dock at the cart rail */
+.lux-intake-scrim,
+.lux-intake-sheet,
+.lux-intake-drawer {
+  transition-duration: var(--lux-ms);
+  transition-timing-function: var(--lux-ease);
+}
+
+/* Radix dialogs / sheets portaled to body */
+[data-radix-dialog-overlay] {
+  background: rgba(5, 12, 8, 0.58) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+[data-radix-dialog-content] {
+  transition-timing-function: var(--lux-ease) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alts-root,
+  .lux-page-enter {
+    animation: none;
+  }
+
+  .lux-scrim,
+  .lux-panel,
+  .lux-espresso-wrap,
+  .lux-intake-scrim,
+  .lux-intake-sheet,
+  .lux-intake-drawer {
+    transition: none !important;
+  }
+}
+
