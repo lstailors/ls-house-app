@@ -1,7 +1,7 @@
 /**
  * Address autocomplete for delivery intake.
  * Uses hub /api/places/autocomplete (Google if GOOGLE_MAPS_API_KEY set,
- * else Photon/OSM). Manual entry always remains available.
+ * else OpenStreetMap via Photon + Nominatim). Manual entry always remains available.
  */
 import { useEffect, useRef, useState } from "react";
 import { api } from "@ls/api-client";
