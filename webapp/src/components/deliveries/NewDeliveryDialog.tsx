@@ -23,6 +23,7 @@ import {
 } from "@ls/design/ui/select";
 import { useCreateDelivery, useDeliverySearchContext, type DeliverySearchResult } from "@/lib/queries";
 import { cn } from "@ls/design/utils";
+import AddressAutocomplete from "@/components/address/AddressAutocomplete";
 
 const schema = z.object({
   customerId: z.string().min(1, "Customer is required"),
@@ -77,6 +78,7 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
     register,
     handleSubmit,
     setValue,
+    watch,
     reset,
     formState: { errors },
   } = useForm<FormValues>({
@@ -289,7 +291,18 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
           {/* Address */}
           <div className="space-y-1.5">
             <Label className="text-[11px] uppercase tracking-widest text-[#8a7560]">Street Address</Label>
-            <Input placeholder="123 Main St" {...register("addressLine")} className="bg-[#162118]/60 border-[#c9a84c]/20 text-[#f5f0e8] placeholder:text-[#8a7560] focus:border-[#c9a84c]/50" />
+            <AddressAutocomplete
+              value={watch("addressLine") || ""}
+              onChange={(v) => setValue("addressLine", v, { shouldDirty: true })}
+              onPick={(pick) => {
+                setValue("addressLine", pick.street, { shouldDirty: true });
+                if (pick.city) setValue("city", pick.city, { shouldDirty: true });
+                if (pick.state) setValue("state", pick.state, { shouldDirty: true });
+                if (pick.zip) setValue("zip", pick.zip, { shouldDirty: true });
+              }}
+              placeholder="Start typing a street…"
+              inputClassName="flex h-10 w-full rounded-md bg-[#162118]/60 border border-[#c9a84c]/20 px-3 py-2 text-sm text-[#f5f0e8] placeholder:text-[#8a7560] focus:outline-none focus:border-[#c9a84c]/50"
+            />
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1.5">

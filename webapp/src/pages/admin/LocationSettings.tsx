@@ -10,6 +10,7 @@ import { api } from "@ls/api-client"
 import { GlassCard } from "@ls/design"
 import { Button } from "@ls/design/ui/button"
 import { cn } from "@ls/design/utils"
+import AddressAutocomplete from "@/components/address/AddressAutocomplete"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -271,7 +272,18 @@ function AddressTab({ settings, onSave, saving }: { settings: LocationSettings; 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="sm:col-span-2">
           <Field label="Street Address">
-            <input value={address} onChange={e => setAddress(e.target.value)} className={INPUT} placeholder="123 Fifth Ave" />
+            <AddressAutocomplete
+              value={address}
+              onChange={setAddress}
+              onPick={(pick) => {
+                setAddress(pick.street)
+                if (pick.city) setCity(pick.city)
+                if (pick.state) setState(pick.state)
+                if (pick.zip) setPostalCode(pick.zip)
+              }}
+              placeholder="Start typing a street…"
+              inputClassName={INPUT}
+            />
           </Field>
         </div>
         <Field label="City">

@@ -11,6 +11,7 @@ import { ChargeCardOnFileButton } from "@alts/components/payments/ChargeCardOnFi
 import { ChargeTerminalButton } from "@alts/components/payments/ChargeTerminalButton";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import AddressAutocomplete from "@alts/components/intake/AddressAutocomplete";
 
 type Ticket = {
   name: string;
@@ -484,11 +485,17 @@ export default function Dispatch() {
                   <div className="p-4 grid gap-3 sm:grid-cols-[2fr_1fr_1fr]">
                     <label className="block sm:col-span-3">
                       <span className="caps mb-1.5 block">Street</span>
-                      <input
+                      <AddressAutocomplete
                         value={addr1}
-                        onChange={(e) => setAddr1(e.target.value)}
-                        className="w-full h-12 rounded-xl bg-black/35 border border-brass/25 px-3 text-cream outline-none focus:border-brass"
-                        placeholder="Street + apt"
+                        onChange={setAddr1}
+                        onPick={(pick) => {
+                          setAddr1(pick.street);
+                          if (pick.city) setCity(pick.city);
+                          if (pick.state) setState(pick.state);
+                          if (pick.zip) setZip(pick.zip);
+                        }}
+                        placeholder="Start typing a street…"
+                        inputClassName="w-full h-12 rounded-xl bg-black/35 border border-brass/25 px-3 text-cream outline-none focus:border-brass placeholder:text-cream-dim"
                       />
                     </label>
                     <label className="block">

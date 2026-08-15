@@ -36,6 +36,7 @@ import IntakeConfirm, {
   type IntakeConfirmResult,
 } from "@alts/components/intake/IntakeConfirm";
 import { enqueueIntakeTicket } from "@alts/lib/offlineQueue";
+import AddressAutocomplete from "@alts/components/intake/AddressAutocomplete";
 
 const GARMENT_TYPES = [
   "Jacket",
@@ -1713,11 +1714,17 @@ export default function IntakeStepped() {
                       <div className="caps mb-2 text-brass-light">Delivery address</div>
                       <label className="block mb-3">
                         <span className="caps mb-1.5 block">Street line 1</span>
-                        <input
+                        <AddressAutocomplete
                           value={newLine1}
-                          onChange={(e) => setNewLine1(e.target.value)}
-                          className="w-full h-[52px] rounded-xl bg-black/35 border border-brass/25 px-3.5 text-cream outline-none focus:border-brass"
-                          placeholder="123 E 61st St"
+                          onChange={setNewLine1}
+                          onPick={(pick) => {
+                            setNewLine1(pick.street);
+                            if (pick.city) setNewCity(pick.city);
+                            if (pick.state) setNewState(pick.state);
+                            if (pick.zip) setNewZip(pick.zip);
+                          }}
+                          placeholder="Start typing a street…"
+                          inputClassName="w-full h-[52px] rounded-xl bg-black/35 border border-brass/25 px-3.5 text-cream outline-none focus:border-brass placeholder:text-cream-dim"
                         />
                       </label>
                       <label className="block mb-3">

@@ -9,6 +9,7 @@ import { Button } from "@ls/design/ui/button";
 import { useLocations, useCreateLocation, useUpdateLocation } from "@/lib/queries";
 import { toast } from "sonner";
 import type { Location } from "@ls/types";
+import AddressAutocomplete from "@/components/address/AddressAutocomplete";
 
 const INPUT = "w-full text-sm bg-forest-raised/50 border border-brass/20 rounded-xl px-3 py-2.5 text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/50";
 const LABEL = "ui-label block mb-1";
@@ -83,7 +84,18 @@ function LocationFormFields({ form, set, isNew }: { form: LocationForm; set: (k:
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <label className={LABEL}>Street Address</label>
-            <input {...f("address")} className={INPUT} placeholder="123 Fifth Ave" />
+            <AddressAutocomplete
+              value={form.address}
+              onChange={(v) => set("address", v)}
+              onPick={(pick) => {
+                set("address", pick.street);
+                if (pick.city) set("city", pick.city);
+                if (pick.state) set("state", pick.state);
+                if (pick.zip) set("postalCode", pick.zip);
+              }}
+              placeholder="Start typing a street…"
+              inputClassName={INPUT}
+            />
           </div>
           <div>
             <label className={LABEL}>City</label>

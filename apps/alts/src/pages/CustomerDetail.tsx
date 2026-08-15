@@ -13,6 +13,7 @@ import { Button } from "@ls/design/ui/button";
 import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
 import { CustomerEditSheet } from "@alts/components/CustomerEditSheet";
+import AddressAutocomplete from "@alts/components/intake/AddressAutocomplete";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface AddressRow {
@@ -832,7 +833,18 @@ function NewCustomerForm() {
         </div>
         <div>
           <label className={LABEL}>Address</label>
-          <input className={INPUT} value={line1} onChange={(e) => setLine1(e.target.value)} placeholder="Street" />
+          <AddressAutocomplete
+            value={line1}
+            onChange={setLine1}
+            onPick={(pick) => {
+              setLine1(pick.street);
+              if (pick.city) setCity(pick.city);
+              if (pick.state) setState(pick.state);
+              if (pick.zip) setZip(pick.zip);
+            }}
+            placeholder="Start typing a street…"
+            inputClassName={INPUT}
+          />
         </div>
         <input className={INPUT} value={line2} onChange={(e) => setLine2(e.target.value)} placeholder="Apt / suite" />
         <div className="grid grid-cols-3 gap-2">
@@ -1201,7 +1213,21 @@ export default function CustomerDetail() {
         >
           {editing ? (
             <>
-              <Field label="Street" value={c.address} editing={editing} field="address" draft={draft} onChange={onChange} />
+              <div>
+                <label className={LABEL}>Street</label>
+                <AddressAutocomplete
+                  value={draft.address ?? ""}
+                  onChange={(v) => onChange("address", v)}
+                  onPick={(pick) => {
+                    onChange("address", pick.street);
+                    if (pick.city) onChange("city", pick.city);
+                    if (pick.state) onChange("state", pick.state);
+                    if (pick.zip) onChange("zip_code", pick.zip);
+                  }}
+                  placeholder="Start typing a street…"
+                  inputClassName={INPUT}
+                />
+              </div>
               <div className="grid grid-cols-3 gap-3">
                 <Field label="City" value={c.city} editing={editing} field="city" draft={draft} onChange={onChange} />
                 <Field label="State" value={c.state} editing={editing} field="state" draft={draft} onChange={onChange} />

@@ -3,6 +3,7 @@ import { api } from "@ls/api-client";
 import { toast } from "sonner";
 import { cn } from "@ls/design/utils";
 import LuxuryLayer from "@alts/components/LuxuryLayer";
+import AddressAutocomplete from "@alts/components/intake/AddressAutocomplete";
 
 export type PhoneRow = { key: string; number: string; label: string; isPrimary: boolean };
 export type EmailRow = { key: string; email: string; isPrimary: boolean };
@@ -471,12 +472,31 @@ export function CustomerEditSheet({ open = true, customerId, customerName, onClo
                         />
                       </div>
                     </div>
-                    <Field
-                      label="Street line 1"
-                      value={a.line1}
-                      onChange={(v) => setAddresses((rows) => rows.map((r, j) => (j === i ? { ...r, line1: v } : r)))}
-                      placeholder="123 E 61st St"
-                    />
+                    <label className="block">
+                      <span className="caps block mb-1.5">Street line 1</span>
+                      <AddressAutocomplete
+                        value={a.line1}
+                        onChange={(v) => setAddresses((rows) => rows.map((r, j) => (j === i ? { ...r, line1: v } : r)))}
+                        onPick={(pick) =>
+                          setAddresses((rows) =>
+                            rows.map((r, j) =>
+                              j === i
+                                ? {
+                                    ...r,
+                                    line1: pick.street,
+                                    city: pick.city || r.city,
+                                    state: pick.state || r.state,
+                                    zip: pick.zip || r.zip,
+                                    country: r.country || "United States",
+                                  }
+                                : r,
+                            ),
+                          )
+                        }
+                        placeholder="Start typing a street…"
+                        inputClassName="w-full h-11 rounded-xl bg-black/35 border border-brass/25 px-3 text-[14px] text-cream outline-none focus:border-brass placeholder:text-[var(--cd)]"
+                      />
+                    </label>
                     <Field
                       label="Street line 2"
                       value={a.line2}

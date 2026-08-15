@@ -7,6 +7,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useMe } from "@ls/auth";
 import { Loader2, ArrowLeft, Plus, Trash2, Save, MapPin, Phone, Mail } from "lucide-react";
 import { toast } from "sonner";
+import AddressAutocomplete from "@/components/address/AddressAutocomplete";
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || "";
 
@@ -431,16 +432,30 @@ export default function CustomerProfile() {
                       <Trash2 className="h-3.5 w-3.5" /> Remove
                     </button>
                   </div>
-                  <input
-                    className={field}
-                    placeholder="Street address"
+                  <AddressAutocomplete
                     value={a.line1 || ""}
-                    onChange={(e) => {
-                      const v = e.target.value;
+                    onChange={(v) =>
                       setAddresses((rows) =>
                         rows.map((r, j) => (j === i ? { ...r, line1: v } : r)),
-                      );
-                    }}
+                      )
+                    }
+                    onPick={(pick) =>
+                      setAddresses((rows) =>
+                        rows.map((r, j) =>
+                          j === i
+                            ? {
+                                ...r,
+                                line1: pick.street,
+                                city: pick.city || r.city,
+                                state: pick.state || r.state,
+                                zip: pick.zip || r.zip,
+                              }
+                            : r,
+                        ),
+                      )
+                    }
+                    placeholder="Start typing a street…"
+                    inputClassName={field}
                   />
                   <input
                     className={field}
