@@ -50,6 +50,15 @@ export default function AltsSettings() {
     onError: (e: Error) => toast.error(e.message || "Could not save"),
   });
 
+  const test = useMutation({
+    mutationFn: () => api.post<{ ok: boolean; message: string }>("/api/qc/settings/test", {}),
+    onSuccess: (data) => {
+      if (data.ok) toast.success(data.message || "DocuSeal is connected");
+      else toast.error(data.message || "DocuSeal did not answer");
+    },
+    onError: (e: Error) => toast.error(e.message || "DocuSeal did not answer"),
+  });
+
   const logout = async () => {
     clearAltsPrivateStorage();
     qc.clear();
@@ -109,6 +118,10 @@ export default function AltsSettings() {
             {settings.data?.apiKeySet && (
               <p className="font-mono text-xs text-brass-light">Saved · {settings.data.apiKeyMasked}</p>
             )}
+            <p className="text-xs text-cream-dim">
+              After save, tap Test. On a QC ticket use Sign with DocuSeal — the order PDF opens for signature.
+              Point DocuSeal webhooks at /api/webhooks/docuseal so the ticket marks Signed when they finish.
+            </p>
             <label className="block">
               <span className="caps mb-1.5 block">Host</span>
               <input
@@ -129,14 +142,24 @@ export default function AltsSettings() {
                 className="w-full h-[52px] rounded-xl bg-black/35 border border-brass/25 px-3.5 text-[15px] text-cream outline-none focus:border-brass"
               />
             </label>
-            <button
-              type="button"
-              disabled={save.isPending || (!apiKey.trim() && !url.trim())}
-              onClick={() => save.mutate()}
-              className="btn-brass h-12 w-full text-xs disabled:opacity-50"
-            >
-              {save.isPending ? "Saving…" : "Save DocuSeal"}
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={save.isPending || (!apiKey.trim() && !url.trim())}
+                onClick={() => save.mutate()}
+                className="btn-brass h-12 w-full text-xs disabled:opacity-50"
+              >
+                {save.isPending ? "Saving…" : "Save DocuSeal"}
+              </button>
+              <button
+                type="button"
+                disabled={test.isPending || (!settings.data?.apiKeySet && !apiKey.trim())}
+                onClick={() => test.mutate()}
+                className="h-12 rounded-xl border border-brass/35 text-[11px] font-bold uppercase tracking-widest disabled:opacity-50"
+              >
+                {test.isPending ? "Testing…" : "Test key"}
+              </button>
+            </div>
           </div>
         )}
 
