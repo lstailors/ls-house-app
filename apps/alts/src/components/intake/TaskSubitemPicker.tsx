@@ -15,7 +15,6 @@ import {
 import { ChevronLeft, Folder, GripVertical, Loader2, Search, Star } from "lucide-react";
 import { cn } from "@ls/design/utils";
 import { GarmentZoneIcon } from "@alts/components/intake/GarmentZoneIcon";
-import { formatMoney } from "@alts/lib/money";
 import {
   loadFavoriteIds,
   normalizeGarmentType,
@@ -48,8 +47,12 @@ export type HierarchyPreset = {
   sort_order?: number;
 };
 
-function money(n?: number | string | null) {
-  return formatMoney(n);
+function money(n: number) {
+  return n.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
 }
 
 export function labelOf(p: HierarchyPreset) {
