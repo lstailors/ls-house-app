@@ -199,11 +199,11 @@ test("Hide $ covers sales figures so a client cannot read them", async ({ page }
   await mockApis(page, { rev: 1200, overdue: 7 });
   await page.goto("/");
   await expect(page.locator('[data-testid="rev-today"]')).toContainText("$1.2k");
-  await expect(page.getByTestId("cover-money")).toHaveText("Hide $");
+  await expect(page.getByTestId("cover-money")).toHaveText("Hide numbers");
 
   await page.getByTestId("cover-money").click();
 
-  await expect(page.getByTestId("cover-money")).toHaveText("Show $");
+  await expect(page.getByTestId("cover-money")).toHaveText("Show numbers");
   await expect(page.locator('[data-testid="rev-today"]')).toHaveCount(0);
   await expect(page.locator('[data-band="money"]')).toContainText("Sales numbers covered");
   await expect(page.locator("body")).not.toContainText("$1.2k");

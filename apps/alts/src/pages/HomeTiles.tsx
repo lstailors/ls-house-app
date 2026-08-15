@@ -18,6 +18,7 @@ import { useLiveMetrics } from "@alts/lib/useLiveMetrics";
 import { NeedsYouNow } from "@alts/components/live/NeedsYouNow";
 import { TodayRail } from "@alts/components/live/TodayRail";
 import { MoneyStrip } from "@alts/components/live/MoneyStrip";
+import { CoverMoneyButton } from "@alts/components/live/CoverMoneyButton";
 import { ActivityTicker } from "@alts/components/live/ActivityTicker";
 import { TickNumber } from "@alts/components/live/TickNumber";
 import { EMPTY_LIVE_HOME } from "@alts/lib/liveDashboard";
@@ -1128,21 +1129,7 @@ export default function HomeTiles() {
             "—"
           )}
         </div>
-        <button
-          type="button"
-          onClick={toggleCoverMoney}
-          aria-pressed={coverMoney}
-          data-testid="cover-money"
-          title={coverMoney ? "Show sales numbers" : "Hide sales numbers from customers"}
-          className={cn(
-            "h-8 px-2.5 rounded-full border text-[10.5px] font-bold tracking-[0.08em] uppercase shrink-0 min-h-0",
-            coverMoney
-              ? "bg-brass text-forest-deep border-brass"
-              : "bg-forest-raised border-brass/32 text-brass-light",
-          )}
-        >
-          {coverMoney ? "Show $" : "Hide $"}
-        </button>
+        <CoverMoneyButton on={coverMoney} onToggle={toggleCoverMoney} />
         {!kiosk && (
         <button
           type="button"
@@ -1202,6 +1189,16 @@ export default function HomeTiles() {
           <b className="display tabular-nums">{strip?.deliveredToday ?? "—"}</b>
           <span>delivered today</span>
         </Link>
+        <button
+          type="button"
+          onClick={toggleCoverMoney}
+          className={cn("seg pill", coverMoney ? "gr" : "am")}
+          data-testid="cover-money-strip"
+          title={coverMoney ? "Show sales numbers" : "Hide sales numbers from customers"}
+        >
+          <b className="display">{coverMoney ? "SHOW" : "HIDE"}</b>
+          <span>numbers</span>
+        </button>
         <Link
           to={
             c?.oldestUnpaidInvoiceId
@@ -1310,10 +1307,17 @@ export default function HomeTiles() {
           <TodayRail rail={board.todayRail} pulse={pulse.comingIn || pulse.mustLeave || pulse.ready} />
           {coverMoney ? (
             <section className="live-band live-money is-covered" data-band="money" aria-label="Sales numbers covered">
-              <p className="live-money-covered">Sales numbers covered · tap Show $ up top when the client leaves</p>
+              <div className="live-money-head">
+                <p className="live-money-covered">Sales numbers covered</p>
+                <CoverMoneyButton on={coverMoney} onToggle={toggleCoverMoney} size="band" />
+              </div>
             </section>
           ) : (
-            <MoneyStrip money={board.money} pulse={pulse.revToday || pulse.ar} />
+            <MoneyStrip
+              money={board.money}
+              pulse={pulse.revToday || pulse.ar}
+              coverControl={<CoverMoneyButton on={coverMoney} onToggle={toggleCoverMoney} size="band" />}
+            />
           )}
         </>
       )}

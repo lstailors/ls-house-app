@@ -1337,6 +1337,15 @@ body {
 .live-chip b { color: var(--cr); font-size: 15px; margin: 0 2px; }
 .live-chip.is-ok { color: var(--em); }
 
+.live-money-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.live-money-head .live-band-label { margin-bottom: 0; }
+
 .live-money-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

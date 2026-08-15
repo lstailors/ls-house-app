@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { cn } from "@ls/design/utils";
 import type { LiveAging, LiveHome } from "@ls/types";
@@ -48,15 +49,21 @@ function AgingBar({ aging, total }: { aging: LiveAging; total: number }) {
 export function MoneyStrip({
   money,
   pulse,
+  coverControl,
 }: {
   money: LiveHome["money"];
   pulse?: boolean;
+  coverControl?: ReactNode;
 }) {
   const weekMax = Math.max(1, money.weekRev, money.lastWeekRev);
   const pipeMax = Math.max(1, money.pipeline.nyc + money.pipeline.hou);
   const delta = money.weekDeltaPct;
   return (
     <section className={cn("live-band live-money", pulse && "is-pulse")} data-band="money" aria-label="Money">
+      <div className="live-money-head">
+        <div className="live-band-label">Money</div>
+        {coverControl}
+      </div>
       <div className="live-money-grid">
         <div className="live-money-tile" data-testid="rev-today">
           <span className="live-money-k">Rev today</span>
