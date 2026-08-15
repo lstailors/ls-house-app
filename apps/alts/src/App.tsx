@@ -22,6 +22,7 @@ import Lookup from "@alts/pages/Lookup";
 import TicketPhotos from "@alts/pages/TicketPhotos";
 import Dispatch from "@alts/pages/Dispatch";
 import QuoteComposer from "@alts/pages/QuoteComposer";
+import AppointmentsGlass from "@alts/pages/AppointmentsGlass";
 import TicketDetail from "@alts/pages/intake/TicketDetail";
 import { startOfflineQueueWatcher } from "@alts/lib/offlineQueue";
 import { toast } from "sonner";
@@ -148,6 +149,14 @@ export default function App() {
                 element={
                   <RoleGuard allow={[...FOH]}>
                     <OrdersGlass />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/appointments"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <AppointmentsGlass />
                   </RoleGuard>
                 }
               />

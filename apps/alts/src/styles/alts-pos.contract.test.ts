@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 const css = readFileSync(new URL("./alts-pos.css", import.meta.url), "utf8");
 const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
 
 describe("Alts touch target contract", () => {
   test("the shared login is inside the Alts interaction-floor scope", () => {
@@ -37,5 +38,22 @@ describe("Alts touch target contract", () => {
     expect(css).toMatch(
       /\.alts-root label:has\(\s*input:where\(\[type="checkbox"\], \[type="radio"\], \[type="file"\]\)\s*\)\s*\{[^}]*min-height:\s*44px;/s,
     );
+  });
+});
+
+describe("iPhone scale contract", () => {
+  test("the document asks Safari to fit the device width", () => {
+    expect(html).toContain('width=device-width');
+    expect(html).toContain("viewport-fit=cover");
+  });
+
+  test("the page does not leak sideways or inflate text", () => {
+    expect(css).toContain("-webkit-text-size-adjust: 100%");
+    expect(css).toContain("overflow-x: hidden");
+  });
+
+  test("appointments live on Alts, not a jump to the house app", () => {
+    expect(app).toContain("AppointmentsGlass");
+    expect(app).toContain('path="/appointments"');
   });
 });

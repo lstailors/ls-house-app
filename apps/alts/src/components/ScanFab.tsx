@@ -29,7 +29,7 @@ export default function ScanFab() {
       to="/scanner"
       aria-label="Open scanner"
       className={cn(
-        "fixed z-[60] flex items-center justify-center",
+        "scan-fab fixed z-[60] flex items-center justify-center",
         "right-[max(1rem,env(safe-area-inset-right))]",
         "bottom-[max(1.25rem,env(safe-area-inset-bottom))]",
         "h-14 w-14 min-h-[56px] min-w-[56px] rounded-full",

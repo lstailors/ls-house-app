@@ -990,9 +990,9 @@ export default function HomeTiles() {
     },
     {
       key: "appointments",
-      href: "https://app.lstailors.com/appointments",
+      to: "/appointments",
       title: "Appointments",
-      sub: conflictCount > 0 ? `${conflictCount} conflict${conflictCount > 1 ? "s" : ""} · 7 days` : "Schedule · calendar",
+      sub: conflictCount > 0 ? `${conflictCount} conflict${conflictCount > 1 ? "s" : ""} · 7 days` : "Today · week · house",
       badge: conflictCount > 0 ? conflictCount : null,
       badgeKind: "alert" as const,
       live: apptLive.text,

@@ -1,3 +1,23 @@
+/* iPhone / iPad Safari — scale to the device, never leak sideways */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: #163524;
+}
+
 /* Shared Liquid Glass tokens for mock-faithful alts FOH screens */
 .alts-root {
   --fd: #163524;
@@ -429,7 +449,25 @@
 @media (max-width: 719.98px) {
   .alts-root {
     overflow-x: hidden;
-    max-width: 100vw;
+    max-width: 100%;
+    width: 100%;
+  }
+
+  body:has(.scan-fab) .alts-root {
+    padding-bottom: max(5.75rem, calc(env(safe-area-inset-bottom, 0px) + 4.75rem));
+  }
+
+  .lux-layer[data-variant="sheet"] .lux-panel,
+  .lux-layer[data-variant="modal"] .lux-panel {
+    max-width: 100%;
+  }
+
+  .alts-root header {
+    flex-wrap: wrap;
+  }
+
+  .alts-root .display.text-\[28px\] {
+    font-size: 24px;
   }
 
   /* Safari focus zoom lock */
