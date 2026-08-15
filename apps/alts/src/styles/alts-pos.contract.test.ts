@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const css = readFileSync(new URL("./alts-pos.css", import.meta.url), "utf8");
 const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
