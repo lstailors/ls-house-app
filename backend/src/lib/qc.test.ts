@@ -22,7 +22,7 @@ import {
   qcResultOf,
   tabToQcResult,
 } from "./qc";
-import { maskKey, mergeDocusealSettings } from "./qc-settings";
+import { maskKey, mergeDocusealSettings, parseDocusealSettingsFile } from "./qc-settings";
 
 describe("MTM QC catalog", () => {
   test("the live status list has Quality Control after Received at Store", () => {
@@ -211,6 +211,13 @@ describe("QC list helpers", () => {
     expect(merged.apiKey).toBe("erp-key");
     expect(merged.url).toBe("https://from-global.example");
   });
+
+  test("DocuSeal settings file parses a saved key", () => {
+    expect(parseDocusealSettingsFile('{"apiKey":"abcd1234efgh","url":"https://docuseal.lstailors.com"}')?.apiKey).toBe(
+      "abcd1234efgh",
+    );
+    expect(parseDocusealSettingsFile("plain-key-value")?.apiKey).toBe("plain-key-value");
+  });
 });
 
 describe("QC routes are mounted", () => {
@@ -245,10 +252,12 @@ describe("QC routes are mounted", () => {
     expect(src).toContain("saveQcInspection");
     expect(src).toContain("pausedFieldsOf");
     const settings = readFileSync(new URL("./qc-settings.ts", import.meta.url), "utf8");
+    expect(settings).toContain("persistErpFile");
+    expect(settings).toContain("lsh-docuseal-settings.json");
     expect(settings).toContain("persistGlobals");
     expect(settings).toContain("set_global_default");
     expect(settings).toContain("frappe.client.set_value");
-    expect(settings.indexOf("await persistGlobals(next)")).toBeGreaterThan(settings.indexOf("await persistErpDoc"));
+    expect(settings.indexOf("await persistErpFile(next)")).toBeLessThan(settings.indexOf("await persistErpDoc"));
     expect(src).toContain('doctype === "Sales Order" && key === "status"');
   });
 

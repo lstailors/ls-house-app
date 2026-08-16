@@ -12,6 +12,7 @@ import LuxuryLayer from "@alts/components/LuxuryLayer";
 import { ConfirmDialog } from "@alts/components/ConfirmDialog";
 import StatusBadge from "@alts/components/StatusBadge";
 import { clientInitials } from "@alts/lib/ticketDisplay";
+import { recalledDocusealKey } from "@alts/lib/docusealKey";
 import { blankQcChecks, isQcInspectionName, mergeQcChecks } from "@alts/lib/qcChecks";
 import "@alts/styles/alts-pos.css";
 
@@ -183,7 +184,10 @@ export default function QcInspection() {
   });
 
   const startDocuseal = useMutation({
-    mutationFn: () => api.post<{ embedSrc?: string | null }>(`/api/qc/${encodeURIComponent(inspectionId!)}/sign`, {}),
+    mutationFn: () =>
+      api.post<{ embedSrc?: string | null }>(`/api/qc/${encodeURIComponent(inspectionId!)}/sign`, {
+        apiKey: recalledDocusealKey() || undefined,
+      }),
     onSuccess: (res) => {
       if (res.embedSrc) {
         setEmbedSrc(res.embedSrc);
@@ -725,7 +729,7 @@ export default function QcInspection() {
           style={{ background: "linear-gradient(180deg,#152A1E,#0D1A10)" }}
         >
           <div className="flex items-center gap-2 px-2 pb-2">
-            <div className="display text-xl flex-1">Sign the order PDF</div>
+            <div className="display text-xl flex-1">Sign in DocuSeal</div>
             <button
               type="button"
               onClick={() => {
@@ -738,11 +742,18 @@ export default function QcInspection() {
               Done
             </button>
           </div>
-          <p className="px-2 text-sm text-cream-dim mb-2">
-            Sign here, then close. This is your QC template in DocuSeal — then Pass on this page.
+          <p className="px-2 text-sm text-cream-dim mb-3">
+            DocuSeal will not open inside this page. Tap Open DocuSeal, sign there, then Done. The signed copy files back on this ticket.
           </p>
           {embedSrc ? (
-            <iframe title="DocuSeal" src={embedSrc} className="qc-docuseal-frame" />
+            <a
+              href={embedSrc}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-brass h-14 w-full text-xs inline-flex items-center justify-center"
+            >
+              Open DocuSeal
+            </a>
           ) : (
             <div className="sf-empty">Opening signing page…</div>
           )}

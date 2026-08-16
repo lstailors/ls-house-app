@@ -1,4 +1,5 @@
 import { clearClientSession, clearStoredToken } from "@ls/auth/authClient";
+import { forgetDocusealKey } from "./docusealKey";
 import { clearIntakeDraft } from "./intakeDraft";
 import { clearSoCart } from "./soCart";
 
@@ -11,6 +12,7 @@ export function clearAltsPrivateStorage(): void {
   clearStoredToken();
   clearIntakeDraft();
   clearSoCart();
+  forgetDocusealKey();
 
   try {
     const notificationKeys: string[] = [];
