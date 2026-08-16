@@ -35,6 +35,17 @@ export function isPausedMtmStatus(value: unknown): boolean {
   return PAUSED_STATUS.test(raw);
 }
 
+/** True when a status-like field on this doc is still Pause / Hold. */
+export function shouldLiftPaused(doc: Record<string, unknown> | null | undefined): boolean {
+  if (!doc) return false;
+  for (const [key, value] of Object.entries(doc)) {
+    if (value == null || typeof value === "object") continue;
+    if (!/status|state/i.test(key)) continue;
+    if (isPausedMtmStatus(value)) return true;
+  }
+  return false;
+}
+
 /** Lift a paused make onto the live list so ERPNext will accept a save. */
 export function liveStatusFromPaused(value: unknown, fallback: MtmStatus = "Quality Control"): MtmStatus {
   const raw = String(value ?? "").trim();

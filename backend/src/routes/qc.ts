@@ -15,6 +15,7 @@ import {
   storeArrivalToDocFields,
   dateReceivedLabel,
   isPausedMtmStatus,
+  shouldLiftPaused,
   liveStatusFromPaused,
   type QcInspectionMeta,
   dedupeByInspectionName,
@@ -90,6 +91,22 @@ const QC_FIELDS = [
   "signature_url",
   "docuseal_submission_id",
   "docuseal_embed_src",
+  "creation",
+  "modified",
+];
+
+/** List cards only — skip checklist / DocuSeal columns so ERPNext answers faster. */
+const QC_LIST_FIELDS = [
+  "name",
+  "sales_order",
+  "custom_order",
+  "customer",
+  "customer_name",
+  "qc_result",
+  "result",
+  "date_received",
+  "garment_summary",
+  "fulfillment_mode",
   "creation",
   "modified",
 ];
@@ -188,7 +205,8 @@ async function writeStatusPatch(doctype: string, name: string, patch: Record<str
   }
 }
 
-async function liftPausedStatuses(insp: Record<string, unknown>) {
+async function liftPausedStatuses(insp: Record<string, unknown>, force = false) {
+  if (!force && !shouldLiftPaused(insp)) return;
   const names = [
     insp.custom_order,
     insp.mtmpro_order,
@@ -213,12 +231,12 @@ async function saveQcInspection(
   update: Record<string, unknown>,
   existing: Record<string, unknown>,
 ) {
-  await liftPausedStatuses(existing);
+  if (shouldLiftPaused(existing)) await liftPausedStatuses(existing);
   try {
     return await updateDroppingFields(name, update);
   } catch (e: any) {
     if (!isPauseHoldError(e?.message)) throw e;
-    await liftPausedStatuses(existing);
+    await liftPausedStatuses(existing, true);
     const retry = { ...update };
     retry.order_status = liveStatusFromPaused(existing.order_status);
     if (isPausedMtmStatus(existing.status)) retry.status = liveStatusFromPaused(existing.status);
@@ -243,7 +261,7 @@ async function loadQcMeta(): Promise<QcInspectionMeta> {
 
 async function listInspections() {
   return erpList<any>(DT_QC, {
-    fields: QC_FIELDS,
+    fields: QC_LIST_FIELDS,
     limit: 200,
     order_by: "modified desc",
   }).catch(() => [] as any[]);
@@ -255,7 +273,7 @@ async function listInspectionsByResult(result: "Pending" | "Pass" | "Fail") {
     try {
       return await erpList<any>(DT_QC, {
         filters: [[field, "=", result]],
-        fields: QC_FIELDS,
+        fields: QC_LIST_FIELDS,
         limit: 200,
         order_by: "date_received desc",
         throwOnError: true,
@@ -750,16 +768,16 @@ qcRouter.get("/rates", async (c) => {
   const gate = await requireFloor(c);
   if (gate.res) return gate.res;
   try {
-    const inspections = (await listInspections()).filter(
-      (r) => isQcInspectionName(r.name) && !isSalesOrderName(r.name),
-    );
-    const decided = inspections.filter((r) => {
-      const q = qcResultOf(r);
-      return q === "Pass" || q === "Fail";
-    });
-    const passed = decided.filter((r) => qcResultOf(r) === "Pass");
-    const failed = decided.filter((r) => qcResultOf(r) === "Fail");
-    const pending = inspections.filter((r) => qcResultOf(r) === "Pending");
+    const [passedRows, failedRows, pendingRows] = await Promise.all([
+      listInspectionsByResult("Pass"),
+      listInspectionsByResult("Fail"),
+      listInspectionsByResult("Pending"),
+    ]);
+    const keep = (r: any) => isQcInspectionName(r.name) && !isSalesOrderName(r.name);
+    const passed = passedRows.filter(keep);
+    const failed = failedRows.filter(keep);
+    const pending = pendingRows.filter(keep);
+    const decided = [...passed, ...failed];
     const weekAgo = Date.now() - 7 * 86_400_000;
     const passedThisWeek = passed.filter((r) => {
       const t = Date.parse(r.modified || r.creation || "");
@@ -825,7 +843,7 @@ qcRouter.patch("/orders/:name/status", async (c) => {
   }
 });
 
-// GET /api/qc?tab=waiting|open|passed|failed
+// GET /api/qc?tab=waiting|passed|failed
 qcRouter.get("/", async (c) => {
   const gate = await requireFloor(c);
   if (gate.res) return gate.res;
@@ -913,7 +931,7 @@ qcRouter.get("/:id", async (c) => {
   const id = decodeURIComponent(c.req.param("id"));
 
   try {
-    const insp = await raceMs(resolveInspection(id), 8000, null);
+    const insp = await raceMs(resolveInspection(id), 4000, null);
     if (!insp?.name) {
       if (isQcInspectionName(id)) {
         return c.json({ data: stubInspection(id) });
@@ -959,23 +977,23 @@ qcRouter.get("/:id", async (c) => {
             ["attached_to_name", "=", insp.name],
           ],
           fields: ["name", "file_url", "file_name", "creation"],
-          limit: 80,
+          limit: 40,
           order_by: "creation desc",
         }).catch(() => []),
-        2500,
+        800,
         [] as any[],
       ),
       insp.custom_order
-        ? raceMs(erpGet<any>(DT_CUSTOM, insp.custom_order).catch(() => null), 2500, null)
+        ? raceMs(erpGet<any>(DT_CUSTOM, insp.custom_order).catch(() => null), 1500, null)
         : Promise.resolve(null),
       insp.custom_order || insp.mtmpro_order
         ? raceMs(
             erpGet<any>(DT.MTM_PRO_ORDER, insp.custom_order || insp.mtmpro_order).catch(() => null),
-            2500,
+            1500,
             null,
           )
         : Promise.resolve(null),
-      raceMs(docusealEnabled().catch(() => false), 1500, false),
+      raceMs(docusealEnabled().catch(() => false), 400, true),
     ]);
 
     const photos = files
@@ -1059,7 +1077,6 @@ qcRouter.patch("/:id", async (c) => {
   try {
     const existing = await resolveInspection(id);
     if (!existing?.name) return c.json({ error: { message: "Not found" } }, 404);
-    await liftPausedStatuses(existing);
     const body = await c.req.json().catch(() => ({}));
 
     const want = body.qc_result || body.result;
@@ -1096,15 +1113,18 @@ qcRouter.patch("/:id", async (c) => {
       delete prelude.qc_result;
       delete prelude.result;
       if (Object.keys(prelude).length) {
-        await saveQcInspection(existing.name, prelude, existing);
-        for (const [field, value] of Object.entries(prelude)) {
-          if (Array.isArray(value) || value == null || typeof value === "object") continue;
-          await erpRunMethod("frappe.client.set_value", {
-            doctype: DT_QC,
-            name: existing.name,
-            fieldname: field,
-            value,
-          }).catch(() => null);
+        try {
+          await saveQcInspection(existing.name, prelude, existing);
+        } catch {
+          for (const [field, value] of Object.entries(prelude)) {
+            if (Array.isArray(value) || value == null || typeof value === "object") continue;
+            await erpRunMethod("frappe.client.set_value", {
+              doctype: DT_QC,
+              name: existing.name,
+              fieldname: field,
+              value,
+            }).catch(() => null);
+          }
         }
       }
     }
@@ -1113,12 +1133,11 @@ qcRouter.patch("/:id", async (c) => {
       update.result = want;
     }
 
-    await liftPausedStatuses(existing);
     if (isPausedMtmStatus(existing.order_status)) update.order_status = liveStatusFromPaused(existing.order_status);
     if (isPausedMtmStatus(existing.status)) update.status = liveStatusFromPaused(existing.status);
 
     const saved = await saveQcInspection(existing.name, update, existing);
-    const fresh = (await erpGet<any>(DT_QC, existing.name).catch(() => null)) || saved || { ...existing, ...update };
+    const fresh = saved || { ...existing, ...update };
     if (want === "Fail") {
       void notifyQcFail(fresh, String(update.notes || "")).catch((e) =>
         console.warn("[qc.fail] notify", e?.message),

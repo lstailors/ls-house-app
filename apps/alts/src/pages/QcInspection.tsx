@@ -88,6 +88,7 @@ export default function QcInspection() {
   const [confirmAllPass, setConfirmAllPass] = useState(false);
   const [failDraft, setFailDraft] = useState<{ ids: string[]; labels: string[] } | null>(null);
   const [failDraftNote, setFailDraftNote] = useState("");
+  const [passedDone, setPassedDone] = useState(false);
 
   const detail = useQuery({
     queryKey: ["alts-qc-detail", id],
@@ -295,8 +296,13 @@ export default function QcInspection() {
         },
         {
           onSuccess: () => {
-            toast.success(result === "Pass" ? "Passed" : "Sent to Alterations");
             setDecide(null);
+            if (result === "Pass") {
+              setPassedDone(true);
+              toast.success("Passed");
+            } else {
+              toast.success("Sent to Alterations");
+            }
             qc.invalidateQueries({ queryKey: ["alts-qc-detail", id] });
             qc.invalidateQueries({ queryKey: ["alts-qc"] });
           },
@@ -593,12 +599,12 @@ export default function QcInspection() {
               </div>
               <div className="p-4 space-y-3">
                 <p className="text-sm text-cream-dim">
-                  Sign the order PDF here. The checklist stays on this page — DocuSeal is not the QC form.
+                  Optional. Signs the order PDF in DocuSeal or on this pad. Pass does not send DocuSeal anything, and it does not open a signing page.
                 </p>
                 {data?.signatureUrl && (
                   <img src={data.signatureUrl} alt="Signature" className="w-full max-h-36 object-contain rounded-xl bg-[#F6F1E4]" />
                 )}
-                {!locked && data?.docuseal && (
+                {data?.docuseal && (
                   <button
                     type="button"
                     disabled={startDocuseal.isPending}
@@ -660,20 +666,14 @@ export default function QcInspection() {
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    persistChecks();
-                    setDecide("fail");
-                  }}
+                  onClick={() => setDecide("fail")}
                   className="h-14 rounded-xl border border-signal-rose/45 text-[12px] font-bold uppercase tracking-widest text-signal-rose"
                 >
                   Fail
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    persistChecks();
-                    setDecide("pass");
-                  }}
+                  onClick={() => setDecide("pass")}
                   className="btn-brass h-14 text-[12px]"
                 >
                   Pass
@@ -764,6 +764,51 @@ export default function QcInspection() {
         </div>
       </LuxuryLayer>
 
+      <LuxuryLayer
+        open={passedDone}
+        onClose={() => setPassedDone(false)}
+        variant="sheet"
+        label="QC passed"
+        z={82}
+      >
+        <div
+          className="w-full max-w-lg mx-auto rounded-t-[22px] border border-brass/30 border-b-0 px-5 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
+          style={{ background: "linear-gradient(180deg,#152A1E,#0D1A10)" }}
+        >
+          <h2 className="display text-[32px] leading-none">Passed</h2>
+          <p className="text-sm text-cream-dim mt-2">
+            Next: Awaiting Fitting, or Awaiting Shipment if it ships. Nothing is emailed. DocuSeal only opens if you tap Sign with DocuSeal — that is the order PDF, not Pass.
+          </p>
+          <div className="flex flex-col gap-2 mt-5">
+            <button type="button" onClick={() => nav("/qc")} className="btn-brass h-14 text-xs">
+              Back to QC
+            </button>
+            {data?.docuseal && !data?.signedAt ? (
+              <button
+                type="button"
+                disabled={startDocuseal.isPending}
+                onClick={() => {
+                  setPassedDone(false);
+                  if (embedSrc || data.docusealEmbedSrc) {
+                    setEmbedSrc(embedSrc || data.docusealEmbedSrc || null);
+                    setShowDocuseal(true);
+                    return;
+                  }
+                  startDocuseal.mutate();
+                }}
+                className="btn-ghost h-12 text-xs"
+              >
+                {startDocuseal.isPending ? "Opening DocuSeal…" : "Sign order PDF"}
+              </button>
+            ) : (
+              <button type="button" onClick={() => setPassedDone(false)} className="btn-ghost h-12 text-xs">
+                Stay on ticket
+              </button>
+            )}
+          </div>
+        </div>
+      </LuxuryLayer>
+
       <LuxuryLayer open={!!decide} onClose={() => setDecide(null)} variant="sheet" label="QC result" z={80}>
         {decide === "pass" && (
           <div
@@ -772,7 +817,7 @@ export default function QcInspection() {
           >
             <h2 className="display text-[32px] leading-none">Pass</h2>
             <p className="text-sm text-cream-dim mt-2">
-              Ticks the store-arrival boxes in ERPNext, then moves this make to Awaiting Fitting, or Awaiting Shipment if it ships direct.
+              Files this ticket in ERPNext and moves the make to Awaiting Fitting, or Awaiting Shipment if it ships. Pass does not email anyone and does not open DocuSeal.
             </p>
             {summary.open > 0 && (
               <p className="text-xs text-signal-amber mt-2">
