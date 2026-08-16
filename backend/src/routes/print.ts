@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 import { getAuthedUser, canAccessSuperAdminPortal } from "../lib/scope";
 import { erpGet, erpUpdate } from "../lib/erp";
+import {
+  isMissingErpPrintModule,
+  THERMAL_PRINT_METHODS,
+} from "../lib/thermal-print";
 
 export const printRouter = new Hono();
 
@@ -16,11 +20,11 @@ export const printRouter = new Hono();
 // methods; ERPNext builds the ESC/POS job, opens the raw socket to the printer,
 // and writes the LSH Print Log row itself (we do not double-log here).
 //
-//   POST /api/print/ticket        -> ls_alterations.ls_thermal.api.print_ticket
-//   POST /api/print/tags          -> ls_alterations.ls_thermal.api.print_ticket (what=tags)
+//   POST /api/print/ticket        -> ls_alterations.api.print_ticket (fallback: ls_thermal.api)
+//   POST /api/print/tags          -> print_ticket (what=tags)
 //   POST /api/print/receipt       -> print_ticket (what=receipts) | print_payment_receipt
-//   POST /api/print/payment-link  -> ls_alterations.ls_thermal.api.print_pay_link
-//   GET  /api/print/status        -> ls_alterations.ls_thermal.api.test_printer
+//   POST /api/print/payment-link  -> ls_alterations.api.print_pay_link
+//   GET  /api/print/status        -> ls_alterations.api.test_printer
 //   GET  /api/print/config        -> reads LSH Print Settings (display only)
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -38,36 +42,47 @@ interface ErpPrintResult {
 }
 
 async function printViaErp(
-  method: string,
+  methods: readonly string[] | string,
   kwargs: Record<string, unknown>,
 ): Promise<ErpPrintResult> {
   const key = process.env.ERPNEXT_API_KEY ?? "";
   const secret = process.env.ERPNEXT_API_SECRET ?? "";
   if (!key || !secret) throw new Error("ERPNext API credentials are not configured");
 
-  const res = await fetch(`${ERP_BASE}/api/method/${method}`, {
-    method: "POST",
-    headers: {
-      Authorization: `token ${key}:${secret}`,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(kwargs),
-    signal: AbortSignal.timeout(15_000),
-  });
+  const base = (process.env.ERPNEXT_BASE_URL ?? ERP_BASE).replace(/\/$/, "");
+  const list = (Array.isArray(methods) ? methods : [methods]).filter(Boolean);
+  let lastErr = "ERPNext print failed";
 
-  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) {
-    const serverMessages = json?._server_messages;
-    const msg =
-      (Array.isArray(serverMessages) && serverMessages.join(" ")) ||
-      (typeof json?.exception === "string" && json.exception) ||
-      (typeof json?.message === "string" && json.message) ||
-      `ERPNext print failed (HTTP ${res.status})`;
-    throw new Error(String(msg).slice(0, 300));
+  for (const method of list) {
+    const res = await fetch(`${base}/api/method/${method}`, {
+      method: "POST",
+      headers: {
+        Authorization: `token ${key}:${secret}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        // Same UA as erp.ts — CF tunnel returns 1010 without a browser UA.
+        "User-Agent": "Mozilla/5.0 (compatible; L&S-House-App/1.0; +https://app.lstailors.com)",
+      },
+      body: JSON.stringify(kwargs),
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      const serverMessages = json?._server_messages;
+      const msg =
+        (Array.isArray(serverMessages) && serverMessages.join(" ")) ||
+        (typeof json?.exception === "string" && json.exception) ||
+        (typeof json?.message === "string" && json.message) ||
+        `ERPNext print failed (HTTP ${res.status})`;
+      lastErr = String(msg).slice(0, 300);
+      if (isMissingErpPrintModule(lastErr) && list.length > 1) continue;
+      throw new Error(lastErr);
+    }
+    return (json?.message ?? json) as ErpPrintResult;
   }
-  // Frappe wraps a whitelisted method's return value in { message: ... }.
-  return (json?.message ?? json) as ErpPrintResult;
+
+  throw new Error(lastErr);
 }
 
 // Collapse an ERP print result into the { ok, error? } shape the frontend uses.
@@ -188,7 +203,7 @@ printRouter.get("/status", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   try {
-    const out = await printViaErp("ls_alterations.ls_thermal.api.test_printer", {});
+    const out = await printViaErp(THERMAL_PRINT_METHODS.test_printer, {});
     return c.json(toClientResult(out));
   } catch (e) {
     return c.json({ ok: false, error: e instanceof Error ? e.message : "Printer test failed" });
@@ -220,7 +235,7 @@ printRouter.post("/ticket", async (c) => {
   const reprint = body?.reprint === true || body?.reprint === 1 || body?.reprint === "1" ? 1 : 0;
 
   try {
-    const out = await printViaErp("ls_alterations.ls_thermal.api.print_ticket", {
+    const out = await printViaErp(THERMAL_PRINT_METHODS.print_ticket, {
       ticket,
       what: body?.what ?? "all",
       reprint,
@@ -249,7 +264,7 @@ printRouter.post("/tags", async (c) => {
   const reprint = body?.reprint === true || body?.reprint === 1 || body?.reprint === "1" ? 1 : 0;
 
   try {
-    const out = await printViaErp("ls_alterations.ls_thermal.api.print_ticket", {
+    const out = await printViaErp(THERMAL_PRINT_METHODS.print_ticket, {
       ticket,
       what: "tags",
       reprint,
@@ -279,12 +294,12 @@ printRouter.post("/receipt", async (c) => {
 
   try {
     const out = isAlterationTicket(id)
-      ? await printViaErp("ls_alterations.ls_thermal.api.print_ticket", {
+      ? await printViaErp(THERMAL_PRINT_METHODS.print_ticket, {
           ticket: id,
           what: "receipts",
           reprint,
         })
-      : await printViaErp("ls_alterations.ls_thermal.api.print_payment_receipt", {
+      : await printViaErp(THERMAL_PRINT_METHODS.print_payment_receipt, {
           invoice: id,
           reprint,
         });
@@ -316,7 +331,7 @@ printRouter.post("/payment-link", async (c) => {
     const kwargs = isAlterationTicket(id)
       ? { ticket: id, reprint }
       : { invoice: id, reprint };
-    const out = await printViaErp("ls_alterations.ls_thermal.api.print_pay_link", kwargs);
+    const out = await printViaErp(THERMAL_PRINT_METHODS.print_pay_link, kwargs);
     return c.json({ ...toClientResult(out), url: out?.url });
   } catch (e) {
     return c.json({ ok: false, error: e instanceof Error ? e.message : "QR slip print failed" });
