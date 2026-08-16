@@ -217,6 +217,8 @@ describe("QC routes are mounted", () => {
     expect(src).toContain("loadQcMeta");
     expect(src).toContain("frappe.client.set_value");
     expect(src).toContain("forcePass: true");
+    expect(src).toContain("stubInspection");
+    expect(src).toContain("raceMs");
   });
 
   test("live MTM pipeline routes are registered before /:id", () => {

@@ -12,6 +12,7 @@ import LuxuryLayer from "@alts/components/LuxuryLayer";
 import { ConfirmDialog } from "@alts/components/ConfirmDialog";
 import StatusBadge from "@alts/components/StatusBadge";
 import { clientInitials } from "@alts/lib/ticketDisplay";
+import { blankQcChecks, isQcInspectionName, mergeQcChecks } from "@alts/lib/qcChecks";
 import "@alts/styles/alts-pos.css";
 
 type QcCheck = {
@@ -77,7 +78,7 @@ export default function QcInspection() {
   const failSigRef = useRef<SignatureCanvas>(null);
   const [notes, setNotes] = useState("");
   const [failReason, setFailReason] = useState("");
-  const [checks, setChecks] = useState<QcCheck[]>([]);
+  const [checks, setChecks] = useState<QcCheck[]>(() => blankQcChecks());
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [showPdf, setShowPdf] = useState(false);
   const [showQr, setShowQr] = useState(false);
@@ -95,7 +96,7 @@ export default function QcInspection() {
   });
 
   const data = detail.data;
-  const inspectionId = data?.id || data?.name || null;
+  const inspectionId = data?.id || data?.name || (isQcInspectionName(id) ? id : null);
 
   const skipCheckSave = useRef(true);
 
@@ -105,7 +106,7 @@ export default function QcInspection() {
     skipCheckSave.current = true;
     setNotes(row.notes || "");
     setFailReason(row.failReason || "");
-    setChecks(row.checks || []);
+    setChecks(mergeQcChecks(row.checks));
     // Keep a saved DocuSeal URL for "Continue signing" — never inject the iframe into the page.
     if (row.docusealEmbedSrc) setEmbedSrc(row.docusealEmbedSrc);
   }, [inspectionId]);
@@ -389,10 +390,20 @@ export default function QcInspection() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-4 pb-[max(7rem,calc(env(safe-area-inset-bottom)+6rem))]">
+        {detail.isFetching && !data && (
+          <div className="card-glass px-4 py-3 text-sm text-cream-dim">Opening ticket…</div>
+        )}
+
         {detail.isError && (
           <QueryErrorPanel
-            title="Could not load this QC"
-            message={detail.error instanceof Error ? detail.error.message : "Retry."}
+            title="Could not refresh this QC"
+            message={
+              inspectionId
+                ? "ERPNext is slow — checks are on this page. You can still Pass."
+                : detail.error instanceof Error
+                  ? detail.error.message
+                  : "Retry."
+            }
             onRetry={() => detail.refetch()}
           />
         )}

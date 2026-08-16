@@ -144,6 +144,9 @@ describe("iPhone scale contract", () => {
     expect(item).toContain("Sign with DocuSeal");
     expect(item).toContain("qc-docuseal-frame");
     expect(item).not.toContain("min-h-[420px]");
+    expect(item).toContain("blankQcChecks");
+    expect(item).toContain("isQcInspectionName");
+    expect(item).toContain("Store arrival");
     expect(app).toContain("NotFound");
     expect(app).toContain('path="/reports/:tab?"');
     expect(app).not.toContain('Navigate to="/"');

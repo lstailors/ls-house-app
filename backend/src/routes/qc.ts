@@ -802,6 +802,39 @@ qcRouter.get("/:id/pdf", async (c) => {
   }
 });
 
+function raceMs<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(fallback);
+      },
+    );
+  });
+}
+
+function stubInspection(id: string, extras: Record<string, unknown> = {}) {
+  const checks = blankChecks();
+  return {
+    id,
+    name: id,
+    customerName: extras.customerName || "Client",
+    qcResult: "Pending",
+    result: "Pending",
+    notes: "",
+    checks,
+    summary: checksSummary(checks),
+    photos: [],
+    docuseal: false,
+    ...extras,
+  };
+}
+
 // GET /api/qc/:id — floor can open the item to change live status; checks stay tailor-gated on PATCH
 qcRouter.get("/:id", async (c) => {
   const gate = await requireFloor(c);
@@ -809,8 +842,11 @@ qcRouter.get("/:id", async (c) => {
   const id = decodeURIComponent(c.req.param("id"));
 
   try {
-    const insp = await resolveInspection(id);
+    const insp = await raceMs(resolveInspection(id), 8000, null);
     if (!insp?.name) {
+      if (isQcInspectionName(id)) {
+        return c.json({ data: stubInspection(id) });
+      }
       const co = await erpGet<any>(DT_CUSTOM, id).catch(() => null);
       const mtm = await erpGet<any>(DT.MTM_PRO_ORDER, id).catch(() => null);
       const so = await erpGet<any>("Sales Order", id).catch(() => null);
@@ -844,15 +880,32 @@ qcRouter.get("/:id", async (c) => {
       });
     }
 
-    const files = await erpList<any>(DT.FILE, {
-      filters: [
-        ["attached_to_doctype", "=", DT_QC],
-        ["attached_to_name", "=", insp.name],
-      ],
-      fields: ["name", "file_url", "file_name", "creation"],
-      limit: 80,
-      order_by: "creation desc",
-    }).catch(() => []);
+    const [files, co, mtm, docuseal] = await Promise.all([
+      raceMs(
+        erpList<any>(DT.FILE, {
+          filters: [
+            ["attached_to_doctype", "=", DT_QC],
+            ["attached_to_name", "=", insp.name],
+          ],
+          fields: ["name", "file_url", "file_name", "creation"],
+          limit: 80,
+          order_by: "creation desc",
+        }).catch(() => []),
+        2500,
+        [] as any[],
+      ),
+      insp.custom_order
+        ? raceMs(erpGet<any>(DT_CUSTOM, insp.custom_order).catch(() => null), 2500, null)
+        : Promise.resolve(null),
+      insp.custom_order || insp.mtmpro_order
+        ? raceMs(
+            erpGet<any>(DT.MTM_PRO_ORDER, insp.custom_order || insp.mtmpro_order).catch(() => null),
+            2500,
+            null,
+          )
+        : Promise.resolve(null),
+      raceMs(docusealEnabled().catch(() => false), 1500, false),
+    ]);
 
     const photos = files
       .filter((f) => /\.(jpe?g|png|webp|heic)$/i.test(String(f.file_name || f.file_url || "")))
@@ -863,29 +916,10 @@ qcRouter.get("/:id", async (c) => {
         createdAt: f.creation,
       }));
 
-    let orderStatus: string | null = null;
-    let garmentSummary: string | null = null;
-    let orderName: string | null = insp.custom_order || insp.mtmpro_order || null;
-    if (insp.custom_order) {
-      const co = await erpGet<any>(DT_CUSTOM, insp.custom_order).catch(() => null);
-      orderStatus = co?.order_status || co?.status || null;
-      garmentSummary = co?.garment_summary || co?.garment_type || null;
-      if (co?.name) orderName = co.name;
-    }
-    if (!orderStatus && orderName) {
-      const mtm = await erpGet<any>(DT.MTM_PRO_ORDER, orderName).catch(() => null);
-      if (mtm) {
-        orderStatus = mtm.order_status || mtm.status || orderStatus;
-        garmentSummary = garmentSummary || mtm.garment_summary || mtm.order_type || null;
-      }
-    }
-
-    let docuseal = false;
-    try {
-      docuseal = await docusealEnabled();
-    } catch {
-      /* DocuSeal is optional — never block the inspection page */
-    }
+    const orderName: string | null = co?.name || insp.custom_order || insp.mtmpro_order || mtm?.name || null;
+    const orderStatus: string | null = co?.order_status || co?.status || mtm?.order_status || mtm?.status || null;
+    const garmentSummary: string | null =
+      co?.garment_summary || co?.garment_type || mtm?.garment_summary || mtm?.order_type || null;
 
     return c.json({
       data: serializeInspection(insp, {
@@ -903,6 +937,7 @@ qcRouter.get("/:id", async (c) => {
     });
   } catch (e: any) {
     console.error("GET /api/qc/:id", e);
+    if (isQcInspectionName(id)) return c.json({ data: stubInspection(id) });
     return c.json({ error: { message: e?.message || "Could not load inspection" } }, 502);
   }
 });
