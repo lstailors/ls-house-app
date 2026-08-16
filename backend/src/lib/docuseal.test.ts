@@ -3,8 +3,12 @@ import {
   docusealApiBase,
   docusealPublicBase,
   isDocusealProOnly,
+  isUnknownFieldError,
   parseDocusealWebhook,
+  pickKnownFields,
   pickQcTemplate,
+  qcDocusealFields,
+  templateFieldNames,
   templateSignerRole,
 } from "./docuseal";
 
@@ -64,5 +68,38 @@ describe("DocuSeal OSS templates", () => {
     expect(parsed.inspectionName).toBe("LSH-QC-2026-00001");
     expect(parsed.signedUrl).toContain("signed.pdf");
     expect(parseDocusealWebhook({ event_type: "form.viewed", data: { id: 1 } }).completed).toBe(false);
+  });
+
+  test("Unknown field: Customer is recognized", () => {
+    expect(isUnknownFieldError('{"error":"Unknown field: Customer"}')).toBe(true);
+    expect(isUnknownFieldError("template not found")).toBe(false);
+  });
+
+  test("a Signature-only template sends no fill-in fields", () => {
+    const known = templateFieldNames({
+      id: 1,
+      fields: [{ name: "Signature", type: "signature" }],
+    });
+    expect(known).toEqual([]);
+    const wanted = qcDocusealFields({ customerName: "Ada West", result: "Pass" });
+    expect(wanted.some((f) => f.name === "Customer")).toBe(true);
+    expect(pickKnownFields(wanted, known)).toEqual([]);
+  });
+
+  test("only fields that exist on the template are sent", () => {
+    const wanted = qcDocusealFields({ customerName: "Ada West", result: "Pass", notes: "Hem" });
+    const picked = pickKnownFields(wanted, ["customer", "Notes"]);
+    expect(picked.map((f) => f.name)).toEqual(["Customer", "Notes"]);
+    expect(picked.find((f) => f.name === "Customer")?.default_value).toBe("Ada West");
+  });
+});
+
+describe("DocuSeal submit retries without invented fields", () => {
+  test("createQcSignatureSubmission filters fields and retries Unknown field", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("./docuseal.ts", import.meta.url), "utf8");
+    expect(src).toContain("pickKnownFields(opts.fields || [], templateFieldNames(template))");
+    expect(src).toContain("isUnknownFieldError(err)");
+    expect(src).toContain("post([])");
   });
 });
