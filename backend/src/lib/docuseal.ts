@@ -138,10 +138,39 @@ function parseSubmission(json: unknown, publicBase: string): DocuSealSubmission 
     row?.embed_src ||
     (slug ? `${publicBase}/s/${slug}` : null);
   return {
-    id: row?.id ?? submitter?.submission_id ?? submitter?.id,
+    id: submitter?.submission_id ?? row?.submission_id ?? row?.id ?? submitter?.id,
     embedSrc: embedSrc || null,
     slug: slug || undefined,
   };
+}
+
+export function parseDocusealWebhook(body: Record<string, any> | null | undefined): {
+  completed: boolean;
+  ids: string[];
+  inspectionName: string | null;
+  signedUrl: string | null;
+} {
+  const event = String(body?.event_type || body?.event || "").toLowerCase();
+  const data = (body?.data ?? body ?? {}) as Record<string, any>;
+  const submission = (data.submission ?? {}) as Record<string, any>;
+  const completed =
+    /complet|signed|finished|closed/.test(event) ||
+    data.status === "completed" ||
+    submission.status === "completed";
+  const ids = [...new Set(
+    [data.submission_id, submission.id, data.id, body?.submission_id]
+      .map((v) => String(v || "").trim())
+      .filter(Boolean),
+  )];
+  const inspectionName = String(data.external_id || data.application_key || "").trim() || null;
+  const signedUrl =
+    data.documents?.[0]?.url ||
+    submission.combined_document_url ||
+    data.combined_document_url ||
+    submission.audit_log_url ||
+    data.audit_log_url ||
+    null;
+  return { completed, ids, inspectionName, signedUrl };
 }
 
 const NO_TEMPLATE =
@@ -237,6 +266,7 @@ export async function createQcSignatureSubmission(opts: {
   pdfBytes?: ArrayBuffer | null;
   pdfName?: string;
   fields?: QcDocusealField[];
+  externalId?: string;
 }): Promise<DocuSealSubmission | null> {
   const cfg = await loadDocusealSettings();
   if (!cfg.apiKey) return null;
@@ -263,6 +293,7 @@ export async function createQcSignatureSubmission(opts: {
           email: opts.inspectorEmail,
           name: opts.inspectorName,
           send_email: false,
+          ...(opts.externalId ? { external_id: opts.externalId } : {}),
           ...(opts.fields?.length ? { fields: opts.fields } : {}),
         },
       ],

@@ -268,5 +268,6 @@ describe("QC routes are mounted", () => {
     expect(src).toContain("fileQcPassFail");
     expect(src).toContain("attachDocusealResultFiles");
     expect(src).toContain("buildQcResultPdf");
+    expect(src).toContain("externalId");
   });
 });

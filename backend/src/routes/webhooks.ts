@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { logErpCommunication, matchCustomerByPhone } from "./comms";
 import { insertCallLog, updateCallLog, insertSmsMessage } from "../lib/erpnext/agents";
+import { parseDocusealWebhook } from "../lib/docuseal";
 import { attachDocusealResultFiles, markQcSignedBySubmission } from "./qc";
 
 export const webhooksRouter = new Hono();
@@ -158,22 +159,14 @@ webhooksRouter.post("/docuseal", async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ ok: false, error: "Invalid JSON" }, 400);
 
-  const event = String(body.event_type || body.event || "").toLowerCase();
-  const data = body.data ?? body;
-  const completed = /complet|signed|finished|closed/.test(event) || data?.status === "completed";
-  if (!completed) return c.json({ ok: true, ignored: true });
+  const parsed = parseDocusealWebhook(body);
+  if (!parsed.completed) return c.json({ ok: true, ignored: true });
 
-  const submissionId = String(
-    data?.submission_id ?? data?.id ?? data?.submission?.id ?? body.submission_id ?? "",
+  const name = await markQcSignedBySubmission(parsed.ids, parsed.signedUrl, parsed.inspectionName).catch(
+    () => null,
   );
-  const signedUrl =
-    data?.documents?.[0]?.url ||
-    data?.audit_log_url ||
-    data?.combined_document_url ||
-    null;
-  const name = await markQcSignedBySubmission(submissionId, signedUrl).catch(() => null);
-  if (name && submissionId) {
-    await attachDocusealResultFiles(name, submissionId, signedUrl).catch((e) =>
+  if (name && parsed.ids[0]) {
+    await attachDocusealResultFiles(name, parsed.ids[0], parsed.signedUrl).catch((e) =>
       console.warn("[docuseal.webhook] attach", e?.message),
     );
   }

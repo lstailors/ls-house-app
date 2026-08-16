@@ -3,6 +3,7 @@ import {
   docusealApiBase,
   docusealPublicBase,
   isDocusealProOnly,
+  parseDocusealWebhook,
   pickQcTemplate,
   templateSignerRole,
 } from "./docuseal";
@@ -43,5 +44,25 @@ describe("DocuSeal OSS templates", () => {
     expect(pickQcTemplate([])).toBeNull();
     expect(templateSignerRole(qc)).toBe("First Party");
     expect(templateSignerRole(invoice)).toBe("Inspector");
+  });
+
+  test("form.completed webhook finds the QC ticket and signed PDF", () => {
+    const parsed = parseDocusealWebhook({
+      event_type: "form.completed",
+      data: {
+        id: 1,
+        submission_id: 12,
+        status: "completed",
+        external_id: "LSH-QC-2026-00001",
+        documents: [{ url: "https://docuseal.lstailors.com/blobs/signed.pdf" }],
+        submission: { id: 12, combined_document_url: "https://docuseal.lstailors.com/blobs/combined.pdf" },
+      },
+    });
+    expect(parsed.completed).toBe(true);
+    expect(parsed.ids).toContain("12");
+    expect(parsed.ids).toContain("1");
+    expect(parsed.inspectionName).toBe("LSH-QC-2026-00001");
+    expect(parsed.signedUrl).toContain("signed.pdf");
+    expect(parseDocusealWebhook({ event_type: "form.viewed", data: { id: 1 } }).completed).toBe(false);
   });
 });
