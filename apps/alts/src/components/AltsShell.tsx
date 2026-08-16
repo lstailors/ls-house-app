@@ -13,8 +13,11 @@ export default function AltsShell() {
   const kiosk = useKioskMode();
 
   if (kiosk || isHome) {
+    // Phone: body is the only vertical scroller. A nested overflow-y-auto
+    // inside overflow-x-hidden is a no-op on iOS Safari — swipe is captured
+    // by the inner box (height:auto) and the page never moves.
     return (
-      <div className="min-h-dvh overflow-x-hidden overflow-y-auto bg-forest-deep text-cream">
+      <div className="min-h-0 overflow-visible bg-forest-deep text-cream">
         <Outlet />
       </div>
     );

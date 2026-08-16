@@ -61,6 +61,7 @@ import { healthRouter } from "./routes/health";
 import { qcRouter } from "./routes/qc";
 import { metricsRouter } from "./routes/metrics";
 import { offlineRouter } from "./routes/offline";
+import { fabricStockRouter } from "./routes/fabric-stock";
 
 const app = new Hono();
 
@@ -151,6 +152,7 @@ app.route("/api/public/booking", publicBookingRouter);
 app.route("/api/qc", qcRouter);
 app.route("/api/metrics", metricsRouter);
 app.route("/api/offline", offlineRouter);
+app.route("/api/fabric-stock", fabricStockRouter);
 
 const port = Number(process.env.PORT) || 3000;
 

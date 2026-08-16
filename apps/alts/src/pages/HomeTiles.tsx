@@ -836,6 +836,26 @@ export default function HomeTiles() {
       ),
     },
     {
+      key: "stock",
+      to: "/stock",
+      title: "Stock",
+      sub: "Fabric · lining · remnants",
+      primary: true,
+      live: (
+        <>
+          <b>Gallery</b> · use to remove
+        </>
+      ),
+      liveTone: "em" as LiveTone,
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M8 16l18-8 18 8v22l-18 8-18-8z" />
+          <path d="M8 16l18 8 18-8" />
+          <path d="M26 24v22" />
+        </svg>
+      ),
+    },
+    {
       key: "floor",
       to: "/shop-floor",
       title: "Shop Floor",
@@ -1103,7 +1123,7 @@ export default function HomeTiles() {
   return (
     <div
       className={cn(
-        "alts-root home-040 flex flex-col min-h-dvh overflow-x-hidden px-[14px] sm:px-[22px] pt-[max(10px,env(safe-area-inset-top))] pb-[max(5.5rem,env(safe-area-inset-bottom))] gap-2.5",
+        "alts-root home-040 flex flex-col min-h-dvh overflow-visible px-[14px] sm:px-[22px] pt-[max(10px,env(safe-area-inset-top))] pb-[max(5.5rem,env(safe-area-inset-bottom))] gap-2.5",
         kiosk && "is-kiosk",
         ambient && "is-ambient",
         coverMoney && "is-cover-money",
@@ -1335,6 +1355,9 @@ export default function HomeTiles() {
         <Link to="/orders/alterations" className="qbtn">
           <span aria-hidden>▤</span> Orders
         </Link>
+        <Link to="/stock" className="qbtn primary" data-testid="qa-stock">
+          <span aria-hidden>▣</span> Stock
+        </Link>
         <Link to="/house" className="qbtn">
           <span aria-hidden>⌂</span> House
         </Link>
@@ -1357,7 +1380,7 @@ export default function HomeTiles() {
       {!kiosk && (home.isLoading ? (
         <TileSkeleton count={10} />
       ) : (
-      <div className="home-040-grid flex-1 min-h-0" data-testid="tile-grid">
+      <div className="home-040-grid flex-none overflow-visible" data-testid="tile-grid">
         {tiles
           .filter((t) => t.key !== "qc" || canQc)
           .map((t) => {
