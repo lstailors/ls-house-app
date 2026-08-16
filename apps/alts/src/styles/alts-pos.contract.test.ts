@@ -122,6 +122,7 @@ describe("iPhone scale contract", () => {
     expect(settings).toContain("https://docuseal.lstailors.com/settings/api");
     expect(settings).toContain("https://docuseal.lstailors.com/templates");
     expect(settings).toContain("New Template");
+    expect(settings).toContain("/api/webhooks/docuseal");
     expect(settings).not.toContain("localStorage");
     expect(settings).toContain("signOut");
     expect(settings).toContain("clearClientSession");
@@ -151,7 +152,8 @@ describe("iPhone scale contract", () => {
     expect(item).not.toContain("Live order status");
     expect(item).not.toContain("/api/qc/orders/");
     expect(item).toContain("Sign with DocuSeal");
-    expect(item).toContain("does not open DocuSeal");
+    expect(item).toContain("Sign and submit");
+    expect(item).toContain("webhook");
     expect(item).toContain("Awaiting Fitting");
     expect(item).toContain("qc-docuseal-frame");
     expect(item).not.toContain("min-h-[420px]");

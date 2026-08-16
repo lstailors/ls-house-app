@@ -15,6 +15,7 @@ type SettingsData = {
   url: string;
   apiKeySet: boolean;
   apiKeyMasked: string;
+  webhookUrl?: string;
 };
 
 export default function AltsSettings() {
@@ -135,8 +136,11 @@ export default function AltsSettings() {
             <ol className="text-sm text-cream-dim list-decimal pl-5 space-y-1">
               <li>Paste the API key, tap Save, then Test.</li>
               <li>In DocuSeal: New Template, add a Signature box, save.</li>
-              <li>On the QC ticket tap Sign with DocuSeal — it should open, not ask for the key again.</li>
+              <li>In DocuSeal Webhooks, paste the URL below so signed copies file back on the ticket.</li>
             </ol>
+            <p className="font-mono text-[11px] text-brass-light break-all">
+              {settings.data?.webhookUrl || "https://app.lstailors.com/api/webhooks/docuseal"}
+            </p>
             <div className="grid grid-cols-2 gap-2">
               <a
                 href="https://docuseal.lstailors.com/settings/api"

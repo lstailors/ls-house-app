@@ -25,9 +25,16 @@ import {
   tabToQcResult,
   type QcCheck,
 } from "../lib/qc";
-import { createQcSignatureSubmission, docusealEnabled, pingDocuseal } from "../lib/docuseal";
+import {
+  createQcSignatureSubmission,
+  docusealEnabled,
+  downloadDocusealDocuments,
+  pingDocuseal,
+  qcDocusealFields,
+} from "../lib/docuseal";
 import { loadDocusealSettings, maskKey, saveDocusealSettings } from "../lib/qc-settings";
 import { loadQcOrderPdf } from "../lib/qc-pdf";
+import { buildQcResultPdf, formatQcResultSummary } from "../lib/qc-result-pdf";
 import { getAltsMetrics } from "../lib/metrics";
 import { sendSms, alertCarl } from "../lib/twilio";
 import { canShowTestData, filterTestRows } from "../lib/ops-mode";
@@ -674,6 +681,105 @@ export async function markQcSignedBySubmission(submissionId: string, signedUrl?:
   return row.name;
 }
 
+export async function attachDocusealResultFiles(
+  inspectionName: string,
+  submissionId: string,
+  signedUrl?: string | null,
+) {
+  const files = await downloadDocusealDocuments(submissionId, signedUrl);
+  for (const file of files) {
+    await uploadFile({
+      file: file.bytes,
+      filename: file.filename,
+      contentType: "application/pdf",
+      doctype: DT_QC,
+      docname: inspectionName,
+      isPrivate: false,
+    }).catch((e) => console.warn("[qc] docuseal attach", e?.message));
+  }
+}
+
+async function loadSignaturePng(url?: string | null): Promise<Uint8Array | null> {
+  const raw = String(url || "").trim();
+  if (!raw) return null;
+  try {
+    const res = await fetch(erpFileAbsoluteUrl(raw), { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return null;
+    return new Uint8Array(await res.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+async function fileQcPassFail(opts: {
+  doc: Record<string, any>;
+  result: "Pass" | "Fail";
+  inspectorEmail: string;
+  inspectorName: string;
+}) {
+  const checks = checksFromDoc(opts.doc);
+  const input = {
+    result: opts.result,
+    inspection: String(opts.doc.name || ""),
+    customerName: opts.doc.customer_name || null,
+    salesOrder: opts.doc.sales_order || null,
+    customOrder: opts.doc.custom_order || null,
+    inspector: opts.inspectorName || opts.doc.inspector || null,
+    notes: String(opts.doc.notes || opts.doc.fail_reason || ""),
+    checks,
+    signedAt: opts.doc.signed_at || new Date().toISOString(),
+    signaturePng: await loadSignaturePng(opts.doc.signature_url),
+  };
+  const extras: Record<string, unknown> = {};
+  try {
+    const pdf = await buildQcResultPdf(input);
+    const { fileUrl } = await uploadFile({
+      file: pdf,
+      filename: `${opts.doc.name}-${opts.result.toLowerCase()}.pdf`,
+      contentType: "application/pdf",
+      doctype: DT_QC,
+      docname: String(opts.doc.name),
+      isPrivate: false,
+    });
+    extras.resultPdfUrl = erpFileAbsoluteUrl(fileUrl);
+    await updateDroppingFields(String(opts.doc.name), { result_pdf_url: extras.resultPdfUrl }).catch(() => null);
+  } catch (e: any) {
+    console.warn("[qc] result pdf", e?.message);
+  }
+
+  if (!(await docusealEnabled().catch(() => false))) return extras;
+  try {
+    const sub = await createQcSignatureSubmission({
+      title: `QC ${opts.result} ${opts.doc.custom_order || opts.doc.sales_order || opts.doc.name}`,
+      inspectorEmail: opts.inspectorEmail,
+      inspectorName: opts.inspectorName,
+      fields: qcDocusealFields({
+        customerName: input.customerName,
+        order: [input.customOrder, input.salesOrder].filter(Boolean).join(" · "),
+        result: opts.result,
+        notes: input.notes,
+        inspection: input.inspection,
+        checksText: formatQcResultSummary(input),
+      }),
+    });
+    if (sub) {
+      extras.docusealEmbedSrc = sub.embedSrc;
+      extras.docusealSubmissionId = sub.id;
+      await saveQcInspection(
+        String(opts.doc.name),
+        {
+          docuseal_submission_id: String(sub.id),
+          docuseal_embed_src: sub.embedSrc,
+        },
+        opts.doc,
+      ).catch(() => null);
+    }
+  } catch (e: any) {
+    console.warn("[qc] docuseal after result", e?.message);
+  }
+  return extras;
+}
+
 // GET /api/qc/catalog
 qcRouter.get("/catalog", async (c) => {
   const gate = await requireQc(c);
@@ -705,6 +811,7 @@ qcRouter.get("/settings", async (c) => {
         url: s.url,
         apiKeySet: Boolean(s.apiKey),
         apiKeyMasked: maskKey(s.apiKey),
+        webhookUrl: "https://app.lstailors.com/api/webhooks/docuseal",
       },
     });
   } catch (e: any) {
@@ -1143,7 +1250,16 @@ qcRouter.patch("/:id", async (c) => {
         console.warn("[qc.fail] notify", e?.message),
       );
     }
-    return c.json({ data: serializeInspection(fresh) });
+    const extras =
+      want === "Pass" || want === "Fail"
+        ? await fileQcPassFail({
+            doc: fresh,
+            result: want,
+            inspectorEmail: gate.user!.email,
+            inspectorName: gate.user!.name || gate.user!.email,
+          })
+        : {};
+    return c.json({ data: serializeInspection(fresh, extras) });
   } catch (e: any) {
     console.error("PATCH /api/qc/:id", e);
     return c.json({ error: { message: e?.message || "Could not save QC" } }, 502);
@@ -1213,10 +1329,28 @@ qcRouter.post("/:id/sign", async (c) => {
       return c.json({ error: { message: "DocuSeal is not connected — sign on the pad" } }, 400);
     }
 
+    const checks = checksFromDoc(existing);
     const sub = await createQcSignatureSubmission({
       title: `QC ${existing.custom_order || existing.sales_order || existing.name}`,
       inspectorEmail: gate.user!.email,
       inspectorName: gate.user!.name || gate.user!.email,
+      fields: qcDocusealFields({
+        customerName: existing.customer_name,
+        order: [existing.custom_order, existing.sales_order].filter(Boolean).join(" · "),
+        result: qcResultOf(existing),
+        notes: existing.notes,
+        inspection: existing.name,
+        checksText: formatQcResultSummary({
+          result: qcResultOf(existing) === "Fail" ? "Fail" : "Pass",
+          inspection: String(existing.name),
+          customerName: existing.customer_name,
+          salesOrder: existing.sales_order,
+          customOrder: existing.custom_order,
+          inspector: existing.inspector,
+          notes: existing.notes,
+          checks,
+        }),
+      }),
     });
     if (!sub) {
       return c.json({ error: { message: "DocuSeal did not start — check the API key in Settings" } }, 502);
