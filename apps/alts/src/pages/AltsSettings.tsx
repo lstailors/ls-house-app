@@ -111,19 +111,39 @@ export default function AltsSettings() {
           </div>
         )}
 
+        {!isAdmin && (
+          <div className="card-glass px-4 py-4 space-y-2">
+            <div className="caps text-brass-light">DocuSeal</div>
+            <p className="text-sm text-cream-dim">
+              An admin turns this on in Settings with the API key. You can still sign on the cream pad on the QC ticket.
+            </p>
+          </div>
+        )}
+
         {isAdmin && (
           <div className="card-glass px-4 py-4 space-y-3">
             <div className="caps text-brass-light">DocuSeal</div>
             <p className="text-sm text-cream-dim">
-              Self-hosted at docuseal.lstailors.com. The API key is stored on the server, not on this phone.
+              {settings.data?.apiKeySet
+                ? "Connected. On a QC ticket tap Sign with DocuSeal — the order PDF opens so you can sign."
+                : "Off until you paste the API key. That is what turns on Sign with DocuSeal."}
             </p>
             {settings.data?.apiKeySet && (
               <p className="font-mono text-xs text-brass-light">Saved · {settings.data.apiKeyMasked}</p>
             )}
-            <p className="text-xs text-cream-dim">
-              After save, tap Test. On a QC ticket use Sign with DocuSeal — the order PDF opens for signature.
-              Point DocuSeal webhooks at /api/webhooks/docuseal so the ticket marks Signed when they finish.
-            </p>
+            <ol className="text-sm text-cream-dim list-decimal pl-5 space-y-1">
+              <li>Open DocuSeal and copy the API key.</li>
+              <li>Paste it below, tap Save, then Test.</li>
+              <li>Go back to the QC ticket and tap Sign with DocuSeal.</li>
+            </ol>
+            <a
+              href="https://docuseal.lstailors.com/settings/api"
+              target="_blank"
+              rel="noreferrer"
+              className="h-12 px-3 rounded-xl border border-brass/35 text-[12px] font-bold uppercase tracking-widest inline-flex items-center justify-center w-full"
+            >
+              Open DocuSeal API key
+            </a>
             <label className="block">
               <span className="caps mb-1.5 block">Host</span>
               <input

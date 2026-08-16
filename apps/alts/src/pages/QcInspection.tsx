@@ -599,32 +599,37 @@ export default function QcInspection() {
               </div>
               <div className="p-4 space-y-3">
                 <p className="text-sm text-cream-dim">
-                  Optional. Signs the order PDF in DocuSeal or on this pad. Pass does not send DocuSeal anything, and it does not open a signing page.
+                  To sign now, draw on the pad and tap Save signature. Sign with DocuSeal opens the order PDF — turn that on in Settings with the API key.
                 </p>
                 {data?.signatureUrl && (
                   <img src={data.signatureUrl} alt="Signature" className="w-full max-h-36 object-contain rounded-xl bg-[#F6F1E4]" />
                 )}
-                {data?.docuseal && (
-                  <button
-                    type="button"
-                    disabled={startDocuseal.isPending}
-                    onClick={() => {
-                      if (embedSrc || data.docusealEmbedSrc) {
-                        setEmbedSrc(embedSrc || data.docusealEmbedSrc || null);
-                        setShowDocuseal(true);
-                        return;
-                      }
-                      startDocuseal.mutate();
-                    }}
-                    className="btn-brass h-12 w-full text-xs"
-                  >
-                    {startDocuseal.isPending
-                      ? "Opening DocuSeal…"
+                <button
+                  type="button"
+                  disabled={startDocuseal.isPending}
+                  onClick={() => {
+                    if (!data?.docuseal) {
+                      toast.error("DocuSeal is off — paste the API key in Settings");
+                      nav("/settings");
+                      return;
+                    }
+                    if (embedSrc || data.docusealEmbedSrc) {
+                      setEmbedSrc(embedSrc || data.docusealEmbedSrc || null);
+                      setShowDocuseal(true);
+                      return;
+                    }
+                    startDocuseal.mutate();
+                  }}
+                  className="btn-brass h-12 w-full text-xs"
+                >
+                  {startDocuseal.isPending
+                    ? "Opening DocuSeal…"
+                    : !data?.docuseal
+                      ? "Turn on DocuSeal"
                       : embedSrc || data.docusealEmbedSrc
                         ? "Continue signing"
                         : "Sign with DocuSeal"}
-                  </button>
-                )}
+                </button>
                 {!locked && (
                   <>
                     <div
