@@ -34,6 +34,8 @@ export type DocusealTemplate = {
   name?: string;
   slug?: string;
   submitters?: Array<{ name?: string; role?: string }>;
+  fields?: Array<{ name?: string; title?: string; type?: string }>;
+  documents?: Array<{ fields?: Array<{ name?: string; title?: string }> }>;
 };
 
 export function isDocusealProOnly(message: string): boolean {
@@ -61,6 +63,34 @@ export function templateSignerRole(template: DocusealTemplate | null | undefined
   const row = template?.submitters?.[0];
   const role = String(row?.name || row?.role || "").trim();
   return role || SIGNER_ROLE;
+}
+
+export function isUnknownFieldError(message: string): boolean {
+  return /unknown field/i.test(message);
+}
+
+export function templateFieldNames(template: DocusealTemplate | null | undefined): string[] {
+  const names = new Set<string>();
+  const walk = (rows: unknown) => {
+    if (!Array.isArray(rows)) return;
+    for (const row of rows) {
+      if (!row || typeof row !== "object") continue;
+      const rec = row as Record<string, unknown>;
+      const n = String(rec.name || rec.title || "").trim();
+      if (n && !/^signature$/i.test(n)) names.add(n);
+      if (Array.isArray(rec.fields)) walk(rec.fields);
+    }
+  };
+  walk(template?.fields);
+  walk(template?.documents);
+  return [...names];
+}
+
+/** Only send fields that exist on the template — DocuSeal 422s on unknown names. */
+export function pickKnownFields(wanted: QcDocusealField[], known: string[]): QcDocusealField[] {
+  if (!wanted.length || !known.length) return [];
+  const set = new Set(known.map((n) => n.toLowerCase()));
+  return wanted.filter((f) => set.has(f.name.toLowerCase()));
 }
 
 function headers(apiKey: string) {
@@ -276,34 +306,47 @@ export async function createQcSignatureSubmission(opts: {
   const auth = headers(cfg.apiKey);
   const preferred = (cfg.templateId || process.env.DOCUSEAL_TEMPLATE_ID || "").trim();
 
-  const template = await resolveTemplate(api, auth, preferred);
-  if (!template) throw new Error(NO_TEMPLATE);
+  const listed = await resolveTemplate(api, auth, preferred);
+  if (!listed) throw new Error(NO_TEMPLATE);
+  const template = (await loadTemplate(api, auth, listed.id)) || listed;
 
   const role = templateSignerRole(template);
-  const res = await fetch(`${api}/submissions`, {
-    method: "POST",
-    headers: auth,
-    body: JSON.stringify({
-      template_id: Number(template.id) || template.id,
-      send_email: false,
-      name: opts.title,
-      submitters: [
-        {
-          role,
-          email: opts.inspectorEmail,
-          name: opts.inspectorName,
-          send_email: false,
-          ...(opts.externalId ? { external_id: opts.externalId } : {}),
-          ...(opts.fields?.length ? { fields: opts.fields } : {}),
-        },
-      ],
-    }),
-  });
+  const fields = pickKnownFields(opts.fields || [], templateFieldNames(template));
 
+  const post = (sendFields: QcDocusealField[]) =>
+    fetch(`${api}/submissions`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        template_id: Number(template.id) || template.id,
+        send_email: false,
+        name: opts.title,
+        submitters: [
+          {
+            role,
+            email: opts.inspectorEmail,
+            name: opts.inspectorName,
+            send_email: false,
+            ...(opts.externalId ? { external_id: opts.externalId } : {}),
+            ...(sendFields.length ? { fields: sendFields } : {}),
+          },
+        ],
+      }),
+    });
+
+  let res = await post(fields);
   if (!res.ok) {
     const err = await res.text().catch(() => "");
     if (isDocusealProOnly(err)) throw new Error(NO_TEMPLATE);
-    throw new Error(`DocuSeal ${res.status}: ${err.slice(0, 240)}`);
+    if (isUnknownFieldError(err) && fields.length) {
+      res = await post([]);
+      if (!res.ok) {
+        const err2 = await res.text().catch(() => "");
+        throw new Error(`DocuSeal ${res.status}: ${err2.slice(0, 240)}`);
+      }
+    } else {
+      throw new Error(`DocuSeal ${res.status}: ${err.slice(0, 240)}`);
+    }
   }
 
   if (String(template.id) !== preferred) {

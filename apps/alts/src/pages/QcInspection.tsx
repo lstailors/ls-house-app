@@ -193,7 +193,9 @@ export default function QcInspection() {
     onError: (e: Error) => {
       const msg = e.message || "Could not start DocuSeal";
       toast.error(msg);
-      if (/not connected|no api key|paste the api key/i.test(msg)) nav("/settings");
+      if (/not connected|no api key|paste the api key/i.test(msg) && !/unknown field/i.test(msg)) {
+        nav("/settings");
+      }
     },
   });
 

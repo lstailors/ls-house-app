@@ -128,6 +128,7 @@ describe("iPhone scale contract", () => {
     expect(settings).toContain("https://docuseal.lstailors.com/settings/api");
     expect(settings).toContain("https://docuseal.lstailors.com/templates");
     expect(settings).toContain("New Template");
+    expect(settings).toContain("you will not be asked again");
     expect(settings).toContain("/api/webhooks/docuseal");
     expect(settings).not.toContain("localStorage");
     expect(settings).toContain("signOut");

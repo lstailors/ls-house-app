@@ -44,9 +44,10 @@ export default function AltsSettings() {
         url: url.trim() || undefined,
       }),
     onSuccess: (data) => {
-      toast.success("DocuSeal saved");
+      toast.success("Key saved on the server — you will not be asked again");
       setApiKey("");
       qc.setQueryData(["alts-qc-settings"], data);
+      qc.invalidateQueries({ queryKey: ["alts-qc-settings"] });
       qc.invalidateQueries({ queryKey: ["alts-qc-detail"] });
     },
     onError: (e: Error) => toast.error(e.message || "Could not save"),
@@ -127,7 +128,7 @@ export default function AltsSettings() {
             <div className="caps text-brass-light">DocuSeal</div>
             <p className="text-sm text-cream-dim">
               {settings.data?.apiKeySet
-                ? "Key is saved. Sign with DocuSeal uses a template in DocuSeal — your edition cannot sign a raw order PDF."
+                ? "Key is saved on the server. You will not be asked again. Sign with DocuSeal uses your template — a Signature box is enough."
                 : "Off until you paste the API key."}
             </p>
             {settings.data?.apiKeySet && (

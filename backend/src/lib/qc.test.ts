@@ -22,7 +22,7 @@ import {
   qcResultOf,
   tabToQcResult,
 } from "./qc";
-import { maskKey } from "./qc-settings";
+import { maskKey, mergeDocusealSettings } from "./qc-settings";
 
 describe("MTM QC catalog", () => {
   test("the live status list has Quality Control after Received at Store", () => {
@@ -202,6 +202,15 @@ describe("QC list helpers", () => {
     expect(maskKey("")).toBe("");
     expect(maskKey("abcd1234efgh")).toBe("abcd…efgh");
   });
+
+  test("DocuSeal settings merge ERP over globals over env", () => {
+    const merged = mergeDocusealSettings(
+      { apiKey: "global-key", url: "https://from-global.example" },
+      { apiKey: "erp-key" },
+    );
+    expect(merged.apiKey).toBe("erp-key");
+    expect(merged.url).toBe("https://from-global.example");
+  });
 });
 
 describe("QC routes are mounted", () => {
@@ -235,6 +244,11 @@ describe("QC routes are mounted", () => {
     expect(src).toContain("liftPausedStatuses");
     expect(src).toContain("saveQcInspection");
     expect(src).toContain("pausedFieldsOf");
+    const settings = readFileSync(new URL("./qc-settings.ts", import.meta.url), "utf8");
+    expect(settings).toContain("persistGlobals");
+    expect(settings).toContain("set_global_default");
+    expect(settings).toContain("frappe.client.set_value");
+    expect(settings.indexOf("await persistGlobals(next)")).toBeGreaterThan(settings.indexOf("await persistErpDoc"));
     expect(src).toContain('doctype === "Sales Order" && key === "status"');
   });
 
