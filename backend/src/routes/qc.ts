@@ -161,21 +161,49 @@ function isPauseHoldError(message: unknown): boolean {
   return /pause\s*\/\s*hold|on pause|on hold|cannot be "pause/i.test(String(message || ""));
 }
 
+function pausedFieldsOf(doc: Record<string, unknown>, doctype: string): Record<string, string> {
+  const next = liveStatusFromPaused(doc.order_status || doc.status);
+  const patch: Record<string, string> = {};
+  for (const [key, value] of Object.entries(doc)) {
+    if (Array.isArray(value) || value == null || typeof value === "object") continue;
+    if (!isPausedMtmStatus(value)) continue;
+    if (!/status|state/i.test(key)) continue;
+    // Never rewrite a Sales Order's core status (Draft / To Deliver / …).
+    if (doctype === "Sales Order" && key === "status") continue;
+    patch[key] = next;
+  }
+  return patch;
+}
+
+async function writeStatusPatch(doctype: string, name: string, patch: Record<string, string>) {
+  if (!Object.keys(patch).length) return;
+  try {
+    await erpUpdate(doctype, name, patch);
+    return;
+  } catch {
+    /* set_value one field at a time */
+  }
+  for (const [fieldname, value] of Object.entries(patch)) {
+    await erpRunMethod("frappe.client.set_value", { doctype, name, fieldname, value }).catch(() => null);
+  }
+}
+
 async function liftPausedStatuses(insp: Record<string, unknown>) {
-  const names = [insp.custom_order, insp.mtmpro_order, insp.sales_order, insp.name].filter(Boolean).map(String);
-  const doctypes = [DT_QC, DT_CUSTOM, DT.MTM_PRO_ORDER];
+  const names = [
+    insp.custom_order,
+    insp.mtmpro_order,
+    insp.sales_order,
+    insp.erp_sales_order,
+    insp.name,
+  ]
+    .filter(Boolean)
+    .map(String);
+  const doctypes = [DT.MTM_PRO_ORDER, DT_CUSTOM, "Sales Order", DT_QC];
   for (const name of names) {
     for (const dt of doctypes) {
       const doc = await erpGet<any>(dt, name).catch(() => null);
       if (!doc?.name) continue;
-      if (!isPausedMtmStatus(doc.order_status) && !isPausedMtmStatus(doc.status)) continue;
-      const next = liveStatusFromPaused(doc.order_status || doc.status);
-      const patch: Record<string, unknown> = {};
-      if (isPausedMtmStatus(doc.order_status)) patch.order_status = next;
-      if (isPausedMtmStatus(doc.status)) patch.status = next;
-      if (Object.keys(patch).length) {
-        await erpUpdate(dt, doc.name, patch).catch(() => null);
-      }
+      await writeStatusPatch(dt, doc.name, pausedFieldsOf(doc, dt));
     }
   }
 }
@@ -185,15 +213,14 @@ async function saveQcInspection(
   update: Record<string, unknown>,
   existing: Record<string, unknown>,
 ) {
+  await liftPausedStatuses(existing);
   try {
     return await updateDroppingFields(name, update);
   } catch (e: any) {
     if (!isPauseHoldError(e?.message)) throw e;
     await liftPausedStatuses(existing);
     const retry = { ...update };
-    if (isPausedMtmStatus(existing.order_status) || isPauseHoldError(e?.message)) {
-      retry.order_status = liveStatusFromPaused(existing.order_status);
-    }
+    retry.order_status = liveStatusFromPaused(existing.order_status);
     if (isPausedMtmStatus(existing.status)) retry.status = liveStatusFromPaused(existing.status);
     return await updateDroppingFields(name, retry);
   }
@@ -1032,6 +1059,7 @@ qcRouter.patch("/:id", async (c) => {
   try {
     const existing = await resolveInspection(id);
     if (!existing?.name) return c.json({ error: { message: "Not found" } }, 404);
+    await liftPausedStatuses(existing);
     const body = await c.req.json().catch(() => ({}));
 
     const want = body.qc_result || body.result;
@@ -1158,7 +1186,7 @@ qcRouter.post("/:id/sign", async (c) => {
         isPrivate: false,
       });
       const url = erpFileAbsoluteUrl(fileUrl);
-      await updateDroppingFields(existing.name, { signature_url: url, signed_at: new Date().toISOString() });
+      await saveQcInspection(existing.name, { signature_url: url, signed_at: new Date().toISOString() }, existing);
       return c.json({ data: { signatureUrl: url, signedAt: new Date().toISOString(), embedSrc: null } });
     }
 
@@ -1186,10 +1214,14 @@ qcRouter.post("/:id/sign", async (c) => {
         502,
       );
     }
-    await updateDroppingFields(existing.name, {
-      docuseal_submission_id: String(sub.id),
-      docuseal_embed_src: sub.embedSrc,
-    });
+    await saveQcInspection(
+      existing.name,
+      {
+        docuseal_submission_id: String(sub.id),
+        docuseal_embed_src: sub.embedSrc,
+      },
+      existing,
+    );
     return c.json({ data: { embedSrc: sub.embedSrc, submissionId: sub.id } });
   } catch (e: any) {
     return c.json({ error: { message: e?.message || "Could not sign" } }, 502);

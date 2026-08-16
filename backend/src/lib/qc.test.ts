@@ -230,6 +230,8 @@ describe("QC routes are mounted", () => {
     expect(src).toContain("raceMs");
     expect(src).toContain("liftPausedStatuses");
     expect(src).toContain("saveQcInspection");
+    expect(src).toContain("pausedFieldsOf");
+    expect(src).toContain('doctype === "Sales Order" && key === "status"');
   });
 
   test("live MTM pipeline routes are registered before /:id", () => {
