@@ -98,12 +98,9 @@ export default function QcInspection() {
   const data = detail.data;
   const inspectionId = data?.id || data?.name || (isQcInspectionName(id) ? id : null);
 
-  const skipCheckSave = useRef(true);
-
   useEffect(() => {
     const row = detail.data;
     if (!row) return;
-    skipCheckSave.current = true;
     setNotes(row.notes || "");
     setFailReason(row.failReason || "");
     setChecks(mergeQcChecks(row.checks));
@@ -346,18 +343,8 @@ export default function QcInspection() {
     }
   }, [showDocuseal, data?.signedAt]);
 
-  useEffect(() => {
-    if (!inspectionId || locked) return;
-    if (!checks.length) return;
-    if (skipCheckSave.current) {
-      skipCheckSave.current = false;
-      return;
-    }
-    const t = setTimeout(() => {
-      save.mutate({ checks, notes, failReason });
-    }, 900);
-    return () => clearTimeout(t);
-  }, [checks, failReason, inspectionId, locked, notes, save]);
+  // Checks stay on the phone until Pass / Fail / notes blur. Auto-save was
+  // writing ERPNext on every tick and blowing up Pause / Hold makes.
 
   return (
     <div className="alts-root min-h-dvh flex flex-col overflow-x-hidden" style={{ touchAction: "manipulation" }}>

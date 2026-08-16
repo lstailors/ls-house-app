@@ -26,6 +26,23 @@ export function isMtmStatus(value: string | null | undefined): value is MtmStatu
   return !!value && MTM_STATUS_KEYS.includes(value as MtmStatus);
 }
 
+/** Legacy desk values that are no longer on the Order Status select. */
+const PAUSED_STATUS = /pause|hold/i;
+
+export function isPausedMtmStatus(value: unknown): boolean {
+  const raw = String(value ?? "").trim();
+  if (!raw || isMtmStatus(raw)) return false;
+  return PAUSED_STATUS.test(raw);
+}
+
+/** Lift a paused make onto the live list so ERPNext will accept a save. */
+export function liveStatusFromPaused(value: unknown, fallback: MtmStatus = "Quality Control"): MtmStatus {
+  const raw = String(value ?? "").trim();
+  if (isMtmStatus(raw)) return raw;
+  if (isPausedMtmStatus(value)) return fallback;
+  return fallback;
+}
+
 export const QC_QUEUE_STATUSES = ["Quality Control", "Received at Store", "At QC"] as const;
 export const QC_PASS_STATUSES = ["Awaiting Fitting", "Awaiting Shipment"] as const;
 export const QC_FAIL_STATUS = "Alterations";
@@ -336,7 +353,6 @@ function arrivalFieldAliases(item: (typeof STORE_ARRIVAL_CHECKS)[number]): strin
 function tickArrivalRow(row: Record<string, unknown>, checkFields: string[]): Record<string, unknown> {
   const next = { ...row };
   for (const field of checkFields.length ? checkFields : ROW_CHECK_FIELDS) next[field] = 1;
-  if (!checkFields.length) next.status = row.status || "Pass";
   return next;
 }
 
@@ -445,8 +461,11 @@ export function storeArrivalToDocFields(
     if (!ok) continue;
     for (const field of arrivalFieldAliases(item)) out[field] = 1;
   }
-  Object.assign(out, tickArrivalChecksFromMeta(opts?.meta), tickArrivalChecksFromDoc(existing));
+  if (force) Object.assign(out, tickArrivalChecksFromMeta(opts?.meta), tickArrivalChecksFromDoc(existing));
   Object.assign(out, markStoreArrivalChildren(existing || {}, force, opts?.meta));
+  for (const key of ["status", "order_status", "qc_result", "result", "name", "doctype"]) {
+    delete out[key];
+  }
   return out;
 }
 

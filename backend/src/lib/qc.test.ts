@@ -11,6 +11,8 @@ import {
   mergeChecks,
   storeArrivalToDocFields,
   frappeScrub,
+  isPausedMtmStatus,
+  liveStatusFromPaused,
   MTM_STATUSES,
   QC_CHECK_CATALOG,
   QC_FAIL_STATUS,
@@ -28,6 +30,13 @@ describe("MTM QC catalog", () => {
     expect(keys.indexOf("Quality Control")).toBeLessThan(keys.indexOf("Awaiting Fitting"));
     expect(keys).toContain("Awaiting Shipment");
     expect(keys).not.toContain("Final QC");
+  });
+
+  test("Pause / Hold is lifted onto the live status list", () => {
+    expect(isPausedMtmStatus("Pause / Hold")).toBe(true);
+    expect(isPausedMtmStatus("On Pause")).toBe(true);
+    expect(isPausedMtmStatus("Quality Control")).toBe(false);
+    expect(liveStatusFromPaused("Pause / Hold")).toBe("Quality Control");
   });
 
   test("queue / pass / fail follow the store-side gate", () => {
@@ -219,6 +228,8 @@ describe("QC routes are mounted", () => {
     expect(src).toContain("forcePass: true");
     expect(src).toContain("stubInspection");
     expect(src).toContain("raceMs");
+    expect(src).toContain("liftPausedStatuses");
+    expect(src).toContain("saveQcInspection");
   });
 
   test("live MTM pipeline routes are registered before /:id", () => {
