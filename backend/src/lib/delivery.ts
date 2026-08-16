@@ -130,3 +130,37 @@ export function normalizeZip(raw: string | null | undefined): string | null {
   if (digits.length < 5) return null;
   return digits.slice(0, 5);
 }
+
+/**
+ * LSH Delivery Timeline.event_type Select options in ERP.
+ * Status "Queued" is valid on the parent doc; the child row must be "queued".
+ */
+export const LSH_TIMELINE_EVENTS = [
+  "created",
+  "queued",
+  "Out for Delivery",
+  "Delivered",
+  "Cancelled",
+  "Failed",
+  "proof_viewed",
+  "note_added",
+] as const;
+
+export type LshTimelineEvent = (typeof LSH_TIMELINE_EVENTS)[number];
+
+const STATUS_TO_TIMELINE_EVENT: Record<string, LshTimelineEvent> = {
+  created: "created",
+  queued: "queued",
+  Queued: "queued",
+  "Out for Delivery": "Out for Delivery",
+  Delivered: "Delivered",
+  Cancelled: "Cancelled",
+  Failed: "Failed",
+  proof_viewed: "proof_viewed",
+  note_added: "note_added",
+};
+
+export function timelineEventType(status: string): LshTimelineEvent {
+  return STATUS_TO_TIMELINE_EVENT[status] ?? "queued";
+}
+

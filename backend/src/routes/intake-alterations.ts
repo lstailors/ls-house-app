@@ -8,7 +8,7 @@ import { assertNoPanInCustomerFields, PciFieldRejected } from '../lib/pci-guard'
 import { canShowTestData, filterTestRows } from '../lib/ops-mode';
 import { eTicketKey, eTicketKeyValid, eTicketPublicUrl } from '../lib/eticket-token';
 import { planDeliveryFee } from './delivery-zones';
-import { erpDatetime } from '../lib/delivery';
+import { erpDatetime, timelineEventType } from '../lib/delivery';
 
 // ---------------------------------------------------------------------------
 // ERPNext config
@@ -1113,7 +1113,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
             lsh_timeline: [
               {
                 doctype: 'LSH Delivery Timeline',
-                event_type: 'Queued',
+                event_type: timelineEventType('Queued'),
                 event_at: erpDatetime(),
                 actor_label: user.name || user.email || 'Staff',
                 message: `Booked with ticket ${ticketName}`,

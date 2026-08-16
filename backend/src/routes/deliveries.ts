@@ -22,6 +22,7 @@ import {
   hasPod,
   needsBackdateNote,
   normalizeZip,
+  timelineEventType,
 } from "../lib/delivery";
 import { nyTodayIso, addDaysIso } from "../lib/shop-time";
 
@@ -125,20 +126,10 @@ async function saveCustomerAddress(
 
 // ── Timeline helper ───────────────────────────────────────────────────────────
 // ERPNext child tables must be sent in full. Fetch existing rows, append new entry.
-const EVENT_LABELS: Record<string, string> = {
-  "queued":           "queued",
-  "Queued":           "queued",
-  "Ready for Pickup": "Ready for Pickup",
-  "Out for Delivery": "Out for Delivery",
-  "Delivered":        "Delivered",
-  "Failed":           "Failed",
-  "Cancelled":        "Cancelled",
-};
-
 function buildTimelineEntry(status: string, actor: string): Record<string, unknown> {
   return {
     doctype: "LSH Delivery Timeline",
-    event_type: EVENT_LABELS[status] ?? status,
+    event_type: timelineEventType(status),
     event_at: erpDatetime(),
     actor_label: actor,
     message: "",

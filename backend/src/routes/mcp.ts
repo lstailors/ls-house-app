@@ -221,23 +221,16 @@ mcpRouter.get("/summary", async (c) => {
 
 // ── Deliveries (MCP) ──────────────────────────────────────────────────────────
 
-import { erpDatetime, sanitizeGps, hasPod } from "../lib/delivery";
+import { erpDatetime, sanitizeGps, hasPod, timelineEventType } from "../lib/delivery";
 
 function erpDatetimeMcp(d?: Date | string | null): string {
   return erpDatetime(d);
 }
 
 function buildDeliveryTimelineEntry(status: string, actor: string) {
-  const labels: Record<string, string> = {
-    "Queued": "Queued",
-    "Out for Delivery": "Out for Delivery",
-    "Delivered": "Delivered",
-    "Failed": "Attempted — Failed",
-    "Cancelled": "Cancelled",
-  };
   return {
     doctype: "LSH Delivery Timeline",
-    event_type: labels[status] ?? status,
+    event_type: timelineEventType(status),
     event_at: erpDatetimeMcp(),
     actor_label: actor,
     message: "",
