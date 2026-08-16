@@ -191,11 +191,8 @@ intakeAlterationsRouter.get('/presets', async (c) => {
         'menu_class',
         'description',
       ],
-      [
-        ['is_active', '=', 1],
-        ['in_pos_menu', '=', 1],
-      ],
-      500,
+      [['is_active', '=', 1]],
+      2000,
       'sort_order asc, garment_type asc, preset_name asc',
     );
     const normalized = list.map((p: any) => {

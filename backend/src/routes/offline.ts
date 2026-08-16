@@ -154,10 +154,7 @@ offlineRouter.get("/snapshot", async (c) => {
     ),
     settled(
       erpList<Record<string, unknown>>("Alteration Preset", {
-        filters: [
-          ["is_active", "=", 1],
-          ["in_pos_menu", "=", 1],
-        ],
+        filters: [["is_active", "=", 1]],
         fields: [
           "name",
           "preset_name",
@@ -166,11 +163,13 @@ offlineRouter.get("/snapshot", async (c) => {
           "alteration_category",
           "default_price",
           "estimated_minutes",
+          "is_group",
+          "parent_preset",
           "item_code",
           "quick_pick",
           "sort_order",
         ],
-        limit: 500,
+        limit: 2000,
         order_by: "sort_order asc",
       }),
       [],

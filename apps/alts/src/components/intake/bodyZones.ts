@@ -6,8 +6,10 @@ import type { BodyZoneId } from "@alts/components/intake/GarmentZoneIcon";
 
 export type PresetLike = {
   id: string;
+  name?: string;
   display_name?: string;
   preset_name?: string;
+  parent_preset?: string | null;
   is_group?: number | boolean;
 };
 
@@ -126,4 +128,30 @@ export function matchZone(p: PresetLike, zones: BodyZoneDef[]): BodyZoneId | nul
 
 export function isGroup(p: PresetLike) {
   return p.is_group === 1 || p.is_group === true;
+}
+
+function groupKeys(p: PresetLike): string[] {
+  return [p.id, p.name, p.preset_name].filter(Boolean) as string[];
+}
+
+/** Every quote line in a zone — leaf label or parent folder, not just starred Quick actions. */
+export function leavesForZone<T extends PresetLike>(presets: T[], zone: BodyZoneDef): T[] {
+  const parentKeys = new Set<string>();
+  for (const p of presets) {
+    if (isGroup(p) && zone.match(labelOfPreset(p).toLowerCase())) {
+      for (const key of groupKeys(p)) parentKeys.add(key);
+    }
+  }
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const p of presets) {
+    if (isGroup(p) || seen.has(p.id)) continue;
+    const inZone =
+      zone.match(labelOfPreset(p).toLowerCase()) ||
+      (!!p.parent_preset && parentKeys.has(p.parent_preset));
+    if (!inZone) continue;
+    seen.add(p.id);
+    out.push(p);
+  }
+  return out;
 }

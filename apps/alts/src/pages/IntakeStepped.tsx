@@ -23,6 +23,7 @@ import TicketCartRail from "@alts/components/intake/TicketCartRail";
 import TicketCartDock from "@alts/components/intake/TicketCartDock";
 import TicketCartSheet from "@alts/components/intake/TicketCartSheet";
 import GarmentOptionsDrawer from "@alts/components/intake/GarmentOptionsDrawer";
+import { garmentMatchesPreset } from "@alts/components/intake/TaskSubitemPicker";
 import SellItemCatalog, {
   type SellFilterId,
   type SellableItem,
@@ -1019,10 +1020,7 @@ export default function IntakeStepped() {
   const filteredPresets = useMemo(() => {
     const all = presets.data ?? [];
     if (!active) return all;
-    return all.filter((p) => {
-      const types = p.garment_types ?? (p.garment_type ? [p.garment_type] : ["All"]);
-      return types.includes("All") || types.includes(active.garmentType) || !p.garment_type;
-    });
+    return all.filter((p) => garmentMatchesPreset(p, active.garmentType));
   }, [presets.data, active]);
 
   const selectCustomer = async (c: CustomerHit) => {
