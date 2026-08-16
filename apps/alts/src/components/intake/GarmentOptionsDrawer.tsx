@@ -1,6 +1,7 @@
 import { cn } from "@ls/design/utils";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useLocation } from "react-router-dom";
 import { LUX_MS, useBodyLock, useOverlayEscape, usePresence } from "@alts/lib/luxuryMotion";
 import TaskSubitemPicker, { type HierarchyPreset } from "@alts/components/intake/TaskSubitemPicker";
 import { formatMoney } from "@alts/lib/money";
@@ -84,7 +85,9 @@ export default function GarmentOptionsDrawer({
   photoStrip,
   icon,
 }: Props) {
-  const visible = open && !!garment;
+  const { pathname } = useLocation();
+  const onQc = /^\/qc(\/|$)/i.test(pathname);
+  const visible = open && !!garment && !onQc;
   const { shown, entered } = usePresence(visible, LUX_MS);
   useBodyLock(shown);
   useOverlayEscape(shown, onClose);

@@ -826,6 +826,14 @@ export default function IntakeStepped() {
     setNoteOpenFor(null);
   };
 
+  useEffect(() => {
+    return () => {
+      setDrawerOpen(false);
+      setSellDrawerOpen(false);
+      setNoteOpenFor(null);
+    };
+  }, []);
+
   const openCartSheet = () => {
     setDrawerOpen(false);
     setSellDrawerOpen(false);

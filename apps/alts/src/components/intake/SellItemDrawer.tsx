@@ -1,5 +1,6 @@
 import { cn } from "@ls/design/utils";
 import { createPortal } from "react-dom";
+import { useLocation } from "react-router-dom";
 import { LUX_MS, useBodyLock, useOverlayEscape, usePresence } from "@alts/lib/luxuryMotion";
 import { formatMoney } from "@alts/lib/money";
 
@@ -76,7 +77,8 @@ export default function SellItemDrawer({
   onRate,
   onEta,
 }: Props) {
-  const visible = open && !!line;
+  const { pathname } = useLocation();
+  const visible = open && !!line && !/^\/qc(\/|$)/i.test(pathname);
   const { shown, entered } = usePresence(visible, LUX_MS);
   useBodyLock(shown);
   useOverlayEscape(shown, onClose);

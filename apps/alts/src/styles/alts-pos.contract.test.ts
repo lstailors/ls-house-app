@@ -148,6 +148,8 @@ describe("iPhone scale contract", () => {
     expect(item).toContain("isQcInspectionName");
     expect(item).toContain("Store arrival");
     expect(item).not.toContain("setTimeout(() => {\n      save.mutate({ checks, notes, failReason })");
+    const drawer = readFileSync(new URL("../components/intake/GarmentOptionsDrawer.tsx", import.meta.url), "utf8");
+    expect(drawer).toContain("/qc");
     expect(app).toContain("NotFound");
     expect(app).toContain('path="/reports/:tab?"');
     expect(app).not.toContain('Navigate to="/"');
