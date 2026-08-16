@@ -493,26 +493,24 @@ export default function QcInspection() {
                     <div className="text-[14px] font-semibold">{row.label}</div>
                     {row.hint && <div className="text-[12px] text-cream-dim mt-0.5">{row.hint}</div>}
                     <div className={cn("grid gap-2 mt-2", group === "Store arrival" ? "grid-cols-2" : "grid-cols-3")}>
-                      {(
-                        [
-                          [true, "Pass", "bg-signal-emerald/20 border-signal-emerald text-signal-emerald"],
-                          [false, "Fail", "bg-signal-rose/15 border-signal-rose/50 text-signal-rose"],
-                          ...(group === "Store arrival"
-                            ? []
-                            : ([[null, "Skip", "border-brass/25 text-cream-dim"]] as const)),
-                        ] as const
-                      ).map(([val, lab, cls]) => (
+                      {([
+                        { val: true as boolean | null, lab: "Pass", cls: "bg-signal-emerald/20 border-signal-emerald text-signal-emerald" },
+                        { val: false as boolean | null, lab: "Fail", cls: "bg-signal-rose/15 border-signal-rose/50 text-signal-rose" },
+                        ...(group === "Store arrival"
+                          ? []
+                          : [{ val: null as boolean | null, lab: "Skip", cls: "border-brass/25 text-cream-dim" }]),
+                      ]).map((opt) => (
                         <button
-                          key={lab}
+                          key={opt.lab}
                           type="button"
                           disabled={locked}
-                          onClick={() => setCheck(row.id, val)}
+                          onClick={() => setCheck(row.id, opt.val)}
                           className={cn(
                             "h-11 rounded-xl border text-[11px] font-bold uppercase tracking-widest",
-                            row.pass === val ? cls : "border-brass/20 text-cream-dim",
+                            row.pass === opt.val ? opt.cls : "border-brass/20 text-cream-dim",
                           )}
                         >
-                          {lab}
+                          {opt.lab}
                         </button>
                       ))}
                     </div>

@@ -144,9 +144,9 @@ describe("iPhone scale contract", () => {
     expect(home).not.toContain("app.lstailors.com/owner");
     expect(home).not.toContain("Store QC · makes only");
     const reports = readFileSync(new URL("../pages/Reports.tsx", import.meta.url), "utf8");
-    expect(reports).toContain('slug: "houston"');
-    expect(reports).toContain('slug: "qc-rates"');
-    expect(reports).toContain("kiosk=1");
+    expect(reports).toContain('["hou", "Houston"]');
+    expect(reports).toContain('["qc", "QC rates"]');
+    expect(reports).toContain('params.get("kiosk") === "1"');
     const search = readFileSync(new URL("../components/UniversalSearch.tsx", import.meta.url), "utf8");
     expect(search).toContain('!pathname.startsWith("/reports")');
     const kind = readFileSync(new URL("../pages/TicketKind.tsx", import.meta.url), "utf8");

@@ -425,8 +425,8 @@ export default function Customers() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: "Total Clients", value: kpis.total.toLocaleString() },
-            { label: "VIP (page)", value: kpis.vip.toLocaleString(), gold: true },
-            { label: "Casa (page)", value: kpis.casa.toLocaleString(), gold: kpis.casa > 0 },
+            { label: "VIP", value: kpis.vip.toLocaleString(), gold: true },
+            { label: "Casa", value: kpis.casa.toLocaleString(), gold: kpis.casa > 0 },
             { label: "Needs review", value: kpis.review.toLocaleString(), alert: kpis.review > 0 },
           ].map(({ label, value, gold, alert }) => (
             <button
