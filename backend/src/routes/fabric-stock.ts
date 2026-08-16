@@ -68,19 +68,19 @@ type StockRow = {
 };
 
 function publicFileUrl(path: string): string {
+  const leaf = path.replace(/^https?:\/\/[^/]+/, "");
+  if (leaf.startsWith("/files/")) return `https://erp.lstailors.com${leaf}`;
   if (/^https?:\/\//i.test(path)) return path;
-  const base = (process.env.ERPNEXT_PUBLIC_URL || process.env.ERPNEXT_BASE_URL || "https://erp.lstailors.com").replace(
-    /\/$/,
-    "",
-  );
-  return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
+  return `https://erp.lstailors.com${leaf.startsWith("/") ? "" : "/"}${leaf}`;
 }
 
 function photoProxy(name: string, row: StockRow): string | null {
-  if (row.photo_url && /^https?:\/\//i.test(row.photo_url)) return row.photo_url;
-  if (row.photo_url && row.photo_url.startsWith("/")) return publicFileUrl(row.photo_url);
-  if (row.photo && /^https?:\/\//i.test(row.photo)) return row.photo;
-  if (row.photo && row.photo.startsWith("/files/")) return publicFileUrl(row.photo);
+  if (row.photo_url && (row.photo_url.startsWith("/files/") || /^https?:\/\//i.test(row.photo_url))) {
+    return publicFileUrl(row.photo_url);
+  }
+  if (row.photo && (row.photo.startsWith("/files/") || /^https?:\/\//i.test(row.photo))) {
+    return publicFileUrl(row.photo);
+  }
   if (row.photo) return `/api/fabric-stock/${encodeURIComponent(name)}/photo`;
   return null;
 }

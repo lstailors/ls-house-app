@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
-import { AuthImage } from "@alts/components/AuthImage";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 
@@ -93,22 +92,22 @@ function Chip({
 
 function StockThumb({ item }: { item: StockCard }) {
   const [failed, setFailed] = useState(false);
-  const showPhoto = !!item.photoUrl && !failed;
+  if (!item.photoUrl || failed) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-[#1b3324]">
+        <span className="text-[11px] tracking-[0.14em] uppercase text-[#c4a574]/80">No photo</span>
+      </div>
+    );
+  }
   return (
-    <div className="relative aspect-[5/4] bg-[#1b3324]">
-      {showPhoto ? (
-        <AuthImage
-          path={item.photoUrl!}
-          alt={item.title}
-          className="absolute inset-0 w-full h-full object-cover"
-          onFail={() => setFailed(true)}
-        />
-      ) : (
-        <div className="absolute inset-0 flex items-center justify-center px-3 text-center">
-          <span className="text-[11px] tracking-[0.14em] uppercase text-brass/70">No photo</span>
-        </div>
-      )}
-    </div>
+    <img
+      src={item.photoUrl}
+      alt={item.title}
+      className="absolute inset-0 w-full h-full object-cover"
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+    />
   );
 }
 
@@ -146,10 +145,11 @@ export default function StockGallery() {
     staleTime: 20_000,
   });
 
-  const items = [...(list.data?.items ?? [])].sort((a, b) => {
-    if (!!a.photoUrl !== !!b.photoUrl) return a.photoUrl ? -1 : 1;
-    return (a.pieceNo ?? 0) - (b.pieceNo ?? 0);
-  });
+  const photographed = [...(list.data?.items ?? [])]
+    .filter((item) => !!item.photoUrl)
+    .sort((a, b) => (a.pieceNo ?? 0) - (b.pieceNo ?? 0));
+  const missingPhoto = (list.data?.items ?? []).filter((item) => !item.photoUrl).length;
+  const items = photographed;
   const counts = list.data?.counts;
 
   const runSearch = () => setGo(q.trim());
@@ -245,45 +245,34 @@ export default function StockGallery() {
 
         {!list.isLoading && !list.isError && items.length === 0 && (
           <div className="rounded-2xl border border-brass/20 bg-black/25 px-6 py-16 text-center">
-            <div className="display text-2xl text-cream mb-2">No pieces</div>
-            <p className="text-sm text-cream-muted max-w-sm mx-auto">
-              Nothing matches this filter. Try Available or clear search.
+            <div className="display text-2xl text-[#f1e9d6] mb-2">No photos yet</div>
+            <p className="text-sm text-[#d4cdb8] max-w-sm mx-auto">
+              {missingPhoto
+                ? `${missingPhoto} pieces are on file without a picture.`
+                : "Nothing matches this filter."}
             </p>
           </div>
         )}
 
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3">
           {items.map((item) => (
             <Link
               key={item.id}
               to={`/stock/${encodeURIComponent(item.id)}`}
-              className="group overflow-hidden rounded-2xl border border-brass/25 bg-[#1f3a2b] shadow-glass hover:border-brass/55 transition-colors"
+              className="group overflow-hidden rounded-2xl border border-[#c4a574]/30 bg-[#1b3324]"
             >
-              <StockThumb item={item} />
-              <div className="px-2.5 py-2.5 space-y-1">
-                <div className="flex flex-wrap gap-1">
-                  <span className="px-1.5 py-0.5 rounded-md bg-black/40 border border-brass/30 text-[9px] tracking-[0.08em] uppercase text-brass-light">
-                    {item.source}
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded-md bg-black/40 border border-white/10 text-[9px] tracking-[0.08em] uppercase text-[#f1e9d6]/85">
-                    {kindLabel(item.kind)}
-                  </span>
-                  {item.status === "Used" && (
-                    <span className="px-1.5 py-0.5 rounded-md bg-signal-rose/80 text-[9px] tracking-[0.08em] uppercase text-white">
-                      Used
-                    </span>
-                  )}
+              <div className="relative aspect-[4/5] bg-[#14261c]">
+                <StockThumb item={item} />
+                <div className="absolute inset-x-0 bottom-0 bg-[#0d1a10]/88 px-2 py-2">
+                  <div className="text-[10px] text-[#c4a574] tabular-nums">
+                    #{item.pieceNo ?? "—"}
+                    {item.lengthYds != null ? ` · ${item.lengthYds} yd` : ""}
+                    {` · ${item.source}`}
+                  </div>
+                  <div className="text-[13px] font-semibold text-[#f1e9d6] leading-snug line-clamp-2">
+                    {item.title}
+                  </div>
                 </div>
-                <div className="text-[10px] text-brass-light/90 tabular-nums">
-                  #{item.pieceNo ?? "—"}
-                  {item.lengthYds != null ? ` · ${item.lengthYds} yd` : ""}
-                </div>
-                <div className="text-[13px] font-semibold text-[#f1e9d6] leading-snug line-clamp-2">
-                  {item.title}
-                </div>
-                {item.customerRef ? (
-                  <div className="text-[11px] text-[#d4cdb8] truncate">{item.customerRef}</div>
-                ) : null}
               </div>
             </Link>
           ))}

@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
-import { AuthImage } from "@alts/components/AuthImage";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { toast } from "sonner";
 import "@alts/styles/alts-pos.css";
@@ -138,12 +137,12 @@ export default function StockDetailPage() {
           >
             <div className="relative aspect-[4/5] sm:aspect-[16/11] max-h-[min(72vh,820px)] mx-auto">
               {d.photoUrl && !imgFailed ? (
-                <AuthImage
-                  path={d.photoUrl}
+                <img
+                  src={d.photoUrl}
                   alt={d.title}
-                  className="absolute inset-0 w-full h-full bg-black"
-                  fit="contain"
-                  onFail={() => setImgFailed(true)}
+                  className="absolute inset-0 w-full h-full object-contain bg-black"
+                  referrerPolicy="no-referrer"
+                  onError={() => setImgFailed(true)}
                 />
               ) : (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center bg-gradient-to-br from-forest-raised to-forest-deep">
