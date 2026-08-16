@@ -67,21 +67,8 @@ type StockRow = {
   modified?: string;
 };
 
-function publicFileUrl(path: string): string {
-  const leaf = path.replace(/^https?:\/\/[^/]+/, "");
-  if (leaf.startsWith("/files/")) return `https://erp.lstailors.com${leaf}`;
-  if (/^https?:\/\//i.test(path)) return path;
-  return `https://erp.lstailors.com${leaf.startsWith("/") ? "" : "/"}${leaf}`;
-}
-
 function photoProxy(name: string, row: StockRow): string | null {
-  if (row.photo_url && (row.photo_url.startsWith("/files/") || /^https?:\/\//i.test(row.photo_url))) {
-    return publicFileUrl(row.photo_url);
-  }
-  if (row.photo && (row.photo.startsWith("/files/") || /^https?:\/\//i.test(row.photo))) {
-    return publicFileUrl(row.photo);
-  }
-  if (row.photo) return `/api/fabric-stock/${encodeURIComponent(name)}/photo`;
+  if (row.photo || row.photo_url) return `/api/fabric-stock/${encodeURIComponent(name)}/photo`;
   return null;
 }
 
@@ -254,10 +241,6 @@ fabricStockRouter.get("/:id/photo", async (c) => {
   const row = await erpGet<StockRow>(DOCTYPE, id);
   if (!row) return c.json({ error: { message: "Not found" } }, 404);
 
-  if (row.photo_url && /^https?:\/\//i.test(row.photo_url)) {
-    return c.redirect(row.photo_url, 302);
-  }
-
   const base = process.env.ERPNEXT_BASE_URL ?? "";
   const key = process.env.ERPNEXT_API_KEY ?? "";
   const secret = process.env.ERPNEXT_API_SECRET ?? "";
@@ -266,7 +249,11 @@ fabricStockRouter.get("/:id/photo", async (c) => {
   }
 
   const guesses: string[] = [];
+  if (row.photo_url) guesses.push(row.photo_url);
   if (row.photo) guesses.push(row.photo);
+  if (row.photo && row.photo.startsWith("/")) {
+    guesses.push(`https://erp.lstailors.com${row.photo}`);
+  }
   if (row.filename) {
     guesses.push(`/private/files/${row.filename}`);
     guesses.push(`/files/${row.filename}`);

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import { AuthImage } from "@alts/components/AuthImage";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 
@@ -50,14 +51,6 @@ type FilterKey =
   | "lst"
   | "all";
 
-function kindLabel(k: string) {
-  if (k === "lining") return "Lining";
-  if (k === "buttons") return "Buttons";
-  if (k === "trim") return "Trim";
-  if (k === "unsure") return "Unsure";
-  return "Fabric";
-}
-
 function Chip({
   active,
   onClick,
@@ -74,18 +67,14 @@ function Chip({
       type="button"
       onClick={onClick}
       className={cn(
-        "shrink-0 h-9 px-3 rounded-full border text-[11px] font-semibold tracking-[0.06em] uppercase transition-colors",
+        "shrink-0 h-9 px-3 rounded-full border text-[11px] font-semibold tracking-[0.06em] uppercase",
         active
-          ? "bg-brass/25 border-brass text-brass-light"
-          : "bg-black/20 border-brass/25 text-cream-muted hover:border-brass/45 hover:text-cream",
+          ? "bg-[#c4a574]/25 border-[#c4a574] text-[#e8d5a3]"
+          : "bg-black/20 border-[#c4a574]/30 text-[#d4cdb8]",
       )}
     >
       {children}
-      {count != null ? (
-        <span className={cn("ml-1.5 tabular-nums", active ? "text-cream" : "text-cream-muted/80")}>
-          {count}
-        </span>
-      ) : null}
+      {count != null ? <span className="ml-1.5 tabular-nums text-[#f1e9d6]">{count}</span> : null}
     </button>
   );
 }
@@ -95,18 +84,16 @@ function StockThumb({ item }: { item: StockCard }) {
   if (!item.photoUrl || failed) {
     return (
       <div className="absolute inset-0 flex items-center justify-center bg-[#1b3324]">
-        <span className="text-[11px] tracking-[0.14em] uppercase text-[#c4a574]/80">No photo</span>
+        <span className="text-[11px] tracking-[0.14em] uppercase text-[#c4a574]">No photo</span>
       </div>
     );
   }
   return (
-    <img
-      src={item.photoUrl}
+    <AuthImage
+      path={item.photoUrl}
       alt={item.title}
-      className="absolute inset-0 w-full h-full object-cover"
-      loading="lazy"
-      referrerPolicy="no-referrer"
-      onError={() => setFailed(true)}
+      className="absolute inset-0 w-full h-full"
+      onFail={() => setFailed(true)}
     />
   );
 }
@@ -130,7 +117,6 @@ export default function StockGallery() {
       p.set("status", "Available");
       p.set("source", filter.toUpperCase());
     }
-    // all = no status filter (includes used)
     return p.toString();
   }, [filter, go]);
 
@@ -145,41 +131,32 @@ export default function StockGallery() {
     staleTime: 20_000,
   });
 
-  const photographed = [...(list.data?.items ?? [])]
-    .filter((item) => !!item.photoUrl)
-    .sort((a, b) => (a.pieceNo ?? 0) - (b.pieceNo ?? 0));
-  const missingPhoto = (list.data?.items ?? []).filter((item) => !item.photoUrl).length;
-  const items = photographed;
+  const items = [...(list.data?.items ?? [])].sort((a, b) => {
+    if (!!a.photoUrl !== !!b.photoUrl) return a.photoUrl ? -1 : 1;
+    return (a.pieceNo ?? 0) - (b.pieceNo ?? 0);
+  });
   const counts = list.data?.counts;
+  const photoCount = items.filter((item) => item.photoUrl).length;
 
   const runSearch = () => setGo(q.trim());
 
   return (
-    <div className="alts-root min-h-dvh flex flex-col bg-forest-deep">
-      <header className="sticky top-0 z-20 border-b border-brass/20 bg-forest-deep/95 backdrop-blur-xl">
-        <div className="flex items-center gap-2.5 sm:gap-3 px-4 sm:px-5 py-3">
-          <button
-            type="button"
-            onClick={() => nav("/")}
-            className="btn-ghost h-11 px-3 text-[12px] shrink-0"
-          >
+    <div className="alts-root min-h-dvh flex flex-col bg-[#0d1a10]">
+      <header className="sticky top-0 z-20 border-b border-[#c4a574]/20 bg-[#0d1a10]/95">
+        <div className="flex items-center gap-2.5 px-4 py-3">
+          <button type="button" onClick={() => nav("/")} className="btn-ghost h-11 px-3 text-[12px] shrink-0">
             ← Home
           </button>
           <BrandSeal size={30} />
           <div className="min-w-0">
-            <div className="display text-xl leading-tight">Stock</div>
-            <div className="caps text-[9px] text-cream-muted">Fabric · lining · remnants</div>
-          </div>
-          <div className="flex-1" />
-          <div className="hidden sm:block text-right shrink-0">
-            <div className="text-[11px] text-brass-light tabular-nums font-semibold">
-              {counts?.available ?? "—"} available
+            <div className="display text-xl leading-tight text-[#f1e9d6]">Stock</div>
+            <div className="text-[9px] tracking-[0.14em] uppercase text-[#c4a574]">
+              {photoCount ? `${photoCount} photos` : "Fabric · lining · remnants"}
             </div>
-            <div className="text-[10px] text-cream-muted tabular-nums">{counts?.used ?? 0} used</div>
           </div>
         </div>
 
-        <div className="px-4 sm:px-5 pb-3 space-y-2.5">
+        <div className="px-4 pb-3 space-y-2.5">
           <form
             className="flex gap-2"
             onSubmit={(e) => {
@@ -191,7 +168,7 @@ export default function StockGallery() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search color, client, pattern, mill…"
-              className="flex-1 h-11 rounded-xl bg-black/30 border border-brass/25 px-3.5 text-[14px] text-cream placeholder:text-cream-muted/50 focus:outline-none focus:border-brass/55"
+              className="flex-1 h-11 rounded-xl bg-black/30 border border-[#c4a574]/25 px-3.5 text-[14px] text-[#f1e9d6] placeholder:text-[#d4cdb8]/50 focus:outline-none"
             />
             <button type="submit" className="btn-brass h-11 px-4 text-[12px] shrink-0">
               Search
@@ -230,7 +207,7 @@ export default function StockGallery() {
         </div>
       </header>
 
-      <main className="flex-1 px-4 sm:px-5 py-4">
+      <main className="flex-1 px-4 py-4">
         {list.isError && (
           <QueryErrorPanel
             title="Could not load stock"
@@ -240,38 +217,32 @@ export default function StockGallery() {
         )}
 
         {list.isLoading && (
-          <div className="grid place-items-center py-24 text-cream-muted text-sm">Loading stock…</div>
+          <div className="grid place-items-center py-24 text-[#d4cdb8] text-sm">Loading stock…</div>
         )}
 
         {!list.isLoading && !list.isError && items.length === 0 && (
-          <div className="rounded-2xl border border-brass/20 bg-black/25 px-6 py-16 text-center">
-            <div className="display text-2xl text-[#f1e9d6] mb-2">No photos yet</div>
-            <p className="text-sm text-[#d4cdb8] max-w-sm mx-auto">
-              {missingPhoto
-                ? `${missingPhoto} pieces are on file without a picture.`
-                : "Nothing matches this filter."}
-            </p>
+          <div className="rounded-2xl border border-[#c4a574]/20 bg-black/25 px-6 py-16 text-center">
+            <div className="display text-2xl text-[#f1e9d6] mb-2">No pieces</div>
+            <p className="text-sm text-[#d4cdb8]">Nothing matches this filter.</p>
           </div>
         )}
 
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2.5">
           {items.map((item) => (
             <Link
               key={item.id}
               to={`/stock/${encodeURIComponent(item.id)}`}
-              className="group overflow-hidden rounded-2xl border border-[#c4a574]/30 bg-[#1b3324]"
+              className="overflow-hidden rounded-2xl border border-[#c4a574]/35 bg-[#1b3324]"
             >
               <div className="relative aspect-[4/5] bg-[#14261c]">
                 <StockThumb item={item} />
-                <div className="absolute inset-x-0 bottom-0 bg-[#0d1a10]/88 px-2 py-2">
+                <div className="absolute inset-x-0 bottom-0 bg-[#0d1a10] px-2 py-2">
                   <div className="text-[10px] text-[#c4a574] tabular-nums">
                     #{item.pieceNo ?? "—"}
                     {item.lengthYds != null ? ` · ${item.lengthYds} yd` : ""}
                     {` · ${item.source}`}
                   </div>
-                  <div className="text-[13px] font-semibold text-[#f1e9d6] leading-snug line-clamp-2">
-                    {item.title}
-                  </div>
+                  <div className="text-[13px] font-semibold text-[#f1e9d6] leading-snug line-clamp-2">{item.title}</div>
                 </div>
               </div>
             </Link>

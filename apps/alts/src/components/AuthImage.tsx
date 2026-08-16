@@ -20,7 +20,7 @@ export function AuthImage({
 }) {
   const box = useRef<HTMLDivElement | null>(null);
   const [src, setSrc] = useState<string | null>(null);
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(true);
 
   useEffect(() => {
     const el = box.current;
@@ -37,8 +37,7 @@ export function AuthImage({
 
   useEffect(() => {
     if (!visible || !path) return;
-    const publicCdn = /^https?:\/\//i.test(path) && !/\/api\/fabric-stock\//.test(path);
-    if (publicCdn) {
+    if (/^https?:\/\//i.test(path) && !/\/api\//.test(path)) {
       setSrc(path);
       return;
     }

@@ -51,6 +51,10 @@ export default defineConfig({
         ],
       },
       workbox: {
+        cacheId: "ls-alts-stock-20260816c",
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         navigateFallback: "/index.html",
         navigateFallbackAllowlist: [/^\/(?!api\/).*/],
         // Shell + hashed assets always; POS navigations via navigateFallback
@@ -77,7 +81,7 @@ export default defineConfig({
             urlPattern: ({ request }) => request.mode === "navigate",
             handler: "NetworkFirst",
             options: {
-              cacheName: "alts-pos-navigations",
+              cacheName: "alts-pos-nav-20260816c",
               networkTimeoutSeconds: 3,
               expiration: { maxEntries: 32, maxAgeSeconds: 60 * 60 * 24 * 7 },
             },
@@ -90,7 +94,7 @@ export default defineConfig({
               request.destination === "font",
             handler: "StaleWhileRevalidate",
             options: {
-              cacheName: "alts-shell-static",
+              cacheName: "alts-shell-20260816c",
               expiration: { maxEntries: 64, maxAgeSeconds: 60 * 60 * 24 * 30 },
             },
           },
