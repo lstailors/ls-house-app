@@ -1344,6 +1344,10 @@ qcRouter.post("/:id/sign", async (c) => {
       return c.json({ data: { signatureUrl: url, signedAt: new Date().toISOString(), embedSrc: null } });
     }
 
+    if (typeof body.apiKey === "string" && body.apiKey.trim()) {
+      await saveDocusealSettings({ apiKey: body.apiKey }).catch(() => null);
+    }
+
     if (!(await docusealEnabled())) {
       return c.json({ error: { message: "DocuSeal is not connected — sign on the pad" } }, 400);
     }

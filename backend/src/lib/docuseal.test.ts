@@ -94,12 +94,12 @@ describe("DocuSeal OSS templates", () => {
   });
 });
 
-describe("DocuSeal submit retries without invented fields", () => {
-  test("createQcSignatureSubmission filters fields and retries Unknown field", async () => {
+describe("DocuSeal submit never invents template fields", () => {
+  test("createQcSignatureSubmission does not POST Customer / Order fields", async () => {
     const { readFileSync } = await import("node:fs");
     const src = readFileSync(new URL("./docuseal.ts", import.meta.url), "utf8");
-    expect(src).toContain("pickKnownFields(opts.fields || [], templateFieldNames(template))");
+    expect(src).toContain("Never send fill-in names");
+    expect(src).not.toContain("pickKnownFields(opts.fields");
     expect(src).toContain("isUnknownFieldError(err)");
-    expect(src).toContain("post([])");
   });
 });

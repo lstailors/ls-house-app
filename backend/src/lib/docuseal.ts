@@ -311,42 +311,34 @@ export async function createQcSignatureSubmission(opts: {
   const template = (await loadTemplate(api, auth, listed.id)) || listed;
 
   const role = templateSignerRole(template);
-  const fields = pickKnownFields(opts.fields || [], templateFieldNames(template));
 
-  const post = (sendFields: QcDocusealField[]) =>
-    fetch(`${api}/submissions`, {
-      method: "POST",
-      headers: auth,
-      body: JSON.stringify({
-        template_id: Number(template.id) || template.id,
-        send_email: false,
-        name: opts.title,
-        submitters: [
-          {
-            role,
-            email: opts.inspectorEmail,
-            name: opts.inspectorName,
-            send_email: false,
-            ...(opts.externalId ? { external_id: opts.externalId } : {}),
-            ...(sendFields.length ? { fields: sendFields } : {}),
-          },
-        ],
-      }),
-    });
+  // Never send fill-in names. A Signature-only template 422s on "Customer".
+  const res = await fetch(`${api}/submissions`, {
+    method: "POST",
+    headers: auth,
+    body: JSON.stringify({
+      template_id: Number(template.id) || template.id,
+      send_email: false,
+      name: opts.title,
+      submitters: [
+        {
+          role,
+          email: opts.inspectorEmail,
+          name: opts.inspectorName,
+          send_email: false,
+          ...(opts.externalId ? { external_id: opts.externalId } : {}),
+        },
+      ],
+    }),
+  });
 
-  let res = await post(fields);
   if (!res.ok) {
     const err = await res.text().catch(() => "");
     if (isDocusealProOnly(err)) throw new Error(NO_TEMPLATE);
-    if (isUnknownFieldError(err) && fields.length) {
-      res = await post([]);
-      if (!res.ok) {
-        const err2 = await res.text().catch(() => "");
-        throw new Error(`DocuSeal ${res.status}: ${err2.slice(0, 240)}`);
-      }
-    } else {
-      throw new Error(`DocuSeal ${res.status}: ${err.slice(0, 240)}`);
+    if (isUnknownFieldError(err)) {
+      throw new Error("DocuSeal template has extra named fields — use a Signature box only.");
     }
+    throw new Error(`DocuSeal ${res.status}: ${err.slice(0, 240)}`);
   }
 
   if (String(template.id) !== preferred) {

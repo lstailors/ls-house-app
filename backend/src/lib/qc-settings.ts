@@ -1,6 +1,7 @@
-/** DocuSeal credentials for MTM QC. Stored in ERPNext — never in the client bundle. */
+/** DocuSeal credentials for MTM QC. Never shipped in the client bundle. */
 
-import { erpGet, erpUpdate, erpCreate, erpRunMethod } from "./erp";
+import { erpGet, erpUpdate, erpCreate, erpRunMethod, erpList } from "./erp";
+import { erpFileAbsoluteUrl, uploadFile } from "./erpnext/files";
 
 const SETTINGS_DT = "LSH QC Settings";
 const SETTINGS_NAME = "LSH QC Settings";
@@ -9,6 +10,9 @@ const DEFAULT_URL = "https://docuseal.lstailors.com";
 const GLOBAL_KEY = "lsh_docuseal_api_key";
 const GLOBAL_URL = "lsh_docuseal_url";
 const GLOBAL_TEMPLATE = "lsh_docuseal_template_id";
+
+/** Private ERP File — Vercel memory and unknown custom fields cannot keep the key. */
+export const DOCUSEAL_SETTINGS_FILE = "lsh-docuseal-settings.json";
 
 export type QcDocusealSettings = {
   url: string;
@@ -46,6 +50,24 @@ export function mergeDocusealSettings(
   return out;
 }
 
+export function parseDocusealSettingsFile(text: string): Partial<QcDocusealSettings> | null {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  if (raw.startsWith("{")) {
+    try {
+      const j = JSON.parse(raw) as Record<string, unknown>;
+      return {
+        apiKey: String(j.apiKey || j.docuseal_api_key || "").trim(),
+        url: String(j.url || j.docuseal_url || "").trim(),
+        templateId: String(j.templateId || j.docuseal_template_id || "").trim(),
+      };
+    } catch {
+      return null;
+    }
+  }
+  return { apiKey: raw };
+}
+
 async function fromErpDoc(): Promise<Partial<QcDocusealSettings> | null> {
   const row = await erpGet<any>(SETTINGS_DT, SETTINGS_NAME).catch(() => null);
   if (!row) return null;
@@ -68,6 +90,45 @@ async function fromGlobals(): Promise<Partial<QcDocusealSettings>> {
     globalDefault(GLOBAL_TEMPLATE),
   ]);
   return { apiKey, url, templateId };
+}
+
+async function fromErpFile(): Promise<Partial<QcDocusealSettings> | null> {
+  const rows = await erpList<{ file_url?: string }>("File", {
+    filters: [["file_name", "=", DOCUSEAL_SETTINGS_FILE]],
+    fields: ["name", "file_url", "creation"],
+    order_by: "creation desc",
+    limit: 3,
+  }).catch(() => []);
+  const fileUrl = rows.find((row) => row.file_url)?.file_url;
+  if (!fileUrl) return null;
+  const base = (process.env.ERPNEXT_BASE_URL || "").replace(/\/$/, "");
+  const key = process.env.ERPNEXT_API_KEY || "";
+  const secret = process.env.ERPNEXT_API_SECRET || "";
+  if (!base || !key || !secret) return null;
+  const abs = erpFileAbsoluteUrl(fileUrl);
+  const res = await fetch(abs, {
+    headers: {
+      Authorization: `token ${key}:${secret}`,
+      Accept: "application/json, text/plain, */*",
+      "User-Agent": "Mozilla/5.0 (compatible; L&S-House-App/1.0; +https://app.lstailors.com)",
+    },
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => null);
+  if (!res?.ok) return null;
+  return parseDocusealSettingsFile(await res.text());
+}
+
+async function persistErpFile(next: QcDocusealSettings): Promise<void> {
+  await uploadFile({
+    file: Buffer.from(
+      JSON.stringify({ apiKey: next.apiKey, url: next.url, templateId: next.templateId }),
+      "utf8",
+    ),
+    filename: DOCUSEAL_SETTINGS_FILE,
+    contentType: "application/json",
+    folder: "Home",
+    isPrivate: true,
+  });
 }
 
 async function persistGlobals(next: QcDocusealSettings): Promise<void> {
@@ -115,8 +176,8 @@ async function persistErpDoc(next: QcDocusealSettings): Promise<void> {
 
 export async function loadDocusealSettings(): Promise<QcDocusealSettings> {
   if (memory?.apiKey) return memory;
-  const [doc, globals] = await Promise.all([fromErpDoc(), fromGlobals()]);
-  memory = mergeDocusealSettings(globals, doc);
+  const [doc, globals, file] = await Promise.all([fromErpDoc(), fromGlobals(), fromErpFile()]);
+  memory = mergeDocusealSettings(globals, doc, file);
   return memory;
 }
 
@@ -132,8 +193,8 @@ export async function saveDocusealSettings(input: {
     templateId: input.templateId != null ? String(input.templateId).trim() : current.templateId,
   };
 
-  // ERP singles often ignore unknown custom fields and still return 200.
-  // Always write Frappe global defaults so the next request still has the key.
+  // File first — this is the store that actually survives a new Vercel instance.
+  await persistErpFile(next);
   await persistErpDoc(next).catch(() => null);
   await persistSetValue(next);
   await persistGlobals(next);

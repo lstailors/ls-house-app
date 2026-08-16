@@ -8,6 +8,7 @@ import { clearClientSession, signOut } from "@ls/auth/authClient";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { clearAltsPrivateStorage } from "@alts/lib/logoutPrivacy";
+import { recalledDocusealKey, rememberDocusealKey } from "@alts/lib/docusealKey";
 import { getShowTestData, setShowTestData } from "@alts/lib/showTestData";
 import "@alts/styles/alts-pos.css";
 
@@ -37,13 +38,24 @@ export default function AltsSettings() {
     if (settings.data?.url && !url) setUrl(settings.data.url);
   }, [settings.data, url]);
 
+  useEffect(() => {
+    if (!settings.data || settings.data.apiKeySet) return;
+    const remembered = recalledDocusealKey();
+    if (!remembered) return;
+    api
+      .patch<SettingsData>("/api/qc/settings", { apiKey: remembered })
+      .then((data) => qc.setQueryData(["alts-qc-settings"], data))
+      .catch(() => null);
+  }, [settings.data, qc]);
+
   const save = useMutation({
     mutationFn: () =>
       api.patch<SettingsData>("/api/qc/settings", {
-        apiKey: apiKey.trim() || undefined,
+        apiKey: apiKey.trim() || recalledDocusealKey() || undefined,
         url: url.trim() || undefined,
       }),
     onSuccess: (data) => {
+      if (apiKey.trim()) rememberDocusealKey(apiKey);
       toast.success("Key saved on the server — you will not be asked again");
       setApiKey("");
       qc.setQueryData(["alts-qc-settings"], data);
@@ -128,8 +140,8 @@ export default function AltsSettings() {
             <div className="caps text-brass-light">DocuSeal</div>
             <p className="text-sm text-cream-dim">
               {settings.data?.apiKeySet
-                ? "Key is saved on the server. You will not be asked again. Sign with DocuSeal uses your template — a Signature box is enough."
-                : "Off until you paste the API key."}
+                ? "The key is stored on the server. You will not be asked again. Sign with DocuSeal opens a new tab — it cannot sit inside this page."
+                : "Paste the API key once. It is stored as a file on the shop server so the next screen still has it."}
             </p>
             {settings.data?.apiKeySet && (
               <p className="font-mono text-xs text-brass-light">Saved · {settings.data.apiKeyMasked}</p>
