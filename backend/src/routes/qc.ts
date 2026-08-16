@@ -1213,25 +1213,13 @@ qcRouter.post("/:id/sign", async (c) => {
       return c.json({ error: { message: "DocuSeal is not connected — sign on the pad" } }, 400);
     }
 
-    const pdf = await loadQcOrderPdf(existing, existing.name);
     const sub = await createQcSignatureSubmission({
       title: `QC ${existing.custom_order || existing.sales_order || existing.name}`,
       inspectorEmail: gate.user!.email,
       inspectorName: gate.user!.name || gate.user!.email,
-      pdfBytes: pdf?.buf ?? null,
-      pdfName: pdf?.filename || `${existing.name}.pdf`,
     });
     if (!sub) {
-      return c.json(
-        {
-          error: {
-            message: pdf
-              ? "DocuSeal did not start — check the API key in Settings"
-              : "No order PDF to send to DocuSeal, and no template is set",
-          },
-        },
-        502,
-      );
+      return c.json({ error: { message: "DocuSeal did not start — check the API key in Settings" } }, 502);
     }
     await saveQcInspection(
       existing.name,

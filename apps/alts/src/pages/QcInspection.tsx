@@ -189,7 +189,11 @@ export default function QcInspection() {
         setShowDocuseal(true);
       } else toast.error("DocuSeal did not return a signing page");
     },
-    onError: (e: Error) => toast.error(e.message || "Could not start DocuSeal"),
+    onError: (e: Error) => {
+      const msg = e.message || "Could not start DocuSeal";
+      toast.error(msg);
+      if (/not connected|no api key|paste the api key/i.test(msg)) nav("/settings");
+    },
   });
 
   const loadPdf = async () => {
@@ -599,7 +603,7 @@ export default function QcInspection() {
               </div>
               <div className="p-4 space-y-3">
                 <p className="text-sm text-cream-dim">
-                  To sign now, draw on the pad and tap Save signature. Sign with DocuSeal opens the order PDF — turn that on in Settings with the API key.
+                  Draw on the pad and tap Save signature to sign now. Sign with DocuSeal opens your QC template — not a paid PDF upload.
                 </p>
                 {data?.signatureUrl && (
                   <img src={data.signatureUrl} alt="Signature" className="w-full max-h-36 object-contain rounded-xl bg-[#F6F1E4]" />
@@ -608,13 +612,8 @@ export default function QcInspection() {
                   type="button"
                   disabled={startDocuseal.isPending}
                   onClick={() => {
-                    if (!data?.docuseal) {
-                      toast.error("DocuSeal is off — paste the API key in Settings");
-                      nav("/settings");
-                      return;
-                    }
-                    if (embedSrc || data.docusealEmbedSrc) {
-                      setEmbedSrc(embedSrc || data.docusealEmbedSrc || null);
+                    if (embedSrc || data?.docusealEmbedSrc) {
+                      setEmbedSrc(embedSrc || data?.docusealEmbedSrc || null);
                       setShowDocuseal(true);
                       return;
                     }
@@ -624,11 +623,9 @@ export default function QcInspection() {
                 >
                   {startDocuseal.isPending
                     ? "Opening DocuSeal…"
-                    : !data?.docuseal
-                      ? "Turn on DocuSeal"
-                      : embedSrc || data.docusealEmbedSrc
-                        ? "Continue signing"
-                        : "Sign with DocuSeal"}
+                    : embedSrc || data?.docusealEmbedSrc
+                      ? "Continue signing"
+                      : "Sign with DocuSeal"}
                 </button>
                 {!locked && (
                   <>
@@ -725,7 +722,7 @@ export default function QcInspection() {
             </button>
           </div>
           <p className="px-2 text-sm text-cream-dim mb-2">
-            This is only the signature on the order PDF. Close when you have signed — then Pass on this page.
+            Sign here, then close. This is your QC template in DocuSeal — then Pass on this page.
           </p>
           {embedSrc ? (
             <iframe title="DocuSeal" src={embedSrc} className="qc-docuseal-frame" />
