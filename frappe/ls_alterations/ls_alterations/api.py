@@ -353,3 +353,54 @@ def sync_payment_to_ticket(doc, method=None):
 		else:
 			new_status = "Unpaid"
 		frappe.db.set_value("Alteration Ticket", ticket_name, "payment_status", new_status)
+
+
+# ── Thermal print (Epson TM-M30ii) ──────────────────────────────────────────
+# Templates live in ls_thermal/. Frappe calls /api/method/<dotted.path>; some
+# benches fail to import ls_alterations.ls_thermal as a package. These wrappers
+# sit on ls_alterations.api (same module as create_ticket) so print stays wired.
+
+
+def _thermal_api():
+	"""Load escpos print helpers — try the package paths used on this bench."""
+	import importlib
+
+	errors = []
+	for mod in (
+		"ls_alterations.ls_thermal.api",
+		"ls_alterations.ls_alterations.ls_thermal.api",
+	):
+		try:
+			return importlib.import_module(mod)
+		except ModuleNotFoundError as e:
+			errors.append("{}: {}".format(mod, e))
+	try:
+		from . import ls_thermal as pkg
+		return importlib.import_module(pkg.__name__ + ".api")
+	except Exception as e:
+		errors.append("relative: {}".format(e))
+	frappe.throw(
+		"Thermal print module is not importable on this bench. Tried: "
+		+ "; ".join(errors)
+	)
+
+
+@frappe.whitelist()
+def print_ticket(ticket, what="all", reprint=0):
+	return _thermal_api().print_ticket(ticket, what=what, reprint=reprint)
+
+
+@frappe.whitelist()
+def print_payment_receipt(invoice, reprint=0):
+	return _thermal_api().print_payment_receipt(invoice, reprint=reprint)
+
+
+@frappe.whitelist()
+def print_pay_link(ticket=None, invoice=None, reprint=0):
+	return _thermal_api().print_pay_link(ticket=ticket, invoice=invoice, reprint=reprint)
+
+
+@frappe.whitelist()
+def test_printer():
+	return _thermal_api().test_printer()
+
