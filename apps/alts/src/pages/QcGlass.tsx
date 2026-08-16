@@ -13,7 +13,7 @@ import { ListSkeleton } from "@alts/components/skeletons";
 import { withShowTest } from "@alts/lib/showTestData";
 import "@alts/styles/alts-pos.css";
 
-type Tab = "waiting" | "open" | "passed" | "failed";
+type Tab = "waiting" | "passed" | "failed";
 
 type QcRow = {
   id: string;
@@ -33,7 +33,6 @@ type QcRow = {
 
 const TABS: Array<[Tab, string]> = [
   ["waiting", "Waiting"],
-  ["open", "Open"],
   ["passed", "Passed"],
   ["failed", "Failed"],
 ];
@@ -61,13 +60,6 @@ export default function QcGlass() {
       localFirstQc(() => api.get<QcRow[]>(withShowTest(`/api/qc?tab=${tab}`))),
     refetchInterval: 45_000,
   });
-  const rates = useQuery({
-    queryKey: ["alts-qc-rates"],
-    enabled: tab === "waiting",
-    queryFn: () => api.get<{ passedThisWeek: number }>("/api/qc/rates"),
-    staleTime: 60_000,
-  });
-
   const rows = list.data ?? [];
   const needle = q.trim().toLowerCase();
   const shown = useMemo(() => {
@@ -110,14 +102,14 @@ export default function QcGlass() {
         </div>
       </header>
 
-      <div className="px-4 sm:px-5 pt-3 flex flex-wrap gap-2">
+      <div className="px-4 sm:px-5 pt-3 grid grid-cols-3 gap-2">
         {TABS.map(([k, lab]) => (
           <button
             key={k}
             type="button"
             onClick={() => setTab(k)}
             className={cn(
-              "px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide border min-h-[44px]",
+              "px-3 rounded-2xl text-sm font-bold uppercase tracking-wide border min-h-[56px]",
               tab === k ? "bg-brass/20 border-brass text-cream" : "border-brass/25 text-cream-dim",
             )}
           >
@@ -154,15 +146,7 @@ export default function QcGlass() {
               <div className="flex items-center gap-2 flex-wrap">
                 <StatusBadge
                   status={row.qcResult || row.result || "Pending"}
-                  tone={
-                    tab === "waiting"
-                      ? "qc"
-                      : tab === "open"
-                        ? "shop"
-                        : tab === "passed"
-                          ? "pickup"
-                          : "tasks"
-                  }
+                  tone={tab === "waiting" ? "qc" : tab === "passed" ? "pickup" : "tasks"}
                 />
                 {day(row.dateReceived) ? (
                   <span className="font-mono text-xs text-brass-light">{day(row.dateReceived)}</span>
@@ -184,9 +168,7 @@ export default function QcGlass() {
         {list.isLoading && <ListSkeleton rows={6} />}
         {!list.isLoading && !shown.length && !list.isError && (
           <div className="sf-empty">
-            {tab === "waiting"
-              ? `All caught up — ${rates.data?.passedThisWeek ?? 0} passed this week`
-              : "No inspections in this list."}
+            {tab === "waiting" ? "All caught up." : "No inspections in this list."}
           </div>
         )}
       </div>

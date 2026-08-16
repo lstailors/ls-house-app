@@ -12,6 +12,7 @@ import {
   storeArrivalToDocFields,
   frappeScrub,
   isPausedMtmStatus,
+  shouldLiftPaused,
   liveStatusFromPaused,
   MTM_STATUSES,
   QC_CHECK_CATALOG,
@@ -37,6 +38,9 @@ describe("MTM QC catalog", () => {
     expect(isPausedMtmStatus("On Pause")).toBe(true);
     expect(isPausedMtmStatus("Quality Control")).toBe(false);
     expect(liveStatusFromPaused("Pause / Hold")).toBe("Quality Control");
+    expect(shouldLiftPaused({ order_status: "Quality Control" })).toBe(false);
+    expect(shouldLiftPaused({ order_status: "Pause / Hold" })).toBe(true);
+    expect(shouldLiftPaused({ notes: "on hold until fabric" })).toBe(false);
   });
 
   test("queue / pass / fail follow the store-side gate", () => {
@@ -160,7 +164,7 @@ describe("MTM QC catalog", () => {
 });
 
 describe("QC list helpers", () => {
-  test("qc_result Pending / Pass / Fail maps the Open/Passed/Failed tabs", () => {
+  test("qc_result Pending / Pass / Fail maps the Waiting/Passed/Failed tabs", () => {
     expect(qcResultOf({ qc_result: "Pending" })).toBe("Pending");
     expect(qcResultOf({ qc_result: "Pass" })).toBe("Pass");
     expect(qcResultOf({ qc_result: "Fail" })).toBe("Fail");
