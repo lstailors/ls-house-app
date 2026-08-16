@@ -9,13 +9,20 @@ body,
 #root {
   width: 100%;
   max-width: 100%;
-  overflow-x: hidden;
+  /* clip does not force overflow-y to auto (hidden + visible-y does — iOS then
+     captures the swipe on a child that cannot scroll). */
+  overflow-x: clip;
 }
 
 html,
 body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+#root {
+  overflow-y: visible;
+  min-height: 100%;
 }
 
 body {
@@ -724,7 +731,7 @@ body {
   height: auto !important;
   max-height: none !important;
   min-height: 100dvh;
-  overflow-x: hidden !important;
+  overflow-x: clip !important;
   overflow-y: visible !important;
 }
 
