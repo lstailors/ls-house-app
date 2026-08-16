@@ -468,7 +468,7 @@ altsRouter.get("/schedule-load", async (c) => {
   const from =
     c.req.query("from") ||
     new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-  const nDays = Math.min(28, Math.max(7, Number(c.req.query("days") || 14) || 14));
+  const nDays = Math.min(70, Math.max(7, Number(c.req.query("days") || 14) || 14));
 
   const start = new Date(`${from}T12:00:00`);
   const dates: string[] = [];

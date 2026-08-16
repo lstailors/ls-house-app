@@ -1015,7 +1015,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
         });
 
         const feePatch: Record<string, unknown> = {
-          delivery_method: plan.method === 'Ship (FedEx)' ? 'Ship (FedEx)' : deliveryMethod,
+          delivery_method: deliveryMethod,
           delivery_scheduled: 1,
           delivery_zone: plan.zone,
           delivery_fee: plan.fee,
@@ -1073,9 +1073,15 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
           ? tNow.garments.map((g: any) => g.garment_type || g.garment_description).filter(Boolean).join(' · ')
           : '';
 
+        const isShip = deliveryMethod === 'Ship (FedEx)';
+        const qrBytes = new Uint8Array(12);
+        crypto.getRandomValues(qrBytes);
+        const qrToken = Array.from(qrBytes)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
         const delDoc: Record<string, unknown> = {
           lsh_status: 'Queued',
-          lsh_delivery_method: plan.method === 'Ship (FedEx)' ? 'Ship Direct' : 'Hand Delivery',
+          lsh_delivery_method: isShip ? 'Ship Direct' : 'Hand Delivery',
           lsh_origin_location: 'NYC',
           lsh_alteration_ticket: ticketName,
           customer: tNow?.customer || payload.customer,
@@ -1092,7 +1098,8 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
           lsh_garment_summary: gsum || null,
           lsh_notify_phone: tNow?.customer_phone || null,
           lsh_delivery_notes: feePatch.delivery_notes || null,
-          lsh_carrier: plan.method === 'Ship (FedEx)' ? 'FedEx' : null,
+          lsh_carrier: isShip ? 'FedEx' : null,
+          lsh_qr_token: qrToken,
         };
 
         let deliveryName: string | null = null;
@@ -1145,9 +1152,9 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
                     ? 'Delivery — Included'
                     : plan.zone_name
                       ? `Hand Delivery — ${plan.zone_name}`
-                      : plan.method === 'Ship (FedEx)'
+                      : deliveryMethod === 'Ship (FedEx)'
                         ? 'Shipping — FedEx'
-                        : 'Delivery',
+                        : 'Hand Delivery',
                   description: plan.free_custom
                     ? 'Custom-order delivery included'
                     : plan.zone
@@ -1166,13 +1173,15 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
         }
 
         deliveryMeta = {
-          method: plan.method,
+          method: deliveryMethod,
           zone: plan.zone,
           zone_name: plan.zone_name,
           fee: plan.fee,
           item_code: plan.item_code,
           free_custom: plan.free_custom,
           delivery_name: deliveryName,
+          queued: Boolean(deliveryName),
+          shipping_record: isShip,
         };
       } catch (e: any) {
         console.error('[intake-alterations] delivery schedule failed:', e?.message);
