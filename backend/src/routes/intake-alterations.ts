@@ -1421,10 +1421,15 @@ intakeAlterationsRouter.patch('/tickets/:name/delivery', async (c) => {
       feeOverrideReason: parsed.data.delivery_fee_override_reason,
     });
 
-    const linesSum = Array.isArray(ticket.lines)
+    const linePrices = Array.isArray(ticket.lines)
       ? ticket.lines.reduce((s: number, l: any) => s + (Number(l.price) || 0), 0)
-      : Number(ticket.ticket_total) || 0;
-    feePatch.ticket_total = linesSum + (plan.fee || 0);
+      : null;
+    const existingFee = Number(ticket.delivery_fee) || 0;
+    const baseTotal =
+      linePrices != null && Array.isArray(ticket.lines) && ticket.lines.length > 0
+        ? linePrices
+        : Math.max(0, (Number(ticket.ticket_total) || 0) - existingFee);
+    feePatch.ticket_total = baseTotal + (plan.fee || 0);
 
     await erpUpdate('Alteration Ticket', ticketName, feePatch);
 
