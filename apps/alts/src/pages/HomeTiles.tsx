@@ -920,6 +920,25 @@ export default function HomeTiles() {
       ),
     },
     {
+      key: "stock",
+      to: "/stock",
+      title: "Stock",
+      sub: "Fabric · lining · remnants",
+      live: (
+        <>
+          <b>Gallery</b> · use to remove
+        </>
+      ),
+      liveTone: "em" as LiveTone,
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M8 16l18-8 18 8v22l-18 8-18-8z" />
+          <path d="M8 16l18 8 18-8" />
+          <path d="M26 24v22" />
+        </svg>
+      ),
+    },
+    {
       key: "deliveries",
       to: "/deliveries",
       title: "Deliveries",
