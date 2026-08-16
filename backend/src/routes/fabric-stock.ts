@@ -69,7 +69,7 @@ type StockRow = {
 
 function photoProxy(name: string, row: StockRow): string | null {
   if (row.photo_url && /^https?:\/\//i.test(row.photo_url)) return row.photo_url;
-  if (row.photo) return `/api/fabric-stock/${encodeURIComponent(name)}/photo`;
+  if (row.photo || row.filename) return `/api/fabric-stock/${encodeURIComponent(name)}/photo`;
   return null;
 }
 
@@ -246,9 +246,6 @@ fabricStockRouter.get("/:id/photo", async (c) => {
     return c.redirect(row.photo_url, 302);
   }
 
-  const fileUrl = row.photo;
-  if (!fileUrl) return c.json({ error: { message: "No photo" } }, 404);
-
   const base = process.env.ERPNEXT_BASE_URL ?? "";
   const key = process.env.ERPNEXT_API_KEY ?? "";
   const secret = process.env.ERPNEXT_API_SECRET ?? "";
@@ -256,29 +253,43 @@ fabricStockRouter.get("/:id/photo", async (c) => {
     return c.json({ error: { message: "ERP credentials missing" } }, 500);
   }
 
-  const absolute = fileUrl.startsWith("http")
-    ? fileUrl
-    : `${base.replace(/\/$/, "")}${fileUrl.startsWith("/") ? "" : "/"}${fileUrl}`;
-
-  const res = await fetch(absolute, {
-    headers: {
-      Authorization: `token ${key}:${secret}`,
-      "User-Agent": "Mozilla/5.0 (compatible; L&S-House-App/1.0)",
-      Accept: "image/*,*/*",
-    },
-  });
-  if (!res.ok) {
-    return c.json({ error: { message: `Photo fetch ${res.status}` } }, 502);
+  const guesses: string[] = [];
+  if (row.photo) guesses.push(row.photo);
+  if (row.filename) {
+    guesses.push(`/private/files/${row.filename}`);
+    guesses.push(`/files/${row.filename}`);
   }
-  const buf = await res.arrayBuffer();
-  const ct = res.headers.get("content-type") || "image/jpeg";
-  return new Response(buf, {
-    status: 200,
-    headers: {
-      "Content-Type": ct,
-      "Cache-Control": "private, max-age=3600",
-    },
-  });
+  if (!guesses.length) return c.json({ error: { message: "No photo" } }, 404);
+
+  const headers = {
+    Authorization: `token ${key}:${secret}`,
+    "User-Agent": "Mozilla/5.0 (compatible; L&S-House-App/1.0)",
+    Accept: "image/*,*/*",
+  };
+  const root = base.replace(/\/$/, "");
+
+  for (const guess of guesses) {
+    const abs = guess.startsWith("http")
+      ? guess
+      : `${root}${guess.startsWith("/") ? "" : "/"}${guess}`;
+    const encoded = abs.replace(/\/([^/]+)$/, (_, leaf) => `/${encodeURIComponent(leaf)}`);
+    for (const url of abs === encoded ? [abs] : [abs, encoded]) {
+      const res = await fetch(url, { headers });
+      if (!res.ok) continue;
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("text/html")) continue;
+      const buf = await res.arrayBuffer();
+      return new Response(buf, {
+        status: 200,
+        headers: {
+          "Content-Type": ct.startsWith("image/") ? ct : "image/jpeg",
+          "Cache-Control": "private, max-age=3600",
+        },
+      });
+    }
+  }
+
+  return c.json({ error: { message: "Photo not on file" } }, 404);
 });
 
 const useBody = z.object({

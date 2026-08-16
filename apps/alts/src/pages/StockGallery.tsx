@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
+import { AuthImage } from "@alts/components/AuthImage";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 
@@ -92,22 +93,22 @@ function Chip({
 
 function StockThumb({ item }: { item: StockCard }) {
   const [failed, setFailed] = useState(false);
-  if (!item.photoUrl || failed) {
-    return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-3 text-center bg-gradient-to-br from-forest-raised to-forest-deep">
-        <span className="text-[10px] tracking-[0.14em] uppercase text-brass/70">L&S Stock</span>
-        <span className="text-[12px] leading-snug text-cream/85 line-clamp-3">{item.visualDescription || item.title}</span>
-      </div>
-    );
-  }
+  const showPhoto = !!item.photoUrl && !failed;
   return (
-    <img
-      src={item.photoUrl}
-      alt={item.title}
-      className="absolute inset-0 w-full h-full object-cover"
-      loading="lazy"
-      onError={() => setFailed(true)}
-    />
+    <div className="relative aspect-[5/4] bg-[#1b3324]">
+      {showPhoto ? (
+        <AuthImage
+          path={item.photoUrl!}
+          alt={item.title}
+          className="absolute inset-0 w-full h-full object-cover"
+          onFail={() => setFailed(true)}
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center px-3 text-center">
+          <span className="text-[11px] tracking-[0.14em] uppercase text-brass/70">No photo</span>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -253,16 +254,15 @@ export default function StockGallery() {
             <Link
               key={item.id}
               to={`/stock/${encodeURIComponent(item.id)}`}
-              className="group relative overflow-hidden rounded-2xl border border-brass/20 bg-forest-raised/60 shadow-glass hover:border-brass/45 transition-colors"
+              className="group overflow-hidden rounded-2xl border border-brass/25 bg-[#1f3a2b] shadow-glass hover:border-brass/55 transition-colors"
             >
-              <div className="relative aspect-[4/5] overflow-hidden">
-                <StockThumb item={item} />
-                <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/85 via-black/40 to-transparent pointer-events-none" />
-                <div className="absolute top-2 left-2 flex flex-wrap gap-1">
-                  <span className="px-1.5 py-0.5 rounded-md bg-black/55 border border-brass/30 text-[9px] tracking-[0.08em] uppercase text-brass-light">
+              <StockThumb item={item} />
+              <div className="px-2.5 py-2.5 space-y-1">
+                <div className="flex flex-wrap gap-1">
+                  <span className="px-1.5 py-0.5 rounded-md bg-black/40 border border-brass/30 text-[9px] tracking-[0.08em] uppercase text-brass-light">
                     {item.source}
                   </span>
-                  <span className="px-1.5 py-0.5 rounded-md bg-black/55 border border-white/10 text-[9px] tracking-[0.08em] uppercase text-cream/85">
+                  <span className="px-1.5 py-0.5 rounded-md bg-black/40 border border-white/10 text-[9px] tracking-[0.08em] uppercase text-[#f1e9d6]/85">
                     {kindLabel(item.kind)}
                   </span>
                   {item.status === "Used" && (
@@ -271,18 +271,16 @@ export default function StockGallery() {
                     </span>
                   )}
                 </div>
-                <div className="absolute bottom-0 inset-x-0 p-2.5 sm:p-3">
-                  <div className="text-[10px] text-brass-light/90 tabular-nums mb-0.5">
-                    #{item.pieceNo ?? "—"}
-                    {item.lengthYds != null ? ` · ${item.lengthYds} yd` : ""}
-                  </div>
-                  <div className="text-[13px] sm:text-[14px] font-semibold text-cream leading-snug line-clamp-2">
-                    {item.title}
-                  </div>
-                  {item.customerRef ? (
-                    <div className="text-[11px] text-cream-muted truncate mt-0.5">{item.customerRef}</div>
-                  ) : null}
+                <div className="text-[10px] text-brass-light/90 tabular-nums">
+                  #{item.pieceNo ?? "—"}
+                  {item.lengthYds != null ? ` · ${item.lengthYds} yd` : ""}
                 </div>
+                <div className="text-[13px] font-semibold text-[#f1e9d6] leading-snug line-clamp-2">
+                  {item.title}
+                </div>
+                {item.customerRef ? (
+                  <div className="text-[11px] text-[#d4cdb8] truncate">{item.customerRef}</div>
+                ) : null}
               </div>
             </Link>
           ))}
