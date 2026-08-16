@@ -77,7 +77,8 @@ export function distinctiveStreetTokens(raw: string): string[] {
 
 export function houseNumber(raw: string): string | null {
   const m = String(raw || "").trim().match(/^(\d+[a-z]?)/i);
-  return m ? m[1].toLowerCase() : null;
+  const n = m?.[1];
+  return n ? n.toLowerCase() : null;
 }
 
 /** Fold ZIP / NY into the geocoder query so "782 Tanglewood rd" + 11795 actually resolves. */

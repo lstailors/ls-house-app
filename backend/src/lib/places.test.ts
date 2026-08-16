@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildSearchQuery,
   distinctiveStreetTokens,
+  houseNumber,
   rankSuggestions,
   scoreSuggestion,
   type PlaceSuggestion,
@@ -41,6 +42,11 @@ describe("buildSearchQuery", () => {
 
   test("does not duplicate an already-present ZIP", () => {
     expect(buildSearchQuery("782 Tanglewood rd 11795", "11795")).toBe("782 Tanglewood rd 11795");
+  });
+
+  test("houseNumber reads the leading street number", () => {
+    expect(houseNumber("782 Tanglewood rd")).toBe("782");
+    expect(houseNumber("no number")).toBeNull();
   });
 });
 
