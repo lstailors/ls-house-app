@@ -1,8 +1,10 @@
 /**
- * Intake delivery block — Pickup | Hand delivery | Ship FedEx + zone quote.
- * SPEC delivery-scheduling-zones Part 7 / 9. Address autocomplete via /api/places.
+ * Intake delivery — Pickup | Hand delivery | Ship.
+ * Compact method buttons; details + extra cost expand under the choice.
+ * Hand delivery always stays hand delivery (out-of-zone ZIP is a quoted fee, not FedEx).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { Package, Store, Truck } from "lucide-react";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import AddressAutocomplete from "./AddressAutocomplete";
@@ -21,7 +23,6 @@ export type DeliverySelection = {
   delivery_fee?: number;
   delivery_fee_override?: boolean;
   delivery_fee_override_reason?: string;
-  /** resolved server-side; UI may stash for display */
   _zone?: string | null;
   _zone_name?: string | null;
   _fee?: number;
@@ -39,6 +40,19 @@ type Props = {
   className?: string;
 };
 
+function feeLabel(value: DeliverySelection, freeCustom?: boolean): string {
+  if (value.delivery_method === "Pickup") return "No charge";
+  if (freeCustom) return "Included";
+  if (value.delivery_method === "Hand Delivery" && value._status === "in_zone") {
+    const n = Number(value.delivery_fee_override ? value.delivery_fee : value._fee || 0);
+    return n ? `+$${n.toFixed(0)}` : "Quoted";
+  }
+  if (value.delivery_fee != null && value.delivery_fee > 0) return `+$${Number(value.delivery_fee).toFixed(0)}`;
+  if (value.delivery_method === "Ship (FedEx)") return "Quote fee";
+  if (value.delivery_method === "Hand Delivery" && value._status === "out_of_zone") return "Quote fee";
+  return "Address";
+}
+
 export default function DeliveryBlock({
   value,
   onChange,
@@ -51,7 +65,6 @@ export default function DeliveryBlock({
 
   const set = (patch: Partial<DeliverySelection>) => onChange({ ...value, ...patch });
 
-  // Resolve zone when ZIP changes
   useEffect(() => {
     if (value.delivery_method !== "Hand Delivery") return;
     const zip = (value.delivery_zip || "").replace(/\D/g, "").slice(0, 5);
@@ -87,12 +100,12 @@ export default function DeliveryBlock({
             delivery_scheduled: true,
           });
         } else if (d.status === "out_of_zone") {
+          // Stay on Hand Delivery — this still goes on our delivery run.
           set({
             _status: "out_of_zone",
             _zone: null,
             _zone_name: null,
             _fee: 0,
-            delivery_method: "Ship (FedEx)",
             delivery_scheduled: true,
           });
         } else {
@@ -110,26 +123,29 @@ export default function DeliveryBlock({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value.delivery_zip, value.delivery_method, freeCustom]);
 
-  const methods = useMemo(
-    () =>
-      [
-        { id: "Pickup" as const, label: "Pickup at shop" },
-        { id: "Hand Delivery" as const, label: "Hand delivery" },
-        { id: "Ship (FedEx)" as const, label: "Ship — FedEx" },
-      ] as const,
-    [],
-  );
+  const methods = [
+    { id: "Pickup" as const, label: "Pickup", hint: "At the shop", Icon: Store },
+    { id: "Hand Delivery" as const, label: "Hand delivery", hint: "Our run", Icon: Truck },
+    { id: "Ship (FedEx)" as const, label: "Ship", hint: "FedEx", Icon: Package },
+  ];
 
-  const showForm = value.delivery_method !== "Pickup";
-  const minDate = new Date().toISOString().slice(0, 10);
+  const showAddress = value.delivery_method !== "Pickup";
 
   return (
-    <div className={cn("rounded-2xl border border-brass/25 bg-forest-deep/40 p-4 space-y-3", className)}>
-      <div className="caps text-brass-light text-[10px] tracking-[0.18em]">Delivery</div>
+    <div className={cn("rounded-2xl border border-brass/25 bg-forest-deep/40 p-3 space-y-3", className)}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="caps text-brass-light text-[10px] tracking-[0.18em]">How it leaves</div>
+        {value.delivery_method !== "Pickup" ? (
+          <div className="text-[11px] text-brass-light font-semibold tabular-nums">
+            {feeLabel(value, freeCustom)}
+          </div>
+        ) : null}
+      </div>
 
-      <div className="space-y-2">
+      <div className="grid grid-cols-3 gap-2">
         {methods.map((m) => {
           const on = value.delivery_method === m.id;
+          const Icon = m.Icon;
           return (
             <button
               key={m.id}
@@ -140,40 +156,44 @@ export default function DeliveryBlock({
                   delivery_scheduled: m.id !== "Pickup",
                   ...(m.id === "Pickup"
                     ? {
-                        _status: "idle",
+                        _status: "idle" as const,
                         _zone: null,
                         _fee: 0,
                         delivery_fee: 0,
                       }
-                    : {}),
+                    : m.id === "Ship (FedEx)"
+                      ? { _status: "idle" as const, _zone: null, _zone_name: null }
+                      : {}),
                 })
               }
               className={cn(
-                "w-full flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors",
-                on ? "border-brass bg-brass/15 text-cream" : "border-white/10 text-cream-dim hover:border-brass/40",
+                "rounded-xl border px-2 py-2.5 text-center transition-colors min-h-[72px]",
+                "flex flex-col items-center justify-center gap-0.5",
+                on ? "border-brass bg-brass/18 text-cream shadow-[0_0_0_1px_rgba(176,141,87,0.35)]" : "border-white/10 text-cream-dim hover:border-brass/40",
               )}
             >
-              <span
-                className={cn(
-                  "w-4 h-4 rounded-full border-2 grid place-items-center",
-                  on ? "border-brass" : "border-cream-dim/40",
-                )}
-              >
-                {on ? <span className="w-2 h-2 rounded-full bg-brass" /> : null}
-              </span>
-              <span className="text-sm font-medium">{m.label}</span>
+              <Icon className={cn("w-4 h-4 mb-0.5", on ? "text-brass" : "text-cream-dim")} strokeWidth={1.75} />
+              <span className="text-[12px] font-semibold leading-tight">{m.label}</span>
+              <span className="text-[10px] text-cream-dim leading-tight">{m.hint}</span>
             </button>
           );
         })}
       </div>
 
-      {showForm && (
-        <div className="space-y-3 pt-1 border-t border-white/10">
+      {value.delivery_method === "Pickup" ? (
+        <p className="text-[12px] text-cream-dim px-0.5">
+          Client collects at the shop. No extra charge.
+        </p>
+      ) : null}
+
+      {showAddress ? (
+        <div className="space-y-2.5 pt-1 border-t border-white/10">
           <div className="grid grid-cols-1 gap-2">
             <label className="block">
               <span className="caps text-[9px] text-cream-dim">Street address</span>
               <AddressAutocomplete
                 value={value.delivery_address || ""}
+                zip={value.delivery_zip}
                 onChange={(street) => set({ delivery_address: street, delivery_scheduled: true })}
                 onPick={(addr) =>
                   set({
@@ -216,18 +236,19 @@ export default function DeliveryBlock({
             </div>
           </div>
 
-          {/* Zone card / FedEx / free custom */}
-          {value.delivery_method === "Hand Delivery" && (
+          {value.delivery_method === "Hand Delivery" ? (
             <div
               className={cn(
-                "rounded-xl border px-3 py-3",
+                "rounded-xl border px-3 py-2.5",
                 freeCustom
                   ? "border-brass/50 bg-brass/10"
                   : value._status === "in_zone"
                     ? "border-brass/40 bg-forest/60"
-                    : value._status === "invalid"
-                      ? "border-amber-500/40 bg-amber-500/10"
-                      : "border-white/10 bg-black/20",
+                    : value._status === "out_of_zone"
+                      ? "border-brass/30 bg-black/25"
+                      : value._status === "invalid"
+                        ? "border-amber-500/40 bg-amber-500/10"
+                        : "border-white/10 bg-black/20",
               )}
             >
               {resolving ? (
@@ -237,35 +258,59 @@ export default function DeliveryBlock({
                   <p className="text-[10px] caps text-brass-light tracking-wider">
                     {value._zone} · {value._zone_name}
                   </p>
-                  <p className="display text-xl text-brass mt-1">Included — no charge</p>
-                  <p className="text-[11px] text-cream-dim mt-0.5">Zone stored for cost tracking</p>
+                  <p className="display text-xl text-brass mt-0.5">Included — no charge</p>
                 </>
               ) : value._status === "in_zone" ? (
                 <>
                   <p className="text-[10px] caps text-brass-light tracking-wider">
                     {value._zone} · {value._zone_name}
                   </p>
-                  <p className="display text-2xl text-cream mt-1">
+                  <p className="display text-2xl text-cream mt-0.5">
                     ${Number(value.delivery_fee_override ? value.delivery_fee : value._fee || 0).toFixed(0)}
                   </p>
+                  <p className="text-[11px] text-cream-dim mt-0.5">Goes on our delivery run</p>
                 </>
+              ) : value._status === "out_of_zone" ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-cream font-medium">Outside Manhattan zones</p>
+                  <p className="text-[11px] text-cream-dim">
+                    Still queued on our delivery run. Enter the fee quoted to the client.
+                  </p>
+                  {!freeCustom ? (
+                    <label className="block">
+                      <span className="caps text-[9px] text-cream-dim">Delivery fee $</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        className="mt-1 w-full rounded-lg bg-black/20 border border-white/10 px-3 py-2 text-sm text-cream"
+                        value={value.delivery_fee ?? ""}
+                        onChange={(e) =>
+                          set({
+                            delivery_fee: e.target.value === "" ? 0 : Number(e.target.value),
+                          })
+                        }
+                      />
+                    </label>
+                  ) : (
+                    <p className="display text-lg text-brass">Included — no charge</p>
+                  )}
+                </div>
               ) : value._status === "invalid" ? (
                 <p className="text-xs text-amber-200">Enter a valid 5-digit ZIP</p>
               ) : (
-                <p className="text-xs text-cream-dim">Enter ZIP for zone quote</p>
+                <p className="text-xs text-cream-dim">Enter ZIP for zone quote — stays on our run</p>
               )}
             </div>
-          )}
+          ) : null}
 
-          {value.delivery_method === "Ship (FedEx)" && (
-            <div className="rounded-xl border border-white/15 bg-black/25 px-3 py-3 space-y-2">
+          {value.delivery_method === "Ship (FedEx)" ? (
+            <div className="rounded-xl border border-white/15 bg-black/25 px-3 py-2.5 space-y-2">
               <p className="text-sm text-cream font-medium">Ship — FedEx</p>
               <p className="text-[11px] text-cream-dim">
-                {value._status === "out_of_zone"
-                  ? "ZIP is outside Manhattan hand-delivery zones. Enter the fee quoted to the client."
-                  : "Manual rate for this ticket (live FedEx rates = phase 2)."}
+                Creates a shipping record on finish. Enter the fee quoted to the client.
               </p>
-              {!freeCustom && (
+              {!freeCustom ? (
                 <label className="block">
                   <span className="caps text-[9px] text-cream-dim">Shipping fee $</span>
                   <input
@@ -282,29 +327,13 @@ export default function DeliveryBlock({
                     }
                   />
                 </label>
-              )}
-              {freeCustom && (
+              ) : (
                 <p className="display text-lg text-brass">Included — no charge</p>
               )}
             </div>
-          )}
+          ) : null}
 
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              <span className="caps text-[9px] text-cream-dim">Date</span>
-              <input
-                type="date"
-                min={minDate}
-                className="mt-1 w-full rounded-lg bg-black/20 border border-white/10 px-3 py-2 text-sm text-cream"
-                value={value.delivery_requested_date || ""}
-                onChange={(e) => set({ delivery_requested_date: e.target.value })}
-              />
-              {dueDate &&
-                value.delivery_requested_date &&
-                value.delivery_requested_date < dueDate && (
-                  <p className="text-[10px] text-amber-300/90 mt-1">Before due date — ok if intentional</p>
-                )}
-            </label>
+          {value.delivery_method === "Hand Delivery" ? (
             <label className="block">
               <span className="caps text-[9px] text-cream-dim">Window</span>
               <select
@@ -319,7 +348,7 @@ export default function DeliveryBlock({
                 ))}
               </select>
             </label>
-          </div>
+          ) : null}
 
           <label className="block">
             <span className="caps text-[9px] text-cream-dim">Notes (doorman, buzzer…)</span>
@@ -330,7 +359,10 @@ export default function DeliveryBlock({
             />
           </label>
 
-          {canOverrideFee && value.delivery_method === "Hand Delivery" && value._status === "in_zone" && !freeCustom && (
+          {canOverrideFee &&
+          value.delivery_method === "Hand Delivery" &&
+          value._status === "in_zone" &&
+          !freeCustom ? (
             <div className="rounded-lg border border-white/10 p-2 space-y-2">
               <label className="flex items-center gap-2 text-xs text-cream-dim">
                 <input
@@ -345,7 +377,7 @@ export default function DeliveryBlock({
                 />
                 Manager override fee
               </label>
-              {value.delivery_fee_override && (
+              {value.delivery_fee_override ? (
                 <>
                   <input
                     type="number"
@@ -360,11 +392,15 @@ export default function DeliveryBlock({
                     onChange={(e) => set({ delivery_fee_override_reason: e.target.value })}
                   />
                 </>
-              )}
+              ) : null}
             </div>
-          )}
+          ) : null}
+
+          {dueDate ? (
+            <p className="text-[10px] text-cream-dim">Promised date on the wheel below is the delivery date.</p>
+          ) : null}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

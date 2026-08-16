@@ -385,7 +385,7 @@ export default function IntakeStepped() {
     enabled: step === 3,
     queryFn: async () => {
       const from = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-      const res = await api.raw(`/api/alts/schedule-load?origin=${origin}&from=${from}&days=14`);
+      const res = await api.raw(`/api/alts/schedule-load?origin=${origin}&from=${from}&days=56`);
       if (!res.ok) throw new Error(`schedule-load ${res.status}`);
       const json = (await res.json()) as {
         data?: { days?: DayLoad[]; origin?: string } | DayLoad[];
@@ -395,6 +395,27 @@ export default function IntakeStepped() {
       return { days: (d?.days ?? []) as DayLoad[] };
     },
   });
+
+  // Seed delivery address from the customer card / new-customer form once, on this step.
+  useEffect(() => {
+    if (step !== 3) return;
+    setDelivery((prev) => {
+      if (prev.delivery_address?.trim() || prev.delivery_zip) return prev;
+      const street =
+        newLine1.trim() || (customer?.addressLine || "").split(",")[0]?.trim() || "";
+      const zip = (newZip || "").replace(/\D/g, "").slice(0, 5);
+      if (!street && !zip) return prev;
+      return {
+        ...prev,
+        delivery_address: street || prev.delivery_address,
+        delivery_apt: newLine2.trim() || prev.delivery_apt,
+        delivery_city: newCity.trim() || prev.delivery_city || "New York",
+        delivery_state: newState.trim() || prev.delivery_state || "NY",
+        delivery_zip: zip || prev.delivery_zip,
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
   // Resume parked cart
   useEffect(() => {
@@ -1151,10 +1172,10 @@ export default function IntakeStepped() {
     };
     // Delivery (3 options)
     body.delivery_method = delivery.delivery_method;
-    if (delivery.delivery_method !== "Pickup") {
+      if (delivery.delivery_method !== "Pickup") {
       body.delivery_scheduled = 1;
-      if (delivery.delivery_requested_date) body.delivery_requested_date = delivery.delivery_requested_date;
-      else if (promiseDate) body.delivery_requested_date = promiseDate;
+      body.delivery_requested_date =
+        delivery.delivery_requested_date || promiseDate || undefined;
       if (delivery.delivery_time_window) body.delivery_time_window = delivery.delivery_time_window;
       if (delivery.delivery_address) body.delivery_address = delivery.delivery_address;
       if (delivery.delivery_apt) body.delivery_apt = delivery.delivery_apt;
@@ -1168,7 +1189,7 @@ export default function IntakeStepped() {
         if (delivery.delivery_fee_override_reason) {
           body.delivery_fee_override_reason = delivery.delivery_fee_override_reason;
         }
-      } else if (delivery.delivery_method === "Ship (FedEx)" && delivery.delivery_fee != null) {
+      } else if (delivery.delivery_fee != null) {
         body.delivery_fee = delivery.delivery_fee;
       }
     }
@@ -1204,6 +1225,13 @@ export default function IntakeStepped() {
         appPayUrl?: string | null;
         invoiceTotal?: number;
         sellWarnings?: string[];
+        delivery?: {
+          method?: string;
+          delivery_name?: string | null;
+          queued?: boolean;
+          shipping_record?: boolean;
+          fee?: number;
+        };
       }>("/api/intake-alterations/tickets", body);
       const ticketName = res.ticketName;
       // Upload garment + line photos after ticket exists (Lucia 023 / 030)
@@ -1286,6 +1314,13 @@ export default function IntakeStepped() {
           ? `Ticket ${res.ticketName} created${inv}${tot} — pay link ready`
           : `Ticket ${res.ticketName} created${inv}${tot}`,
       );
+      if (res.delivery?.queued) {
+        toast.success(
+          res.delivery.shipping_record
+            ? `FedEx shipping record ${res.delivery.delivery_name || ""} queued`.trim()
+            : `Hand delivery ${res.delivery.delivery_name || ""} added to the run`.trim(),
+        );
+      }
       if (res.sellWarnings?.length) {
         toast.warning(res.sellWarnings.join(" · "));
       }
@@ -1294,6 +1329,7 @@ export default function IntakeStepped() {
       }
       qc.invalidateQueries({ queryKey: ["alts-home-stats"] });
       qc.invalidateQueries({ queryKey: ["parked-carts"] });
+      qc.invalidateQueries({ queryKey: ["deliveries"] });
       // Stay on confirmation — SMS / email / print / checkout — not bare ticket hop
       setConfirmResult({
         ticketName: res.ticketName!,
@@ -1734,6 +1770,7 @@ export default function IntakeStepped() {
                             if (pick.zip) setNewZip(pick.zip);
                           }}
                           placeholder="Start typing a street…"
+                          zip={newZip}
                           inputClassName="w-full h-[52px] rounded-xl bg-black/35 border border-brass/25 px-3.5 text-cream outline-none focus:border-brass placeholder:text-cream-dim"
                         />
                       </label>
@@ -2168,17 +2205,7 @@ export default function IntakeStepped() {
 
         {/* ── Schedule (SPEC 058) — last step before write ── */}
         {step === 3 && !confirmResult && (
-          <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
-            <div className="shrink-0 max-h-[34vh] overflow-y-auto">
-            <DeliveryBlock
-              value={delivery}
-              onChange={setDelivery}
-              dueDate={promiseDate || undefined}
-              freeCustom={billing === "on_order"}
-              canOverrideFee={me?.role === "super_admin" || me?.role === "store_manager"}
-            />
-            </div>
-            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             <PromiseSchedule
               origin={origin}
               days={scheduleLoad.data?.days ?? []}
@@ -2187,10 +2214,19 @@ export default function IntakeStepped() {
               selectedTime={promiseTime}
               isRush={isRush}
               clientLabel={displayName}
+              lead={
+                <DeliveryBlock
+                  value={delivery}
+                  onChange={setDelivery}
+                  dueDate={promiseDate || undefined}
+                  freeCustom={billing === "on_order"}
+                  canOverrideFee={me?.role === "super_admin" || me?.role === "store_manager"}
+                />
+              }
               onSelectDate={(d) => {
                 setPromiseDate(d);
                 if (!promiseTime) setPromiseTime("18:00");
-                if (delivery.delivery_method !== "Pickup" && !delivery.delivery_requested_date) {
+                if (delivery.delivery_method !== "Pickup") {
                   setDelivery((prev) => ({ ...prev, delivery_requested_date: d }));
                 }
               }}
@@ -2213,16 +2249,31 @@ export default function IntakeStepped() {
                     toast.error("Enter delivery street address");
                     return;
                   }
-                }
-                if (delivery.delivery_method === "Ship (FedEx)" && billing === "billable") {
-                  if (delivery.delivery_fee == null || Number(delivery.delivery_fee) < 0) {
-                    toast.error("Enter FedEx fee (or 0 if complimentary)");
+                  if (
+                    billing === "billable" &&
+                    delivery._status === "out_of_zone" &&
+                    (delivery.delivery_fee == null || Number(delivery.delivery_fee) < 0)
+                  ) {
+                    toast.error("Enter the hand-delivery fee quoted (or 0 if complimentary)");
                     return;
+                  }
+                }
+                if (delivery.delivery_method === "Ship (FedEx)") {
+                  if (!delivery.delivery_address?.trim()) {
+                    toast.error("Enter ship-to street address");
+                    return;
+                  }
+                  if (billing === "billable") {
+                    if (delivery.delivery_fee == null || Number(delivery.delivery_fee) < 0) {
+                      toast.error("Enter FedEx fee (or 0 if complimentary)");
+                      return;
+                    }
                   }
                 }
                 if (
                   delivery.delivery_fee_override &&
                   delivery.delivery_method === "Hand Delivery" &&
+                  delivery._status === "in_zone" &&
                   billing === "billable"
                 ) {
                   if (!String(delivery.delivery_fee_override_reason || "").trim()) {
@@ -2233,7 +2284,6 @@ export default function IntakeStepped() {
                 create.mutate();
               }}
             />
-            </div>
           </div>
         )}
 

@@ -1,21 +1,21 @@
 /**
  * Address autocomplete for alts delivery intake.
- * Prefers Google Places (New) when GOOGLE_MAPS_API_KEY is set;
- * falls back to Photon (OSM) so FOH always has suggestions.
+ * Prefers Google Places when GOOGLE_MAPS_API_KEY is set;
+ * falls back to Photon + Nominatim. Results are ranked so a Long Island
+ * street like "782 Tanglewood rd" is not replaced by random 782s.
  */
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
+import {
+  buildSearchQuery,
+  formatPlaceLabel,
+  normalizeState,
+  rankSuggestions,
+  scoreSuggestion,
+  type PlaceSuggestion,
+} from "../lib/places";
 
 export const placesRouter = new Hono();
-
-type Suggestion = {
-  id: string;
-  label: string;
-  street?: string;
-  city?: string;
-  state?: string;
-  zip?: string;
-};
 
 const NYC = { lat: 40.76289, lng: -73.9665 };
 
@@ -36,7 +36,7 @@ function parseUsComponents(components: Array<{ long_name?: string; short_name?: 
   };
 }
 
-async function googleAutocomplete(q: string): Promise<Suggestion[] | null> {
+async function googleAutocomplete(q: string): Promise<PlaceSuggestion[] | null> {
   const key = (process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY || "").trim();
   if (!key) return null;
   try {
@@ -45,8 +45,10 @@ async function googleAutocomplete(q: string): Promise<Suggestion[] | null> {
     url.searchParams.set("key", key);
     url.searchParams.set("types", "address");
     url.searchParams.set("components", "country:us");
+    // ~80mi bias covers Manhattan + Long Island + Westchester. Bias, not a hard fence.
     url.searchParams.set("location", `${NYC.lat},${NYC.lng}`);
-    url.searchParams.set("radius", "25000");
+    url.searchParams.set("radius", "130000");
+    url.searchParams.set("origin", `${NYC.lat},${NYC.lng}`);
     const res = await fetch(url.toString(), { signal: AbortSignal.timeout(6000) });
     if (!res.ok) return null;
     const json = (await res.json()) as {
@@ -55,13 +57,12 @@ async function googleAutocomplete(q: string): Promise<Suggestion[] | null> {
     };
     if (json.status !== "OK" && json.status !== "ZERO_RESULTS") return null;
     const preds = json.predictions || [];
-    // Resolve top 5 place details for structured address (zip critical for zone quote)
-    const out: Suggestion[] = [];
+    const out: PlaceSuggestion[] = [];
     for (const p of preds.slice(0, 5)) {
       const detailUrl = new URL("https://maps.googleapis.com/maps/api/place/details/json");
       detailUrl.searchParams.set("place_id", p.place_id);
       detailUrl.searchParams.set("key", key);
-      detailUrl.searchParams.set("fields", "address_component,formatted_address");
+      detailUrl.searchParams.set("fields", "address_component,formatted_address,geometry");
       const dres = await fetch(detailUrl.toString(), { signal: AbortSignal.timeout(5000) });
       if (!dres.ok) {
         out.push({
@@ -72,7 +73,11 @@ async function googleAutocomplete(q: string): Promise<Suggestion[] | null> {
         continue;
       }
       const djson = (await dres.json()) as {
-        result?: { address_components?: Array<{ long_name?: string; short_name?: string; types?: string[] }>; formatted_address?: string };
+        result?: {
+          address_components?: Array<{ long_name?: string; short_name?: string; types?: string[] }>;
+          formatted_address?: string;
+          geometry?: { location?: { lat?: number; lng?: number } };
+        };
       };
       const parsed = parseUsComponents(djson.result?.address_components || []);
       out.push({
@@ -82,6 +87,8 @@ async function googleAutocomplete(q: string): Promise<Suggestion[] | null> {
         city: parsed.city,
         state: parsed.state,
         zip: parsed.zip,
+        lat: djson.result?.geometry?.location?.lat,
+        lng: djson.result?.geometry?.location?.lng,
       });
     }
     return out;
@@ -90,15 +97,13 @@ async function googleAutocomplete(q: string): Promise<Suggestion[] | null> {
   }
 }
 
-async function photonAutocomplete(q: string): Promise<Suggestion[]> {
+async function photonAutocomplete(q: string): Promise<PlaceSuggestion[]> {
   const url = new URL("https://photon.komoot.io/api/");
   url.searchParams.set("q", q);
   url.searchParams.set("lat", String(NYC.lat));
   url.searchParams.set("lon", String(NYC.lng));
-  url.searchParams.set("limit", "6");
+  url.searchParams.set("limit", "8");
   url.searchParams.set("lang", "en");
-  // Bias US
-  url.searchParams.set("osm_tag", "place:house");
   try {
     const res = await fetch(url.toString(), {
       headers: { Accept: "application/json", "User-Agent": "L&S-House-Alts/1.0" },
@@ -107,6 +112,7 @@ async function photonAutocomplete(q: string): Promise<Suggestion[]> {
     if (!res.ok) return [];
     const json = (await res.json()) as {
       features?: Array<{
+        geometry?: { coordinates?: [number, number] };
         properties?: {
           osm_id?: number | string;
           name?: string;
@@ -120,35 +126,102 @@ async function photonAutocomplete(q: string): Promise<Suggestion[]> {
         };
       }>;
     };
-    const out: Suggestion[] = [];
+    const out: PlaceSuggestion[] = [];
     for (const f of json.features || []) {
       const p = f.properties || {};
       if (p.countrycode && p.countrycode.toUpperCase() !== "US") continue;
       const street = [p.housenumber, p.street || p.name].filter(Boolean).join(" ").trim();
       if (!street) continue;
       const city = p.city || p.district || "New York";
-      const state = p.state === "New York" ? "NY" : p.state || "NY";
+      const state = normalizeState(p.state);
       const zip = (p.postcode || "").replace(/\D/g, "").slice(0, 5);
-      const label = [street, city, state, zip].filter(Boolean).join(", ");
+      const coords = f.geometry?.coordinates;
       out.push({
-        id: String(p.osm_id ?? label),
-        label,
+        id: `ph-${String(p.osm_id ?? street)}`,
+        label: formatPlaceLabel({ street, city, state, zip }),
         street,
         city,
-        state: state.length > 2 ? state.slice(0, 2).toUpperCase() : state,
+        state,
         zip,
+        lng: coords?.[0],
+        lat: coords?.[1],
       });
     }
-    // Dedupe by label
-    const seen = new Set<string>();
-    return out.filter((s) => {
-      if (seen.has(s.label)) return false;
-      seen.add(s.label);
-      return true;
-    });
+    return out;
   } catch {
     return [];
   }
+}
+
+async function nominatimAutocomplete(q: string): Promise<PlaceSuggestion[]> {
+  const url = new URL("https://nominatim.openstreetmap.org/search");
+  url.searchParams.set("q", q);
+  url.searchParams.set("format", "jsonv2");
+  url.searchParams.set("addressdetails", "1");
+  url.searchParams.set("countrycodes", "us");
+  url.searchParams.set("limit", "6");
+  // NY metro + Long Island viewbox (west, north, east, south)
+  url.searchParams.set("viewbox", "-74.4,41.2,-71.8,40.4");
+  url.searchParams.set("bounded", "0");
+  try {
+    const res = await fetch(url.toString(), {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "L&S-House-Alts/1.0 (alts.lstailors.com)",
+      },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return [];
+    const json = (await res.json()) as Array<{
+      place_id?: number;
+      lat?: string;
+      lon?: string;
+      address?: {
+        house_number?: string;
+        road?: string;
+        residential?: string;
+        city?: string;
+        town?: string;
+        village?: string;
+        hamlet?: string;
+        suburb?: string;
+        state?: string;
+        postcode?: string;
+      };
+    }>;
+    const out: PlaceSuggestion[] = [];
+    for (const row of json || []) {
+      const a = row.address || {};
+      const street = [a.house_number, a.road || a.residential].filter(Boolean).join(" ").trim();
+      if (!street) continue;
+      const city = a.city || a.town || a.village || a.hamlet || a.suburb || "New York";
+      const state = normalizeState(a.state);
+      const zip = (a.postcode || "").replace(/\D/g, "").slice(0, 5);
+      out.push({
+        id: `nm-${String(row.place_id ?? street)}`,
+        label: formatPlaceLabel({ street, city, state, zip }),
+        street,
+        city,
+        state,
+        zip,
+        lat: row.lat ? Number(row.lat) : undefined,
+        lng: row.lon ? Number(row.lon) : undefined,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+function dedupe(items: PlaceSuggestion[]): PlaceSuggestion[] {
+  const seen = new Set<string>();
+  return items.filter((s) => {
+    const key = (s.label || "").toLowerCase().replace(/\s+/g, " ");
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 placesRouter.get("/autocomplete", async (c) => {
@@ -156,11 +229,23 @@ placesRouter.get("/autocomplete", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
 
   const q = (c.req.query("q") || "").trim();
+  const zip = (c.req.query("zip") || "").trim();
   if (q.length < 3) return c.json({ data: [] });
 
-  const google = await googleAutocomplete(q);
-  if (google) return c.json({ data: google, provider: "google" });
+  const search = buildSearchQuery(q, zip);
 
-  const photon = await photonAutocomplete(q);
-  return c.json({ data: photon, provider: "photon" });
+  const google = await googleAutocomplete(search);
+  const googleRanked = google && google.length > 0 ? rankSuggestions(q, dedupe(google), zip) : [];
+  const googleTop = googleRanked[0];
+  const googleLooksRight = googleTop ? scoreSuggestion(q, googleTop, zip) >= 40 : false;
+  if (googleLooksRight) {
+    return c.json({ data: googleRanked.slice(0, 6), provider: "google" });
+  }
+
+  const [photon, nominatim] = await Promise.all([photonAutocomplete(search), nominatimAutocomplete(search)]);
+  const merged = rankSuggestions(q, dedupe([...googleRanked, ...nominatim, ...photon]), zip).slice(0, 6);
+  return c.json({
+    data: merged,
+    provider: nominatim.length ? "nominatim+photon" : "photon",
+  });
 });

@@ -202,10 +202,10 @@ export async function planDeliveryFee(opts: {
     };
   }
 
-  // out of zone / invalid → FedEx path (fee manual)
+  // Out of Manhattan zones: keep Hand Delivery (goes on our run). Fee is quoted, not FedEx.
   const fee = freeCustom ? 0 : Number(opts.delivery_fee) || 0;
   return {
-    method: resolved.status === "out_of_zone" ? "Ship (FedEx)" : method,
+    method,
     scheduled,
     zone: null,
     zone_name: null,

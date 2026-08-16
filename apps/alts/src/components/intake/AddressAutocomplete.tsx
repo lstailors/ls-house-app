@@ -32,6 +32,8 @@ type Props = {
   className?: string;
   inputClassName?: string;
   placeholder?: string;
+  /** ZIP already typed — folded into the geocode so Long Island streets resolve. */
+  zip?: string;
 };
 
 export default function AddressAutocomplete({
@@ -41,6 +43,7 @@ export default function AddressAutocomplete({
   className,
   inputClassName,
   placeholder = "213 E 61st St",
+  zip,
 }: Props) {
   const [q, setQ] = useState(value || "");
   const [open, setOpen] = useState(false);
@@ -77,7 +80,9 @@ export default function AddressAutocomplete({
       setLoading(true);
       try {
         const res = await api.raw(
-          `/api/places/autocomplete?q=${encodeURIComponent(query)}&near=NYC`,
+          `/api/places/autocomplete?q=${encodeURIComponent(query)}${
+            zip ? `&zip=${encodeURIComponent(zip.replace(/\D/g, "").slice(0, 5))}` : ""
+          }&near=NYC`,
         );
         const json = (await res.json()) as { data?: Suggestion[] };
         if (cancelled) return;
@@ -97,7 +102,7 @@ export default function AddressAutocomplete({
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [q]);
+  }, [q, zip]);
 
   return (
     <div ref={boxRef} className={cn("relative", className)}>

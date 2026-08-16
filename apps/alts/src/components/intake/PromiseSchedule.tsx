@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { cn } from "@ls/design/utils";
 
 export type DayLoad = {
@@ -34,6 +34,8 @@ export type PromiseScheduleProps = {
   onBack: () => void;
   onConfirm: () => void;
   confirming?: boolean;
+  /** Delivery method + address sit in the same scroll as the date wheel. */
+  lead?: ReactNode;
 };
 
 /** FOH promise slots — last is shop EOD default when date-only. */
@@ -95,12 +97,16 @@ export default function PromiseSchedule({
   onBack,
   onConfirm,
   confirming,
+  lead,
 }: PromiseScheduleProps) {
   const selected = useMemo(
     () => days.find((d) => d.date === selectedDate) || null,
     [days, selectedDate],
   );
 
+  const [shown, setShown] = useState(14);
+  const visibleDays = days.slice(0, shown);
+  const hasMore = days.length > shown;
   const canConfirm = !!selectedDate && !!selectedTime;
 
   return (
@@ -114,6 +120,9 @@ export default function PromiseSchedule({
           >
             ← Back to review
           </button>
+        </div>
+        {lead ? <div className="mb-4">{lead}</div> : null}
+        <div className="shrink-0 mb-4">
           <h2 className="display text-[36px] md:text-[44px] leading-none italic">
             When is it promised?
           </h2>
@@ -126,13 +135,13 @@ export default function PromiseSchedule({
 
         <div className="mb-5">
           <div className="text-[11px] font-bold tracking-[0.16em] uppercase text-brass-light mb-3">
-            Next 14 shop days · {origin}
+            Shop days · {origin}
           </div>
           {loading ? (
             <div className="h-40 rounded-2xl border border-brass/20 bg-black/25 animate-pulse" />
           ) : (
             <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
-              {days.map((d) => {
+              {visibleDays.map((d) => {
                 const level = loadLevel(d.count);
                 const lab = fmtDayLabel(d.date);
                 const sel = selectedDate === d.date;
@@ -187,6 +196,34 @@ export default function PromiseSchedule({
               })}
             </div>
           )}
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            {hasMore ? (
+              <button
+                type="button"
+                onClick={() => setShown((n) => n + 14)}
+                className="rounded-xl border border-brass/40 bg-brass/10 px-3.5 py-2 text-[12px] font-bold tracking-wider uppercase text-brass-light min-h-[44px]"
+              >
+                More dates →
+              </button>
+            ) : null}
+            <label className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-black/25 px-3 py-2 min-h-[44px]">
+              <span className="text-[11px] font-bold tracking-wider uppercase text-cream-dim">
+                Later
+              </span>
+              <input
+                type="date"
+                min={days[0]?.date || new Date().toISOString().slice(0, 10)}
+                className="bg-transparent text-sm text-cream outline-none"
+                value={selectedDate || ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) return;
+                  setShown((n) => Math.max(n, days.length));
+                  onSelectDate(v);
+                }}
+              />
+            </label>
+          </div>
           <div className="flex gap-4 mt-2 text-[12px] text-cream-dim">
             <span className="inline-flex items-center gap-1">
               <i className="w-2.5 h-2.5 rounded-sm bg-[var(--em,#4FBF8E)]" /> Open
