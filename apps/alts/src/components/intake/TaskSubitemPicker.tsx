@@ -24,6 +24,7 @@ import {
 import {
   isGroup as isGroupFn,
   labelOfPreset,
+  leavesForZone,
   matchZone,
   zonesForGarment,
   type BodyZoneDef,
@@ -208,18 +209,11 @@ export default function TaskSubitemPicker({
 
   const starred = useMemo(() => new Set(favIds), [favIds]);
 
-  /** Zone stats: option count + from $ across matching groups' leaves */
+  /** Zone stats: every quote line in the area — not just Quick actions. */
   const zoneStats = useMemo(() => {
     return zones.map((z) => {
+      const leaves = leavesForZone(forGarment, z);
       const matchedRoots = rootItems.filter((p) => matchZone(p, [z]) === z.id);
-      const leaves: HierarchyPreset[] = [];
-      for (const r of matchedRoots) {
-        if (isGroupPreset(r)) {
-          leaves.push(...childrenOf(r).filter((c) => !isGroupPreset(c)));
-        } else {
-          leaves.push(r);
-        }
-      }
       const prices = leaves.map((l) => Number(l.price) || 0).filter((n) => n > 0);
       const from = prices.length ? Math.min(...prices) : 0;
       const selectedCount = leaves.filter((l) => selected.has(l.id)).length;
@@ -228,11 +222,11 @@ export default function TaskSubitemPicker({
         roots: matchedRoots,
         leaves,
         from,
-        count: leaves.length || matchedRoots.length,
+        count: leaves.length,
         selectedCount,
       };
     });
-  }, [zones, rootItems, childrenOf, selected]);
+  }, [zones, forGarment, rootItems, selected]);
 
   const unmatchedRoots = useMemo(() => {
     return rootItems.filter((p) => matchZone(p, zones) == null);
@@ -249,29 +243,11 @@ export default function TaskSubitemPicker({
     }
     const st = zoneStats.find((s) => s.zone.id === view.zone.id);
     if (!st) return [];
-    const out: HierarchyPreset[] = [];
-    for (const r of st.roots) {
-      if (isGroupPreset(r)) {
-        const kids = childrenOf(r);
-        if (kids.length) out.push(...kids.filter((k) => !isGroupPreset(k)));
-        else out.push(r);
-        out.push(...kids.filter(isGroupPreset));
-      } else {
-        out.push(r);
-      }
-    }
-    const seen = new Set<string>();
-    return out
-      .filter((p) => {
-        if (seen.has(p.id)) return false;
-        seen.add(p.id);
-        return true;
-      })
-      .sort(
-        (a, b) =>
-          (a.sort_order ?? 100) - (b.sort_order ?? 100) ||
-          labelOf(a).localeCompare(labelOf(b)),
-      );
+    return [...st.leaves].sort(
+      (a, b) =>
+        (a.sort_order ?? 100) - (b.sort_order ?? 100) ||
+        labelOf(a).localeCompare(labelOf(b)),
+    );
   }, [view, zoneStats, childrenOf]);
 
   const filteredList = useMemo(() => {
