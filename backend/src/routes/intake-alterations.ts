@@ -1181,7 +1181,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
           free_custom: plan.free_custom,
           delivery_name: deliveryName,
           queued: Boolean(deliveryName),
-          shipping_record: isShip,
+          shipping_record: deliveryMethod === 'Ship (FedEx)',
         };
       } catch (e: any) {
         console.error('[intake-alterations] delivery schedule failed:', e?.message);
