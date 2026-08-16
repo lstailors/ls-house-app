@@ -146,7 +146,10 @@ export default function StockGallery() {
     staleTime: 20_000,
   });
 
-  const items = list.data?.items ?? [];
+  const items = [...(list.data?.items ?? [])].sort((a, b) => {
+    if (!!a.photoUrl !== !!b.photoUrl) return a.photoUrl ? -1 : 1;
+    return (a.pieceNo ?? 0) - (b.pieceNo ?? 0);
+  });
   const counts = list.data?.counts;
 
   const runSearch = () => setGo(q.trim());

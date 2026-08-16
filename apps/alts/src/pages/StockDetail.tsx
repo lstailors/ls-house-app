@@ -149,7 +149,7 @@ export default function StockDetailPage() {
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center bg-gradient-to-br from-forest-raised to-forest-deep">
                   <span className="text-[11px] tracking-[0.16em] uppercase text-brass/80">Photo pending</span>
                   <p className="text-sm text-cream/90 max-w-md leading-relaxed">{d.visualDescription}</p>
-                  <p className="text-[11px] text-cream-muted">Images attach when Claude Code upload finishes</p>
+                  <p className="text-[11px] text-cream-muted">No photo on this piece yet</p>
                 </div>
               )}
               {d.status === "Used" && (
