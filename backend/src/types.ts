@@ -1780,3 +1780,38 @@ export const OfflineSnapshot = z.object({
   }),
 });
 export type OfflineSnapshot = z.infer<typeof OfflineSnapshot>;
+
+/** Pickup | Hand delivery | Ship (FedEx) — same three choices as intake checkout. */
+export const FohDeliveryMethod = z.enum(["Pickup", "Hand Delivery", "Ship (FedEx)"]);
+export type FohDeliveryMethod = z.infer<typeof FohDeliveryMethod>;
+
+export const UpdateTicketDeliveryRequest = z.object({
+  delivery_method: z.union([
+    FohDeliveryMethod,
+    z.literal("Ship"),
+    z.literal("FedEx"),
+    z.literal("Ship Direct"),
+    z.literal("Courier"),
+  ]),
+  delivery_address: z.string().optional().nullable(),
+  delivery_apt: z.string().optional().nullable(),
+  delivery_city: z.string().optional().nullable(),
+  delivery_state: z.string().optional().nullable(),
+  delivery_zip: z.string().optional().nullable(),
+  delivery_notes: z.string().optional().nullable(),
+  delivery_requested_date: z.string().optional().nullable(),
+  delivery_time_window: z.string().optional().nullable(),
+  delivery_fee: z.number().optional().nullable(),
+  delivery_fee_override: z.boolean().optional(),
+  delivery_fee_override_reason: z.string().optional().nullable(),
+});
+export type UpdateTicketDeliveryRequest = z.infer<typeof UpdateTicketDeliveryRequest>;
+
+export const UpdateTicketDeliveryResponse = z.object({
+  ok: z.literal(true),
+  delivery_method: FohDeliveryMethod,
+  linked_delivery: z.string().nullable(),
+  cancelled_delivery: z.string().nullable().optional(),
+  warning: z.string().nullable().optional(),
+});
+export type UpdateTicketDeliveryResponse = z.infer<typeof UpdateTicketDeliveryResponse>;
