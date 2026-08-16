@@ -147,6 +147,7 @@ describe("iPhone scale contract", () => {
     expect(item).toContain("blankQcChecks");
     expect(item).toContain("isQcInspectionName");
     expect(item).toContain("Store arrival");
+    expect(item).not.toContain("setTimeout(() => {\n      save.mutate({ checks, notes, failReason })");
     expect(app).toContain("NotFound");
     expect(app).toContain('path="/reports/:tab?"');
     expect(app).not.toContain('Navigate to="/"');

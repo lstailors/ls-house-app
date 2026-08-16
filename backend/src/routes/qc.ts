@@ -14,6 +14,8 @@ import {
   checksToDocFields,
   storeArrivalToDocFields,
   dateReceivedLabel,
+  isPausedMtmStatus,
+  liveStatusFromPaused,
   type QcInspectionMeta,
   dedupeByInspectionName,
   isQcInspectionName,
@@ -154,6 +156,48 @@ async function updateDroppingFields(name: string, doc: Record<string, unknown>) 
 
 type MetaField = { fieldname?: string; label?: string; fieldtype?: string; options?: string };
 let qcMetaCache: QcInspectionMeta | null = null;
+
+function isPauseHoldError(message: unknown): boolean {
+  return /pause\s*\/\s*hold|on pause|on hold|cannot be "pause/i.test(String(message || ""));
+}
+
+async function liftPausedStatuses(insp: Record<string, unknown>) {
+  const names = [insp.custom_order, insp.mtmpro_order, insp.sales_order, insp.name].filter(Boolean).map(String);
+  const doctypes = [DT_QC, DT_CUSTOM, DT.MTM_PRO_ORDER];
+  for (const name of names) {
+    for (const dt of doctypes) {
+      const doc = await erpGet<any>(dt, name).catch(() => null);
+      if (!doc?.name) continue;
+      if (!isPausedMtmStatus(doc.order_status) && !isPausedMtmStatus(doc.status)) continue;
+      const next = liveStatusFromPaused(doc.order_status || doc.status);
+      const patch: Record<string, unknown> = {};
+      if (isPausedMtmStatus(doc.order_status)) patch.order_status = next;
+      if (isPausedMtmStatus(doc.status)) patch.status = next;
+      if (Object.keys(patch).length) {
+        await erpUpdate(dt, doc.name, patch).catch(() => null);
+      }
+    }
+  }
+}
+
+async function saveQcInspection(
+  name: string,
+  update: Record<string, unknown>,
+  existing: Record<string, unknown>,
+) {
+  try {
+    return await updateDroppingFields(name, update);
+  } catch (e: any) {
+    if (!isPauseHoldError(e?.message)) throw e;
+    await liftPausedStatuses(existing);
+    const retry = { ...update };
+    if (isPausedMtmStatus(existing.order_status) || isPauseHoldError(e?.message)) {
+      retry.order_status = liveStatusFromPaused(existing.order_status);
+    }
+    if (isPausedMtmStatus(existing.status)) retry.status = liveStatusFromPaused(existing.status);
+    return await updateDroppingFields(name, retry);
+  }
+}
 
 async function loadQcMeta(): Promise<QcInspectionMeta> {
   if (qcMetaCache) return qcMetaCache;
@@ -990,13 +1034,20 @@ qcRouter.patch("/:id", async (c) => {
     if (!existing?.name) return c.json({ error: { message: "Not found" } }, 404);
     const body = await c.req.json().catch(() => ({}));
 
+    const want = body.qc_result || body.result;
     const update: Record<string, unknown> = {};
-    if (Array.isArray(body.checks)) Object.assign(update, checksToDocFields(body.checks));
+    if (Array.isArray(body.checks)) {
+      const fields = checksToDocFields(body.checks);
+      if (want !== "Pass") {
+        // Check ticks only — do not rewrite order status or guessed arrival tables.
+        update.checks_json = fields.checks_json;
+      } else {
+        Object.assign(update, fields);
+      }
+    }
     if (typeof body.notes === "string") update.notes = body.notes;
     if (typeof body.failReason === "string") update.fail_reason = body.failReason;
     if (typeof body.signatureUrl === "string") update.signature_url = body.signatureUrl;
-
-    const want = body.qc_result || body.result;
     if (want === "Fail") {
       const notes = String(body.notes ?? body.failReason ?? update.notes ?? existing.notes ?? "").trim();
       if (!notes) return c.json({ error: { message: "Notes are required to fail" } }, 400);
@@ -1017,7 +1068,7 @@ qcRouter.patch("/:id", async (c) => {
       delete prelude.qc_result;
       delete prelude.result;
       if (Object.keys(prelude).length) {
-        await updateDroppingFields(existing.name, prelude);
+        await saveQcInspection(existing.name, prelude, existing);
         for (const [field, value] of Object.entries(prelude)) {
           if (Array.isArray(value) || value == null || typeof value === "object") continue;
           await erpRunMethod("frappe.client.set_value", {
@@ -1034,7 +1085,11 @@ qcRouter.patch("/:id", async (c) => {
       update.result = want;
     }
 
-    const saved = await updateDroppingFields(existing.name, update);
+    await liftPausedStatuses(existing);
+    if (isPausedMtmStatus(existing.order_status)) update.order_status = liveStatusFromPaused(existing.order_status);
+    if (isPausedMtmStatus(existing.status)) update.status = liveStatusFromPaused(existing.status);
+
+    const saved = await saveQcInspection(existing.name, update, existing);
     const fresh = (await erpGet<any>(DT_QC, existing.name).catch(() => null)) || saved || { ...existing, ...update };
     if (want === "Fail") {
       void notifyQcFail(fresh, String(update.notes || "")).catch((e) =>
