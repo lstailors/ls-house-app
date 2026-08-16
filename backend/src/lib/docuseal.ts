@@ -160,12 +160,83 @@ async function resolveTemplate(
   return pickQcTemplate(listed, preferredId);
 }
 
+export type QcDocusealField = { name: string; default_value: string };
+
+export function qcDocusealFields(input: {
+  customerName?: string | null;
+  order?: string | null;
+  result?: string | null;
+  notes?: string | null;
+  inspection?: string | null;
+  checksText?: string | null;
+}): QcDocusealField[] {
+  const pairs: Array<[string, string]> = [
+    ["Customer", String(input.customerName || "").trim()],
+    ["Client", String(input.customerName || "").trim()],
+    ["Order", String(input.order || "").trim()],
+    ["Result", String(input.result || "").trim()],
+    ["QC Result", String(input.result || "").trim()],
+    ["Notes", String(input.notes || "").trim()],
+    ["Checks", String(input.checksText || "").trim()],
+    ["Summary", String(input.checksText || "").trim()],
+    ["Inspection", String(input.inspection || "").trim()],
+  ];
+  const seen = new Set<string>();
+  const out: QcDocusealField[] = [];
+  for (const [name, value] of pairs) {
+    if (!value || seen.has(name)) continue;
+    seen.add(name);
+    out.push({ name, default_value: value.slice(0, 8000) });
+  }
+  return out;
+}
+
+export async function downloadDocusealDocuments(
+  submissionId: string,
+  signedUrl?: string | null,
+): Promise<Array<{ bytes: Uint8Array; filename: string }>> {
+  const files: Array<{ bytes: Uint8Array; filename: string }> = [];
+  const push = async (url: string, filename: string) => {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+      if (!res.ok) return;
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (bytes.byteLength > 80) files.push({ bytes, filename });
+    } catch {
+      /* optional */
+    }
+  };
+  if (signedUrl) await push(signedUrl, `qc-docuseal-${submissionId}.pdf`);
+
+  const cfg = await loadDocusealSettings();
+  if (!cfg.apiKey) return files;
+  const api = docusealApiBase(cfg.url);
+  const auth = headers(cfg.apiKey);
+  try {
+    const res = await fetch(`${api}/submissions/${encodeURIComponent(submissionId)}/documents`, {
+      headers: auth,
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!res.ok) return files;
+    const json = await res.json();
+    const rows = Array.isArray(json) ? json : (json as { data?: unknown[] })?.data || [];
+    for (const [i, row] of rows.entries()) {
+      const url = String((row as { url?: string })?.url || "");
+      if (url) await push(url, `qc-docuseal-${submissionId}-${i + 1}.pdf`);
+    }
+  } catch {
+    /* optional */
+  }
+  return files;
+}
+
 export async function createQcSignatureSubmission(opts: {
   title: string;
   inspectorEmail: string;
   inspectorName: string;
   pdfBytes?: ArrayBuffer | null;
   pdfName?: string;
+  fields?: QcDocusealField[];
 }): Promise<DocuSealSubmission | null> {
   const cfg = await loadDocusealSettings();
   if (!cfg.apiKey) return null;
@@ -192,6 +263,7 @@ export async function createQcSignatureSubmission(opts: {
           email: opts.inspectorEmail,
           name: opts.inspectorName,
           send_email: false,
+          ...(opts.fields?.length ? { fields: opts.fields } : {}),
         },
       ],
     }),

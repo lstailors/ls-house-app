@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { logErpCommunication, matchCustomerByPhone } from "./comms";
 import { insertCallLog, updateCallLog, insertSmsMessage } from "../lib/erpnext/agents";
-import { markQcSignedBySubmission } from "./qc";
+import { attachDocusealResultFiles, markQcSignedBySubmission } from "./qc";
 
 export const webhooksRouter = new Hono();
 
@@ -172,5 +172,10 @@ webhooksRouter.post("/docuseal", async (c) => {
     data?.combined_document_url ||
     null;
   const name = await markQcSignedBySubmission(submissionId, signedUrl).catch(() => null);
+  if (name && submissionId) {
+    await attachDocusealResultFiles(name, submissionId, signedUrl).catch((e) =>
+      console.warn("[docuseal.webhook] attach", e?.message),
+    );
+  }
   return c.json({ ok: true, inspection: name });
 });

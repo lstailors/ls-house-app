@@ -44,6 +44,7 @@ type Inspection = {
   signedAt?: string | null;
   signatureUrl?: string | null;
   docusealEmbedSrc?: string | null;
+  resultPdfUrl?: string | null;
   scanUrl?: string;
   photos?: Photo[];
   docuseal?: boolean;
@@ -299,13 +300,17 @@ export default function QcInspection() {
           result,
         },
         {
-          onSuccess: () => {
+          onSuccess: (saved) => {
             setDecide(null);
+            if (saved?.docusealEmbedSrc) {
+              setEmbedSrc(saved.docusealEmbedSrc);
+              setShowDocuseal(true);
+            }
             if (result === "Pass") {
               setPassedDone(true);
-              toast.success("Passed");
+              toast.success("Passed — QC PDF filed");
             } else {
-              toast.success("Sent to Alterations");
+              toast.success("Sent to Alterations — QC PDF filed");
             }
             qc.invalidateQueries({ queryKey: ["alts-qc-detail", id] });
             qc.invalidateQueries({ queryKey: ["alts-qc"] });
@@ -313,16 +318,16 @@ export default function QcInspection() {
         },
       );
 
-    if (result === "Fail" && !data?.signedAt && !data?.signatureUrl) {
-      const pad = failSigRef.current || sigRef.current;
+    if (!data?.signedAt && !data?.signatureUrl) {
+      const pad = (result === "Fail" ? failSigRef.current : sigRef.current) || failSigRef.current || sigRef.current;
       if (!pad || pad.isEmpty()) {
-        toast.error("Sign the pad, then send");
+        toast.error("Sign the pad, then submit");
         return;
       }
-      signPad.mutate("fail", {
+      signPad.mutate(result === "Fail" ? "fail" : "main", {
         onSuccess: () => run(),
         onError: () => {
-          signPad.mutate("main", { onSuccess: () => run() });
+          signPad.mutate(result === "Fail" ? "main" : "fail", { onSuccess: () => run() });
         },
       });
       return;
@@ -686,6 +691,16 @@ export default function QcInspection() {
               <div className="card-glass px-4 py-4 text-center">
                 <div className="display text-2xl">{data?.result}</div>
                 <div className="text-sm text-cream-dim mt-1">{data?.nextStatus || data?.orderStatus}</div>
+                {data?.resultPdfUrl ? (
+                  <a
+                    href={data.resultPdfUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-brass h-12 inline-flex items-center justify-center mt-3 px-4 text-xs"
+                  >
+                    Open QC PDF
+                  </a>
+                ) : null}
               </div>
             )}
           </>
@@ -779,7 +794,7 @@ export default function QcInspection() {
         >
           <h2 className="display text-[32px] leading-none">Passed</h2>
           <p className="text-sm text-cream-dim mt-2">
-            Next: Awaiting Fitting, or Awaiting Shipment if it ships. Nothing is emailed. DocuSeal only opens if you tap Sign with DocuSeal — that is the order PDF, not Pass.
+            Next: Awaiting Fitting, or Awaiting Shipment if it ships. A QC PDF of this pass is on the ticket. If DocuSeal opened, finish the signature — the webhook files that copy too.
           </p>
           <div className="flex flex-col gap-2 mt-5">
             <button type="button" onClick={() => nav("/qc")} className="btn-brass h-14 text-xs">
@@ -819,8 +834,22 @@ export default function QcInspection() {
           >
             <h2 className="display text-[32px] leading-none">Pass</h2>
             <p className="text-sm text-cream-dim mt-2">
-              Files this ticket in ERPNext and moves the make to Awaiting Fitting, or Awaiting Shipment if it ships. Pass does not email anyone and does not open DocuSeal.
+              Sign and submit. We make a PDF of this pass/fail, file it on the ticket, and DocuSeal’s webhook attaches the signed copy when you finish there.
             </p>
+            {!data?.signedAt && !data?.signatureUrl ? (
+              <div className="mt-4 rounded-xl border border-brass/25 bg-[#F6F1E4] overflow-hidden">
+                <SignatureCanvas
+                  ref={sigRef}
+                  penColor="#1A1A1A"
+                  canvasProps={{ className: "w-full h-36" }}
+                />
+                <p className="px-3 py-2 text-[11px] font-bold uppercase tracking-widest text-forest-deep/80">
+                  Sign here, then submit
+                </p>
+              </div>
+            ) : (
+              <div className="mt-3 text-[12px] font-bold uppercase tracking-widest text-signal-emerald">Signed</div>
+            )}
             {summary.open > 0 && (
               <p className="text-xs text-signal-amber mt-2">
                 {checks.filter((c) => c.group === "Store arrival" && c.pass !== true).length
@@ -831,11 +860,11 @@ export default function QcInspection() {
             <div className="flex flex-col gap-2 mt-5">
               <button
                 type="button"
-                disabled={save.isPending}
+                disabled={save.isPending || signPad.isPending}
                 onClick={() => finish("Pass")}
                 className="btn-brass h-14 text-xs"
               >
-                Confirm pass
+                {save.isPending || signPad.isPending ? "Submitting…" : "Sign and submit"}
               </button>
               <button type="button" onClick={() => setDecide(null)} className="btn-ghost h-12 text-xs">
                 Back

@@ -265,5 +265,8 @@ describe("QC routes are mounted", () => {
     expect(src.indexOf('qcRouter.patch("/settings"')).toBeLessThan(src.indexOf('qcRouter.patch("/:id"'));
     expect(src.indexOf('qcRouter.post("/settings/test"')).toBeLessThan(src.indexOf('qcRouter.post("/:id/sign"'));
     expect(src).not.toContain("submissions/pdf");
+    expect(src).toContain("fileQcPassFail");
+    expect(src).toContain("attachDocusealResultFiles");
+    expect(src).toContain("buildQcResultPdf");
   });
 });
