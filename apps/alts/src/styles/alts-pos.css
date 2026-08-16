@@ -2055,3 +2055,14 @@ body {
   color: rgba(243, 234, 214, 0.78);
 }
 
+/* DocuSeal stays in its own sheet — never inline on the QC page (iPhone zoom). */
+.qc-docuseal-frame {
+  display: block;
+  width: 100%;
+  height: min(72vh, 640px);
+  border: 0;
+  border-radius: 14px;
+  background: #fff;
+  touch-action: manipulation;
+}
+

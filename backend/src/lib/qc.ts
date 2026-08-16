@@ -38,7 +38,49 @@ export type QcCheck = {
   pass: boolean | null;
 };
 
+/** ERPNext LSH QC Inspection store-arrival gate — Pass is blocked until these are checked. */
+export const STORE_ARRIVAL_GROUP = "Store arrival";
+
+export const STORE_ARRIVAL_CHECKS = [
+  {
+    id: "arrive-contents",
+    group: STORE_ARRIVAL_GROUP,
+    label: "Contents match order",
+    hint: "Pieces on the order are in the bag",
+    fields: ["contents_match_order", "contents_match"],
+  },
+  {
+    id: "arrive-fabric",
+    group: STORE_ARRIVAL_GROUP,
+    label: "Fabric/article correct",
+    hint: "Cloth / article matches the ticket",
+    fields: ["fabric_article_correct", "fabric_article"],
+  },
+  {
+    id: "arrive-styling",
+    group: STORE_ARRIVAL_GROUP,
+    label: "Styling / visual OK",
+    hint: "Looks like the ordered make",
+    fields: ["styling_visual_ok", "styling_visual"],
+  },
+  {
+    id: "arrive-damage",
+    group: STORE_ARRIVAL_GROUP,
+    label: "No transit damage",
+    hint: "No crush, stain, or ship damage",
+    fields: ["no_transit_damage", "transit_damage_ok"],
+  },
+  {
+    id: "arrive-labels",
+    group: STORE_ARRIVAL_GROUP,
+    label: "Labels/tags present",
+    hint: "Maker label and tags are on the garment",
+    fields: ["labels_tags_present", "labels_tags"],
+  },
+] as const;
+
 export const QC_CHECK_CATALOG: Array<Omit<QcCheck, "pass">> = [
+  ...STORE_ARRIVAL_CHECKS.map(({ fields: _fields, ...row }) => row),
   { id: "id-label", group: "Identity", label: "Label / ticket matches the order", hint: "Name, SO, MTMPro #" },
   { id: "id-client", group: "Identity", label: "Client name on the garment is correct" },
   { id: "id-fabric", group: "Identity", label: "Cloth / mill matches the order" },
@@ -142,6 +184,7 @@ export function checksFromDoc(doc: Record<string, unknown> | null | undefined): 
     }
   }
   const byGroup = new Map<string, boolean | null>();
+  const byId = new Map<string, boolean | null>();
   let any = false;
   for (const six of QC_SIX) {
     for (const f of six.fields) {
@@ -152,10 +195,19 @@ export function checksFromDoc(doc: Record<string, unknown> | null | undefined): 
       }
     }
   }
+  for (const item of STORE_ARRIVAL_CHECKS) {
+    for (const f of item.fields) {
+      if (doc[f] != null && doc[f] !== "") {
+        byId.set(item.id, coercePass(doc[f]));
+        any = true;
+        break;
+      }
+    }
+  }
   if (!any) return blankChecks();
   return QC_CHECK_CATALOG.map((c) => ({
     ...c,
-    pass: byGroup.has(c.group) ? byGroup.get(c.group)! : null,
+    pass: byId.has(c.id) ? byId.get(c.id)! : byGroup.has(c.group) ? byGroup.get(c.group)! : null,
   }));
 }
 
@@ -170,6 +222,75 @@ export function checksToDocFields(checks: QcCheck[]): Record<string, unknown> {
     const val = failed ? 0 : 1;
     out[six.id] = val;
     out[`check_${six.id}`] = val;
+  }
+  Object.assign(out, storeArrivalToDocFields(checks));
+  return out;
+}
+
+export function storeArrivalOpen(checks: QcCheck[]): string[] {
+  return STORE_ARRIVAL_CHECKS
+    .filter((item) => {
+      const row = checks.find((c) => c.id === item.id || c.label === item.label);
+      return row?.pass !== true;
+    })
+    .map((item) => item.label);
+}
+
+/** Tick the ERPNext store-arrival boxes (Check fields + any matching child table). */
+export function storeArrivalToDocFields(
+  checks: QcCheck[] | undefined,
+  existing?: Record<string, unknown> | null,
+  opts?: { forcePass?: boolean },
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const force = Boolean(opts?.forcePass);
+  for (const item of STORE_ARRIVAL_CHECKS) {
+    const row = checks?.find((c) => c.id === item.id || c.label === item.label);
+    const ok = force || row?.pass === true;
+    if (!ok) continue;
+    for (const field of item.fields) out[field] = 1;
+  }
+  if (existing) Object.assign(out, markStoreArrivalChildren(existing, force));
+  return out;
+}
+
+const ARRIVAL_CHILD_KEYS = [
+  "store_arrival_checklist",
+  "arrival_checklist",
+  "store_arrival_items",
+  "qc_checklist",
+  "checklist_items",
+];
+
+function arrivalLabelOf(row: Record<string, unknown>): string {
+  return String(row.label || row.item || row.check_item || row.description || row.checklist_item || "").trim();
+}
+
+function markStoreArrivalChildren(doc: Record<string, unknown>, force: boolean): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const entries = Object.entries(doc).filter(([key, val]) => {
+    if (!Array.isArray(val) || !val.length) return false;
+    if (ARRIVAL_CHILD_KEYS.includes(key)) return true;
+    return val.some((row) => {
+      if (!row || typeof row !== "object") return false;
+      const label = arrivalLabelOf(row as Record<string, unknown>).toLowerCase();
+      return STORE_ARRIVAL_CHECKS.some((item) => label === item.label.toLowerCase() || label.includes(item.label.toLowerCase().slice(0, 10)));
+    });
+  });
+  for (const [key, val] of entries) {
+    const rows = (val as Record<string, unknown>[]).map((row) => {
+      const label = arrivalLabelOf(row).toLowerCase();
+      const match = STORE_ARRIVAL_CHECKS.some((item) => label === item.label.toLowerCase() || label.includes(item.label.toLowerCase().slice(0, 10)));
+      if (!force && !match) return row;
+      return {
+        ...row,
+        checked: 1,
+        check: 1,
+        completed: 1,
+        status: row.status || "Pass",
+      };
+    });
+    out[key] = rows;
   }
   return out;
 }

@@ -82,6 +82,7 @@ export default function QcInspection() {
   const [showPdf, setShowPdf] = useState(false);
   const [showQr, setShowQr] = useState(false);
   const [embedSrc, setEmbedSrc] = useState<string | null>(null);
+  const [showDocuseal, setShowDocuseal] = useState(false);
   const [decide, setDecide] = useState<"pass" | "fail" | null>(null);
   const [confirmAllPass, setConfirmAllPass] = useState(false);
   const [failDraft, setFailDraft] = useState<{ ids: string[]; labels: string[] } | null>(null);
@@ -105,7 +106,8 @@ export default function QcInspection() {
     setNotes(row.notes || "");
     setFailReason(row.failReason || "");
     setChecks(row.checks || []);
-    setEmbedSrc(row.docusealEmbedSrc || null);
+    // Keep a saved DocuSeal URL for "Continue signing" — never inject the iframe into the page.
+    if (row.docusealEmbedSrc) setEmbedSrc(row.docusealEmbedSrc);
   }, [inspectionId]);
 
   useEffect(() => {
@@ -183,8 +185,10 @@ export default function QcInspection() {
   const startDocuseal = useMutation({
     mutationFn: () => api.post<{ embedSrc?: string | null }>(`/api/qc/${encodeURIComponent(inspectionId!)}/sign`, {}),
     onSuccess: (res) => {
-      if (res.embedSrc) setEmbedSrc(res.embedSrc);
-      else toast.error("DocuSeal did not return a signing page");
+      if (res.embedSrc) {
+        setEmbedSrc(res.embedSrc);
+        setShowDocuseal(true);
+      } else toast.error("DocuSeal did not return a signing page");
     },
     onError: (e: Error) => toast.error(e.message || "Could not start DocuSeal"),
   });
@@ -274,10 +278,18 @@ export default function QcInspection() {
       toast.error("Say what failed");
       return;
     }
+    const nextChecks =
+      result === "Pass"
+        ? checks.map((c) => (c.group === "Store arrival" && c.pass !== false ? { ...c, pass: true } : c))
+        : checks;
+    if (result === "Pass" && nextChecks.some((c) => c.group === "Store arrival" && c.pass === false)) {
+      toast.error("A store-arrival check failed — send to Alterations instead");
+      return;
+    }
     const run = () =>
       save.mutate(
         {
-          checks,
+          checks: nextChecks,
           notes: result === "Fail" ? reason : notes,
           failReason: result === "Fail" ? reason : failReason,
           qc_result: result,
@@ -319,6 +331,21 @@ export default function QcInspection() {
   const photos = data?.photos ?? [];
 
   useEffect(() => {
+    if (!showDocuseal || !inspectionId) return;
+    const t = setInterval(() => {
+      qc.invalidateQueries({ queryKey: ["alts-qc-detail", id] });
+    }, 4000);
+    return () => clearInterval(t);
+  }, [showDocuseal, inspectionId, id, qc]);
+
+  useEffect(() => {
+    if (showDocuseal && data?.signedAt) {
+      setShowDocuseal(false);
+      toast.success("Order PDF signed");
+    }
+  }, [showDocuseal, data?.signedAt]);
+
+  useEffect(() => {
     if (!inspectionId || locked) return;
     if (!checks.length) return;
     if (skipCheckSave.current) {
@@ -332,7 +359,7 @@ export default function QcInspection() {
   }, [checks, failReason, inspectionId, locked, notes, save]);
 
   return (
-    <div className="alts-root min-h-dvh flex flex-col overflow-x-hidden">
+    <div className="alts-root min-h-dvh flex flex-col overflow-x-hidden" style={{ touchAction: "manipulation" }}>
       <header className="flex items-center gap-3 px-4 sm:px-5 py-4 border-b border-brass/20 flex-wrap">
         <BrandSeal />
         <Link to="/qc" className="text-cream-dim p-2 min-h-[44px] min-w-[44px] inline-flex items-center">
@@ -465,12 +492,14 @@ export default function QcInspection() {
                   <div key={row.id} className="px-4 py-3 border-b border-brass/10 last:border-0">
                     <div className="text-[14px] font-semibold">{row.label}</div>
                     {row.hint && <div className="text-[12px] text-cream-dim mt-0.5">{row.hint}</div>}
-                    <div className="grid grid-cols-3 gap-2 mt-2">
+                    <div className={cn("grid gap-2 mt-2", group === "Store arrival" ? "grid-cols-2" : "grid-cols-3")}>
                       {(
                         [
                           [true, "Pass", "bg-signal-emerald/20 border-signal-emerald text-signal-emerald"],
                           [false, "Fail", "bg-signal-rose/15 border-signal-rose/50 text-signal-rose"],
-                          [null, "Skip", "border-brass/25 text-cream-dim"],
+                          ...(group === "Store arrival"
+                            ? []
+                            : ([[null, "Skip", "border-brass/25 text-cream-dim"]] as const)),
                         ] as const
                       ).map(([val, lab, cls]) => (
                         <button
@@ -567,20 +596,31 @@ export default function QcInspection() {
                 {data?.signedAt && <span className="text-[11px] font-bold uppercase tracking-widest text-signal-emerald">Signed</span>}
               </div>
               <div className="p-4 space-y-3">
+                <p className="text-sm text-cream-dim">
+                  Sign the order PDF here. The checklist stays on this page — DocuSeal is not the QC form.
+                </p>
                 {data?.signatureUrl && (
                   <img src={data.signatureUrl} alt="Signature" className="w-full max-h-36 object-contain rounded-xl bg-[#F6F1E4]" />
                 )}
-                {embedSrc && (
-                  <iframe title="DocuSeal" src={embedSrc} className="w-full min-h-[420px] rounded-xl border border-brass/25 bg-white" />
-                )}
-                {!locked && data?.docuseal && !embedSrc && (
+                {!locked && data?.docuseal && (
                   <button
                     type="button"
                     disabled={startDocuseal.isPending}
-                    onClick={() => startDocuseal.mutate()}
+                    onClick={() => {
+                      if (embedSrc || data.docusealEmbedSrc) {
+                        setEmbedSrc(embedSrc || data.docusealEmbedSrc || null);
+                        setShowDocuseal(true);
+                        return;
+                      }
+                      startDocuseal.mutate();
+                    }}
                     className="btn-brass h-12 w-full text-xs"
                   >
-                    {startDocuseal.isPending ? "Opening DocuSeal…" : "Sign with DocuSeal"}
+                    {startDocuseal.isPending
+                      ? "Opening DocuSeal…"
+                      : embedSrc || data.docusealEmbedSrc
+                        ? "Continue signing"
+                        : "Sign with DocuSeal"}
                   </button>
                 )}
                 {!locked && (
@@ -654,6 +694,46 @@ export default function QcInspection() {
         )}
       </div>
 
+      <LuxuryLayer
+        open={showDocuseal}
+        onClose={() => {
+          setShowDocuseal(false);
+          window.scrollTo(0, 0);
+          qc.invalidateQueries({ queryKey: ["alts-qc-detail", id] });
+        }}
+        variant="sheet"
+        label="Sign order PDF"
+        z={85}
+      >
+        <div
+          className="w-full max-w-3xl mx-auto rounded-t-[22px] border border-brass/30 border-b-0 px-3 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]"
+          style={{ background: "linear-gradient(180deg,#152A1E,#0D1A10)" }}
+        >
+          <div className="flex items-center gap-2 px-2 pb-2">
+            <div className="display text-xl flex-1">Sign the order PDF</div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowDocuseal(false);
+                window.scrollTo(0, 0);
+                qc.invalidateQueries({ queryKey: ["alts-qc-detail", id] });
+              }}
+              className="h-11 px-3 rounded-full border border-brass/30 text-xs"
+            >
+              Done
+            </button>
+          </div>
+          <p className="px-2 text-sm text-cream-dim mb-2">
+            This is only the signature on the order PDF. Close when you have signed — then Pass on this page.
+          </p>
+          {embedSrc ? (
+            <iframe title="DocuSeal" src={embedSrc} className="qc-docuseal-frame" />
+          ) : (
+            <div className="sf-empty">Opening signing page…</div>
+          )}
+        </div>
+      </LuxuryLayer>
+
       <LuxuryLayer open={showPdf} onClose={() => setShowPdf(false)} variant="sheet" label="Order PDF" z={80}>
         <div
           className="w-full max-w-3xl mx-auto rounded-t-[22px] border border-brass/30 border-b-0 px-3 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]"
@@ -695,9 +775,15 @@ export default function QcInspection() {
             style={{ background: "linear-gradient(180deg,#152A1E,#0D1A10)" }}
           >
             <h2 className="display text-[32px] leading-none">Pass</h2>
-            <p className="text-sm text-cream-dim mt-2">ERPNext will move this make to Awaiting Fitting, or Awaiting Shipment if it ships direct.</p>
+            <p className="text-sm text-cream-dim mt-2">
+              Ticks the store-arrival boxes in ERPNext, then moves this make to Awaiting Fitting, or Awaiting Shipment if it ships direct.
+            </p>
             {summary.open > 0 && (
-              <p className="text-xs text-signal-amber mt-2">{summary.open} checks still open — they will stay as skip.</p>
+              <p className="text-xs text-signal-amber mt-2">
+                {checks.filter((c) => c.group === "Store arrival" && c.pass !== true).length
+                  ? "Confirm pass will tick the five store-arrival boxes ERPNext requires."
+                  : `${summary.open} detail checks still open — they will stay as skip.`}
+              </p>
             )}
             <div className="flex flex-col gap-2 mt-5">
               <button

@@ -12,6 +12,7 @@ import {
   checksFromDoc,
   checksSummary,
   checksToDocFields,
+  storeArrivalToDocFields,
   dateReceivedLabel,
   dedupeByInspectionName,
   isQcInspectionName,
@@ -74,6 +75,11 @@ const QC_FIELDS = [
   "finish",
   "condition",
   "fit_ready",
+  "contents_match_order",
+  "fabric_article_correct",
+  "styling_visual_ok",
+  "no_transit_damage",
+  "labels_tags_present",
   "checks_json",
   "garment_summary",
   "fail_reason",
@@ -115,7 +121,7 @@ async function createDroppingFields(doc: Record<string, unknown>) {
 
 async function updateDroppingFields(name: string, doc: Record<string, unknown>) {
   const payload = { ...doc };
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 24; i++) {
     try {
       return await erpUpdate<any>(DT_QC, name, payload);
     } catch (e: any) {
@@ -927,6 +933,15 @@ qcRouter.patch("/:id", async (c) => {
         const notes = String(body.notes ?? body.failReason ?? update.notes ?? existing.notes ?? "").trim();
         if (!notes) return c.json({ error: { message: "Notes are required to fail" } }, 400);
         update.notes = notes;
+      }
+      if (want === "Pass") {
+        // ERPNext blocks Pass until the store-arrival boxes are ticked — write them here.
+        Object.assign(
+          update,
+          storeArrivalToDocFields(Array.isArray(body.checks) ? body.checks : checksFromDoc(existing), existing, {
+            forcePass: true,
+          }),
+        );
       }
       update.qc_result = want;
       update.result = want;
