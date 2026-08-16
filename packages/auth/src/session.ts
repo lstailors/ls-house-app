@@ -5,14 +5,14 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@ls/api-client";
 import type { Profile } from "@ls/types";
-import { refreshSession } from "./authClient";
+import { justLoggedOut, ME_CACHE_KEY, refreshSession } from "./authClient";
 
 export const ME_KEY = ["me"];
-const ME_CACHE = "ls.me.cache";
 
 function readCachedMe(): Profile | null {
+  if (justLoggedOut()) return null;
   try {
-    const raw = sessionStorage.getItem(ME_CACHE);
+    const raw = sessionStorage.getItem(ME_CACHE_KEY);
     if (!raw) return null;
     return JSON.parse(raw) as Profile;
   } catch {
@@ -22,8 +22,8 @@ function readCachedMe(): Profile | null {
 
 function writeCachedMe(user: Profile | null) {
   try {
-    if (!user) sessionStorage.removeItem(ME_CACHE);
-    else sessionStorage.setItem(ME_CACHE, JSON.stringify(user));
+    if (!user) sessionStorage.removeItem(ME_CACHE_KEY);
+    else sessionStorage.setItem(ME_CACHE_KEY, JSON.stringify(user));
   } catch {
     /* private mode */
   }
@@ -35,6 +35,10 @@ export function useMe() {
     queryKey: ME_KEY,
     initialData: cached ?? undefined,
     queryFn: async () => {
+      if (justLoggedOut()) {
+        writeCachedMe(null);
+        return null;
+      }
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 8000);

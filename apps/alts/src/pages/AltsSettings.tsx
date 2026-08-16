@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
-import { useMe } from "@ls/auth/session";
-import { signOut } from "@ls/auth/authClient";
+import { ME_KEY, useMe } from "@ls/auth/session";
+import { clearClientSession, signOut } from "@ls/auth/authClient";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { clearAltsPrivateStorage } from "@alts/lib/logoutPrivacy";
@@ -60,6 +60,8 @@ export default function AltsSettings() {
   });
 
   const logout = async () => {
+    clearClientSession();
+    qc.setQueryData(ME_KEY, null);
     clearAltsPrivateStorage();
     qc.clear();
     await signOut();

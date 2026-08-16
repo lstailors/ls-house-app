@@ -50,9 +50,27 @@ export function setSessionCookie(c: Context, token: string, maxAge = ACCESS_TTL_
   setCookie(c, SESSION_COOKIE, token, baseOpts(maxAge));
 }
 
-export function clearSessionCookie(c: Context): void {
-  deleteCookie(c, SESSION_COOKIE, {
+function expireCookie(c: Context, name: string, domain?: string): void {
+  const secure =
+    process.env.COOKIE_SECURE === "1" ||
+    process.env.VERCEL === "1" ||
+    process.env.NODE_ENV === "production";
+  const opts = {
     path: "/",
-    ...(cookieDomain() ? { domain: cookieDomain() } : {}),
-  });
+    httpOnly: true,
+    secure,
+    sameSite: "Lax" as const,
+    maxAge: 0,
+    ...(domain ? { domain } : {}),
+  };
+  // Empty + maxAge 0 with the same flags the cookie was set with.
+  setCookie(c, name, "", opts);
+  deleteCookie(c, name, opts);
+}
+
+export function clearSessionCookie(c: Context): void {
+  const domain = cookieDomain();
+  expireCookie(c, SESSION_COOKIE, domain);
+  // Also drop a host-only copy from older deploys that omitted Domain.
+  if (domain) expireCookie(c, SESSION_COOKIE);
 }

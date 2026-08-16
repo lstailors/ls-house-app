@@ -1087,6 +1087,8 @@ export default function HomeTiles() {
       title: "Floor Reports",
       sub: coverMoney ? "Pipeline · tally" : "Pipeline · tally · $",
       admin: true,
+      live: "On this phone",
+      liveTone: "em",
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 44h40" strokeWidth="1.6" />
@@ -1388,17 +1390,7 @@ export default function HomeTiles() {
                 <h2>{t.title}</h2>
                 <div className="sub">{t.sub}</div>
               </div>
-              {t.admin ? (
-                <a
-                  href="https://app.lstailors.com/owner"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="host"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  app.lstailors.com/owner
-                </a>
-              ) : t.live != null ? (
+              {t.live != null ? (
                 <div className={cn("live", t.liveTone === "am" && "am", t.liveTone === "ro" && "ro")}>
                   <LiveDot tone={t.liveTone} />
                   <span className="truncate min-w-0">{t.live}</span>

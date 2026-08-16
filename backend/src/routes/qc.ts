@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
-import { erpList, erpGet, erpCreate, erpUpdate } from "../lib/erp";
+import { erpList, erpGet, erpCreate, erpUpdate, erpRunMethod } from "../lib/erp";
 import { uploadFile, erpFileAbsoluteUrl } from "../lib/erpnext/files";
 import { DT } from "../lib/erpnext/doctypes";
 import {
@@ -12,7 +12,9 @@ import {
   checksFromDoc,
   checksSummary,
   checksToDocFields,
+  storeArrivalToDocFields,
   dateReceivedLabel,
+  type QcInspectionMeta,
   dedupeByInspectionName,
   isQcInspectionName,
   isSalesOrderName,
@@ -74,6 +76,11 @@ const QC_FIELDS = [
   "finish",
   "condition",
   "fit_ready",
+  "contents_match_order",
+  "fabric_article_correct",
+  "styling_visual_ok",
+  "no_transit_damage",
+  "labels_tags_present",
   "checks_json",
   "garment_summary",
   "fail_reason",
@@ -113,21 +120,54 @@ async function createDroppingFields(doc: Record<string, unknown>) {
   throw new Error("Could not create QC inspection");
 }
 
+function deleteFieldDeep(payload: Record<string, unknown>, field: string): boolean {
+  if (field in payload) {
+    delete payload[field];
+    return true;
+  }
+  let found = false;
+  for (const value of Object.values(payload)) {
+    if (!Array.isArray(value)) continue;
+    for (const row of value) {
+      if (row && typeof row === "object" && field in (row as Record<string, unknown>)) {
+        delete (row as Record<string, unknown>)[field];
+        found = true;
+      }
+    }
+  }
+  return found;
+}
+
 async function updateDroppingFields(name: string, doc: Record<string, unknown>) {
-  const payload = { ...doc };
-  for (let i = 0; i < 12; i++) {
+  const payload = structuredClone(doc);
+  for (let i = 0; i < 24; i++) {
     try {
       return await erpUpdate<any>(DT_QC, name, payload);
     } catch (e: any) {
       const field = unknownField(String(e?.message || ""));
-      if (field && field in payload) {
-        delete payload[field];
-        continue;
-      }
+      if (field && deleteFieldDeep(payload, field)) continue;
       throw e;
     }
   }
   throw new Error("Could not update QC inspection");
+}
+
+type MetaField = { fieldname?: string; label?: string; fieldtype?: string; options?: string };
+let qcMetaCache: QcInspectionMeta | null = null;
+
+async function loadQcMeta(): Promise<QcInspectionMeta> {
+  if (qcMetaCache) return qcMetaCache;
+  const doc = await erpGet<{ fields?: MetaField[] }>("DocType", DT_QC).catch(() => null);
+  const fields = Array.isArray(doc?.fields) ? doc.fields : [];
+  const childFields: Record<string, MetaField[]> = {};
+  for (const field of fields) {
+    if (field?.fieldtype === "Table" && field.options && field.fieldname) {
+      const child = await erpGet<{ fields?: MetaField[] }>("DocType", String(field.options)).catch(() => null);
+      if (Array.isArray(child?.fields)) childFields[String(field.fieldname)] = child.fields;
+    }
+  }
+  qcMetaCache = { fields, childFields };
+  return qcMetaCache;
 }
 
 async function listInspections() {
@@ -762,6 +802,39 @@ qcRouter.get("/:id/pdf", async (c) => {
   }
 });
 
+function raceMs<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(fallback);
+      },
+    );
+  });
+}
+
+function stubInspection(id: string, extras: Record<string, unknown> = {}) {
+  const checks = blankChecks();
+  return {
+    id,
+    name: id,
+    customerName: extras.customerName || "Client",
+    qcResult: "Pending",
+    result: "Pending",
+    notes: "",
+    checks,
+    summary: checksSummary(checks),
+    photos: [],
+    docuseal: false,
+    ...extras,
+  };
+}
+
 // GET /api/qc/:id — floor can open the item to change live status; checks stay tailor-gated on PATCH
 qcRouter.get("/:id", async (c) => {
   const gate = await requireFloor(c);
@@ -769,8 +842,11 @@ qcRouter.get("/:id", async (c) => {
   const id = decodeURIComponent(c.req.param("id"));
 
   try {
-    const insp = await resolveInspection(id);
+    const insp = await raceMs(resolveInspection(id), 8000, null);
     if (!insp?.name) {
+      if (isQcInspectionName(id)) {
+        return c.json({ data: stubInspection(id) });
+      }
       const co = await erpGet<any>(DT_CUSTOM, id).catch(() => null);
       const mtm = await erpGet<any>(DT.MTM_PRO_ORDER, id).catch(() => null);
       const so = await erpGet<any>("Sales Order", id).catch(() => null);
@@ -804,15 +880,32 @@ qcRouter.get("/:id", async (c) => {
       });
     }
 
-    const files = await erpList<any>(DT.FILE, {
-      filters: [
-        ["attached_to_doctype", "=", DT_QC],
-        ["attached_to_name", "=", insp.name],
-      ],
-      fields: ["name", "file_url", "file_name", "creation"],
-      limit: 80,
-      order_by: "creation desc",
-    }).catch(() => []);
+    const [files, co, mtm, docuseal] = await Promise.all([
+      raceMs(
+        erpList<any>(DT.FILE, {
+          filters: [
+            ["attached_to_doctype", "=", DT_QC],
+            ["attached_to_name", "=", insp.name],
+          ],
+          fields: ["name", "file_url", "file_name", "creation"],
+          limit: 80,
+          order_by: "creation desc",
+        }).catch(() => []),
+        2500,
+        [] as any[],
+      ),
+      insp.custom_order
+        ? raceMs(erpGet<any>(DT_CUSTOM, insp.custom_order).catch(() => null), 2500, null)
+        : Promise.resolve(null),
+      insp.custom_order || insp.mtmpro_order
+        ? raceMs(
+            erpGet<any>(DT.MTM_PRO_ORDER, insp.custom_order || insp.mtmpro_order).catch(() => null),
+            2500,
+            null,
+          )
+        : Promise.resolve(null),
+      raceMs(docusealEnabled().catch(() => false), 1500, false),
+    ]);
 
     const photos = files
       .filter((f) => /\.(jpe?g|png|webp|heic)$/i.test(String(f.file_name || f.file_url || "")))
@@ -823,29 +916,10 @@ qcRouter.get("/:id", async (c) => {
         createdAt: f.creation,
       }));
 
-    let orderStatus: string | null = null;
-    let garmentSummary: string | null = null;
-    let orderName: string | null = insp.custom_order || insp.mtmpro_order || null;
-    if (insp.custom_order) {
-      const co = await erpGet<any>(DT_CUSTOM, insp.custom_order).catch(() => null);
-      orderStatus = co?.order_status || co?.status || null;
-      garmentSummary = co?.garment_summary || co?.garment_type || null;
-      if (co?.name) orderName = co.name;
-    }
-    if (!orderStatus && orderName) {
-      const mtm = await erpGet<any>(DT.MTM_PRO_ORDER, orderName).catch(() => null);
-      if (mtm) {
-        orderStatus = mtm.order_status || mtm.status || orderStatus;
-        garmentSummary = garmentSummary || mtm.garment_summary || mtm.order_type || null;
-      }
-    }
-
-    let docuseal = false;
-    try {
-      docuseal = await docusealEnabled();
-    } catch {
-      /* DocuSeal is optional — never block the inspection page */
-    }
+    const orderName: string | null = co?.name || insp.custom_order || insp.mtmpro_order || mtm?.name || null;
+    const orderStatus: string | null = co?.order_status || co?.status || mtm?.order_status || mtm?.status || null;
+    const garmentSummary: string | null =
+      co?.garment_summary || co?.garment_type || mtm?.garment_summary || mtm?.order_type || null;
 
     return c.json({
       data: serializeInspection(insp, {
@@ -863,6 +937,7 @@ qcRouter.get("/:id", async (c) => {
     });
   } catch (e: any) {
     console.error("GET /api/qc/:id", e);
+    if (isQcInspectionName(id)) return c.json({ data: stubInspection(id) });
     return c.json({ error: { message: e?.message || "Could not load inspection" } }, 502);
   }
 });
@@ -922,12 +997,39 @@ qcRouter.patch("/:id", async (c) => {
     if (typeof body.signatureUrl === "string") update.signature_url = body.signatureUrl;
 
     const want = body.qc_result || body.result;
-    if (want === "Pass" || want === "Fail") {
-      if (want === "Fail") {
-        const notes = String(body.notes ?? body.failReason ?? update.notes ?? existing.notes ?? "").trim();
-        if (!notes) return c.json({ error: { message: "Notes are required to fail" } }, 400);
-        update.notes = notes;
+    if (want === "Fail") {
+      const notes = String(body.notes ?? body.failReason ?? update.notes ?? existing.notes ?? "").trim();
+      if (!notes) return c.json({ error: { message: "Notes are required to fail" } }, 400);
+      update.notes = notes;
+    }
+    if (want === "Pass") {
+      // ERPNext validate blocks Pass until store-arrival items are ticked.
+      // Discover the real field / child-table names, write them first, then set Pass.
+      const meta = await loadQcMeta().catch(() => null);
+      Object.assign(
+        update,
+        storeArrivalToDocFields(Array.isArray(body.checks) ? body.checks : checksFromDoc(existing), existing, {
+          forcePass: true,
+          meta,
+        }),
+      );
+      const prelude: Record<string, unknown> = { ...update };
+      delete prelude.qc_result;
+      delete prelude.result;
+      if (Object.keys(prelude).length) {
+        await updateDroppingFields(existing.name, prelude);
+        for (const [field, value] of Object.entries(prelude)) {
+          if (Array.isArray(value) || value == null || typeof value === "object") continue;
+          await erpRunMethod("frappe.client.set_value", {
+            doctype: DT_QC,
+            name: existing.name,
+            fieldname: field,
+            value,
+          }).catch(() => null);
+        }
       }
+    }
+    if (want === "Pass" || want === "Fail") {
       update.qc_result = want;
       update.result = want;
     }

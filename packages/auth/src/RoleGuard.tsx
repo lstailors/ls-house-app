@@ -1,5 +1,6 @@
 import { Navigate, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
+import { justLoggedOut } from "./authClient";
 import { useMe } from "./session";
 import type { UserRole } from "@ls/types";
 import { Monogram } from "@ls/design";
@@ -21,7 +22,7 @@ export function RoleGuard({ allow, children, fallback = "/" }: Props) {
       </div>
     );
   }
-  if (!user) {
+  if (!user || justLoggedOut()) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
   if (!allow.includes(user.role)) {
