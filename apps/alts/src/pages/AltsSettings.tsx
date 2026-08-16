@@ -46,6 +46,7 @@ export default function AltsSettings() {
       toast.success("DocuSeal saved");
       setApiKey("");
       qc.setQueryData(["alts-qc-settings"], data);
+      qc.invalidateQueries({ queryKey: ["alts-qc-detail"] });
     },
     onError: (e: Error) => toast.error(e.message || "Could not save"),
   });
@@ -125,25 +126,35 @@ export default function AltsSettings() {
             <div className="caps text-brass-light">DocuSeal</div>
             <p className="text-sm text-cream-dim">
               {settings.data?.apiKeySet
-                ? "Connected. On a QC ticket tap Sign with DocuSeal — the order PDF opens so you can sign."
-                : "Off until you paste the API key. That is what turns on Sign with DocuSeal."}
+                ? "Key is saved. Sign with DocuSeal uses a template in DocuSeal — your edition cannot sign a raw order PDF."
+                : "Off until you paste the API key."}
             </p>
             {settings.data?.apiKeySet && (
               <p className="font-mono text-xs text-brass-light">Saved · {settings.data.apiKeyMasked}</p>
             )}
             <ol className="text-sm text-cream-dim list-decimal pl-5 space-y-1">
-              <li>Open DocuSeal and copy the API key.</li>
-              <li>Paste it below, tap Save, then Test.</li>
-              <li>Go back to the QC ticket and tap Sign with DocuSeal.</li>
+              <li>Paste the API key, tap Save, then Test.</li>
+              <li>In DocuSeal: New Template, add a Signature box, save.</li>
+              <li>On the QC ticket tap Sign with DocuSeal — it should open, not ask for the key again.</li>
             </ol>
-            <a
-              href="https://docuseal.lstailors.com/settings/api"
-              target="_blank"
-              rel="noreferrer"
-              className="h-12 px-3 rounded-xl border border-brass/35 text-[12px] font-bold uppercase tracking-widest inline-flex items-center justify-center w-full"
-            >
-              Open DocuSeal API key
-            </a>
+            <div className="grid grid-cols-2 gap-2">
+              <a
+                href="https://docuseal.lstailors.com/settings/api"
+                target="_blank"
+                rel="noreferrer"
+                className="h-12 px-3 rounded-xl border border-brass/35 text-[11px] font-bold uppercase tracking-widest inline-flex items-center justify-center"
+              >
+                API key
+              </a>
+              <a
+                href="https://docuseal.lstailors.com/templates"
+                target="_blank"
+                rel="noreferrer"
+                className="h-12 px-3 rounded-xl border border-brass/35 text-[11px] font-bold uppercase tracking-widest inline-flex items-center justify-center"
+              >
+                Templates
+              </a>
+            </div>
             <label className="block">
               <span className="caps mb-1.5 block">Host</span>
               <input

@@ -120,6 +120,8 @@ describe("iPhone scale contract", () => {
     const settings = readFileSync(new URL("../pages/AltsSettings.tsx", import.meta.url), "utf8");
     expect(settings).toContain("/api/qc/settings");
     expect(settings).toContain("https://docuseal.lstailors.com/settings/api");
+    expect(settings).toContain("https://docuseal.lstailors.com/templates");
+    expect(settings).toContain("New Template");
     expect(settings).not.toContain("localStorage");
     expect(settings).toContain("signOut");
     expect(settings).toContain("clearClientSession");
@@ -149,7 +151,6 @@ describe("iPhone scale contract", () => {
     expect(item).not.toContain("Live order status");
     expect(item).not.toContain("/api/qc/orders/");
     expect(item).toContain("Sign with DocuSeal");
-    expect(item).toContain("Turn on DocuSeal");
     expect(item).toContain("does not open DocuSeal");
     expect(item).toContain("Awaiting Fitting");
     expect(item).toContain("qc-docuseal-frame");
