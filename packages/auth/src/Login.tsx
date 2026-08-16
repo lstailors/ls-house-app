@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
-import { signIn } from "./authClient";
+import { justLoggedOut, signIn } from "./authClient";
 import { useMe, ME_KEY } from "./session";
 import { Button } from "@ls/design/ui/button";
 import { Input } from "@ls/design/ui/input";
@@ -24,7 +24,7 @@ export default function Login() {
       : null;
 
   useEffect(() => {
-    if (me) {
+    if (me && !justLoggedOut()) {
       const dest = from ?? (me.role === "driver" ? "/deliveries" : "/");
       navigate(dest, { replace: true });
     }

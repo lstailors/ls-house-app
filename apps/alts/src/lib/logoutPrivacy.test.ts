@@ -43,6 +43,7 @@ test("logout removes private Alts state without deleting device preferences", ()
   local.setItem("alts.espresso.open", "1");
   local.setItem("lsh.activeLocationId", "NYC");
   local.setItem("alts-intake-favorites:v1:Trouser", JSON.stringify({ ids: ["hem-shorten"] }));
+  session.setItem("ls.me.cache", JSON.stringify({ email: "prior@lstailors.com", name: "Prior" }));
 
   clearAltsPrivateStorage();
 
@@ -50,6 +51,8 @@ test("logout removes private Alts state without deleting device preferences", ()
   expect(session.getItem(ALTS_SO_CART_KEY)).toBeNull();
   expect(local.getItem("notify-ready-ALT-NYC-2026-00042")).toBeNull();
   expect(local.getItem("lst_token")).toBeNull();
+  expect(session.getItem("ls.me.cache")).toBeNull();
+  expect(session.getItem("ls.logged_out")).toBe("1");
   expect(local.getItem("alts.espresso.open")).toBe("1");
   expect(local.getItem("lsh.activeLocationId")).toBe("NYC");
   expect(local.getItem("alts-intake-favorites:v1:Trouser")).toBe(

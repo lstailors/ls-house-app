@@ -47,35 +47,35 @@ export const STORE_ARRIVAL_CHECKS = [
     group: STORE_ARRIVAL_GROUP,
     label: "Contents match order",
     hint: "Pieces on the order are in the bag",
-    fields: ["contents_match_order", "contents_match"],
+    fields: ["contents_match_order", "contents_match", "custom_contents_match_order"],
   },
   {
     id: "arrive-fabric",
     group: STORE_ARRIVAL_GROUP,
     label: "Fabric/article correct",
     hint: "Cloth / article matches the ticket",
-    fields: ["fabric_article_correct", "fabric_article"],
+    fields: ["fabric_article_correct", "fabric_article", "custom_fabric_article_correct"],
   },
   {
     id: "arrive-styling",
     group: STORE_ARRIVAL_GROUP,
     label: "Styling / visual OK",
     hint: "Looks like the ordered make",
-    fields: ["styling_visual_ok", "styling_visual"],
+    fields: ["styling_visual_ok", "styling_visual", "custom_styling_visual_ok"],
   },
   {
     id: "arrive-damage",
     group: STORE_ARRIVAL_GROUP,
     label: "No transit damage",
     hint: "No crush, stain, or ship damage",
-    fields: ["no_transit_damage", "transit_damage_ok"],
+    fields: ["no_transit_damage", "transit_damage_ok", "custom_no_transit_damage"],
   },
   {
     id: "arrive-labels",
     group: STORE_ARRIVAL_GROUP,
     label: "Labels/tags present",
     hint: "Maker label and tags are on the garment",
-    fields: ["labels_tags_present", "labels_tags"],
+    fields: ["labels_tags_present", "labels_tags", "custom_labels_tags_present"],
   },
 ] as const;
 
@@ -172,6 +172,85 @@ export function coercePass(v: unknown): boolean | null {
   return null;
 }
 
+/** Frappe fieldname scrub — spaces, slashes, and punctuation become underscores. */
+export function frappeScrub(text: string): string {
+  return String(text || "")
+    .replace(/[^A-Za-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_")
+    .toLowerCase();
+}
+
+export type QcMetaField = {
+  fieldname?: string;
+  label?: string;
+  fieldtype?: string;
+  options?: string;
+};
+
+export type QcInspectionMeta = {
+  fields?: QcMetaField[];
+  childFields?: Record<string, QcMetaField[]>;
+};
+
+const ARRIVAL_CHILD_KEYS = [
+  "store_arrival_checklist",
+  "store_arrival_checks",
+  "store_arrival_items",
+  "store_arrival",
+  "arrival_checklist",
+  "arrival_checks",
+  "arrival_items",
+  "qc_checklist",
+  "qc_checks",
+  "checklist",
+  "checklist_items",
+  "inspection_checklist",
+  "receiving_checklist",
+  "store_checklist",
+];
+
+const ROW_LABEL_FIELDS = [
+  "label",
+  "item",
+  "check_item",
+  "description",
+  "checklist_item",
+  "item_name",
+  "title",
+  "checkpoint",
+  "check_name",
+  "name1",
+  "subject",
+];
+
+const ROW_CHECK_FIELDS = [
+  "checked",
+  "check",
+  "completed",
+  "is_checked",
+  "ok",
+  "pass",
+  "passed",
+  "done",
+  "tick",
+];
+
+function arrivalLabelsMatch(raw: string, wanted: string): boolean {
+  const a = frappeScrub(raw);
+  const b = frappeScrub(wanted);
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
+function arrivalLabelOf(row: Record<string, unknown>, extraKeys: string[] = []): string {
+  for (const key of [...extraKeys, ...ROW_LABEL_FIELDS]) {
+    const value = String(row[key] ?? "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
 export function checksFromDoc(doc: Record<string, unknown> | null | undefined): QcCheck[] {
   if (!doc) return blankChecks();
   const rawJson = doc.checks_json ?? doc.checks;
@@ -202,6 +281,19 @@ export function checksFromDoc(doc: Record<string, unknown> | null | undefined): 
         any = true;
         break;
       }
+    }
+  }
+  for (const value of Object.values(doc)) {
+    if (!Array.isArray(value)) continue;
+    for (const row of value) {
+      if (!row || typeof row !== "object") continue;
+      const rec = row as Record<string, unknown>;
+      const label = arrivalLabelOf(rec);
+      const item = STORE_ARRIVAL_CHECKS.find((c) => arrivalLabelsMatch(label, c.label));
+      if (!item) continue;
+      const ticked = ROW_CHECK_FIELDS.some((field) => coercePass(rec[field]) === true);
+      byId.set(item.id, ticked);
+      any = true;
     }
   }
   if (!any) return blankChecks();
@@ -236,11 +328,114 @@ export function storeArrivalOpen(checks: QcCheck[]): string[] {
     .map((item) => item.label);
 }
 
+function arrivalFieldAliases(item: (typeof STORE_ARRIVAL_CHECKS)[number]): string[] {
+  const scrub = frappeScrub(item.label);
+  return [...new Set([...item.fields, scrub, `custom_${scrub}`, `check_${scrub}`])];
+}
+
+function tickArrivalRow(row: Record<string, unknown>, checkFields: string[]): Record<string, unknown> {
+  const next = { ...row };
+  for (const field of checkFields.length ? checkFields : ROW_CHECK_FIELDS) next[field] = 1;
+  if (!checkFields.length) next.status = row.status || "Pass";
+  return next;
+}
+
+function seedArrivalRows(labelField: string, checkFields: string[]): Record<string, unknown>[] {
+  return STORE_ARRIVAL_CHECKS.map((item) => {
+    const row: Record<string, unknown> = {};
+    for (const key of ROW_LABEL_FIELDS) row[key] = item.label;
+    if (labelField) row[labelField] = item.label;
+    return tickArrivalRow(row, checkFields);
+  });
+}
+
+function looksLikeArrivalTable(key: string, rows: unknown[], labelKeys: string[] = []): boolean {
+  if (ARRIVAL_CHILD_KEYS.includes(key) || /arrival|checklist/.test(key)) return true;
+  return rows.some((row) => {
+    if (!row || typeof row !== "object") return false;
+    const label = arrivalLabelOf(row as Record<string, unknown>, labelKeys);
+    return STORE_ARRIVAL_CHECKS.some((item) => arrivalLabelsMatch(label, item.label));
+  });
+}
+
+function markStoreArrivalChildren(
+  doc: Record<string, unknown>,
+  force: boolean,
+  meta?: QcInspectionMeta | null,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const childMeta = meta?.childFields || {};
+  const seen = new Set<string>();
+
+  const visit = (key: string, raw: unknown, fields?: QcMetaField[]) => {
+    if (seen.has(key)) return;
+    const rows = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
+    const labelKeys = (fields || []).filter((f) => f.fieldname && f.fieldtype !== "Check").map((f) => String(f.fieldname));
+    const checkFields = (fields || [])
+      .filter((f) => f.fieldtype === "Check" && f.fieldname)
+      .map((f) => String(f.fieldname));
+    if (!looksLikeArrivalTable(key, rows, labelKeys)) return;
+    seen.add(key);
+    const next = rows.length
+      ? rows.map((row) => {
+          const label = arrivalLabelOf(row, labelKeys);
+          const match = STORE_ARRIVAL_CHECKS.some((item) => arrivalLabelsMatch(label, item.label));
+          if (!match && !force) return row;
+          if (!match && !ARRIVAL_CHILD_KEYS.includes(key) && !/arrival/.test(key)) return row;
+          return tickArrivalRow(row, checkFields);
+        })
+      : force
+        ? seedArrivalRows(labelKeys[0] || "label", checkFields)
+        : [];
+    if (next.length) out[key] = next;
+  };
+
+  for (const [key, val] of Object.entries(doc)) {
+    if (!Array.isArray(val)) continue;
+    visit(key, val, childMeta[key]);
+  }
+  for (const [key, fields] of Object.entries(childMeta)) {
+    if (seen.has(key)) continue;
+    visit(key, doc[key], fields);
+  }
+  if (force) {
+    for (const key of ARRIVAL_CHILD_KEYS) {
+      if (out[key] || key in doc) continue;
+      out[key] = seedArrivalRows("label", []);
+    }
+  }
+  return out;
+}
+
+function tickArrivalChecksFromMeta(meta?: QcInspectionMeta | null): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const field of meta?.fields || []) {
+    if (field.fieldtype !== "Check" || !field.fieldname) continue;
+    const label = String(field.label || field.fieldname);
+    if (STORE_ARRIVAL_CHECKS.some((item) => arrivalLabelsMatch(label, item.label) || arrivalLabelsMatch(field.fieldname!, item.label))) {
+      out[field.fieldname] = 1;
+    }
+  }
+  return out;
+}
+
+function tickArrivalChecksFromDoc(doc: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!doc) return out;
+  const aliases = new Set(STORE_ARRIVAL_CHECKS.flatMap((item) => arrivalFieldAliases(item)));
+  for (const key of Object.keys(doc)) {
+    if (aliases.has(key) || STORE_ARRIVAL_CHECKS.some((item) => arrivalLabelsMatch(key, item.label))) {
+      out[key] = 1;
+    }
+  }
+  return out;
+}
+
 /** Tick the ERPNext store-arrival boxes (Check fields + any matching child table). */
 export function storeArrivalToDocFields(
   checks: QcCheck[] | undefined,
   existing?: Record<string, unknown> | null,
-  opts?: { forcePass?: boolean },
+  opts?: { forcePass?: boolean; meta?: QcInspectionMeta | null },
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   const force = Boolean(opts?.forcePass);
@@ -248,50 +443,10 @@ export function storeArrivalToDocFields(
     const row = checks?.find((c) => c.id === item.id || c.label === item.label);
     const ok = force || row?.pass === true;
     if (!ok) continue;
-    for (const field of item.fields) out[field] = 1;
+    for (const field of arrivalFieldAliases(item)) out[field] = 1;
   }
-  if (existing) Object.assign(out, markStoreArrivalChildren(existing, force));
-  return out;
-}
-
-const ARRIVAL_CHILD_KEYS = [
-  "store_arrival_checklist",
-  "arrival_checklist",
-  "store_arrival_items",
-  "qc_checklist",
-  "checklist_items",
-];
-
-function arrivalLabelOf(row: Record<string, unknown>): string {
-  return String(row.label || row.item || row.check_item || row.description || row.checklist_item || "").trim();
-}
-
-function markStoreArrivalChildren(doc: Record<string, unknown>, force: boolean): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  const entries = Object.entries(doc).filter(([key, val]) => {
-    if (!Array.isArray(val) || !val.length) return false;
-    if (ARRIVAL_CHILD_KEYS.includes(key)) return true;
-    return val.some((row) => {
-      if (!row || typeof row !== "object") return false;
-      const label = arrivalLabelOf(row as Record<string, unknown>).toLowerCase();
-      return STORE_ARRIVAL_CHECKS.some((item) => label === item.label.toLowerCase() || label.includes(item.label.toLowerCase().slice(0, 10)));
-    });
-  });
-  for (const [key, val] of entries) {
-    const rows = (val as Record<string, unknown>[]).map((row) => {
-      const label = arrivalLabelOf(row).toLowerCase();
-      const match = STORE_ARRIVAL_CHECKS.some((item) => label === item.label.toLowerCase() || label.includes(item.label.toLowerCase().slice(0, 10)));
-      if (!force && !match) return row;
-      return {
-        ...row,
-        checked: 1,
-        check: 1,
-        completed: 1,
-        status: row.status || "Pass",
-      };
-    });
-    out[key] = rows;
-  }
+  Object.assign(out, tickArrivalChecksFromMeta(opts?.meta), tickArrivalChecksFromDoc(existing));
+  Object.assign(out, markStoreArrivalChildren(existing || {}, force, opts?.meta));
   return out;
 }
 

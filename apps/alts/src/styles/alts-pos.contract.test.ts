@@ -121,6 +121,12 @@ describe("iPhone scale contract", () => {
     expect(settings).toContain("/api/qc/settings");
     expect(settings).not.toContain("localStorage");
     expect(settings).toContain("signOut");
+    expect(settings).toContain("clearClientSession");
+    const login = readFileSync(new URL("../../../../packages/auth/src/Login.tsx", import.meta.url), "utf8");
+    expect(login).toContain("justLoggedOut");
+    expect(login).toContain("if (me && !justLoggedOut())");
+    const guard = readFileSync(new URL("../../../../packages/auth/src/RoleGuard.tsx", import.meta.url), "utf8");
+    expect(guard).toContain("justLoggedOut()");
     const shell = readFileSync(new URL("../components/AltsShell.tsx", import.meta.url), "utf8");
     expect(shell).toContain('to="/settings"');
     expect(shell).not.toMatch(/onClick=\{logout\}/);

@@ -1,5 +1,37 @@
 const API_BASE = import.meta.env.VITE_BACKEND_URL || "";
 const TOKEN_KEY = "lst_token";
+export const ME_CACHE_KEY = "ls.me.cache";
+export const LOGOUT_FLAG_KEY = "ls.logged_out";
+
+function storageSet(store: "local" | "session", key: string, value: string | null): void {
+  try {
+    const bag = store === "local" ? localStorage : sessionStorage;
+    if (value == null) bag.removeItem(key);
+    else bag.setItem(key, value);
+  } catch {
+    /* private mode / blocked storage */
+  }
+}
+
+/** True in this tab after Sign out, until the next successful sign-in. */
+export function justLoggedOut(): boolean {
+  try {
+    return sessionStorage.getItem(LOGOUT_FLAG_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function clearLogoutFlag(): void {
+  storageSet("session", LOGOUT_FLAG_KEY, null);
+}
+
+/** Drop the cached profile and stop refresh from reminting a leftover cookie. */
+export function clearClientSession(): void {
+  clearStoredToken();
+  storageSet("session", ME_CACHE_KEY, null);
+  storageSet("session", LOGOUT_FLAG_KEY, "1");
+}
 
 /**
  * Session model (HER-15 / Stage 1):
@@ -52,6 +84,7 @@ export const signIn = {
       if (!res.ok) return { error: { message: json?.error?.message || "Sign-in failed" } };
       // Dual-write: cookie is already Set-Cookie'd; keep localStorage for Bearer fallback
       if (json?.data?.token) setStoredToken(json.data.token);
+      clearLogoutFlag();
       return { error: null };
     } catch {
       return { error: { message: "Could not reach the server" } };
@@ -60,6 +93,7 @@ export const signIn = {
 };
 
 export async function signOut(): Promise<void> {
+  clearClientSession();
   try {
     await fetch(`${API_BASE}/api/auth/logout`, {
       method: "POST",
@@ -68,11 +102,12 @@ export async function signOut(): Promise<void> {
   } catch {
     /* still clear local state */
   }
-  clearStoredToken();
+  clearClientSession();
 }
 
 /** Extend the 8h session; safe to call on app focus / interval. */
 export async function refreshSession(): Promise<boolean> {
+  if (justLoggedOut()) return false;
   try {
     const token = getStoredToken();
     const res = await fetch(`${API_BASE}/api/auth/refresh`, {

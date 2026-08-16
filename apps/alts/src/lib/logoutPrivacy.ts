@@ -1,4 +1,4 @@
-import { clearStoredToken } from "@ls/auth/authClient";
+import { clearClientSession, clearStoredToken } from "@ls/auth/authClient";
 import { clearIntakeDraft } from "./intakeDraft";
 import { clearSoCart } from "./soCart";
 
@@ -6,7 +6,8 @@ const NOTIFY_READY_PREFIX = "notify-ready-";
 
 /** Remove customer-identifying browser state before the shared device changes hands. */
 export function clearAltsPrivateStorage(): void {
-  // Remove the Bearer fallback before the network logout can block or fail.
+  // Remove the Bearer fallback and cached profile before the network logout can block or fail.
+  clearClientSession();
   clearStoredToken();
   clearIntakeDraft();
   clearSoCart();

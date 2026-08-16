@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
-import { erpList, erpGet, erpCreate, erpUpdate } from "../lib/erp";
+import { erpList, erpGet, erpCreate, erpUpdate, erpRunMethod } from "../lib/erp";
 import { uploadFile, erpFileAbsoluteUrl } from "../lib/erpnext/files";
 import { DT } from "../lib/erpnext/doctypes";
 import {
@@ -14,6 +14,7 @@ import {
   checksToDocFields,
   storeArrivalToDocFields,
   dateReceivedLabel,
+  type QcInspectionMeta,
   dedupeByInspectionName,
   isQcInspectionName,
   isSalesOrderName,
@@ -119,21 +120,54 @@ async function createDroppingFields(doc: Record<string, unknown>) {
   throw new Error("Could not create QC inspection");
 }
 
+function deleteFieldDeep(payload: Record<string, unknown>, field: string): boolean {
+  if (field in payload) {
+    delete payload[field];
+    return true;
+  }
+  let found = false;
+  for (const value of Object.values(payload)) {
+    if (!Array.isArray(value)) continue;
+    for (const row of value) {
+      if (row && typeof row === "object" && field in (row as Record<string, unknown>)) {
+        delete (row as Record<string, unknown>)[field];
+        found = true;
+      }
+    }
+  }
+  return found;
+}
+
 async function updateDroppingFields(name: string, doc: Record<string, unknown>) {
-  const payload = { ...doc };
+  const payload = structuredClone(doc);
   for (let i = 0; i < 24; i++) {
     try {
       return await erpUpdate<any>(DT_QC, name, payload);
     } catch (e: any) {
       const field = unknownField(String(e?.message || ""));
-      if (field && field in payload) {
-        delete payload[field];
-        continue;
-      }
+      if (field && deleteFieldDeep(payload, field)) continue;
       throw e;
     }
   }
   throw new Error("Could not update QC inspection");
+}
+
+type MetaField = { fieldname?: string; label?: string; fieldtype?: string; options?: string };
+let qcMetaCache: QcInspectionMeta | null = null;
+
+async function loadQcMeta(): Promise<QcInspectionMeta> {
+  if (qcMetaCache) return qcMetaCache;
+  const doc = await erpGet<{ fields?: MetaField[] }>("DocType", DT_QC).catch(() => null);
+  const fields = Array.isArray(doc?.fields) ? doc.fields : [];
+  const childFields: Record<string, MetaField[]> = {};
+  for (const field of fields) {
+    if (field?.fieldtype === "Table" && field.options && field.fieldname) {
+      const child = await erpGet<{ fields?: MetaField[] }>("DocType", String(field.options)).catch(() => null);
+      if (Array.isArray(child?.fields)) childFields[String(field.fieldname)] = child.fields;
+    }
+  }
+  qcMetaCache = { fields, childFields };
+  return qcMetaCache;
 }
 
 async function listInspections() {
@@ -928,21 +962,39 @@ qcRouter.patch("/:id", async (c) => {
     if (typeof body.signatureUrl === "string") update.signature_url = body.signatureUrl;
 
     const want = body.qc_result || body.result;
+    if (want === "Fail") {
+      const notes = String(body.notes ?? body.failReason ?? update.notes ?? existing.notes ?? "").trim();
+      if (!notes) return c.json({ error: { message: "Notes are required to fail" } }, 400);
+      update.notes = notes;
+    }
+    if (want === "Pass") {
+      // ERPNext validate blocks Pass until store-arrival items are ticked.
+      // Discover the real field / child-table names, write them first, then set Pass.
+      const meta = await loadQcMeta().catch(() => null);
+      Object.assign(
+        update,
+        storeArrivalToDocFields(Array.isArray(body.checks) ? body.checks : checksFromDoc(existing), existing, {
+          forcePass: true,
+          meta,
+        }),
+      );
+      const prelude: Record<string, unknown> = { ...update };
+      delete prelude.qc_result;
+      delete prelude.result;
+      if (Object.keys(prelude).length) {
+        await updateDroppingFields(existing.name, prelude);
+        for (const [field, value] of Object.entries(prelude)) {
+          if (Array.isArray(value) || value == null || typeof value === "object") continue;
+          await erpRunMethod("frappe.client.set_value", {
+            doctype: DT_QC,
+            name: existing.name,
+            fieldname: field,
+            value,
+          }).catch(() => null);
+        }
+      }
+    }
     if (want === "Pass" || want === "Fail") {
-      if (want === "Fail") {
-        const notes = String(body.notes ?? body.failReason ?? update.notes ?? existing.notes ?? "").trim();
-        if (!notes) return c.json({ error: { message: "Notes are required to fail" } }, 400);
-        update.notes = notes;
-      }
-      if (want === "Pass") {
-        // ERPNext blocks Pass until the store-arrival boxes are ticked — write them here.
-        Object.assign(
-          update,
-          storeArrivalToDocFields(Array.isArray(body.checks) ? body.checks : checksFromDoc(existing), existing, {
-            forcePass: true,
-          }),
-        );
-      }
       update.qc_result = want;
       update.result = want;
     }

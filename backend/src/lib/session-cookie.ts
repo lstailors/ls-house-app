@@ -59,15 +59,29 @@ export function readErpSid(c: Context): string | null {
   return getCookie(c, ERP_SID_COOKIE) || null;
 }
 
+function expireCookie(c: Context, name: string, domain?: string): void {
+  const secure =
+    process.env.COOKIE_SECURE === "1" ||
+    process.env.VERCEL === "1" ||
+    process.env.NODE_ENV === "production";
+  const opts = {
+    path: "/",
+    httpOnly: true,
+    secure,
+    sameSite: "Lax" as const,
+    maxAge: 0,
+    ...(domain ? { domain } : {}),
+  };
+  // Empty + maxAge 0 with the same flags the cookie was set with.
+  setCookie(c, name, "", opts);
+  deleteCookie(c, name, opts);
+}
+
 export function clearSessionCookie(c: Context): void {
-  // maxAge 0 + matching domain/path so browsers drop it
   const domain = cookieDomain();
-  deleteCookie(c, SESSION_COOKIE, {
-    path: "/",
-    ...(domain ? { domain } : {}),
-  });
-  deleteCookie(c, ERP_SID_COOKIE, {
-    path: "/",
-    ...(domain ? { domain } : {}),
-  });
+  for (const name of [SESSION_COOKIE, ERP_SID_COOKIE]) {
+    expireCookie(c, name, domain);
+    // Also drop a host-only copy from older deploys that omitted Domain.
+    if (domain) expireCookie(c, name);
+  }
 }
