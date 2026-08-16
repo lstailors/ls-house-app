@@ -665,20 +665,38 @@ async function resolveInspection(id: string) {
   return null;
 }
 
-export async function markQcSignedBySubmission(submissionId: string, signedUrl?: string | null) {
-  const id = String(submissionId || "").trim();
-  if (!id) return null;
-  const rows = await erpList<any>(DT_QC, {
-    filters: [["docuseal_submission_id", "=", id]],
-    fields: ["name"],
-    limit: 5,
-  }).catch(() => []);
-  const row = rows[0];
-  if (!row?.name) return null;
-  const patch: Record<string, unknown> = { signed_at: new Date().toISOString() };
-  if (signedUrl) patch.signature_url = signedUrl;
-  await updateDroppingFields(row.name, patch);
-  return row.name;
+export async function markQcSignedBySubmission(
+  submissionId: string | string[],
+  signedUrl?: string | null,
+  inspectionHint?: string | null,
+) {
+  const ids = (Array.isArray(submissionId) ? submissionId : [submissionId])
+    .map((v) => String(v || "").trim())
+    .filter(Boolean);
+  const hint = String(inspectionHint || "").trim();
+  if (hint && isQcInspectionName(hint)) {
+    const direct = await erpGet<any>(DT_QC, hint).catch(() => null);
+    if (direct?.name) {
+      const patch: Record<string, unknown> = { signed_at: new Date().toISOString() };
+      if (signedUrl) patch.signature_url = signedUrl;
+      await updateDroppingFields(direct.name, patch);
+      return direct.name;
+    }
+  }
+  for (const id of ids) {
+    const rows = await erpList<any>(DT_QC, {
+      filters: [["docuseal_submission_id", "=", id]],
+      fields: ["name"],
+      limit: 5,
+    }).catch(() => []);
+    const row = rows[0];
+    if (!row?.name) continue;
+    const patch: Record<string, unknown> = { signed_at: new Date().toISOString() };
+    if (signedUrl) patch.signature_url = signedUrl;
+    await updateDroppingFields(row.name, patch);
+    return row.name;
+  }
+  return null;
 }
 
 export async function attachDocusealResultFiles(
@@ -753,6 +771,7 @@ async function fileQcPassFail(opts: {
       title: `QC ${opts.result} ${opts.doc.custom_order || opts.doc.sales_order || opts.doc.name}`,
       inspectorEmail: opts.inspectorEmail,
       inspectorName: opts.inspectorName,
+      externalId: String(opts.doc.name || ""),
       fields: qcDocusealFields({
         customerName: input.customerName,
         order: [input.customOrder, input.salesOrder].filter(Boolean).join(" · "),
@@ -1334,6 +1353,7 @@ qcRouter.post("/:id/sign", async (c) => {
       title: `QC ${existing.custom_order || existing.sales_order || existing.name}`,
       inspectorEmail: gate.user!.email,
       inspectorName: gate.user!.name || gate.user!.email,
+      externalId: String(existing.name || ""),
       fields: qcDocusealFields({
         customerName: existing.customer_name,
         order: [existing.custom_order, existing.sales_order].filter(Boolean).join(" · "),
