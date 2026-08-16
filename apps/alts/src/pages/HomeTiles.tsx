@@ -836,6 +836,26 @@ export default function HomeTiles() {
       ),
     },
     {
+      key: "stock",
+      to: "/stock",
+      title: "Stock",
+      sub: "Fabric · lining · remnants",
+      primary: true,
+      live: (
+        <>
+          <b>Gallery</b> · use to remove
+        </>
+      ),
+      liveTone: "em" as LiveTone,
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M8 16l18-8 18 8v22l-18 8-18-8z" />
+          <path d="M8 16l18 8 18-8" />
+          <path d="M26 24v22" />
+        </svg>
+      ),
+    },
+    {
       key: "floor",
       to: "/shop-floor",
       title: "Shop Floor",
@@ -916,25 +936,6 @@ export default function HomeTiles() {
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="22" cy="22" r="14" />
           <path d="M32.5 32.5L46 46" strokeWidth="2" />
-        </svg>
-      ),
-    },
-    {
-      key: "stock",
-      to: "/stock",
-      title: "Stock",
-      sub: "Fabric · lining · remnants",
-      live: (
-        <>
-          <b>Gallery</b> · use to remove
-        </>
-      ),
-      liveTone: "em" as LiveTone,
-      icon: (
-        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M8 16l18-8 18 8v22l-18 8-18-8z" />
-          <path d="M8 16l18 8 18-8" />
-          <path d="M26 24v22" />
         </svg>
       ),
     },
@@ -1353,6 +1354,9 @@ export default function HomeTiles() {
         </Link>
         <Link to="/orders/alterations" className="qbtn">
           <span aria-hidden>▤</span> Orders
+        </Link>
+        <Link to="/stock" className="qbtn primary" data-testid="qa-stock">
+          <span aria-hidden>▣</span> Stock
         </Link>
         <Link to="/house" className="qbtn">
           <span aria-hidden>⌂</span> House
