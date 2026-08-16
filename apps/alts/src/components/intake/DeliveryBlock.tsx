@@ -35,6 +35,8 @@ type Props = {
   value: DeliverySelection;
   onChange: (v: DeliverySelection) => void;
   dueDate?: string;
+  /** Intake schedule wheel sits below this block. Ticket details hides the hint. */
+  showScheduleHint?: boolean;
   freeCustom?: boolean;
   canOverrideFee?: boolean;
   className?: string;
@@ -57,6 +59,7 @@ export default function DeliveryBlock({
   value,
   onChange,
   dueDate,
+  showScheduleHint = true,
   freeCustom,
   canOverrideFee,
   className,
@@ -308,7 +311,7 @@ export default function DeliveryBlock({
             <div className="rounded-xl border border-white/15 bg-black/25 px-3 py-2.5 space-y-2">
               <p className="text-sm text-cream font-medium">Ship — FedEx</p>
               <p className="text-[11px] text-cream-dim">
-                Creates a shipping record on finish. Enter the fee quoted to the client.
+                Queues a FedEx ship record. Enter the fee quoted to the client.
               </p>
               {!freeCustom ? (
                 <label className="block">
@@ -396,7 +399,7 @@ export default function DeliveryBlock({
             </div>
           ) : null}
 
-          {dueDate ? (
+          {dueDate && showScheduleHint ? (
             <p className="text-[10px] text-cream-dim">Promised date on the wheel below is the delivery date.</p>
           ) : null}
         </div>

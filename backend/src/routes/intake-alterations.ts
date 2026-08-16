@@ -9,6 +9,17 @@ import { canShowTestData, filterTestRows } from '../lib/ops-mode';
 import { eTicketKey, eTicketKeyValid, eTicketPublicUrl } from '../lib/eticket-token';
 import { planDeliveryFee } from './delivery-zones';
 import { erpDatetime, timelineEventType } from '../lib/delivery';
+import { UpdateTicketDeliveryRequest } from '../types';
+import {
+  canCancelQueuedDelivery,
+  canMutateQueuedDelivery,
+  lshCarrierForTicket,
+  lshMethodForTicket,
+  normalizeTicketDeliveryMethod,
+  scheduledAtFrom,
+  ticketDeliveryPatch,
+  validateTicketDeliveryInput,
+} from '../lib/ticket-delivery';
 
 // ---------------------------------------------------------------------------
 // ERPNext config
@@ -776,13 +787,9 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
     billingStatus === 'Included in Custom Order' || body.included_in_custom === 1 || body.included_in_custom === true ? 1 : 0;
 
   // Delivery block (SPEC delivery-scheduling-zones) — 3 methods only
-  const deliveryMethodRaw = String(body.delivery_method || body.deliveryMethod || 'Pickup');
-  const deliveryMethod =
-    deliveryMethodRaw === 'Ship (FedEx)' || deliveryMethodRaw === 'Ship' || deliveryMethodRaw === 'FedEx'
-      ? 'Ship (FedEx)'
-      : deliveryMethodRaw === 'Hand Delivery' || deliveryMethodRaw === 'Courier'
-        ? 'Hand Delivery'
-        : 'Pickup';
+  const deliveryMethod = normalizeTicketDeliveryMethod(
+    String(body.delivery_method || body.deliveryMethod || 'Pickup'),
+  );
   const deliveryScheduled =
     body.delivery_scheduled === 1 ||
     body.delivery_scheduled === true ||
@@ -1059,21 +1066,14 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
           fields: ['name'],
           limit: 1,
         }).catch(() => []);
-        const windowStart: Record<string, string> = {
-          'Morning (9–12)': '09:00:00',
-          'Afternoon (12–4)': '12:00:00',
-          'Evening (4–7)': '16:00:00',
-          Anytime: '12:00:00',
-        };
         const tw = String(body.delivery_time_window || body.deliveryTimeWindow || 'Anytime');
         const reqDate = String(body.delivery_requested_date || body.deliveryRequestedDate || tNow?.due_date || '');
-        const scheduledAt = reqDate ? `${reqDate} ${windowStart[tw] || '12:00:00'}` : null;
+        const scheduledAt = scheduledAtFrom(reqDate, tw);
         const gcount = Array.isArray(tNow?.garments) ? tNow.garments.length : garmentsIn.length;
         const gsum = Array.isArray(tNow?.garments)
           ? tNow.garments.map((g: any) => g.garment_type || g.garment_description).filter(Boolean).join(' · ')
           : '';
 
-        const isShip = deliveryMethod === 'Ship (FedEx)';
         const qrBytes = new Uint8Array(12);
         crypto.getRandomValues(qrBytes);
         const qrToken = Array.from(qrBytes)
@@ -1081,7 +1081,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
           .join("");
         const delDoc: Record<string, unknown> = {
           lsh_status: 'Queued',
-          lsh_delivery_method: isShip ? 'Ship Direct' : 'Hand Delivery',
+          lsh_delivery_method: lshMethodForTicket(deliveryMethod) || 'Hand Delivery',
           lsh_origin_location: 'NYC',
           lsh_alteration_ticket: ticketName,
           customer: tNow?.customer || payload.customer,
@@ -1098,7 +1098,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
           lsh_garment_summary: gsum || null,
           lsh_notify_phone: tNow?.customer_phone || null,
           lsh_delivery_notes: feePatch.delivery_notes || null,
-          lsh_carrier: isShip ? 'FedEx' : null,
+          lsh_carrier: lshCarrierForTicket(deliveryMethod),
           lsh_qr_token: qrToken,
         };
 
@@ -1181,7 +1181,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
           free_custom: plan.free_custom,
           delivery_name: deliveryName,
           queued: Boolean(deliveryName),
-          shipping_record: isShip,
+          shipping_record: deliveryMethod === 'Ship (FedEx)',
         };
       } catch (e: any) {
         console.error('[intake-alterations] delivery schedule failed:', e?.message);
@@ -1364,6 +1364,199 @@ intakeAlterationsRouter.get('/sales-orders/:name', async (c) => {
   } catch (e: any) {
     console.error('[so-get]', e?.message);
     return c.json({ error: { message: e?.message || 'Failed to load sales order' } }, 502);
+  }
+});
+
+// 7. PATCH /tickets/:name/delivery — Pickup / Hand delivery / Ship (FedEx) after checkout
+intakeAlterationsRouter.patch('/tickets/:name/delivery', async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: 'Unauthorized' } }, 401);
+
+  const ticketName = c.req.param('name');
+  const parsed = UpdateTicketDeliveryRequest.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json(
+      { error: { message: parsed.error.issues[0]?.message ?? 'Invalid delivery request' } },
+      400,
+    );
+  }
+
+  const method = normalizeTicketDeliveryMethod(parsed.data.delivery_method);
+  const invalid = validateTicketDeliveryInput({
+    method,
+    address: parsed.data.delivery_address,
+    zip: parsed.data.delivery_zip,
+  });
+  if (invalid) return c.json({ error: { message: invalid } }, 400);
+
+  try {
+    const ticket = await erpGetDoc<any>('Alteration Ticket', ticketName);
+    if (!ticket) return c.json({ error: { message: 'Ticket not found' } }, 404);
+
+    const plan = await planDeliveryFee({
+      delivery_method: method,
+      delivery_scheduled: method !== 'Pickup',
+      delivery_zip: parsed.data.delivery_zip,
+      delivery_fee_override: parsed.data.delivery_fee_override,
+      delivery_fee: parsed.data.delivery_fee,
+      included_in_custom: ticket.included_in_custom,
+      billing_status: ticket.billing_status,
+      linked_sales_order: ticket.linked_sales_order,
+      origin_location: ticket.origin_location || 'NYC',
+    });
+
+    const feePatch = ticketDeliveryPatch({
+      method,
+      address: parsed.data.delivery_address,
+      apt: parsed.data.delivery_apt,
+      city: parsed.data.delivery_city,
+      state: parsed.data.delivery_state,
+      zip: parsed.data.delivery_zip,
+      notes: parsed.data.delivery_notes,
+      requestedDate: parsed.data.delivery_requested_date || ticket.due_date,
+      timeWindow: parsed.data.delivery_time_window,
+      fee: plan.fee,
+      zone: plan.zone,
+      feeOverride: parsed.data.delivery_fee_override,
+      feeOverrideReason: parsed.data.delivery_fee_override_reason,
+    });
+
+    const linePrices = Array.isArray(ticket.lines)
+      ? ticket.lines.reduce((s: number, l: any) => s + (Number(l.price) || 0), 0)
+      : null;
+    const existingFee = Number(ticket.delivery_fee) || 0;
+    const baseTotal =
+      linePrices != null && Array.isArray(ticket.lines) && ticket.lines.length > 0
+        ? linePrices
+        : Math.max(0, (Number(ticket.ticket_total) || 0) - existingFee);
+    feePatch.ticket_total = baseTotal + (plan.fee || 0);
+
+    await erpUpdate('Alteration Ticket', ticketName, feePatch);
+
+    const existingDel = await erpList<any>('LSH Delivery', {
+      filters: [['lsh_alteration_ticket', '=', ticketName]],
+      fields: ['name', 'lsh_status', 'lsh_qr_token'],
+      limit: 5,
+      order_by: 'modified desc',
+    }).catch(() => []);
+    const openDel = (existingDel || []).find((d: any) => d.lsh_status !== 'Cancelled') || existingDel?.[0] || null;
+
+    if (method === 'Pickup') {
+      let cancelled: string | null = null;
+      if (openDel && canCancelQueuedDelivery(openDel.lsh_status)) {
+        await erpUpdate('LSH Delivery', openDel.name, { lsh_status: 'Cancelled' });
+        cancelled = openDel.name;
+      } else if (openDel && !canCancelQueuedDelivery(openDel.lsh_status) && openDel.lsh_status !== 'Cancelled') {
+        return c.json({
+          data: {
+            ok: true as const,
+            delivery_method: method,
+            linked_delivery: openDel.name,
+            warning: 'Ticket set to pickup. Delivery already left the shop — cancel it on Dispatch if needed.',
+          },
+        });
+      }
+      return c.json({
+        data: {
+          ok: true as const,
+          delivery_method: method,
+          linked_delivery: cancelled ? null : (ticket.linked_delivery || null),
+          cancelled_delivery: cancelled,
+        },
+      });
+    }
+
+    const lshMethod = lshMethodForTicket(method);
+    if (!lshMethod) {
+      return c.json({ error: { message: 'Could not map delivery method' } }, 400);
+    }
+
+    if (openDel && !canMutateQueuedDelivery(openDel.lsh_status)) {
+      return c.json({
+        data: {
+          ok: true as const,
+          delivery_method: method,
+          linked_delivery: openDel.name,
+          warning: `Ticket updated. Delivery ${openDel.name} is already ${openDel.lsh_status} — method on the run was not changed.`,
+        },
+      });
+    }
+
+    const gcount = Array.isArray(ticket.garments) ? ticket.garments.length : 0;
+    const gsum = Array.isArray(ticket.garments)
+      ? ticket.garments.map((g: any) => g.garment_type || g.garment_description).filter(Boolean).join(' · ')
+      : '';
+    const scheduledAt = scheduledAtFrom(
+      parsed.data.delivery_requested_date || ticket.due_date,
+      parsed.data.delivery_time_window,
+    );
+
+    const delDoc: Record<string, unknown> = {
+      lsh_status: 'Queued',
+      lsh_delivery_method: lshMethod,
+      lsh_origin_location: ticket.origin_location || 'NYC',
+      lsh_alteration_ticket: ticketName,
+      customer: ticket.customer || null,
+      customer_name: ticket.customer_name || null,
+      customer_phone: ticket.customer_phone || null,
+      lsh_delivery_address: feePatch.delivery_address || null,
+      lsh_delivery_apt: feePatch.delivery_apt || null,
+      lsh_delivery_city: feePatch.delivery_city || 'New York',
+      lsh_delivery_state: feePatch.delivery_state || 'NY',
+      lsh_delivery_zip: feePatch.delivery_zip || null,
+      lsh_scheduled_at: scheduledAt,
+      lsh_garment_count: gcount,
+      lsh_garment_summary: gsum || null,
+      lsh_notify_phone: ticket.customer_phone || null,
+      lsh_delivery_notes: feePatch.delivery_notes || null,
+      lsh_carrier: lshCarrierForTicket(method),
+    };
+
+    let deliveryName: string | null = openDel?.name || ticket.linked_delivery || null;
+    if (openDel?.name && canMutateQueuedDelivery(openDel.lsh_status)) {
+      deliveryName = openDel.name;
+      await erpUpdate('LSH Delivery', openDel.name, delDoc);
+    } else {
+      const qrBytes = new Uint8Array(12);
+      crypto.getRandomValues(qrBytes);
+      const qrToken = Array.from(qrBytes)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+      const created = await erpCreate<any>('LSH Delivery', {
+        naming_series: 'DN-NYC-.YYYY.-',
+        ...delDoc,
+        lsh_queued_at: erpDatetime(),
+        lsh_qr_token: qrToken,
+        lsh_timeline: [
+          {
+            doctype: 'LSH Delivery Timeline',
+            event_type: timelineEventType('Queued'),
+            event_at: erpDatetime(),
+            actor_label: user.name || user.email || 'Staff',
+            message: `Method set on ticket ${ticketName}`,
+          },
+        ],
+      });
+      deliveryName = created?.name || null;
+    }
+
+    if (deliveryName) {
+      await erpUpdate('Alteration Ticket', ticketName, { linked_delivery: deliveryName }).catch(() => {});
+    }
+
+    return c.json({
+      data: {
+        ok: true as const,
+        delivery_method: method,
+        linked_delivery: deliveryName,
+      },
+    });
+  } catch (e: any) {
+    console.error('[ticket delivery patch]', e?.message);
+    return c.json(
+      { error: { message: e?.message || 'Could not update how this ticket leaves' } },
+      502,
+    );
   }
 });
 

@@ -32,6 +32,7 @@ import { ChargeTerminalButton } from '@alts/components/payments/ChargeTerminalBu
 import { ChargeCardOnFileButton } from '@alts/components/payments/ChargeCardOnFileButton'
 import { EditTicketDrawer } from '@alts/components/alterations/EditTicketDrawer'
 import { payUrl } from '@alts/lib/printUrls'
+import TicketDeliverySection from '@alts/components/intake/TicketDeliverySection'
 import {
   Dialog,
   DialogContent,
@@ -66,6 +67,21 @@ interface AlterationTicketDoc {
   internal_notes?: string
   customer_mobile?: string
   customer_email?: string
+  delivery_method?: string | null
+  delivery_address?: string | null
+  delivery_apt?: string | null
+  delivery_city?: string | null
+  delivery_state?: string | null
+  delivery_zip?: string | null
+  delivery_notes?: string | null
+  delivery_fee?: number | null
+  delivery_scheduled?: number | boolean | null
+  delivery_requested_date?: string | null
+  delivery_time_window?: string | null
+  linked_delivery?: string | null
+  included_in_custom?: number | boolean | null
+  billing_status?: string | null
+  linked_sales_order?: string | null
   notified_ready_at?: string
   lsh_delay_reason?: string | null
   lsh_delay_notes?: string | null
@@ -1406,6 +1422,9 @@ export default function TicketDetail() {
 
         {/* ── Customer Card ── */}
         <CustomerCard ticket={ticket} ticketName={ticketName!} />
+
+        {/* ── How it leaves — Pickup / Hand delivery / Ship (FedEx) ── */}
+        <TicketDeliverySection ticket={ticket} ticketName={ticketName!} />
 
         {/* ── Notifications ── */}
         <NotifySection
