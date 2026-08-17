@@ -87,3 +87,24 @@ interface PaymentLinkResult {
   url: string
   payment_link_id: string
 }
+
+// ── Constants ──────────────────────────────────────────────────────────────
+
+const WORKFLOW_STEPS = ['Received', 'In Progress', 'Ready', 'Picked Up'] as const
+type WorkflowStep = typeof WORKFLOW_STEPS[number]
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function formatDate(dateStr: string) {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
+}
+
+function stepIndex(state: string) {
+  return WORKFLOW_STEPS.indexOf(state as WorkflowStep)
+}
