@@ -118,6 +118,10 @@ describe("iPhone scale contract", () => {
     expect(app).toContain('path="/qc"');
     expect(app).toContain("QcInspection");
     expect(app).toContain('path="/qc/:id"');
+    expect(app).toContain("StockGallery");
+    expect(app).toContain('path="/stock"');
+    expect(app).toContain("StockDetail");
+    expect(app).toContain('path="/stock/:id"');
     expect(app).toContain("AltsSettings");
     expect(app).toContain('path="/settings"');
     const home = readFileSync(new URL("../pages/HomeTiles.tsx", import.meta.url), "utf8");
