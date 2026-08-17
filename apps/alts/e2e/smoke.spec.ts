@@ -188,6 +188,12 @@ async function mockApis(page: Page, opts: { authed?: boolean } = { authed: true 
       });
     }
     if (path.startsWith("/api/qc")) return json([]);
+    if (path.startsWith("/api/fabric-stock")) {
+      return json({
+        items: [],
+        counts: { total: 0, available: 0, used: 0, fabric: 0, lining: 0, buttons: 0, yz: 0, sdc: 0, lst: 0, photos: 0 },
+      });
+    }
     if (path === "/api/dashboard/floor-brief") {
       return json({ body: "Quiet floor.", title: "Espresso", createdAt: new Date().toISOString(), fromCache: true });
     }
@@ -275,6 +281,7 @@ const ROUTES = [
   "/pickup",
   "/orders/alterations",
   "/house",
+  "/stock",
   "/qc",
   "/invoices",
   "/deliveries",
