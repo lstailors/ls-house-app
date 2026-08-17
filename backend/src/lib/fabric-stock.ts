@@ -76,6 +76,18 @@ export function photoProxyUrl(fileUrl: string): string {
   return `/api/files/erp?path=${encodeURIComponent(path)}`;
 }
 
+/** Public ERP /files URLs the browser can load as a normal <img>. Private files stay proxied. */
+export function browserPhotoUrl(fileUrl: string): string {
+  const path = safeErpFilePath(fileUrl);
+  if (!path) return "";
+  if (path.startsWith("/private/")) return photoProxyUrl(path);
+  const base = (process.env.ERPNEXT_PUBLIC_FILE_BASE || process.env.ERPNEXT_BASE_URL || "https://erp.lstailors.com").replace(
+    /\/$/,
+    "",
+  );
+  return `${base}${path}`;
+}
+
 function pickBestFileUrl(candidates: FileHint[]): string | null {
   const urls = candidates
     .map((f) => (f.file_url || "").trim())
@@ -153,7 +165,7 @@ export function serializeStockPiece(
     status: row.status || "Available",
     kind: row.kind || null,
     source: row.source || null,
-    photoUrl: fileUrl ? photoProxyUrl(fileUrl) : null,
+    photoUrl: fileUrl ? browserPhotoUrl(fileUrl) : null,
     photoPath: fileUrl,
     labelType: row.label_type || null,
     supplierMill: row.supplier_mill || null,
