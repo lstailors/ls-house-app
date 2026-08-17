@@ -53,6 +53,7 @@ import { garmentRouter } from "./routes/garment";
 import { qrRouter } from "./routes/qr";
 import { squareRouter } from "./routes/square-terminal";
 import { filesRouter } from "./routes/files";
+import { fabricStockRouter } from "./routes/fabric-stock";
 import { outreachRouter } from "./routes/outreach";
 import { erpnextCustomersRouter } from "./routes/erpnext-customers";
 import { sofiaBridgeRouter } from "./routes/sofia-bridge";
@@ -66,7 +67,7 @@ import { offlineRouter } from "./routes/offline";
 
 const app = new Hono();
 
-// ─── CORS ─────────────────────────────────────────────────────────────────────
+// ─── CORS ───────────────────────────────────────────────────────────────
 // Hard-coded allowed origins + optional ALLOWED_ORIGINS env var (comma-separated
 // literal origins, e.g. "https://app.lstailors.com,https://staging.lstailors.com").
 // On Vercel, frontend + backend share the same origin so CORS is moot for prod,
@@ -163,6 +164,7 @@ app.route("/api/garment", garmentRouter);
 app.route("/api/qr", qrRouter);
 app.route("/api/square", squareRouter);
 app.route("/api/files", filesRouter);
+app.route("/api/fabric-stock", fabricStockRouter);
 app.route("/api/outreach", outreachRouter);
 app.route("/api/erpnext-customers", erpnextCustomersRouter);
 
