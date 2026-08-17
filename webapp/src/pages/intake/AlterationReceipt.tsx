@@ -65,7 +65,8 @@ export default function AlterationReceipt() {
       if (!result.ok) throw new Error(result.error ?? 'Print failed')
       toast.success('✓ Printed')
     } catch (e: any) {
-      toast.error(e.message || 'Print failed')
+      toast.error(e.message || 'Epson unavailable — using browser print')
+      window.print()
     } finally { setPrinting(false) }
   }
 

@@ -1,7 +1,7 @@
 import { Toaster as Sonner } from "@ls/design/ui/sonner";
 import { TooltipProvider } from "@ls/design/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { RoleGuard } from "@/components/shell/RoleGuard";
@@ -68,6 +68,12 @@ const queryClient = new QueryClient({
   },
 });
 
+/** House has no /thermal page — send staff to the browser receipt (Epson is on the shop LAN). */
+function ThermalToReceipt() {
+  const { ticketName } = useParams<{ ticketName: string }>();
+  return <Navigate to={`/orders/alterations/${ticketName}/receipt`} replace />;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -108,6 +114,7 @@ const App = () => (
           {/* Standalone print pages — outside AppShell so only content renders */}
           <Route path="/orders/alterations/:ticketName/tags" element={<AlterationTags />} />
           <Route path="/orders/alterations/:ticketName/receipt" element={<AlterationReceipt />} />
+          <Route path="/orders/alterations/:ticketName/thermal" element={<ThermalToReceipt />} />
           <Route path="/deliveries/:id/label" element={<DeliveryLabel />} />
           <Route element={<AppShell />}>
             <Route path="/" element={<Dashboard />} />

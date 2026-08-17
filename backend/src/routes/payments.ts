@@ -1,7 +1,11 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
-import { erpGet, erpUpdate, erpRunMethod, erpSubmit } from "../lib/erp";
+import { erpGet, erpUpdate, erpRunMethod, erpSubmit, erpCreate, erpList } from "../lib/erp";
 import { recordCardOnFileProvenance } from "../lib/paymentProvenance";
+import {
+  humanizeSquareTerminalError,
+  isMissingLsSquareModule,
+} from "../lib/square-checkout";
 
 export const paymentsRouter = new Hono();
 
@@ -13,6 +17,8 @@ function erpHeaders(contentType = "application/json"): Record<string, string> {
   return {
     Authorization: `token ${key}:${secret}`,
     Accept: "application/json",
+    // Same UA as erp.ts — CF tunnel returns 1010 without a browser UA.
+    "User-Agent": "Mozilla/5.0 (compatible; L&S-House-App/1.0; +https://app.lstailors.com)",
     ...(contentType ? { "Content-Type": contentType } : {}),
   };
 }
@@ -101,12 +107,7 @@ paymentsRouter.post("/link", async (c) => {
   } catch (erpErr) {
     const erpMsg = erpErr instanceof Error ? erpErr.message : String(erpErr);
     // Only fall through for missing-module / method; other ERP errors may be real
-    const missingModule =
-      /No module named ['"]ls_alterations\.ls_square['"]/i.test(erpMsg) ||
-      /has no attribute ['"]create_payment_link['"]/i.test(erpMsg) ||
-      /Failed to get method for command/i.test(erpMsg);
-
-    if (!missingModule) {
+    if (!isMissingLsSquareModule(erpErr)) {
       return c.json({ error: { message: erpMsg || "Could not create payment link" } }, 502);
     }
 
@@ -245,6 +246,10 @@ async function mintPaymentLinkDirect(
 }
 
 // POST /api/payments/terminal-checkout
+// Prefer ERP ls_square when deployed; fall back to direct Square Terminal API
+// so FOH checkout works even when the bench module is missing.
+// Never forward client `amount` to ERP — live create_checkout() does not
+// accept it (TypeError), and HER-63 says outstanding comes from the SI.
 paymentsRouter.post("/terminal-checkout", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
@@ -258,15 +263,25 @@ paymentsRouter.post("/terminal-checkout", async (c) => {
     return c.json({ error: { message: "invoice or ticket is required" } }, 400);
   }
 
+  const rawId = (body.ticket || body.invoice || "").trim();
+
   try {
     const result = await callErpMethod("ls_alterations.ls_square.pos.create_checkout", {
       ...(body.ticket ? { ticket: body.ticket } : refFor(body.invoice!)),
-      ...(body.amount ? { amount: body.amount } : {}),
     });
     return c.json(normalizeCheckout(result));
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "Could not create terminal checkout";
-    return c.json({ error: { message } }, 502);
+  } catch (erpErr) {
+    if (!isMissingLsSquareModule(erpErr)) {
+      const message = humanizeSquareTerminalError(erpErr);
+      return c.json({ error: { message } }, 502);
+    }
+    try {
+      const checkout = await mintTerminalCheckoutDirect(rawId);
+      return c.json(checkout);
+    } catch (e) {
+      const message = humanizeSquareTerminalError(e);
+      return c.json({ error: { message } }, 502);
+    }
   }
 });
 
@@ -289,7 +304,7 @@ paymentsRouter.get("/terminal-checkout/:checkoutId", async (c) => {
     },
   );
   const squareData = (await squareRes.json().catch(() => ({}))) as {
-    checkout?: { id?: string; status?: string; payment_ids?: string[] };
+    checkout?: SquareTerminalCheckout;
     errors?: Array<{ detail?: string }>;
   };
   if (!squareRes.ok) {
@@ -297,11 +312,19 @@ paymentsRouter.get("/terminal-checkout/:checkoutId", async (c) => {
     return c.json({ error: { message } }, squareRes.status as 400);
   }
 
+  const checkout = squareData.checkout;
+  if ((checkout?.status ?? "").toUpperCase() === "COMPLETED") {
+    // Webhook may 500 while ls_square is missing — record the PE here too.
+    void applyCompletedSquareCheckout(checkout).catch((err) => {
+      console.error("[terminal-checkout poll] apply payment:", err instanceof Error ? err.message : err);
+    });
+  }
+
   return c.json({
     ok: true,
-    checkout_id: squareData.checkout?.id ?? checkoutId,
-    status: squareData.checkout?.status ?? "UNKNOWN",
-    payment_ids: squareData.checkout?.payment_ids ?? [],
+    checkout_id: checkout?.id ?? checkoutId,
+    status: checkout?.status ?? "UNKNOWN",
+    payment_ids: checkout?.payment_ids ?? [],
   });
 });
 
@@ -323,13 +346,30 @@ paymentsRouter.post("/webhook", async (c) => {
       },
     );
     const text = await res.text();
-    return new Response(text || JSON.stringify({ ok: res.ok }), {
-      status: res.status,
-      headers: { "Content-Type": res.headers.get("Content-Type") ?? "application/json" },
-    });
+    const missing =
+      !res.ok &&
+      isMissingLsSquareModule(text);
+    if (!missing) {
+      return new Response(text || JSON.stringify({ ok: res.ok }), {
+        status: res.status,
+        headers: { "Content-Type": res.headers.get("Content-Type") ?? "application/json" },
+      });
+    }
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Square webhook proxy failed";
-    return c.json({ error: { message } }, 502);
+    if (!isMissingLsSquareModule(e)) {
+      const message = e instanceof Error ? e.message : "Square webhook proxy failed";
+      return c.json({ error: { message } }, 502);
+    }
+  }
+
+  // Bench ls_square is not deployed — reconcile from Square's confirmed objects.
+  try {
+    const outcome = await handleSquareWebhookDirect(raw);
+    return c.json(outcome);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Square webhook fallback failed";
+    console.error("[payments/webhook] fallback:", message);
+    return c.json({ ok: false, error: message }, 500);
   }
 });
 
@@ -445,6 +485,297 @@ function squareHeaders(token: string): Record<string, string> {
     "Content-Type": "application/json",
     Accept: "application/json",
   };
+}
+
+type SquareTerminalCheckout = {
+  id?: string;
+  status?: string;
+  payment_ids?: string[];
+  reference_id?: string;
+  amount_money?: { amount?: number; currency?: string };
+};
+
+/**
+ * Push a Terminal Checkout via Square when ERP ls_square is not on the bench.
+ * Amount is always the SI outstanding (ignore any client-sent figure).
+ */
+async function mintTerminalCheckoutDirect(
+  rawId: string,
+): Promise<{ ok: true; checkout_id: string }> {
+  const token = process.env.SQUARE_ACCESS_TOKEN ?? "";
+  if (!token) throw new Error("Square not configured (SQUARE_ACCESS_TOKEN)");
+
+  let invoiceName = rawId;
+  let customerName = "";
+  let ticketName = "";
+
+  if (/^ALT/i.test(rawId)) {
+    const t = await erpGet<Record<string, unknown>>("Alteration Ticket", rawId);
+    if (!t) throw new Error(`Ticket ${rawId} not found`);
+    const si = String(t.sales_invoice ?? "").trim();
+    if (!si) throw new Error(`Ticket ${rawId} has no Sales Invoice yet`);
+    invoiceName = si;
+    customerName = String(t.customer_name ?? "");
+    ticketName = rawId;
+  }
+
+  let inv = await erpGet<Record<string, unknown>>("Sales Invoice", invoiceName);
+  if (!inv) throw new Error(`Sales Invoice ${invoiceName} not found`);
+
+  let docstatus = Number(inv.docstatus ?? 0);
+  if (docstatus === 2) throw new Error(`Invoice ${invoiceName} is cancelled`);
+  if (docstatus === 0) {
+    try {
+      await erpSubmit("Sales Invoice", invoiceName);
+    } catch (subErr) {
+      const sm = subErr instanceof Error ? subErr.message : String(subErr);
+      inv = (await erpGet<Record<string, unknown>>("Sales Invoice", invoiceName)) || inv;
+      docstatus = Number(inv.docstatus ?? 0);
+      if (docstatus !== 1) {
+        throw new Error(`Could not submit draft invoice ${invoiceName}: ${sm}`);
+      }
+    }
+    inv = (await erpGet<Record<string, unknown>>("Sales Invoice", invoiceName)) || inv;
+  }
+
+  customerName = customerName || String(inv.customer_name ?? inv.customer ?? "");
+  const outstanding = Number(inv.outstanding_amount ?? inv.grand_total ?? 0) || 0;
+  if (outstanding <= 0) throw new Error(`Invoice ${invoiceName} has nothing outstanding`);
+
+  try {
+    const open = await erpList<Record<string, unknown>>("Square Checkout", {
+      filters: [
+        ["invoice", "=", invoiceName],
+        ["kind", "=", "Terminal"],
+        ["status", "=", "Created"],
+      ],
+      fields: ["name", "checkout_id", "amount"],
+      order_by: "creation desc",
+      limit: 10,
+    });
+    const reused = open.find((r) => String(r.checkout_id ?? "").trim());
+    if (reused?.checkout_id) {
+      return { ok: true, checkout_id: String(reused.checkout_id) };
+    }
+  } catch {
+    /* listing is best-effort */
+  }
+
+  const settings = await erpGet<Record<string, unknown>>(
+    "Square Integration Settings",
+    "Square Integration Settings",
+  );
+  const deviceId =
+    String(settings?.device_id ?? "").trim() ||
+    (process.env.SQUARE_TERMINAL_DEVICE_ID ?? "").trim();
+  if (!deviceId) {
+    throw new Error("No Square Terminal device_id configured. Pair the terminal from Settings.");
+  }
+
+  const amountCents = Math.round(outstanding * 100);
+  const sqRes = await fetch(`${SQUARE_API}/v2/terminals/checkouts`, {
+    method: "POST",
+    headers: squareHeaders(token),
+    body: JSON.stringify({
+      idempotency_key: crypto.randomUUID(),
+      checkout: {
+        amount_money: { amount: amountCents, currency: "USD" },
+        reference_id: invoiceName.slice(0, 40),
+        note: `L&S ${invoiceName} - ${customerName}`.slice(0, 500),
+        device_options: { device_id: deviceId },
+      },
+    }),
+  });
+  const sqData = (await sqRes.json().catch(() => ({}))) as {
+    checkout?: SquareTerminalCheckout;
+    errors?: Array<{ detail?: string; code?: string }>;
+  };
+  if (!sqRes.ok) {
+    throw new Error(
+      sqData.errors?.[0]?.detail || sqData.errors?.[0]?.code || `Square HTTP ${sqRes.status}`,
+    );
+  }
+  const checkoutId = String(sqData.checkout?.id ?? "").trim();
+  if (!checkoutId) throw new Error("Square did not return a terminal checkout ID");
+
+  try {
+    await erpCreate("Square Checkout", {
+      invoice: invoiceName,
+      ticket: ticketName || undefined,
+      kind: "Terminal",
+      amount: outstanding,
+      status: "Created",
+      checkout_id: checkoutId,
+    });
+  } catch {
+    /* mapping is convenience — webhook/poll can still resolve via reference_id */
+  }
+
+  return { ok: true, checkout_id: checkoutId };
+}
+
+async function applyCompletedSquareCheckout(
+  checkout: SquareTerminalCheckout | undefined,
+): Promise<void> {
+  if (!checkout) return;
+  if ((checkout.status ?? "").toUpperCase() !== "COMPLETED") return;
+  const invoice = String(checkout.reference_id ?? "").trim();
+  if (!invoice) return;
+  const paymentId = String(checkout.payment_ids?.[0] ?? checkout.id ?? "").trim();
+  const amountCents = Number(checkout.amount_money?.amount ?? 0);
+  const amount = amountCents > 0 ? amountCents / 100 : 0;
+  await applySquarePaymentToInvoice({
+    invoice,
+    paymentId,
+    amount,
+    checkoutId: checkout.id,
+  });
+}
+
+async function applySquarePaymentToInvoice(opts: {
+  invoice: string;
+  paymentId: string;
+  amount: number;
+  checkoutId?: string;
+}): Promise<{ ok: true; status: string; payment_entry?: string }> {
+  const { invoice, paymentId, checkoutId } = opts;
+  if (!invoice) throw new Error("invoice is required");
+
+  const existing = paymentId
+    ? await erpList<Record<string, unknown>>("Payment Entry", {
+        filters: [
+          ["reference_no", "=", paymentId],
+          ["docstatus", "=", 1],
+        ],
+        fields: ["name"],
+        limit: 1,
+      })
+    : [];
+  if (existing[0]?.name) {
+    return { ok: true, status: "duplicate", payment_entry: String(existing[0].name) };
+  }
+
+  const inv = await erpGet<Record<string, unknown>>("Sales Invoice", invoice);
+  if (!inv) throw new Error(`Sales Invoice ${invoice} not found`);
+  if (Number(inv.docstatus ?? 0) !== 1) {
+    throw new Error(`Invoice ${invoice} is not submitted`);
+  }
+
+  const outstanding = Number(inv.outstanding_amount ?? 0) || 0;
+  if (outstanding <= 0.02) {
+    return { ok: true, status: "already_paid" };
+  }
+
+  const amount = opts.amount > 0 && opts.amount <= outstanding + 0.02 ? opts.amount : outstanding;
+
+  const pe = await erpCreate<Record<string, unknown>>("Payment Entry", {
+    payment_type: "Receive",
+    party_type: "Customer",
+    party: inv.customer,
+    paid_amount: amount,
+    received_amount: amount,
+    paid_to_account_currency: inv.currency ?? "USD",
+    company: inv.company,
+    mode_of_payment: "Square",
+    reference_no: paymentId || "SQUARE",
+    reference_date: new Date().toISOString().slice(0, 10),
+    references: [
+      {
+        reference_doctype: "Sales Invoice",
+        reference_name: invoice,
+        allocated_amount: amount,
+      },
+    ],
+    docstatus: 1,
+  });
+
+  if (checkoutId) {
+    try {
+      const rows = await erpList<Record<string, unknown>>("Square Checkout", {
+        filters: [["checkout_id", "=", checkoutId]],
+        fields: ["name"],
+        limit: 1,
+      });
+      if (rows[0]?.name) {
+        await erpUpdate("Square Checkout", String(rows[0].name), {
+          status: "Completed",
+          payment_id: paymentId,
+        });
+      }
+    } catch {
+      /* mapping close is best-effort */
+    }
+  }
+
+  return {
+    ok: true,
+    status: "processed",
+    payment_entry: pe?.name ? String(pe.name) : undefined,
+  };
+}
+
+async function handleSquareWebhookDirect(
+  raw: ArrayBuffer,
+): Promise<{ ok: boolean; status: string }> {
+  let body: Record<string, any>;
+  try {
+    body = JSON.parse(new TextDecoder().decode(raw)) as Record<string, any>;
+  } catch {
+    return { ok: false, status: "bad_json" };
+  }
+
+  const eventType = String(body.type ?? "");
+  if (
+    eventType !== "payment.updated" &&
+    eventType !== "payment.created" &&
+    eventType !== "terminal.checkout.updated"
+  ) {
+    return { ok: true, status: "ignored" };
+  }
+
+  const obj = body.data?.object ?? {};
+  const token = process.env.SQUARE_ACCESS_TOKEN ?? "";
+  if (!token) throw new Error("Square not configured");
+
+  if (obj.checkout?.id) {
+    const confirmed = await fetch(
+      `${SQUARE_API}/v2/terminals/checkouts/${encodeURIComponent(obj.checkout.id)}`,
+      { headers: squareHeaders(token) },
+    );
+    const data = (await confirmed.json().catch(() => ({}))) as { checkout?: SquareTerminalCheckout };
+    await applyCompletedSquareCheckout(data.checkout ?? obj.checkout);
+    return { ok: true, status: "processed" };
+  }
+
+  if (obj.payment?.id) {
+    const confirmed = await fetch(
+      `${SQUARE_API}/v2/payments/${encodeURIComponent(obj.payment.id)}`,
+      { headers: squareHeaders(token) },
+    );
+    const data = (await confirmed.json().catch(() => ({}))) as {
+      payment?: {
+        id?: string;
+        status?: string;
+        reference_id?: string;
+        amount_money?: { amount?: number };
+      };
+    };
+    const p = data.payment ?? obj.payment;
+    if ((p.status ?? "").toUpperCase() !== "COMPLETED") {
+      return { ok: true, status: "ignored" };
+    }
+    const invoice = String(p.reference_id ?? "").trim();
+    if (!invoice) return { ok: true, status: "ignored_unmapped" };
+    const amountCents = Number(p.amount_money?.amount ?? 0);
+    await applySquarePaymentToInvoice({
+      invoice,
+      paymentId: String(p.id ?? ""),
+      amount: amountCents > 0 ? amountCents / 100 : 0,
+    });
+    return { ok: true, status: "processed" };
+  }
+
+  return { ok: true, status: "ignored" };
 }
 
 type PublicCard = {
