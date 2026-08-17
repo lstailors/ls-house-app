@@ -67,7 +67,7 @@ import { offlineRouter } from "./routes/offline";
 
 const app = new Hono();
 
-// ─── CORS ───────────────────────────────────────────────────────────────
+// ─── CORS ─────────────────────────────────────────────────────────────────
 // Hard-coded allowed origins + optional ALLOWED_ORIGINS env var (comma-separated
 // literal origins, e.g. "https://app.lstailors.com,https://staging.lstailors.com").
 // On Vercel, frontend + backend share the same origin so CORS is moot for prod,
