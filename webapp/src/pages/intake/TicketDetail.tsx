@@ -108,5 +108,3 @@ function formatCurrency(amount: number) {
 function stepIndex(state: string) {
   return WORKFLOW_STEPS.indexOf(state as WorkflowStep)
 }
-
-// REST_OF_FILE_SEE_DISK
