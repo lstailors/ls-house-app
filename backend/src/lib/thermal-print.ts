@@ -28,5 +28,17 @@ export const THERMAL_PRINT_METHODS = {
 
 export function isMissingErpPrintModule(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err ?? "");
-  return /No module named|Failed to get method for command/i.test(msg);
+  return (
+    /No module named|Failed to get method for command/i.test(msg) ||
+    /has no attribute ['"]print_(ticket|payment_receipt|pay_link|test_printer)['"]/i.test(msg) ||
+    /Thermal print module is not importable/i.test(msg)
+  );
+}
+
+/** Staff-facing copy when the bench cannot reach the Epson. */
+export function friendlyThermalPrintError(err: unknown): string {
+  if (isMissingErpPrintModule(err)) {
+    return "Epson thermal is not available on the shop server. Use Browser Print on the receipt page.";
+  }
+  return err instanceof Error ? err.message : String(err ?? "Print failed");
 }
