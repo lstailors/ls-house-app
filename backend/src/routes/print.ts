@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { getAuthedUser, canAccessSuperAdminPortal } from "../lib/scope";
 import { erpGet, erpUpdate } from "../lib/erp";
 import {
+  friendlyThermalPrintError,
   isMissingErpPrintModule,
   THERMAL_PRINT_METHODS,
 } from "../lib/thermal-print";
@@ -206,7 +207,7 @@ printRouter.get("/status", async (c) => {
     const out = await printViaErp(THERMAL_PRINT_METHODS.test_printer, {});
     return c.json(toClientResult(out));
   } catch (e) {
-    return c.json({ ok: false, error: e instanceof Error ? e.message : "Printer test failed" });
+    return c.json({ ok: false, error: friendlyThermalPrintError(e) });
   }
 });
 
@@ -242,7 +243,7 @@ printRouter.post("/ticket", async (c) => {
     });
     return c.json(toClientResult(out));
   } catch (e) {
-    return c.json({ ok: false, error: e instanceof Error ? e.message : "Print failed" });
+    return c.json({ ok: false, error: friendlyThermalPrintError(e) });
   }
 });
 
@@ -271,7 +272,7 @@ printRouter.post("/tags", async (c) => {
     });
     return c.json(toClientResult(out));
   } catch (e) {
-    return c.json({ ok: false, error: e instanceof Error ? e.message : "Tag print failed" });
+    return c.json({ ok: false, error: friendlyThermalPrintError(e) });
   }
 });
 
@@ -305,7 +306,7 @@ printRouter.post("/receipt", async (c) => {
         });
     return c.json(toClientResult(out));
   } catch (e) {
-    return c.json({ ok: false, error: e instanceof Error ? e.message : "Receipt print failed" });
+    return c.json({ ok: false, error: friendlyThermalPrintError(e) });
   }
 });
 
@@ -334,6 +335,6 @@ printRouter.post("/payment-link", async (c) => {
     const out = await printViaErp(THERMAL_PRINT_METHODS.print_pay_link, kwargs);
     return c.json({ ...toClientResult(out), url: out?.url });
   } catch (e) {
-    return c.json({ ok: false, error: e instanceof Error ? e.message : "QR slip print failed" });
+    return c.json({ ok: false, error: friendlyThermalPrintError(e) });
   }
 });
