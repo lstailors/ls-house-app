@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { isMissingErpPrintModule, THERMAL_PRINT_METHODS } from "./thermal-print";
+import {
+  friendlyThermalPrintError,
+  isMissingErpPrintModule,
+  THERMAL_PRINT_METHODS,
+} from "./thermal-print";
 
 describe("thermal print method wiring", () => {
   test("prefers ls_alterations.api — the module ERP already loads for tickets", () => {
@@ -16,6 +20,20 @@ describe("thermal print method wiring", () => {
       ),
     ).toBe(true);
     expect(isMissingErpPrintModule(new Error("No printer IP / bridge configured"))).toBe(false);
+    expect(
+      isMissingErpPrintModule(
+        new Error("module 'ls_alterations.api' has no attribute 'print_ticket'"),
+      ),
+    ).toBe(true);
+  });
+
+  test("friendly copy points staff at browser print when the module is missing", () => {
+    expect(
+      friendlyThermalPrintError(
+        new Error("No module named 'ls_alterations.ls_thermal'"),
+      ),
+    ).toMatch(/Browser Print/i);
+    expect(friendlyThermalPrintError(new Error("Connection refused"))).toBe("Connection refused");
   });
 });
 
