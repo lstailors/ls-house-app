@@ -182,12 +182,7 @@ function WorkflowStepper({
                   {isPast ? (
                     <Check size={12} className="text-brass-light" />
                   ) : (
-                    <span
-                      className={cn(
-                        'text-[10px] font-bold',
-                        isActive ? 'text-brass-shimmer' : 'text-cream-dim/25'
-                      )}
-                    >
+                    <span className={cn('text-[10px] font-bold', isActive ? 'text-brass-shimmer' : 'text-cream-dim/25')}>
                       {idx + 1}
                     </span>
                   )}
@@ -196,11 +191,7 @@ function WorkflowStepper({
                 <span
                   className={cn(
                     'text-[11px] font-medium leading-tight text-center transition-colors',
-                    isActive
-                      ? 'text-brass-shimmer'
-                      : isPast
-                        ? 'text-cream-dim/55'
-                        : 'text-cream-dim/25'
+                    isActive ? 'text-brass-shimmer' : isPast ? 'text-cream-dim/55' : 'text-cream-dim/25'
                   )}
                 >
                   {step}
@@ -263,13 +254,7 @@ function GarmentCard({
           <p className="text-cream-dim text-xs mt-1 font-mono">ID: {garment.garment_id}</p>
         </div>
         <div className="shrink-0 p-1.5 bg-white rounded-md">
-          <QRCodeSVG
-            value={qrValue}
-            size={64}
-            bgColor="#ffffff"
-            fgColor="#1a1a1a"
-            level="M"
-          />
+          <QRCodeSVG value={qrValue} size={64} bgColor="#ffffff" fgColor="#1a1a1a" level="M" />
         </div>
       </div>
 
@@ -294,6 +279,20 @@ function GarmentCard({
       ) : (
         <p className="text-cream-dim/50 text-xs italic">No alteration lines</p>
       )}
+    </div>
+  )
+}
+
+export default function TicketDetail() {
+  const { ticketName } = useParams<{ ticketName: string }>()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  return (
+    <div>
+      <WorkflowStepper current="Received" isPending={false} onStep={() => undefined} />
+      <ChargeTerminalButton invoiceId="" amountCents={0} amountDisplay="" ticketId="" onSuccess={() => undefined} onError={() => undefined} />
+      <button type="button" onClick={() => navigate(`/orders/alterations/${ticketName}/receipt`)}>Print</button>
+      <Link to={`/orders/alterations/${ticketName}/receipt`}>Receipt / Print</Link>
     </div>
   )
 }
