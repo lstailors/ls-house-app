@@ -254,6 +254,9 @@ export function routeForScannerResult(result: ScannerResult): ScanNav {
       if (result.doctype === "LSH QC Inspection" || result.doctype === "MTMPro Order") {
         return { kind: "path", path: `/qc/${encodeURIComponent(name)}`, replace: true };
       }
+      if (result.doctype === "LSH Fabric Stock Piece" || /^FSP-\d+$/i.test(name)) {
+        return { kind: "path", path: `/stock/${encodeURIComponent(name)}`, replace: true };
+      }
       if (type === ("customer" as ScannerType) || result.doctype === "Customer") {
         return { kind: "path", path: `/customers/${encodeURIComponent(name)}`, replace: true };
       }
@@ -280,6 +283,22 @@ export function openPathForResult(result: ScannerResult): ScanNav {
   return { kind: "none" };
 }
 
+/** Factory stock piece QR / URL: `/stock/FSP-00934` or bare `FSP-00934`. */
+export function parseStockUrl(decoded: string): string | null {
+  const value = decoded.trim();
+  if (!value) return null;
+  if (/^FSP-\d+$/i.test(value)) return value.toUpperCase();
+  let path: string;
+  try {
+    path = new URL(value).pathname;
+  } catch {
+    const m = value.match(/\/stock\/([^/?#]+)/i);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  const m = path.match(/^\/stock\/([^/]+)\/?$/i);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 /** Fast client-side routing before any network call. */
 export function routeFromRawScan(decoded: string): ScanNav {
   const garment = parseGarmentTagUrl(decoded);
@@ -296,6 +315,15 @@ export function routeFromRawScan(decoded: string): ScanNav {
     return {
       kind: "path",
       path: `/qc/${encodeURIComponent(qc)}`,
+      replace: true,
+    };
+  }
+
+  const stock = parseStockUrl(decoded);
+  if (stock) {
+    return {
+      kind: "path",
+      path: `/stock/${encodeURIComponent(stock)}`,
       replace: true,
     };
   }

@@ -10,6 +10,7 @@ import {
   parsePickupScanTarget,
   parseProgressScanTarget,
   parseQcUrl,
+  parseStockUrl,
   routeForScannerResult,
   openPathForResult,
   routeFromRawScan,
@@ -53,6 +54,10 @@ assert(parseQcUrl("https://alts.lstailors.com/qc/LSH-QC-2026-00008") === "LSH-QC
 assert(parseQcUrl("LSH-QC-2026-00008") === "LSH-QC-2026-00008", "bare LSH-QC");
 assert(parseQcUrl("LST-122470-1") === "LST-122470-1", "mtmpro LST");
 assert(parseQcUrl("ALT-NYC-2026-00061") === null, "alts ticket is not QC");
+assert(parseStockUrl("https://alts.lstailors.com/stock/FSP-00934") === "FSP-00934", "stock url");
+assert(parseStockUrl("FSP-00934") === "FSP-00934", "bare FSP");
+const stockFast = routeFromRawScan("https://alts.lstailors.com/stock/FSP-00954");
+assert(stockFast.kind === "path" && stockFast.path === "/stock/FSP-00954", "fast stock → /stock/");
 const qcFast = routeFromRawScan("https://alts.lstailors.com/qc/LST-122470-1");
 assert(qcFast.kind === "path" && qcFast.path === "/qc/LST-122470-1", "fast qc → /qc/");
 const mtm: ScannerResult = {

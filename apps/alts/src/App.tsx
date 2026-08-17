@@ -59,6 +59,8 @@ const InvoiceDetail = lazy(() => import("@alts/pages/InvoiceDetail"));
 const AddWork = lazy(() => import("@alts/pages/AddWork"));
 const FloorPerformance = lazy(() => import("@alts/pages/FloorPerformance"));
 const Reports = lazy(() => import("@alts/pages/Reports"));
+const StockGallery = lazy(() => import("@alts/pages/StockGallery"));
+const StockDetail = lazy(() => import("@alts/pages/StockDetail"));
 
 const FOH = ["super_admin", "store_manager", "salesperson", "tailor"] as const;
 const QC = ["super_admin", "tailor"] as const;
@@ -209,6 +211,22 @@ export default function App() {
                 element={
                   <RoleGuard allow={[...FOH]}>
                     <HouseFind />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/stock"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <StockGallery />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/stock/:id"
+                element={
+                  <RoleGuard allow={[...FOH]}>
+                    <StockDetail />
                   </RoleGuard>
                 }
               />
