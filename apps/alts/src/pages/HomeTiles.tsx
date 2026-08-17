@@ -79,7 +79,7 @@ function briefAge(iso?: string | null) {
   if (!iso) return "";
   const raw = iso.includes("T") ? iso : iso.replace(" ", "T");
   // Frappe datetimes are store-local without Z — parse as local-ish
-  const ms = Date.parse(raw.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(raw) ? raw : `${raw}`);
+  const ms = Date.parse(raw.endsWith("Z") || /[+\-]\d{2}:\d{2}$/.test(raw) ? raw : `${raw}`);
   if (!Number.isFinite(ms)) return "";
   const sec = Math.max(0, Math.round((Date.now() - ms) / 1000));
   if (sec < 45) return "just now";
@@ -1068,6 +1068,26 @@ export default function HomeTiles() {
       ),
     },
     {
+      key: "stock",
+      to: "/stock",
+      title: "Stock",
+      sub: "Fabric · lining · remnants",
+      primary: true,
+      live: (
+        <>
+          <b>Gallery</b> · use to remove
+        </>
+      ),
+      liveTone: "em",
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="6" y="10" width="18" height="24" rx="2.5" />
+          <rect x="28" y="16" width="18" height="24" rx="2.5" />
+          <path d="M10 18h10M10 24h8" strokeWidth="1.3" />
+        </svg>
+      ),
+    },
+    {
       key: "house",
       to: "/house",
       title: "House orders",
@@ -1333,7 +1353,10 @@ export default function HomeTiles() {
           <span aria-hidden>✎</span> Send Quote
         </Link>
         <Link to="/orders/alterations" className="qbtn">
-          <span aria-hidden>▤</span> Orders
+          <span aria-hidden>▦</span> Orders
+        </Link>
+        <Link to="/stock" className="qbtn primary" data-testid="qa-stock">
+          <span aria-hidden>▣</span> Stock
         </Link>
         <Link to="/house" className="qbtn">
           <span aria-hidden>⌂</span> House
