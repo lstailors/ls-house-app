@@ -79,7 +79,7 @@ function briefAge(iso?: string | null) {
   if (!iso) return "";
   const raw = iso.includes("T") ? iso : iso.replace(" ", "T");
   // Frappe datetimes are store-local without Z — parse as local-ish
-  const ms = Date.parse(raw.endsWith("Z") || /[+\-]\d{2}:\d{2}$/.test(raw) ? raw : `${raw}`);
+  const ms = Date.parse(raw.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(raw) ? raw : `${raw}`);
   if (!Number.isFinite(ms)) return "";
   const sec = Math.max(0, Math.round((Date.now() - ms) / 1000));
   if (sec < 45) return "just now";
@@ -1353,7 +1353,7 @@ export default function HomeTiles() {
           <span aria-hidden>✎</span> Send Quote
         </Link>
         <Link to="/orders/alterations" className="qbtn">
-          <span aria-hidden>▦</span> Orders
+          <span aria-hidden>▤</span> Orders
         </Link>
         <Link to="/stock" className="qbtn primary" data-testid="qa-stock">
           <span aria-hidden>▣</span> Stock
