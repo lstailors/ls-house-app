@@ -1,6 +1,3 @@
-import { useEffect, useRef, useState } from "react";
-import { api } from "@ls/api-client";
-
 type AuthImageProps = {
   path: string;
   alt: string;
@@ -9,65 +6,18 @@ type AuthImageProps = {
   onFail?: () => void;
 };
 
-/** Load ERP photos through the authed API so private /files URLs actually render. */
+/** Public ERP /files URLs load as a normal image. Private paths use the API proxy URL. */
 export default function AuthImage({ path, alt, className, fit = "cover", onFail }: AuthImageProps) {
-  const box = useRef<HTMLDivElement>(null);
-  const [src, setSrc] = useState<string | null>(null);
-  const [visible, setVisible] = useState(true);
-
-  useEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) setVisible(true);
-      },
-      { rootMargin: "320px" },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!visible || !path) return;
-    if (/^https?:\/\//i.test(path) && !/\/api\//.test(path)) {
-      setSrc(path);
-      return;
-    }
-
-    let objectUrl: string | null = null;
-    let cancelled = false;
-    const endpoint = path.replace(/^https?:\/\/[^/]+/, "");
-
-    void (async () => {
-      try {
-        const res = await api.raw(endpoint);
-        if (!res.ok) throw new Error(String(res.status));
-        const blob = await res.blob();
-        if (cancelled) return;
-        if (!blob.type.startsWith("image/")) throw new Error(blob.type || "not image");
-        objectUrl = URL.createObjectURL(blob);
-        setSrc(objectUrl);
-      } catch {
-        if (!cancelled) onFail?.();
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [visible, path, onFail]);
+  if (!path) return <div className={className} />;
 
   return (
-    <div ref={box} className={className}>
-      {src ? (
-        <img
-          src={src}
-          alt={alt}
-          className={fit === "contain" ? "w-full h-full object-contain" : "w-full h-full object-cover"}
-        />
-      ) : null}
+    <div className={className}>
+      <img
+        src={path}
+        alt={alt}
+        className={fit === "contain" ? "w-full h-full object-contain" : "w-full h-full object-cover"}
+        onError={() => onFail?.()}
+      />
     </div>
   );
 }

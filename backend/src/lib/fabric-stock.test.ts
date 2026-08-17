@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   indexFilesByName,
   indexYzstkItems,
+  browserPhotoUrl,
   photoProxyUrl,
   resolvePiecePhoto,
   safeErpFilePath,
@@ -86,8 +87,20 @@ describe("resolvePiecePhoto", () => {
   });
 });
 
+describe("browserPhotoUrl", () => {
+  test("uses the public ERP URL for /files so the browser can <img> it", () => {
+    expect(browserPhotoUrl("/files/YZSTK-081.jpg")).toBe("https://erp.lstailors.com/files/YZSTK-081.jpg");
+  });
+
+  test("proxies private files", () => {
+    expect(browserPhotoUrl("/private/files/LST STOCK FABRIC AND LINING (1).jpg")).toBe(
+      photoProxyUrl("/private/files/LST STOCK FABRIC AND LINING (1).jpg"),
+    );
+  });
+});
+
 describe("serializeStockPiece", () => {
-  test("returns a proxied photo URL the gallery can fetch", () => {
+  test("returns a public ERP photo URL the gallery can show", () => {
     const item = serializeStockPiece(
       {
         name: "FSP-00934",
@@ -102,8 +115,8 @@ describe("serializeStockPiece", () => {
       new Map(),
       new Map(),
     );
-    expect(item.photoUrl).toBe(photoProxyUrl("/files/YZSTK-081.jpg"));
-    expect(item.photoUrl).toContain("/api/files/erp?path=");
+    expect(item.photoUrl).toBe("https://erp.lstailors.com/files/YZSTK-081.jpg");
+    expect(item.photoUrl).not.toContain("/api/files/erp");
     expect(item.pieceNo).toBe(81);
   });
 });

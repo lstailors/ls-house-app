@@ -16,9 +16,14 @@ export const fabricStockRouter = new Hono();
 const DOCTYPE = "LSH Fabric Stock Piece";
 
 async function loadPhotoIndexes() {
-  const [lstFiles, yzFiles, items] = await Promise.all([
+  const [lstFiles, sdcFiles, yzFiles, items] = await Promise.all([
     erpList<FileHint>("File", {
       filters: [["file_name", "like", "LST STOCK FABRIC%"]],
+      fields: ["name", "file_name", "file_url"],
+      limit: 500,
+    }),
+    erpList<FileHint>("File", {
+      filters: [["file_name", "like", "SDC STOCK FABRIC%"]],
       fields: ["name", "file_name", "file_url"],
       limit: 500,
     }),
@@ -34,7 +39,7 @@ async function loadPhotoIndexes() {
     }),
   ]);
   return {
-    filesByName: indexFilesByName([...lstFiles, ...yzFiles]),
+    filesByName: indexFilesByName([...lstFiles, ...sdcFiles, ...yzFiles]),
     yzstkImages: indexYzstkItems(items),
   };
 }
