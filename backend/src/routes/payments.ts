@@ -350,6 +350,112 @@ paymentsRouter.post("/cash", async (c) => {
   }
 });
 
+
+// POST /api/payments/outside — Cash / Check / Square handheld (already collected)
+// Records PE via lsh_house.checkout so drawer/check/handheld can be matched later.
+paymentsRouter.post("/outside", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const body = (await c.req.json().catch(() => null)) as {
+    invoice?: string;
+    ticket?: string;
+    method?: string;
+    amount?: number;
+    check_number?: string;
+    reference?: string;
+  } | null;
+  if (!body?.invoice && !body?.ticket) {
+    return c.json({ error: { message: "invoice or ticket is required" } }, 400);
+  }
+  const method = String(body.method || "").trim().toLowerCase();
+  if (!method) {
+    return c.json({ error: { message: "method is required (cash|check|square_handheld)" } }, 400);
+  }
+
+  try {
+    const result = await callErpMethodFirst(
+      [
+        "lsh_house.checkout.record_outside_payment",
+        "ls_alterations.api.record_cash_payment",
+        "ls_alterations.ls_square.pos.record_cash_payment",
+      ],
+      {
+        ...(body.ticket ? { ticket: body.ticket } : refFor(body.invoice!)),
+        method,
+        ...(body.amount != null ? { amount: body.amount } : {}),
+        ...(body.check_number ? { check_number: body.check_number } : {}),
+        ...(body.reference ? { reference: body.reference } : {}),
+      },
+    );
+    return c.json(result);
+  } catch (e) {
+    // Cash-only ERP fallback for method=cash when lsh_house missing
+    if (method === "cash") {
+      try {
+        const result = await callErpMethodFirst(squareErpMethods("record_cash_payment"), {
+          ...(body.ticket ? { ticket: body.ticket } : refFor(body.invoice!)),
+          ...(body.amount != null ? { amount: body.amount } : {}),
+        });
+        return c.json(result);
+      } catch {
+        /* fall through */
+      }
+    }
+    const message = e instanceof Error ? e.message : "Could not record payment";
+    return c.json({ error: { message } }, 502);
+  }
+});
+
+// GET /api/payments/outside — outstanding + method options + void eligibility
+paymentsRouter.get("/outside", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  const ticket = c.req.query("ticket") || undefined;
+  const invoice = c.req.query("invoice") || undefined;
+  if (!ticket && !invoice) {
+    return c.json({ error: { message: "ticket or invoice is required" } }, 400);
+  }
+  try {
+    const result = await callErpMethod("lsh_house.checkout.get_checkout_payment", {
+      ...(ticket ? { ticket } : {}),
+      ...(invoice ? { invoice } : {}),
+    });
+    return c.json(result);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not load checkout payment";
+    return c.json({ error: { message } }, 502);
+  }
+});
+
+// POST /api/payments/outside/void — cancel PE + unstamp ticket (undo mistake)
+paymentsRouter.post("/outside/void", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const body = (await c.req.json().catch(() => null)) as {
+    invoice?: string;
+    ticket?: string;
+    payment_entry?: string;
+    confirm?: number | boolean | string;
+  } | null;
+  if (!body?.invoice && !body?.ticket) {
+    return c.json({ error: { message: "invoice or ticket is required" } }, 400);
+  }
+  try {
+    const result = await callErpMethod("lsh_house.checkout.void_outside_payment", {
+      ...(body.ticket ? { ticket: body.ticket } : {}),
+      ...(body.invoice ? { invoice: body.invoice } : {}),
+      ...(body.payment_entry ? { payment_entry: body.payment_entry } : {}),
+      confirm: body.confirm ?? 1,
+    });
+    return c.json(result);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not void payment";
+    return c.json({ error: { message } }, 502);
+  }
+});
+
 // GET /api/payments/terminals — counter + mobile device ids
 paymentsRouter.get("/terminals", async (c) => {
   const user = await getAuthedUser(c);
