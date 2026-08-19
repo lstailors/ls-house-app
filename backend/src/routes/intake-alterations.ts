@@ -1686,6 +1686,175 @@ intakeAlterationsRouter.patch('/tickets/:name/status', async (c) => {
   }
 });
 
+// 8b. POST /tickets/:name/cancel — void whole ticket (customer mind-change / test cleanup)
+// Soft-cancel via workflow Cancel. Does not hard-delete. Best-effort cancels unpaid SI + queued DN.
+intakeAlterationsRouter.post('/tickets/:name/cancel', async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+  const ticketName = c.req.param('name');
+  const body = (await c.req.json().catch(() => ({}))) as {
+    reason?: string;
+    cancel_invoice?: boolean;
+    cancel_delivery?: boolean;
+  };
+  const reason = String(body.reason || '').trim();
+  const cancelInvoice = body.cancel_invoice !== false;
+  const cancelDelivery = body.cancel_delivery !== false;
+
+  try {
+    const doc = await mcpGet<any>('Alteration Ticket', ticketName);
+    const state = String(doc.workflow_state || '');
+    if (state === 'Cancelled') {
+      return c.json({ data: { ok: true, status: 'already_cancelled', ticket: ticketName } });
+    }
+    if (state === 'Picked Up') {
+      return c.json({
+        error: {
+          message:
+            'Ticket is already Picked Up — cannot void. Create a re-do ticket if needed.',
+        },
+      }, 400);
+    }
+
+    // Workflow Cancel (Received / In Progress / Ready → Cancelled)
+    const res = await fetch(`${ERP_BASE}/api/method/frappe.model.workflow.apply_workflow`, {
+      method: 'POST',
+      headers: erpHeaders(),
+      body: JSON.stringify({
+        doc: JSON.stringify({ doctype: 'Alteration Ticket', name: ticketName }),
+        action: 'Cancel',
+      }),
+    });
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as any;
+      // Fallback: direct status write if workflow role still blocks
+      try {
+        await erpUpdate('Alteration Ticket', ticketName, { workflow_state: 'Cancelled' });
+      } catch (e2: any) {
+        return c.json({
+          error: {
+            message: `Cancel failed: ${err._server_messages ?? err.message ?? res.status} / ${e2?.message || e2}`,
+          },
+        }, 502);
+      }
+    }
+
+    const result: Record<string, unknown> = {
+      ok: true,
+      ticket: ticketName,
+      status: 'Cancelled',
+      reason: reason || null,
+      invoice_cancelled: null as string | null,
+      delivery_cancelled: null as string | null,
+    };
+
+    // Cancel unpaid SI so client is not charged
+    const invName = doc.sales_invoice as string | undefined;
+    if (cancelInvoice && invName) {
+      try {
+        const inv = await mcpGet<any>('Sales Invoice', invName);
+        const outstanding = Number(inv.outstanding_amount ?? 0);
+        const paid = String(inv.status || '') === 'Paid' || outstanding <= 0.02;
+        if (!paid && Number(inv.docstatus) === 1) {
+          await erpRunMethod('frappe.client.cancel', { doctype: 'Sales Invoice', name: invName });
+          result.invoice_cancelled = invName;
+        } else if (!paid && Number(inv.docstatus) === 0) {
+          await erpRunMethod('frappe.client.delete', { doctype: 'Sales Invoice', name: invName }).catch(async () => {
+            await erpUpdate('Sales Invoice', invName, { docstatus: 2 } as any).catch(() => undefined);
+          });
+          result.invoice_cancelled = invName;
+        } else {
+          result.invoice_cancelled = null;
+          result.invoice_note = 'Invoice already paid or zero outstanding — left in place';
+        }
+      } catch (e: any) {
+        result.invoice_error = e?.message || 'invoice_cancel_failed';
+      }
+    }
+
+    // Cancel linked Queued delivery
+    if (cancelDelivery) {
+      try {
+        const linked = (doc.linked_delivery as string | undefined) || null;
+        let dn = linked;
+        if (!dn) {
+          const list = await erpList<any>('LSH Delivery', {
+            filters: [['lsh_alteration_ticket', '=', ticketName]],
+            fields: ['name', 'lsh_status'],
+            limit: 5,
+          });
+          dn = list.find((d: any) => d.lsh_status !== 'Cancelled' && d.lsh_status !== 'Delivered')?.name || null;
+        }
+        if (dn) {
+          const ddoc = await mcpGet<any>('LSH Delivery', dn).catch(() => null);
+          const st = String(ddoc?.lsh_status || '');
+          if (st && st !== 'Delivered' && st !== 'Cancelled') {
+            await erpUpdate('LSH Delivery', dn, {
+              lsh_status: 'Cancelled',
+              lsh_cancelled_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
+            });
+            result.delivery_cancelled = dn;
+          }
+        }
+      } catch (e: any) {
+        result.delivery_error = e?.message || 'delivery_cancel_failed';
+      }
+    }
+
+    // Audit comment
+    const who = user.name || user.email || 'Staff';
+    const note = reason
+      ? `Ticket cancelled by ${who}. Reason: ${reason}`
+      : `Ticket cancelled by ${who}.`;
+    await erpRunMethod('frappe.client.add_comment', {
+      reference_doctype: 'Alteration Ticket',
+      reference_name: ticketName,
+      content: note,
+      comment_email: user.email || 'ops@lstailors.com',
+      comment_by: who,
+    }).catch(() => undefined);
+
+    return c.json({ data: result });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message || 'Cancel failed' } }, 502);
+  }
+});
+
+// 8c. POST /tickets/:name/reopen — undo cancel (Cancelled → Received)
+intakeAlterationsRouter.post('/tickets/:name/reopen', async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+  const ticketName = c.req.param('name');
+  try {
+    const doc = await mcpGet<any>('Alteration Ticket', ticketName);
+    if (String(doc.workflow_state) !== 'Cancelled') {
+      return c.json({ error: { message: `Ticket is ${doc.workflow_state}, not Cancelled` } }, 400);
+    }
+    const res = await fetch(`${ERP_BASE}/api/method/frappe.model.workflow.apply_workflow`, {
+      method: 'POST',
+      headers: erpHeaders(),
+      body: JSON.stringify({
+        doc: JSON.stringify({ doctype: 'Alteration Ticket', name: ticketName }),
+        action: 'Reopen',
+      }),
+    });
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as any;
+      try {
+        await erpUpdate('Alteration Ticket', ticketName, { workflow_state: 'Received' });
+      } catch (e2: any) {
+        return c.json({
+          error: { message: `Reopen failed: ${err.message ?? res.status} / ${e2?.message || e2}` },
+        }, 502);
+      }
+    }
+    return c.json({ data: { ok: true, ticket: ticketName, status: 'Received' } });
+  } catch (e: any) {
+    return c.json({ error: { message: e?.message || 'Reopen failed' } }, 502);
+  }
+});
+
 /** Multi-bubble unpaid-release SMS. No-op if paid / N/A / no phone / zero balance. */
 async function notifyUnpaidRelease(
   ticketName: string,
