@@ -121,10 +121,25 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
         delivery_zip: values.zip || null,
         zip: values.zip || null,
         driverName: values.driverName || null,
-        garmentSummary: values.garmentSummary || null,
         notes: values.notes || null,
         orderRef: selected?.orderRef ?? null,
         alteration_ticket: selected?.alterationTicket ?? null,
+        alterationTicket: selected?.alterationTicket ?? null,
+        // Standalone OK — no ticket/SO required
+        garmentCount: Number(values.garmentCount) >= 1 ? Number(values.garmentCount) : 1,
+        garmentSummary: (
+          values.garmentSummary ||
+          selected?.garmentSummary ||
+          `${
+            values.method === "In-Store Pickup" || values.method === "Pickup"
+              ? "Pickup"
+              : "Delivery"
+          } for ${
+            isNew
+              ? selected?.customerName || "customer"
+              : selected?.customerName || values.customerId || "customer"
+          }`
+        ).trim(),
         // Always save typed address onto customer so next delivery pulls it
         saveAddressToCustomer: values.saveAddressToCustomer !== false,
       });
@@ -505,19 +520,6 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
                 placeholder="Driver name"
                 {...register("driverName")}
                 className="bg-[#162118]/60 border-[#c9a84c]/20 text-[#f5f0e8] placeholder:text-[#8a7560] focus:border-[#c9a84c]/50"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-[11px] uppercase tracking-widest text-[#8a7560]">Garment Summary (optional)</Label>
-              <textarea
-                placeholder="2-piece navy suit, white dress shirt…"
-                {...register("garmentSummary")}
-                rows={2}
-                className={cn(
-                  "w-full rounded-md border border-[#c9a84c]/20 bg-[#162118]/60 px-3 py-2 text-sm text-[#f5f0e8]",
-                  "placeholder:text-[#8a7560] focus:outline-none focus:border-[#c9a84c]/50 resize-none",
-                )}
               />
             </div>
 
