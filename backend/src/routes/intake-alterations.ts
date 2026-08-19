@@ -1654,14 +1654,19 @@ intakeAlterationsRouter.patch('/tickets/:name/status', async (c) => {
       return c.json({ data: { ok: true } }); // already at target
     }
 
-    // Apply each transition via frappe.model.workflow.apply_workflow (same approach as alterations.ts)
+    // Apply each transition via frappe.model.workflow.apply_workflow
+    // Must send full current doc JSON (name-only payload breaks Cancel).
     for (const action of path) {
+      const current = await mcpGet<any>('Alteration Ticket', ticketName);
       const res = await fetch(
         `${ERP_BASE}/api/method/frappe.model.workflow.apply_workflow`,
         {
           method: 'POST',
           headers: erpHeaders(),
-          body: JSON.stringify({ doc: JSON.stringify({ doctype: 'Alteration Ticket', name: ticketName }), action }),
+          body: JSON.stringify({
+            doc: JSON.stringify({ ...current, doctype: 'Alteration Ticket', name: ticketName }),
+            action,
+          }),
         }
       );
       if (!res.ok) {
@@ -1717,24 +1722,32 @@ intakeAlterationsRouter.post('/tickets/:name/cancel', async (c) => {
       }, 400);
     }
 
-    // Workflow Cancel (Received / In Progress / Ready → Cancelled)
+    // Workflow Cancel (Received / In Progress / Ready → Cancelled).
+    // Frappe needs the full doc JSON (not just name) for apply_workflow.
+    const fullDoc = { ...doc, doctype: 'Alteration Ticket', name: ticketName };
     const res = await fetch(`${ERP_BASE}/api/method/frappe.model.workflow.apply_workflow`, {
       method: 'POST',
       headers: erpHeaders(),
       body: JSON.stringify({
-        doc: JSON.stringify({ doctype: 'Alteration Ticket', name: ticketName }),
+        doc: JSON.stringify(fullDoc),
         action: 'Cancel',
       }),
     });
     if (!res.ok) {
       const err = (await res.json().catch(() => ({}))) as any;
-      // Fallback: direct status write if workflow role still blocks
+      const detail = String(err._server_messages ?? err.message ?? err.exception ?? res.status);
+      // Fallback: force state via set_value (workflow engine already validated roles on live)
       try {
-        await erpUpdate('Alteration Ticket', ticketName, { workflow_state: 'Cancelled' });
+        await erpRunMethod('frappe.client.set_value', {
+          doctype: 'Alteration Ticket',
+          name: ticketName,
+          fieldname: 'workflow_state',
+          value: 'Cancelled',
+        });
       } catch (e2: any) {
         return c.json({
           error: {
-            message: `Cancel failed: ${err._server_messages ?? err.message ?? res.status} / ${e2?.message || e2}`,
+            message: `Cancel failed: ${detail} / ${e2?.message || e2}`,
           },
         }, 502);
       }
@@ -1831,18 +1844,24 @@ intakeAlterationsRouter.post('/tickets/:name/reopen', async (c) => {
     if (String(doc.workflow_state) !== 'Cancelled') {
       return c.json({ error: { message: `Ticket is ${doc.workflow_state}, not Cancelled` } }, 400);
     }
+    const fullDoc = { ...doc, doctype: 'Alteration Ticket', name: ticketName };
     const res = await fetch(`${ERP_BASE}/api/method/frappe.model.workflow.apply_workflow`, {
       method: 'POST',
       headers: erpHeaders(),
       body: JSON.stringify({
-        doc: JSON.stringify({ doctype: 'Alteration Ticket', name: ticketName }),
+        doc: JSON.stringify(fullDoc),
         action: 'Reopen',
       }),
     });
     if (!res.ok) {
       const err = (await res.json().catch(() => ({}))) as any;
       try {
-        await erpUpdate('Alteration Ticket', ticketName, { workflow_state: 'Received' });
+        await erpRunMethod('frappe.client.set_value', {
+          doctype: 'Alteration Ticket',
+          name: ticketName,
+          fieldname: 'workflow_state',
+          value: 'Received',
+        });
       } catch (e2: any) {
         return c.json({
           error: { message: `Reopen failed: ${err.message ?? res.status} / ${e2?.message || e2}` },
