@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import {
   Terminal,
+  Smartphone,
+  Banknote,
   Loader2,
   CheckCircle2,
   AlertTriangle,
@@ -9,7 +11,6 @@ import {
 import { Button } from "@ls/design/ui/button";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -28,6 +29,8 @@ type Stage =
   | "completed"
   | "error";
 
+type PayMethod = "counter" | "mobile" | "cash";
+
 interface ChargeTerminalButtonProps {
   invoiceId: string;
   amountCents: number;
@@ -36,6 +39,7 @@ interface ChargeTerminalButtonProps {
   ticketId?: string;
   onSuccess: () => void;
   onError: (msg: string) => void;
+  autoStart?: boolean;
 }
 
 export function ChargeTerminalButton({
@@ -45,9 +49,11 @@ export function ChargeTerminalButton({
   ticketId,
   onSuccess,
   onError,
+  autoStart,
 }: ChargeTerminalButtonProps) {
   const [stage, setStage] = useState<Stage>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
+  const [mobileReady, setMobileReady] = useState<boolean | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -63,6 +69,31 @@ export function ChargeTerminalButton({
   };
 
   useEffect(() => () => cleanup(), []);
+
+  useEffect(() => {
+    if (autoStart && stage === "idle") setStage("confirming");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
+
+  useEffect(() => {
+    if (stage !== "confirming") return;
+    let cancelled = false;
+    api
+      .raw("/api/payments/terminals")
+      .then((res) => res.json().catch(() => ({})))
+      .then((data) => {
+        if (cancelled) return;
+        const terminals = data?.terminals ?? data?.data?.terminals ?? [];
+        const mobile = terminals.find((t: { id?: string }) => t.id === "mobile");
+        setMobileReady(Boolean(mobile?.configured || mobile?.device_id));
+      })
+      .catch(() => {
+        if (!cancelled) setMobileReady(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [stage]);
 
   const pollCheckoutStatus = (checkoutId: string) => {
     pollRef.current = setInterval(async () => {
@@ -99,9 +130,8 @@ export function ChargeTerminalButton({
     }, 3 * 60 * 1000);
   };
 
-  const handleConfirm = async () => {
+  const startTerminal = async (device: "counter" | "mobile") => {
     setStage("sending");
-
     try {
       const res = await api.raw("/api/payments/terminal-checkout", {
         method: "POST",
@@ -109,6 +139,7 @@ export function ChargeTerminalButton({
         body: JSON.stringify({
           ...(ticketId ? { ticket: ticketId } : { invoice: invoiceId }),
           amount: amountCents / 100,
+          device,
         }),
       });
 
@@ -124,12 +155,49 @@ export function ChargeTerminalButton({
       setStage("waiting");
       pollCheckoutStatus(checkoutId as string);
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to reach terminal";
+      const msg = err instanceof Error ? err.message : "Failed to reach terminal";
       setStage("error");
       setErrorMsg(msg);
       onError(msg);
     }
+  };
+
+  const startCash = async () => {
+    setStage("sending");
+    try {
+      const res = await api.raw("/api/payments/cash", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(ticketId ? { ticket: ticketId } : { invoice: invoiceId }),
+          amount: amountCents / 100,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error?.message ?? data?.error ?? "Could not record cash");
+      }
+      if (data?.ok === false && data?.status === "already_paid") {
+        setStage("completed");
+        onSuccess();
+        return;
+      }
+      if (data?.ok === false) {
+        throw new Error(data?.error?.message ?? data?.error ?? "Could not record cash");
+      }
+      setStage("completed");
+      onSuccess();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not record cash";
+      setStage("error");
+      setErrorMsg(msg);
+      onError(msg);
+    }
+  };
+
+  const handleMethod = (method: PayMethod) => {
+    if (method === "cash") return startCash();
+    return startTerminal(method);
   };
 
   const reset = () => {
@@ -190,29 +258,79 @@ export function ChargeTerminalButton({
         <AlertDialogContent className="bg-forest-raised/95 backdrop-blur-xl border-brass/30 text-cream">
           <AlertDialogHeader>
             <AlertDialogTitle className="font-display italic text-2xl">
-              Send to Terminal?
+              Collect {amountDisplay}
             </AlertDialogTitle>
             <AlertDialogDescription className="text-cream-muted leading-relaxed">
-              This will send{" "}
-              <span className="text-brass font-semibold">{amountDisplay}</span>{" "}
-              to the Square Terminal. The customer will be prompted to tap or
-              insert their card.
+              Send this balance to a Square terminal, or record cash in ERP.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="grid gap-2 py-2">
+            <MethodButton
+              icon={<Terminal className="h-4 w-4" />}
+              label="Counter Terminal"
+              hint="Fixed Square Terminal at the desk"
+              onClick={() => handleMethod("counter")}
+            />
+            <MethodButton
+              icon={<Smartphone className="h-4 w-4" />}
+              label="Mobile Terminal"
+              hint={
+                mobileReady === false
+                  ? "Set Mobile Device ID in Square Integration Settings"
+                  : "Handheld / mobile Square reader"
+              }
+              disabled={mobileReady === false}
+              onClick={() => handleMethod("mobile")}
+            />
+            <MethodButton
+              icon={<Banknote className="h-4 w-4" />}
+              label="Cash"
+              hint="Posts a Cash Payment Entry now"
+              onClick={() => handleMethod("cash")}
+            />
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel className="border-brass/20 text-cream-muted hover:bg-brass/10 hover:text-cream">
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirm}
-              className="bg-brass text-forest-deep hover:bg-brass-light font-semibold"
-            >
-              Confirm — {amountDisplay}
-            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function MethodButton({
+  icon,
+  label,
+  hint,
+  disabled,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  hint: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "flex items-start gap-3 rounded-xl border px-4 py-3 text-left transition-colors",
+        disabled
+          ? "border-brass/10 text-cream-dim cursor-not-allowed opacity-60"
+          : "border-brass/30 hover:bg-brass/10 hover:border-brass text-cream"
+      )}
+    >
+      <span className="mt-0.5 text-brass">{icon}</span>
+      <span>
+        <span className="block font-semibold">{label}</span>
+        <span className="block text-xs text-cream-muted mt-0.5">{hint}</span>
+      </span>
+    </button>
   );
 }
 
@@ -229,7 +347,7 @@ function ButtonLabel({
     return (
       <>
         <Terminal className="h-4 w-4 mr-2 shrink-0" />
-        Charge Terminal — {amountDisplay}
+        Checkout — {amountDisplay}
       </>
     );
   }
@@ -237,7 +355,7 @@ function ButtonLabel({
     return (
       <>
         <Loader2 className="h-4 w-4 mr-2 animate-spin text-brass shrink-0" />
-        Sending to Terminal…
+        Sending…
       </>
     );
   }
