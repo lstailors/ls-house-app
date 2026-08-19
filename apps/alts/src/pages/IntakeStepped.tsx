@@ -57,3 +57,70 @@ const GARMENT_TYPES = [
   "Skirt",
   "Other",
 ] as const;
+
+type Line = {
+  id: string;
+  description: string;
+  price: number;
+  estMinutes?: number | null;
+  presetId?: string;
+  /** per-line note → ERP line_notes */
+  notes?: string;
+  /** local preview URLs until ticket exists; then uploaded */
+  photoFiles?: File[];
+  photoPreviewUrls?: string[];
+};
+type Garment = {
+  ref: string;
+  garmentType: string;
+  color: string;
+  notes: string;
+  lines: Line[];
+  soItemKey?: string;
+  soItemName?: string;
+  /** intake condition photos (Lucia 023) — upload after ticket create */
+  photoFiles?: File[];
+  photoPreviewUrls?: string[];
+};
+type CustomerHit = {
+  id?: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  addressLine?: string;
+};
+
+
+type SellItem = {
+  ref: string;
+  item_code: string;
+  item_name: string;
+  color: string;
+  size: string;
+  qty: number;
+  rate: number;
+  availability: "in" | "order" | "out";
+  eta?: string;
+  source?: "erp" | "seed" | "house";
+  kind?: "mtm" | "rtw";
+  /** attribute options from catalog at add-time */
+  sizeOptions?: string[];
+  colorOptions?: string[];
+};
+
+type Preset = {
+  id: string;
+  preset_name: string;
+  display_name?: string;
+  garment_type?: string;
+  garment_types?: string[];
+  price: number;
+  est_minutes?: number | null;
+  is_group?: number | boolean;
+  parent_preset?: string | null;
+  item_code?: string | null;
+  quick_pick?: number | boolean;
+  sort_order?: number;
+};
+
+type Remind = "eod" | "3d" | "2w" | "never";
