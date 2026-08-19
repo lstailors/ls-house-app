@@ -355,7 +355,7 @@ def sync_payment_to_ticket(doc, method=None):
 		frappe.db.set_value("Alteration Ticket", ticket_name, "payment_status", new_status)
 
 
-# ── Thermal print (Epson TM-M30ii) ──────────────────────────────
+# ── Thermal print (Epson TM-M30ii) ──────────────────────────────────────
 # Templates live in ls_thermal/. Frappe calls /api/method/<dotted.path>; some
 # benches fail to import ls_alterations.ls_thermal as a package. These wrappers
 # sit on ls_alterations.api (same module as create_ticket) so print stays wired.
@@ -406,7 +406,7 @@ def test_printer():
 
 
 
-# ── Square POS (Terminal / cash / pay-link) ────────────────────────
+# ── Square POS (Terminal / cash / pay-link) ────────────────────────────────
 # Same reason as thermal: some benches fail to import ls_alterations.ls_square
 # as a package. Wrappers on ls_alterations.api keep checkout wired.
 # Cash posts a Payment Entry here so it works even if Square HTTP is down.
