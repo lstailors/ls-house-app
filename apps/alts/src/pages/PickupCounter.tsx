@@ -9,6 +9,7 @@ import { cn } from "@ls/design/utils";
 import { billingStatusLabel } from "@alts/lib/billingLabels";
 import { ChargeCardOnFileButton } from "@alts/components/payments/ChargeCardOnFileButton";
 import { ChargeTerminalButton } from "@alts/components/payments/ChargeTerminalButton";
+import { OutsideTenderButtons } from "@alts/components/payments/OutsideTenderButtons";
 import { parsePickupScanTarget } from "@alts/lib/scanRoutes";
 import {
   addPickupBagKey,
@@ -1241,6 +1242,54 @@ export default function PickupCounter() {
                     </div>
                     {!chargeArmed && (
                       <>
+                        <OutsideTenderButtons
+                          fullWidth
+                          ticketId={
+                            chargeTarget.kind === "ticket"
+                              ? chargeTarget.id
+                              : chargeTicketId || undefined
+                          }
+                          invoiceId={
+                            chargeTarget.kind === "invoice"
+                              ? chargeTarget.id
+                              : chargeInvoiceId || undefined
+                          }
+                          amountDollars={chargeAmount}
+                          amountDisplay={money(chargeAmount)}
+                          onSuccess={(info) => {
+                            if (info.status === "voided") {
+                              toast.success("Payment voided — refreshing…");
+                              refreshAll();
+                              return;
+                            }
+                            const methodLabel =
+                              info.method === "check"
+                                ? "Check"
+                                : info.method === "square_handheld"
+                                  ? "Square handheld"
+                                  : info.method === "cash"
+                                    ? "Cash"
+                                    : "Outside payment";
+                            setReceipt({
+                              client: chargeTarget.customerName,
+                              invoices: bagInvoices
+                                .map((i) => i.id)
+                                .concat(
+                                  chargeTarget.kind === "invoice"
+                                    ? [chargeTarget.id]
+                                    : chargeInvoiceId
+                                      ? [chargeInvoiceId]
+                                      : [],
+                                )
+                                .filter((v, i, a) => a.indexOf(v) === i),
+                              amount: chargeAmount,
+                              method: methodLabel,
+                            });
+                            refreshAll();
+                          }}
+                          onError={(msg) => toast.error(msg)}
+                        />
+                        <div className="h-px bg-brass/15 my-1" />
                         <button
                           type="button"
                           onClick={() => setChargeIntent("card")}

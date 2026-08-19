@@ -29,6 +29,7 @@ import { cn } from "@ls/design/utils"
 import { useMe } from '@ls/auth'
 import type { CartPayload } from '@alts/lib/cart/parked'
 import { ChargeTerminalButton } from '@alts/components/payments/ChargeTerminalButton'
+import { OutsideTenderButtons } from '@alts/components/payments/OutsideTenderButtons'
 import { ChargeCardOnFileButton } from '@alts/components/payments/ChargeCardOnFileButton'
 import { EditTicketDrawer } from '@alts/components/alterations/EditTicketDrawer'
 import { payUrl } from '@alts/lib/printUrls'
@@ -1554,26 +1555,56 @@ export default function TicketDetail() {
           </div>
 
           {ticket.payment_status === 'Paid' ? (
-            <div className="mt-3 flex flex-wrap items-center gap-3 justify-end">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-900/30 px-3 py-1.5 text-sm text-emerald-300">
-                <CheckCircle2 size={14} /> Paid ✓
-              </span>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => printReceiptMutation.mutate()}
-                disabled={printReceiptMutation.isPending}
-                className="border-brass/20 text-cream-muted hover:bg-brass/10 hover:text-cream"
-              >
-                {printReceiptMutation.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Printer className="h-4 w-4 mr-1.5" />}
-                Print Receipt
-              </Button>
+            <div className="mt-3 flex flex-col items-end gap-2">
+              <div className="flex flex-wrap items-center gap-3 justify-end">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-900/30 px-3 py-1.5 text-sm text-emerald-300">
+                  <CheckCircle2 size={14} /> Paid ✓
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => printReceiptMutation.mutate()}
+                  disabled={printReceiptMutation.isPending}
+                  className="border-brass/20 text-cream-muted hover:bg-brass/10 hover:text-cream"
+                >
+                  {printReceiptMutation.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Printer className="h-4 w-4 mr-1.5" />}
+                  Print Receipt
+                </Button>
+              </div>
+              <OutsideTenderButtons
+                ticketId={ticket.name}
+                invoiceId={ticket.sales_invoice || undefined}
+                amountDollars={ticketBillTotal(ticket)}
+                amountDisplay={formatCurrency(ticketBillTotal(ticket))}
+                showVoid
+                onSuccess={(info) => {
+                  toast.success(info.status === 'voided' ? 'Payment voided — refreshing…' : 'Updated — refreshing…')
+                  queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
+                }}
+                onError={(msg: string) => toast.error(msg)}
+              />
             </div>
           ) : ticket.payment_status !== 'Paid' && ticketBillTotal(ticket) > 0 ? (
             <div className="mt-3 flex flex-col items-stretch gap-2">
               <p className="text-xs text-cream-dim text-right">
                 Pickup allowed unpaid — client gets balance SMS on release.
               </p>
+              <div className="flex flex-col items-end gap-2 w-full">
+              <OutsideTenderButtons
+                ticketId={ticket.name}
+                invoiceId={ticket.sales_invoice || undefined}
+                amountDollars={ticketBillTotal(ticket)}
+                amountDisplay={formatCurrency(ticketBillTotal(ticket))}
+                onSuccess={(info) => {
+                  toast.success(
+                    info.status === 'voided'
+                      ? 'Payment voided — refreshing…'
+                      : `Recorded ${info.method || 'payment'} — refreshing…`,
+                  )
+                  queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
+                }}
+                onError={(msg: string) => toast.error(msg)}
+              />
               <div className="flex flex-wrap items-center gap-3 justify-end">
               <ChargeTerminalButton
                 invoiceId={ticket.sales_invoice || ticket.name}
@@ -1642,6 +1673,7 @@ export default function TicketDetail() {
                   SMS unpaid balance
                 </Button>
               )}
+              </div>
               </div>
             </div>
           ) : null}
