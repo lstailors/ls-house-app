@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   humanizeSquareTerminalError,
   isMissingLsSquareModule,
+  squareErpMethods,
 } from "./square-checkout";
 
 describe("isMissingLsSquareModule", () => {
@@ -28,6 +29,21 @@ describe("isMissingLsSquareModule", () => {
       false,
     );
     expect(isMissingLsSquareModule(new Error("DEVICE_BUSY"))).toBe(false);
+  });
+});
+
+describe("squareErpMethods", () => {
+  test("prefers ls_alterations.api wrappers", () => {
+    expect(squareErpMethods("create_checkout")).toEqual([
+      "ls_alterations.api.create_checkout",
+      "ls_alterations.ls_square.pos.create_checkout",
+    ]);
+    expect(squareErpMethods("record_cash_payment")[0]).toBe(
+      "ls_alterations.api.record_cash_payment",
+    );
+    expect(squareErpMethods("receive")).toContain(
+      "ls_alterations.api.receive_square_webhook",
+    );
   });
 });
 
