@@ -115,7 +115,9 @@ export default function DeliveryDetail() {
       qc.invalidateQueries({ queryKey: ["delivery", id] });
       qc.invalidateQueries({ queryKey: ["deliveries"] });
       toast.success("Delivery cancelled");
-    } catch { toast.error("Could not cancel delivery"); }
+    } catch (e) {
+      toast.error((e as Error)?.message || "Could not cancel delivery");
+    }
   };
 
   if (isLoading) {

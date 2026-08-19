@@ -166,6 +166,11 @@ export function canCreateDelivery(role: UserRole): boolean {
   );
 }
 
+/** Status changes (cancel, dispatch, delivered) — same floor roles as create. */
+export function canUpdateDelivery(role: UserRole): boolean {
+  return canCreateDelivery(role) || role === "driver";
+}
+
 export function canReassignTailor(role: UserRole): boolean {
   return role === "super_admin" || role === "store_manager";
 }
