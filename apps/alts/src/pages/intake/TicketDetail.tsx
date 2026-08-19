@@ -21,6 +21,8 @@ import {
   ShoppingCart,
   Loader2,
   Plus,
+  Ban,
+  RotateCcw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@ls/api-client'
@@ -1015,6 +1017,8 @@ export default function TicketDetail() {
   const [paymentLinkOpen, setPaymentLinkOpen] = useState(false)
   const [paymentLink, setPaymentLink] = useState<PaymentLinkResult | null>(null)
   const [editOpen, setEditOpen] = useState(false)
+  const [cancelOpen, setCancelOpen] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
   const { data: me } = useMe()
 
   const [autoNotify, setAutoNotify] = useState<boolean>(() => {
@@ -1173,9 +1177,56 @@ export default function TicketDetail() {
         queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
       }, 3000)
     },
-    onError: () => {
-      toast.error('Failed to update status')
+    onError: (e: Error) => {
+      toast.error(e?.message || 'Failed to update status')
     },
+  })
+
+  const cancelTicketMutation = useMutation({
+    mutationFn: (reason: string) =>
+      api.post<{
+        ok: boolean
+        status?: string
+        invoice_cancelled?: string | null
+        delivery_cancelled?: string | null
+        invoice_note?: string
+      }>(`/api/intake-alterations/tickets/${ticketName}/cancel`, {
+        reason: reason || undefined,
+        cancel_invoice: true,
+        cancel_delivery: true,
+      }),
+    onSuccess: (data) => {
+      toast.success('Ticket cancelled / voided')
+      if (data?.invoice_cancelled) toast.message(`Invoice ${data.invoice_cancelled} cancelled`)
+      if (data?.delivery_cancelled) toast.message(`Delivery ${data.delivery_cancelled} cancelled`)
+      if (data?.invoice_note) toast.message(String(data.invoice_note))
+      setCancelOpen(false)
+      setCancelReason('')
+      queryClient.setQueryData(['ticket', ticketName], (old: any) =>
+        old ? { ...old, workflow_state: 'Cancelled' } : old,
+      )
+      queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
+      queryClient.invalidateQueries({ queryKey: ['shop-floor-tickets'] })
+      queryClient.invalidateQueries({ queryKey: ['deliveries'] })
+    },
+    onError: (e: Error) => toast.error(e?.message || 'Could not cancel ticket'),
+  })
+
+  const reopenTicketMutation = useMutation({
+    mutationFn: () =>
+      api.post<{ ok: boolean; status?: string }>(
+        `/api/intake-alterations/tickets/${ticketName}/reopen`,
+        {},
+      ),
+    onSuccess: () => {
+      toast.success('Ticket reopened')
+      queryClient.setQueryData(['ticket', ticketName], (old: any) =>
+        old ? { ...old, workflow_state: 'Received' } : old,
+      )
+      queryClient.invalidateQueries({ queryKey: ['ticket', ticketName] })
+      queryClient.invalidateQueries({ queryKey: ['shop-floor-tickets'] })
+    },
+    onError: (e: Error) => toast.error(e?.message || 'Could not reopen ticket'),
   })
 
   const printTicketMutation = useMutation({
@@ -1392,6 +1443,38 @@ export default function TicketDetail() {
                 <ShoppingCart size={12} />
                 {openInIntakeMutation.isPending ? 'Creating…' : 'Open in Intake'}
               </button>
+              {ticket.workflow_state !== 'Cancelled' && ticket.workflow_state !== 'Picked Up' && (
+                <button
+                  type="button"
+                  onClick={() => setCancelOpen(true)}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-all min-h-11',
+                    'bg-red-950/40 border-red-500/40 text-red-300 hover:bg-red-900/50',
+                  )}
+                >
+                  <Ban size={12} />
+                  Cancel / void
+                </button>
+              )}
+              {ticket.workflow_state === 'Cancelled' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('Reopen this cancelled ticket to Received?')) {
+                      reopenTicketMutation.mutate()
+                    }
+                  }}
+                  disabled={reopenTicketMutation.isPending}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-all min-h-11',
+                    'bg-brass/15 border-brass/40 text-brass hover:bg-brass/25',
+                    'disabled:opacity-50',
+                  )}
+                >
+                  <RotateCcw size={12} />
+                  {reopenTicketMutation.isPending ? 'Reopening…' : 'Reopen ticket'}
+                </button>
+              )}
             </div>
             <InlineDueDate ticket={ticket} ticketName={ticketName!} />
           </div>
@@ -1862,6 +1945,58 @@ export default function TicketDetail() {
           </div>
         </DialogContent>
       </Dialog>
+
+      
+      {/* Cancel / void whole ticket */}
+      {cancelOpen && (
+        <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-red-500/30 bg-forest-raised p-5 space-y-4 shadow-2xl">
+            <div>
+              <h2 className="text-lg font-semibold text-red-200 flex items-center gap-2">
+                <Ban size={18} /> Cancel / void ticket?
+              </h2>
+              <p className="text-sm text-cream-muted mt-2 leading-relaxed">
+                Marks <span className="font-mono text-brass-light">{ticket.name}</span> as{' '}
+                <strong>Cancelled</strong> (not deleted). Use for test cleanup or when the
+                client changes their mind. Unpaid invoice and queued delivery are cancelled
+                when possible.
+              </p>
+            </div>
+            <label className="block text-xs uppercase tracking-widest text-cream-dim">
+              Reason (optional)
+              <textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                rows={3}
+                placeholder="e.g. Client cancelled · test ticket · wrong customer"
+                className="mt-1.5 w-full rounded-lg border border-brass/25 bg-forest-deep px-3 py-2 text-sm text-cream placeholder:text-cream-dim/60 resize-none"
+              />
+            </label>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => { setCancelOpen(false); setCancelReason('') }}
+                className="px-4 h-11 rounded-lg border border-brass/25 text-cream-muted text-sm"
+              >
+                Keep ticket
+              </button>
+              <button
+                type="button"
+                disabled={cancelTicketMutation.isPending}
+                onClick={() => cancelTicketMutation.mutate(cancelReason)}
+                className="px-4 h-11 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-semibold disabled:opacity-50 inline-flex items-center gap-2"
+              >
+                {cancelTicketMutation.isPending ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Ban size={14} />
+                )}
+                Yes, cancel ticket
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <EditTicketDrawer
         open={editOpen}
