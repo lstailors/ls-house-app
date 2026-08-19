@@ -139,14 +139,24 @@ def _ensure_invoice_submitted(inv):
     return inv
 
 
+def _wants_specific_device(device_id=None, device=None):
+    if (device_id or "").strip():
+        return True
+    return (device or "").strip().lower() in ("mobile", "handheld", "reader")
+
+
 @frappe.whitelist()
-def create_checkout(code=None, invoice=None, ticket=None):
+def create_checkout(code=None, invoice=None, ticket=None, device_id=None, device=None):
     """
     TERMINAL flow: resolve to an invoice and push a Terminal Checkout for the
     outstanding amount. Pass either `code` (scanned QR text), `invoice`, or
     `ticket`.
 
-    HER-63 P0-3: reuse an open Terminal Square Checkout when present.
+    device: "counter" (default) or "mobile" / "handheld" / "reader".
+    device_id: optional Square device id that overrides settings.
+
+    HER-63 P0-3: reuse an open Terminal Square Checkout when present and the
+    caller did not ask for a different device.
     Auto-submits draft alteration invoices so intake can charge immediately.
     """
     inv_name = _resolve_invoice(code=code, invoice=invoice, ticket=ticket)
@@ -158,24 +168,28 @@ def create_checkout(code=None, invoice=None, ticket=None):
     if outstanding <= 0:
         return {"ok": False, "status": "already_paid", "invoice": inv_name}
 
-    existing = _open_checkout(inv_name, "Terminal")
-    if existing and existing.get("checkout_id"):
-        return {
-            "ok": True,
-            "status": "reused_open_checkout",
-            "method": "terminal",
-            "invoice": inv_name,
-            "amount": flt(existing.get("amount") or outstanding),
-            "checkout_id": existing.get("checkout_id"),
-            "square_checkout": existing.get("name"),
-            "reused": True,
-        }
+    if not _wants_specific_device(device_id, device):
+        existing = _open_checkout(inv_name, "Terminal")
+        if existing and existing.get("checkout_id"):
+            return {
+                "ok": True,
+                "status": "reused_open_checkout",
+                "method": "terminal",
+                "device": (device or "counter"),
+                "invoice": inv_name,
+                "amount": flt(existing.get("amount") or outstanding),
+                "checkout_id": existing.get("checkout_id"),
+                "square_checkout": existing.get("name"),
+                "reused": True,
+            }
 
     amount_cents = int(round(outstanding * 100))
+    resolved_device = client.resolve_device_id(device_id=device_id, device=device)
     checkout = client.create_terminal_checkout(
         amount_cents=amount_cents,
         reference_id=inv_name,
         note="L&S {} - {}".format(inv_name, inv.customer_name or inv.customer),
+        device_id=resolved_device,
     )
     sc = _record(inv_name, "Terminal", outstanding,
                  checkout_id=checkout.get("id"))
@@ -183,6 +197,8 @@ def create_checkout(code=None, invoice=None, ticket=None):
         "ok": True,
         "status": "pushed_to_terminal",
         "method": "terminal",
+        "device": (device or "counter"),
+        "device_id": resolved_device,
         "invoice": inv_name,
         "amount": outstanding,
         "checkout_id": checkout.get("id"),
@@ -298,6 +314,103 @@ def checkout_status(checkout_id):
     """Poll a terminal checkout (e.g. to show progress on the iPad)."""
     c = client.get_terminal_checkout(checkout_id)
     return {"status": c.get("status"), "payment_ids": c.get("payment_ids") or []}
+
+
+@frappe.whitelist()
+def list_terminals():
+    """Return configured counter + mobile Square Terminal device ids."""
+    s = client.get_settings()
+    counter = (s.device_id or "").strip()
+    mobile = (getattr(s, "mobile_device_id", None) or "").strip()
+    return {
+        "ok": True,
+        "terminals": [
+            {
+                "id": "counter",
+                "label": "Counter Terminal",
+                "device_id": counter,
+                "configured": bool(counter),
+            },
+            {
+                "id": "mobile",
+                "label": "Mobile Terminal",
+                "device_id": mobile,
+                "configured": bool(mobile),
+            },
+        ],
+    }
+
+
+def _stamp_ticket_payment(inv_name, payment_method, reference, ticket=None):
+    tname = ticket or _ticket_for_invoice(inv_name)
+    if not tname:
+        return None
+    values = {
+        "square_payment_method": payment_method,
+        "paid_at": frappe.utils.now(),
+    }
+    if reference:
+        values["square_transaction_id"] = reference
+    employee = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
+    if employee:
+        values["paid_by_employee"] = employee
+    frappe.db.set_value("Alteration Ticket", tname, values, update_modified=False)
+    return tname
+
+
+def _post_payment_entry(inv, amount, mode_of_payment, reference_no, remarks=None):
+    from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
+
+    pe = get_payment_entry("Sales Invoice", inv.name, party_amount=amount)
+    pe.mode_of_payment = mode_of_payment
+    pe.reference_no = (reference_no or mode_of_payment)[:140]
+    pe.reference_date = frappe.utils.today()
+    if remarks:
+        pe.remarks = remarks[:140]
+    pe.flags.ignore_permissions = True
+    pe.insert(ignore_permissions=True)
+    pe.submit()
+    return pe
+
+
+@frappe.whitelist()
+def record_cash_payment(code=None, invoice=None, ticket=None, amount=None):
+    """
+    Record a cash Payment Entry against the invoice outstanding.
+    Does not talk to Square. Amount defaults to full outstanding.
+    """
+    inv_name = _resolve_invoice(code=code, invoice=invoice, ticket=ticket)
+    inv = frappe.get_doc("Sales Invoice", inv_name)
+    inv = _ensure_invoice_submitted(inv)
+
+    outstanding = flt(inv.outstanding_amount)
+    if outstanding <= 0:
+        return {"ok": False, "status": "already_paid", "invoice": inv_name}
+
+    charge_amt = flt(amount) if amount is not None else outstanding
+    if charge_amt <= 0:
+        frappe.throw("amount must be positive")
+    if charge_amt - outstanding > 0.02:
+        frappe.throw("amount {} exceeds outstanding {}".format(charge_amt, outstanding))
+
+    pe = _post_payment_entry(
+        inv,
+        charge_amt,
+        "Cash",
+        "CASH-{}".format(inv_name),
+        remarks="Cash for {} ({})".format(inv_name, ticket or ""),
+    )
+    stamped = _stamp_ticket_payment(inv_name, "Cash", pe.name, ticket=ticket)
+    frappe.db.commit()
+    return {
+        "ok": True,
+        "status": "cash_recorded",
+        "method": "cash",
+        "invoice": inv_name,
+        "ticket": stamped,
+        "amount": charge_amt,
+        "payment_entry": pe.name,
+    }
 
 
 # ---------------------------------------------------------------------------
