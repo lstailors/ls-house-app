@@ -18,7 +18,6 @@ import { findCustomerByPhone } from "../lib/erpnext/customers";
 import { approveEmailDraft, discardEmailDraft } from "../lib/erpnext/email-drafts";
 import { getAuthedUser } from "../lib/scope";
 import { requireCronOrSession } from "../lib/require-secret";
-import { dispatchSms } from "../lib/outbound";
 // sendSms and alertCarl defined locally below
 
 // ── Constants ──
@@ -101,9 +100,29 @@ async function twilioSend(
   body: string,
   mediaUrl?: string
 ): Promise<{ ok: boolean; sid?: string; error?: string; status?: number }> {
-  const result = await dispatchSms({ to, body, mediaUrl, source: "sofia.twilioSend" });
-  if (result.sid) return { ok: true, sid: result.sid, status: 200 };
-  return { ok: false, error: result.reason ?? "send_failed" };
+  const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID ?? "";
+  const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? "";
+  const TWILIO_MSG_SVC = process.env.TWILIO_MSG_SERVICE_SID ?? "MG9221599972ec362cb5e2f051430e0421";
+  const twilioAuth = btoa(`${TWILIO_SID}:${TWILIO_TOKEN}`);
+  const params = new URLSearchParams({ To: to, Body: body, MessagingServiceSid: TWILIO_MSG_SVC });
+  if (mediaUrl) params.append("MediaUrl", mediaUrl);
+  const r = await fetch(
+    `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${twilioAuth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    }
+  );
+  let data: any = null;
+  try {
+    data = await r.json();
+  } catch {}
+  if (r.status >= 200 && r.status < 300 && data?.sid) return { ok: true, sid: data.sid, status: r.status };
+  return { ok: false, error: data?.message ?? `HTTP ${r.status}`, status: r.status };
 }
 
 // legacy wrapper for non-SMS parts of the file
@@ -457,15 +476,30 @@ async function buildLocalSofiaConversations() {
   );
 }
 
+/** Canonical Alteration Ticket statuses from ERP Select options — never invent synonyms. */
+const ALT_TICKET_STATUSES = ["Received", "In Progress", "Ready", "Picked Up", "Cancelled"] as const;
+
+function clientFacingAltStatus(raw: unknown): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  // Exact ERP workflow_state only (Received | In Progress | Ready | Picked Up | Cancelled)
+  if ((ALT_TICKET_STATUSES as readonly string[]).includes(s)) return s;
+  return null;
+}
+
 function formatTicketSummary(ticket: any): string {
+  const status = clientFacingAltStatus(ticket.workflow_state);
+  const total = ticket.ticket_total ?? ticket.grand_total;
+  const pay = ticket.payment_status ? String(ticket.payment_status) : null;
   const parts = [
     ticket.name ? `Ticket ${ticket.name}` : "Alteration ticket",
     ticket.customer_name ? `for ${ticket.customer_name}` : null,
-    ticket.workflow_state ? `is ${ticket.workflow_state}` : null,
+    status ? `status ${status}` : null,
     ticket.due_date ? `due ${ticket.due_date}` : null,
-    ticket.grand_total ? `total $${ticket.grand_total}` : null,
+    total != null && total !== "" ? `total $${total}` : null,
+    pay ? `payment ${pay}` : null,
   ].filter(Boolean);
-  return parts.join(" ");
+  return parts.join(" · ");
 }
 
 async function getAlterationTicketsForPhone(phone: string) {
@@ -473,25 +507,42 @@ async function getAlterationTicketsForPhone(phone: string) {
   const last10 = phoneLast10(normalized);
   if (!last10) return [];
 
-  const rows = await erpList<any>("Alteration Ticket", {
-    fields: [
-      "name",
-      "customer",
-      "customer_name",
-      "customer_phone",
-      "workflow_state",
-      "due_date",
-      "grand_total",
-      "modified",
-      "creation",
-      "sales_invoice",
-      "origin_location",
-    ],
-    order_by: "modified desc",
-    limit: 25,
-  });
+  const fields = [
+    "name",
+    "customer",
+    "customer_name",
+    "customer_phone",
+    "workflow_state",
+    "due_date",
+    "ticket_total",
+    "payment_status",
+    "modified",
+    "creation",
+    "sales_invoice",
+    "origin_location",
+  ];
 
-  return (rows ?? []).filter((ticket: any) => samePhone(ticket.customer_phone, normalized)).slice(0, 10);
+  // Prefer ERP-side phone match (last-10) so we are not capped to the global newest 25 tickets.
+  let rows = await erpList<any>("Alteration Ticket", {
+    filters: [["customer_phone", "like", `%${last10}`]],
+    fields,
+    order_by: "modified desc",
+    limit: 15,
+  }).catch(() => [] as any[]);
+
+  // Fallback: broader pull + samePhone (handles weird formatting / missing last-10 hits)
+  if (!rows?.length) {
+    const broad = await erpList<any>("Alteration Ticket", {
+      fields,
+      order_by: "modified desc",
+      limit: 100,
+    }).catch(() => [] as any[]);
+    rows = (broad ?? []).filter((ticket: any) => samePhone(ticket.customer_phone, normalized));
+  } else {
+    rows = (rows ?? []).filter((ticket: any) => samePhone(ticket.customer_phone, normalized));
+  }
+
+  return (rows ?? []).slice(0, 10);
 }
 
 async function getAlterationTicketByName(ticketName: string) {
@@ -506,7 +557,8 @@ async function getAlterationTicketByName(ticketName: string) {
       "customer_phone",
       "workflow_state",
       "due_date",
-      "grand_total",
+      "ticket_total",
+      "payment_status",
       "modified",
       "creation",
       "sales_invoice",
@@ -1605,12 +1657,20 @@ RESCHEDULE/CANCEL POLICY: To reschedule or cancel, call get_fitting_history firs
 ORDER POLICY: When a client asks about their order status, due date, or garments -- call lookup_orders first. For delivery requests, change requests, pickup scheduling, or questions you cannot resolve from the data, use submit_order_request to alert Carl's team -- then tell the client: "I've passed your request to the team and they'll be in touch shortly."
 
 ALTERATION POLICY: When a client asks about their alterations, tailoring, or garments:
-1. Call get_customer_tickets to retrieve their tickets by phone.
-2. For status: summarize the ticket state naturally (e.g. "Your jacket is Ready for pickup").
-3. For payment: call send_payment_link -- this texts them the link directly. No need to tell them to visit a website.
-4. For delivery: collect their address, then call request_delivery -- this creates a real delivery order in the system and notifies the team. Confirm to the client once created.
-5. To share their ticket page: call send_ticket_link -- texts a signed link to alts.lstailors.com where they can see full details.
-Always be proactive: if a client's ticket is Ready and they haven't paid, offer the payment link. If they're asking about pickup, offer delivery as an option.
+1. Call get_customer_tickets (by phone) or get_ticket_status (by ticket name like ALT-NYC-2026-00042). Never invent a ticket or status.
+2. Status vocabulary is ERP-only — use the exact workflow_state string from the tool: Received | In Progress | Ready | Picked Up | Cancelled. Do NOT invent custom labels (no "at the cleaners", "with the tailor", "almost done", "in QC", "shipping soon") unless that exact phrase appears in tool output.
+3. Client-friendly phrasing must still map 1:1: Received → "we've received it"; In Progress → "it's in progress with our team"; Ready → "it's ready for pickup"; Picked Up → "already picked up"; Cancelled → "cancelled".
+4. For payment: call send_payment_link — texts the link directly.
+5. For delivery: collect address, then request_delivery — real ERP delivery + team notify.
+6. To share the ticket page: send_ticket_link (alts.lstailors.com).
+7. If tools return no ticket: say you don't see one on file and offer to check with the shop (escalate_to_carl or take_message) — never fabricate.
+Always be proactive: if status is Ready and payment is Unpaid, offer the payment link. If they're asking about pickup, offer delivery as an option.
+
+SHOP CONNECTION (SMS): You cannot cold-transfer a text thread to a live shop phone. When the client asks for a human / the shop / Carl:
+- Call escalate_to_carl with a clear reason + summary (texts Carl; preferred for judgment / complaints / "connect me").
+- Also call take_message so the shop has a written note.
+- Tell the client plainly: you have alerted the shop and someone will follow up shortly; for an immediate live voice line they can call the main shop number (212) 752-1638 during open hours.
+Never pretend you transferred them on SMS.
 
 IMPORTANT: get_fitting_history auto-searches by the caller's inbound phone as fallback, so even Apple Calendar appointments (which may not have a customer_id link) will surface -- always check before saying no appointment exists.`;
 

@@ -713,12 +713,60 @@ async def voice_stream(
                             log_collector=tool_call_log,
                         )
 
-                        if tool_name == "forward_call" and stream_sid:
-                            await websocket.send_json({
-                                "event": "redirect",
-                                "streamSid": stream_sid,
-                                "redirect": {"url": f"{settings.BASE_URL}/voice/forward"},
-                            })
+                        if tool_name == "forward_call":
+                            # Preferred: Media Stream redirect to TwiML Dial.
+                            if stream_sid:
+                                try:
+                                    await websocket.send_json({
+                                        "event": "redirect",
+                                        "streamSid": stream_sid,
+                                        "redirect": {"url": f"{settings.BASE_URL}/voice/forward"},
+                                    })
+                                    logger.info(
+                                        "forward_call stream redirect sent streamSid=%s url=%s/voice/forward",
+                                        stream_sid,
+                                        settings.BASE_URL,
+                                    )
+                                except Exception as redir_err:
+                                    logger.error("forward_call stream redirect failed: %s", redir_err)
+                            # Reliable fallback: Twilio REST Updates the live Call with Dial TwiML.
+                            # Media-stream "redirect" is flaky under barge-in / no streamSid — REST works.
+                            if sid:
+                                try:
+                                    forward_twiml = (
+                                        '<?xml version="1.0" encoding="UTF-8"?>'
+                                        "<Response>"
+                                        '<Say voice="Polly.Joanna">One moment please, I am connecting you now.</Say>'
+                                        f"<Dial>{settings.FORWARD_TO_NUMBER}</Dial>"
+                                        "</Response>"
+                                    )
+                                    twilio_client.calls(sid).update(twiml=forward_twiml)
+                                    logger.info(
+                                        "forward_call REST update ok CallSid=%s to=%s",
+                                        sid,
+                                        settings.FORWARD_TO_NUMBER,
+                                    )
+                                    if isinstance(result, dict):
+                                        result = {
+                                            **result,
+                                            "rest_transfer": True,
+                                            "call_sid": sid,
+                                            "forward_to": settings.FORWARD_TO_NUMBER,
+                                        }
+                                except Exception as rest_err:
+                                    logger.error(
+                                        "forward_call REST update FAILED CallSid=%s: %s",
+                                        sid,
+                                        rest_err,
+                                    )
+                                    if isinstance(result, dict):
+                                        result = {
+                                            **result,
+                                            "rest_transfer": False,
+                                            "rest_error": str(rest_err),
+                                        }
+                            else:
+                                logger.error("forward_call: no CallSid (sid) on stream — cannot REST-transfer")
 
                         await grok_ws.send(json.dumps({
                             "type": "conversation.item.create",
