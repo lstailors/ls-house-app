@@ -355,7 +355,7 @@ def sync_payment_to_ticket(doc, method=None):
 		frappe.db.set_value("Alteration Ticket", ticket_name, "payment_status", new_status)
 
 
-# ── Thermal print (Epson TM-M30ii) ──────────────────────────────────────────
+# ── Thermal print (Epson TM-M30ii) ──────────────────────────────
 # Templates live in ls_thermal/. Frappe calls /api/method/<dotted.path>; some
 # benches fail to import ls_alterations.ls_thermal as a package. These wrappers
 # sit on ls_alterations.api (same module as create_ticket) so print stays wired.
@@ -404,3 +404,175 @@ def print_pay_link(ticket=None, invoice=None, reprint=0):
 def test_printer():
 	return _thermal_api().test_printer()
 
+
+
+# ── Square POS (Terminal / cash / pay-link) ────────────────────────
+# Same reason as thermal: some benches fail to import ls_alterations.ls_square
+# as a package. Wrappers on ls_alterations.api keep checkout wired.
+# Cash posts a Payment Entry here so it works even if Square HTTP is down.
+
+
+def _square_mod(name):
+	"""Load ls_square.<name> from the package paths used on this bench."""
+	import importlib
+
+	errors = []
+	for mod in (
+		"ls_alterations.ls_square.{}".format(name),
+		"ls_alterations.ls_alterations.ls_square.{}".format(name),
+	):
+		try:
+			return importlib.import_module(mod)
+		except ModuleNotFoundError as e:
+			errors.append("{}: {}".format(mod, e))
+	try:
+		from . import ls_square as pkg
+
+		return importlib.import_module(pkg.__name__ + "." + name)
+	except Exception as e:
+		errors.append("relative: {}".format(e))
+	frappe.throw(
+		"Square POS module is not importable on this bench. Tried: "
+		+ "; ".join(errors)
+	)
+
+
+@frappe.whitelist()
+def create_checkout(code=None, invoice=None, ticket=None, device_id=None, device=None):
+	return _square_mod("pos").create_checkout(
+		code=code,
+		invoice=invoice,
+		ticket=ticket,
+		device_id=device_id,
+		device=device,
+	)
+
+
+@frappe.whitelist()
+def create_payment_link(code=None, invoice=None, ticket=None):
+	return _square_mod("pos").create_payment_link(
+		code=code, invoice=invoice, ticket=ticket
+	)
+
+
+@frappe.whitelist()
+def checkout_status(checkout_id):
+	return _square_mod("pos").checkout_status(checkout_id)
+
+
+@frappe.whitelist()
+def list_terminals():
+	"""Configured counter + mobile Square Terminals. Safe if ls_square is missing."""
+	try:
+		return _square_mod("pos").list_terminals()
+	except Exception:
+		s = frappe.get_cached_doc("Square Integration Settings")
+		counter = (s.device_id or "").strip()
+		mobile = (getattr(s, "mobile_device_id", None) or "").strip()
+		return {
+			"ok": True,
+			"terminals": [
+				{
+					"id": "counter",
+					"label": "Counter Terminal",
+					"device_id": counter,
+					"configured": bool(counter),
+				},
+				{
+					"id": "mobile",
+					"label": "Mobile Terminal",
+					"device_id": mobile,
+					"configured": bool(mobile),
+				},
+			],
+		}
+
+
+def _resolve_invoice_for_cash(code=None, invoice=None, ticket=None):
+	if invoice:
+		return invoice
+	if ticket:
+		inv_name = frappe.db.get_value("Alteration Ticket", ticket, "sales_invoice")
+		if not inv_name:
+			frappe.throw("Ticket {} has no Sales Invoice yet".format(ticket))
+		return inv_name
+	token = (code or "").strip().rstrip("/").split("/")[-1]
+	if frappe.db.exists("Sales Invoice", token):
+		return token
+	if frappe.db.exists("Alteration Ticket", token):
+		inv_name = frappe.db.get_value("Alteration Ticket", token, "sales_invoice")
+		if not inv_name:
+			frappe.throw("Ticket {} has no Sales Invoice yet".format(token))
+		return inv_name
+	frappe.throw("Could not resolve scanned code: {}".format(token))
+
+
+@frappe.whitelist()
+def record_cash_payment(code=None, invoice=None, ticket=None, amount=None):
+	"""
+	Cash Payment Entry against SI outstanding. Does not call Square.
+	Lives on ls_alterations.api so FOH can collect cash even when ls_square
+	is not importable on the bench.
+	"""
+	from frappe.utils import flt
+	from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
+
+	inv_name = _resolve_invoice_for_cash(code=code, invoice=invoice, ticket=ticket)
+	inv = frappe.get_doc("Sales Invoice", inv_name)
+	if inv.docstatus == 2:
+		frappe.throw("Invoice {} is cancelled".format(inv.name))
+	if inv.docstatus == 0:
+		inv.flags.ignore_permissions = True
+		inv.submit()
+		inv.reload()
+
+	outstanding = flt(inv.outstanding_amount)
+	if outstanding <= 0:
+		return {"ok": False, "status": "already_paid", "invoice": inv_name}
+
+	charge_amt = flt(amount) if amount is not None else outstanding
+	if charge_amt <= 0:
+		frappe.throw("amount must be positive")
+	if charge_amt - outstanding > 0.02:
+		frappe.throw("amount {} exceeds outstanding {}".format(charge_amt, outstanding))
+
+	pe = get_payment_entry("Sales Invoice", inv.name, party_amount=charge_amt)
+	pe.mode_of_payment = "Cash"
+	pe.reference_no = "CASH-{}".format(inv_name)[:140]
+	pe.reference_date = frappe.utils.today()
+	pe.remarks = "Cash for {} ({})".format(inv_name, ticket or "")[:140]
+	pe.flags.ignore_permissions = True
+	pe.insert(ignore_permissions=True)
+	pe.submit()
+
+	tname = ticket or frappe.db.get_value(
+		"Alteration Ticket", {"sales_invoice": inv_name}, "name"
+	)
+	if tname:
+		values = {
+			"square_payment_method": "Cash",
+			"square_transaction_id": pe.name,
+			"paid_at": frappe.utils.now(),
+		}
+		employee = frappe.db.get_value(
+			"Employee", {"user_id": frappe.session.user}, "name"
+		)
+		if employee:
+			values["paid_by_employee"] = employee
+		frappe.db.set_value("Alteration Ticket", tname, values, update_modified=False)
+
+	frappe.db.commit()
+	return {
+		"ok": True,
+		"status": "cash_recorded",
+		"method": "cash",
+		"invoice": inv_name,
+		"ticket": tname,
+		"amount": charge_amt,
+		"payment_entry": pe.name,
+	}
+
+
+@frappe.whitelist(allow_guest=True)
+def receive_square_webhook():
+	return _square_mod("webhook").receive()
