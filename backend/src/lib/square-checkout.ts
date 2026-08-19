@@ -10,8 +10,23 @@ export function isMissingLsSquareModule(err: unknown): boolean {
     /No module named ['"]ls_alterations\.ls_square['"]/i.test(msg) ||
     /has no attribute ['"]create_(checkout|payment_link)['"]/i.test(msg) ||
     /has no attribute ['"]receive['"]/i.test(msg) ||
+    /has no attribute ['"]record_cash_payment['"]/i.test(msg) ||
     /Failed to get method for command/i.test(msg)
   );
+}
+
+/** Try stable ls_alterations.api wrappers first, then the nested ls_square path. */
+export function squareErpMethods(name: "create_checkout" | "create_payment_link" | "checkout_status" | "list_terminals" | "record_cash_payment" | "receive"): string[] {
+  if (name === "receive") {
+    return [
+      "ls_alterations.api.receive_square_webhook",
+      "ls_alterations.ls_square.webhook.receive",
+    ];
+  }
+  return [
+    `ls_alterations.api.${name}`,
+    `ls_alterations.ls_square.pos.${name}`,
+  ];
 }
 
 export function humanizeSquareTerminalError(err: unknown): string {

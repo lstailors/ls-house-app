@@ -103,22 +103,44 @@ def _request(method, path, body=None, retries=3, timeout=15):
         retries, last))
 
 
-def create_terminal_checkout(amount_cents, reference_id, note=None,
-                             idempotency_key=None):
+def resolve_device_id(device_id=None, device=None):
     """
-    Push a checkout to the Square Terminal device. The customer taps their
-    card on the terminal. reference_id carries our Sales Invoice name so the
-    resulting webhook can be reconciled back.
+    Counter terminal = settings.device_id.
+    Mobile / handheld = settings.mobile_device_id (Custom Field).
+    An explicit device_id always wins.
     """
     s = get_settings()
-    if not s.device_id:
+    explicit = (device_id or "").strip()
+    if explicit:
+        return explicit
+    kind = (device or "counter").strip().lower()
+    if kind in ("mobile", "handheld", "reader"):
+        mobile = (getattr(s, "mobile_device_id", None) or "").strip()
+        if not mobile:
+            raise frappe.ValidationError(
+                "No Square mobile terminal configured. "
+                "Set Mobile Device ID on Square Integration Settings."
+            )
+        return mobile
+    counter = (s.device_id or "").strip()
+    if not counter:
         raise frappe.ValidationError("No Square Terminal device_id configured")
+    return counter
+
+
+def create_terminal_checkout(amount_cents, reference_id, note=None,
+                             idempotency_key=None, device_id=None, device=None):
+    """
+    Push a checkout to a Square Terminal (counter or mobile/handheld).
+    reference_id carries our Sales Invoice name so the webhook can reconcile.
+    """
+    resolved = resolve_device_id(device_id=device_id, device=device)
     body = {
         "idempotency_key": idempotency_key or frappe.generate_hash(length=24),
         "checkout": {
             "amount_money": {"amount": int(amount_cents), "currency": "USD"},
             "reference_id": (reference_id or "")[:40],
-            "device_options": {"device_id": s.device_id},
+            "device_options": {"device_id": resolved},
         },
     }
     if note:

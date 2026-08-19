@@ -9,3 +9,4 @@ ls_alterations.patches.v2_0.install_print_format
 ls_alterations.patches.v2_0.backfill_invoices
 ls_alterations.patches.v2_0.ensure_workflow_states
 ls_alterations.patches.v2_0.repair_alteration_schema
+ls_alterations.patches.v2_0.add_square_mobile_device_id
