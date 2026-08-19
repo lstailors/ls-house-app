@@ -665,7 +665,9 @@ deliveriesRouter.post("/", async (c) => {
     };
     const method = methodMap[methodRaw] || "Hand Delivery";
 
-    // Part 1.4 — standalone create requires garment count ≥ 1 when no ticket
+    // Standalone create (no ticket / SO) is allowed — floor often queues a run
+    // first and attaches the order later. Default piece count + summary so ERP
+    // never blocks on empty garment fields.
     const ticketLink = body.alterationTicket ?? body.alteration_ticket ?? null;
     let garmentCount = body.garmentCount ?? body.garment_count ?? null;
     let garmentSummary = body.garmentSummary ?? body.garment_summary ?? null;
@@ -687,11 +689,13 @@ deliveriesRouter.post("/", async (c) => {
         /* best-effort */
       }
     }
-    if (!ticketLink && (!garmentCount || Number(garmentCount) < 1)) {
-      return c.json({ error: { message: "garmentCount ≥ 1 required for standalone deliveries" } }, 400);
-    }
-    if (!ticketLink && !String(garmentSummary || "").trim()) {
-      return c.json({ error: { message: "garmentSummary required for standalone deliveries" } }, 400);
+    if (!garmentCount || Number(garmentCount) < 1) garmentCount = 1;
+    if (!String(garmentSummary || "").trim()) {
+      const who =
+        String(body.customer_name ?? body.customerName ?? body.newCustomerName ?? "").trim() ||
+        "customer";
+      const isPickup = method === "Pickup";
+      garmentSummary = isPickup ? `Pickup for ${who}` : `Delivery for ${who}`;
     }
 
     // Date-only → noon Eastern for Datetime field
