@@ -44,3 +44,16 @@ import IntakeConfirm, {
 import { enqueueIntakeTicket } from "@alts/lib/offlineQueue";
 import AddressAutocomplete from "@alts/components/intake/AddressAutocomplete";
 import { formatMoney } from "@alts/lib/money";
+
+const GARMENT_TYPES = [
+  "Jacket",
+  "Trouser",
+  "Shirt",
+  "Dress",
+  "Coat",
+  "Vest",
+  "Suit (2pc)",
+  "Suit (3pc)",
+  "Skirt",
+  "Other",
+] as const;
