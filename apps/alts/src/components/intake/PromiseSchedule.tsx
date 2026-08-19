@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { cn } from "@ls/design/utils";
 
 export type DayLoad = {
@@ -38,18 +38,18 @@ export type PromiseScheduleProps = {
   lead?: ReactNode;
 };
 
-/** FOH promise slots — last is shop EOD default when date-only. */
+/** FOH promise slots — 4 PM is used when staff skip the time picker. */
+export const DEFAULT_PROMISE_TIME = "16:00";
+
 export const PROMISE_SLOTS = [
   { value: "10:00", label: "10 AM" },
-  { value: "11:00", label: "11 AM" },
-  { value: "12:00", label: "12 PM" },
-  { value: "13:00", label: "1 PM" },
-  { value: "14:00", label: "2 PM" },
-  { value: "15:00", label: "3 PM" },
   { value: "16:00", label: "4 PM" },
-  { value: "17:00", label: "5 PM" },
-  { value: "18:00", label: "6 PM · EOD" },
 ] as const;
+
+export function snapPromiseTime(value?: string | null): string {
+  const raw = String(value || "").trim().slice(0, 5);
+  return raw === "10:00" ? "10:00" : DEFAULT_PROMISE_TIME;
+}
 
 function loadLevel(count: number): "open" | "busy" | "full" {
   if (count <= 2) return "open";
@@ -103,6 +103,13 @@ export default function PromiseSchedule({
     () => days.find((d) => d.date === selectedDate) || null,
     [days, selectedDate],
   );
+
+  useEffect(() => {
+    const snapped = snapPromiseTime(selectedTime);
+    if (snapped !== (selectedTime || "")) {
+      onSelectTime(snapped);
+    }
+  }, [selectedTime, onSelectTime]);
 
   const [shown, setShown] = useState(14);
   const visibleDays = days.slice(0, shown);
