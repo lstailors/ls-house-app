@@ -38,6 +38,7 @@ const schema = z.object({
   state: z.string().optional(),
   zip: z.string().optional(),
   driverName: z.string().optional(),
+  garmentCount: z.coerce.number().int().min(1).max(99).default(1),
   garmentSummary: z.string().optional(),
   notes: z.string().optional(),
   saveAddressToCustomer: z.boolean().default(true),
@@ -91,6 +92,7 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
     defaultValues: {
       method: "Hand Delivery",
       originLocation: "NYC",
+      garmentCount: 1,
       saveAddressToCustomer: true,
     },
   });
@@ -139,7 +141,7 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
   };
 
   const handleClose = () => {
-    reset({ method: "Hand Delivery", originLocation: "NYC", saveAddressToCustomer: true });
+    reset({ method: "Hand Delivery", originLocation: "NYC", garmentCount: 1, saveAddressToCustomer: true });
     setSearch("");
     setSelected(null);
     setNewCustomerPhone("");
@@ -193,7 +195,7 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
       <DialogContent className="max-w-lg bg-[#0e1a14]/95 backdrop-blur-xl border-[#c9a84c]/25 text-[#f5f0e8] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display italic text-2xl text-[#f5f0e8]">
-            {createdId ? "Delivery ready" : "New Delivery"}
+            {createdId ? "Ready" : "New delivery / pickup"}
           </DialogTitle>
           <DialogDescription className="text-[#a89070]">
             {createdId
@@ -369,9 +371,15 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-[#0e1a14] border-[#c9a84c]/25 text-[#f5f0e8]">
-                    {["Hand Delivery", "Courier", "Ship Direct", "In-Store Pickup", "Uber Messenger"].map((m) => (
+                    {[
+                      "Hand Delivery",
+                      "In-Store Pickup",
+                      "Ship Direct",
+                      "Courier",
+                      "Uber Messenger",
+                    ].map((m) => (
                       <SelectItem key={m} value={m} className="focus:bg-[#c9a84c]/15 focus:text-[#f5f0e8]">
-                        {m}
+                        {m === "In-Store Pickup" ? "Pickup at shop" : m}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -389,6 +397,31 @@ export function NewDeliveryDialog({ open, onClose }: Props) {
                     </SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-[#8a7560] leading-snug -mt-1">
+              Order / ticket optional — queue a run for a customer now, attach later.
+            </p>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-[11px] uppercase tracking-widest text-[#8a7560]">Pieces</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={99}
+                  {...register("garmentCount")}
+                  className="bg-[#162118]/60 border-[#c9a84c]/20 text-[#f5f0e8] focus:border-[#c9a84c]/50"
+                />
+              </div>
+              <div className="space-y-1.5 col-span-2">
+                <Label className="text-[11px] uppercase tracking-widest text-[#8a7560]">What&apos;s going</Label>
+                <Input
+                  placeholder="Optional — e.g. 2 suits, blue coat"
+                  {...register("garmentSummary")}
+                  className="bg-[#162118]/60 border-[#c9a84c]/20 text-[#f5f0e8] placeholder:text-[#8a7560] focus:border-[#c9a84c]/50"
+                />
               </div>
             </div>
 
