@@ -5,6 +5,7 @@ import { recordCardOnFileProvenance } from "../lib/paymentProvenance";
 import {
   humanizeSquareTerminalError,
   isMissingLsSquareModule,
+  squareErpMethods,
 } from "../lib/square-checkout";
 
 export const paymentsRouter = new Hono();
@@ -53,6 +54,22 @@ async function callErpMethod<T>(method: string, body: Record<string, unknown>): 
   return ((payload as any).message ?? payload) as T;
 }
 
+async function callErpMethodFirst<T>(
+  methods: string[],
+  body: Record<string, unknown>,
+): Promise<T> {
+  let lastErr: unknown;
+  for (const method of methods) {
+    try {
+      return await callErpMethod<T>(method, body);
+    } catch (err) {
+      lastErr = err;
+      if (!isMissingLsSquareModule(err)) throw err;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("ERPNext method failed");
+}
+
 function normalizePaymentLink(result: any) {
   const data = result?.data ?? result ?? {};
   const url = data.url ?? data.payment_url ?? data.long_url ?? data.order?.checkout_page_url;
@@ -97,12 +114,15 @@ paymentsRouter.post("/link", async (c) => {
 
   const rawId = body.invoice.trim();
 
-  // 1) Try ERP method when present
+  // 1) Try ERP wrappers (api.*) then nested ls_square.pos
   try {
-    const result = await callErpMethod("ls_alterations.ls_square.pos.create_payment_link", {
-      ...refFor(rawId),
-      ...(body.amount ? { amount: body.amount } : {}),
-    });
+    const result = await callErpMethodFirst(
+      squareErpMethods("create_payment_link"),
+      {
+        ...refFor(rawId),
+        ...(body.amount ? { amount: body.amount } : {}),
+      },
+    );
     return c.json(normalizePaymentLink(result));
   } catch (erpErr) {
     const erpMsg = erpErr instanceof Error ? erpErr.message : String(erpErr);
@@ -258,17 +278,26 @@ paymentsRouter.post("/terminal-checkout", async (c) => {
     invoice?: string;
     ticket?: string;
     amount?: number;
+    device?: "counter" | "mobile" | "handheld" | "reader";
+    device_id?: string;
   } | null;
   if (!body?.invoice && !body?.ticket) {
     return c.json({ error: { message: "invoice or ticket is required" } }, 400);
   }
 
   const rawId = (body.ticket || body.invoice || "").trim();
+  const device = body.device || undefined;
+  const deviceId = (body.device_id || "").trim() || undefined;
 
   try {
-    const result = await callErpMethod("ls_alterations.ls_square.pos.create_checkout", {
-      ...(body.ticket ? { ticket: body.ticket } : refFor(body.invoice!)),
-    });
+    const result = await callErpMethodFirst(
+      squareErpMethods("create_checkout"),
+      {
+        ...(body.ticket ? { ticket: body.ticket } : refFor(body.invoice!)),
+        ...(device ? { device } : {}),
+        ...(deviceId ? { device_id: deviceId } : {}),
+      },
+    );
     return c.json(normalizeCheckout(result));
   } catch (erpErr) {
     if (!isMissingLsSquareModule(erpErr)) {
@@ -276,10 +305,76 @@ paymentsRouter.post("/terminal-checkout", async (c) => {
       return c.json({ error: { message } }, 502);
     }
     try {
-      const checkout = await mintTerminalCheckoutDirect(rawId);
+      const checkout = await mintTerminalCheckoutDirect(rawId, { device, deviceId });
       return c.json(checkout);
     } catch (e) {
       const message = humanizeSquareTerminalError(e);
+      return c.json({ error: { message } }, 502);
+    }
+  }
+});
+
+// POST /api/payments/cash — record cash against SI outstanding
+paymentsRouter.post("/cash", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const body = (await c.req.json().catch(() => null)) as {
+    invoice?: string;
+    ticket?: string;
+    amount?: number;
+  } | null;
+  if (!body?.invoice && !body?.ticket) {
+    return c.json({ error: { message: "invoice or ticket is required" } }, 400);
+  }
+
+  const rawId = (body.ticket || body.invoice || "").trim();
+  try {
+    const result = await callErpMethodFirst(squareErpMethods("record_cash_payment"), {
+      ...(body.ticket ? { ticket: body.ticket } : refFor(body.invoice!)),
+      ...(body.amount ? { amount: body.amount } : {}),
+    });
+    return c.json(result);
+  } catch (erpErr) {
+    if (!isMissingLsSquareModule(erpErr)) {
+      const message = erpErr instanceof Error ? erpErr.message : "Could not record cash";
+      return c.json({ error: { message } }, 502);
+    }
+    try {
+      const recorded = await recordCashDirect(rawId, body.amount);
+      return c.json(recorded);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Could not record cash";
+      return c.json({ error: { message } }, 502);
+    }
+  }
+});
+
+// GET /api/payments/terminals — counter + mobile device ids
+paymentsRouter.get("/terminals", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  try {
+    const result = await callErpMethodFirst(squareErpMethods("list_terminals"), {});
+    return c.json(result);
+  } catch {
+    try {
+      const settings = await erpGet<Record<string, unknown>>(
+        "Square Integration Settings",
+        "Square Integration Settings",
+      );
+      const counter = String(settings?.device_id ?? "").trim();
+      const mobile = String(settings?.mobile_device_id ?? "").trim();
+      return c.json({
+        ok: true,
+        terminals: [
+          { id: "counter", label: "Counter Terminal", device_id: counter, configured: Boolean(counter) },
+          { id: "mobile", label: "Mobile Terminal", device_id: mobile, configured: Boolean(mobile) },
+        ],
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Could not list terminals";
       return c.json({ error: { message } }, 502);
     }
   }
@@ -334,22 +429,23 @@ paymentsRouter.post("/webhook", async (c) => {
   const raw = await c.req.arrayBuffer();
 
   try {
-    const res = await fetch(
-      `${ERP_BASE}/api/method/ls_alterations.ls_square.webhook.receive`,
-      {
+    let res: Response | null = null;
+    let lastText = "";
+    for (const method of squareErpMethods("receive")) {
+      res = await fetch(`${ERP_BASE}/api/method/${method}`, {
         method: "POST",
         headers: {
           ...erpHeaders("application/json"),
           ...(signature ? { "x-square-hmacsha256-signature": signature } : {}),
         },
         body: raw,
-      },
-    );
-    const text = await res.text();
-    const missing =
-      !res.ok &&
-      isMissingLsSquareModule(text);
-    if (!missing) {
+      });
+      lastText = await res.text();
+      if (res.ok || !isMissingLsSquareModule(lastText)) break;
+    }
+    const text = lastText;
+    const missing = Boolean(res && !res.ok && isMissingLsSquareModule(text));
+    if (!missing && res) {
       return new Response(text || JSON.stringify({ ok: res.ok }), {
         status: res.status,
         headers: { "Content-Type": res.headers.get("Content-Type") ?? "application/json" },
@@ -387,12 +483,16 @@ paymentsRouter.post("/webhook", async (c) => {
 
 const SQUARE_VERSION = "2024-12-18";
 
-async function saveTerminalDeviceId(deviceId: string): Promise<void> {
+async function saveTerminalDeviceId(
+  deviceId: string,
+  target: "counter" | "mobile" = "counter",
+): Promise<void> {
   // PUT the single Square Integration Settings doc so the live checkout flow
   // (pos.create_checkout) picks up the freshly-paired device.
+  const field = target === "mobile" ? "mobile_device_id" : "device_id";
   await fetch(
     `${ERP_BASE}/api/resource/${encodeURIComponent("Square Integration Settings")}/${encodeURIComponent("Square Integration Settings")}`,
-    { method: "PUT", headers: erpHeaders(), body: JSON.stringify({ device_id: deviceId }) },
+    { method: "PUT", headers: erpHeaders(), body: JSON.stringify({ [field]: deviceId }) },
   );
 }
 
@@ -462,7 +562,8 @@ paymentsRouter.get("/terminal/pair/:id", async (c) => {
     const deviceId = dc.device_id ?? null;
     let saved = false;
     if (status === "PAIRED" && deviceId) {
-      try { await saveTerminalDeviceId(deviceId); saved = true; } catch { saved = false; }
+      const target = c.req.query("target") === "mobile" ? "mobile" : "counter";
+      try { await saveTerminalDeviceId(deviceId, target); saved = true; } catch { saved = false; }
     }
     return c.json({ ok: true, status, device_id: deviceId, saved });
   } catch (e) {
@@ -501,6 +602,7 @@ type SquareTerminalCheckout = {
  */
 async function mintTerminalCheckoutDirect(
   rawId: string,
+  opts: { device?: string; deviceId?: string } = {},
 ): Promise<{ ok: true; checkout_id: string }> {
   const token = process.env.SQUARE_ACCESS_TOKEN ?? "";
   if (!token) throw new Error("Square not configured (SQUARE_ACCESS_TOKEN)");
@@ -542,34 +644,48 @@ async function mintTerminalCheckoutDirect(
   const outstanding = Number(inv.outstanding_amount ?? inv.grand_total ?? 0) || 0;
   if (outstanding <= 0) throw new Error(`Invoice ${invoiceName} has nothing outstanding`);
 
-  try {
-    const open = await erpList<Record<string, unknown>>("Square Checkout", {
-      filters: [
-        ["invoice", "=", invoiceName],
-        ["kind", "=", "Terminal"],
-        ["status", "=", "Created"],
-      ],
-      fields: ["name", "checkout_id", "amount"],
-      order_by: "creation desc",
-      limit: 10,
-    });
-    const reused = open.find((r) => String(r.checkout_id ?? "").trim());
-    if (reused?.checkout_id) {
-      return { ok: true, checkout_id: String(reused.checkout_id) };
+  const wantsSpecific =
+    Boolean(opts.deviceId) ||
+    ["mobile", "handheld", "reader"].includes((opts.device || "").toLowerCase());
+
+  if (!wantsSpecific) {
+    try {
+      const open = await erpList<Record<string, unknown>>("Square Checkout", {
+        filters: [
+          ["invoice", "=", invoiceName],
+          ["kind", "=", "Terminal"],
+          ["status", "=", "Created"],
+        ],
+        fields: ["name", "checkout_id", "amount"],
+        order_by: "creation desc",
+        limit: 10,
+      });
+      const reused = open.find((r) => String(r.checkout_id ?? "").trim());
+      if (reused?.checkout_id) {
+        return { ok: true, checkout_id: String(reused.checkout_id) };
+      }
+    } catch {
+      /* listing is best-effort */
     }
-  } catch {
-    /* listing is best-effort */
   }
 
   const settings = await erpGet<Record<string, unknown>>(
     "Square Integration Settings",
     "Square Integration Settings",
   );
-  const deviceId =
+  const mobileId = String(settings?.mobile_device_id ?? process.env.SQUARE_MOBILE_DEVICE_ID ?? "").trim();
+  const counterId =
     String(settings?.device_id ?? "").trim() ||
     (process.env.SQUARE_TERMINAL_DEVICE_ID ?? "").trim();
+  const deviceId =
+    (opts.deviceId || "").trim() ||
+    (wantsSpecific ? mobileId : counterId);
   if (!deviceId) {
-    throw new Error("No Square Terminal device_id configured. Pair the terminal from Settings.");
+    throw new Error(
+      wantsSpecific
+        ? "No Square mobile terminal configured. Set Mobile Device ID on Square Integration Settings."
+        : "No Square Terminal device_id configured. Pair the terminal from Settings.",
+    );
   }
 
   const amountCents = Math.round(outstanding * 100);
@@ -612,6 +728,88 @@ async function mintTerminalCheckoutDirect(
   }
 
   return { ok: true, checkout_id: checkoutId };
+}
+
+async function recordCashDirect(
+  rawId: string,
+  amountOverride?: number,
+): Promise<{
+  ok: true;
+  status: string;
+  method: "cash";
+  invoice: string;
+  amount: number;
+  payment_entry?: string;
+}> {
+  let invoiceName = rawId;
+  let ticketName = "";
+  if (/^ALT/i.test(rawId)) {
+    const t = await erpGet<Record<string, unknown>>("Alteration Ticket", rawId);
+    if (!t) throw new Error(`Ticket ${rawId} not found`);
+    const si = String(t.sales_invoice ?? "").trim();
+    if (!si) throw new Error(`Ticket ${rawId} has no Sales Invoice yet`);
+    invoiceName = si;
+    ticketName = rawId;
+  }
+
+  let inv = await erpGet<Record<string, unknown>>("Sales Invoice", invoiceName);
+  if (!inv) throw new Error(`Sales Invoice ${invoiceName} not found`);
+  if (Number(inv.docstatus ?? 0) === 2) throw new Error(`Invoice ${invoiceName} is cancelled`);
+  if (Number(inv.docstatus ?? 0) === 0) {
+    await erpSubmit("Sales Invoice", invoiceName);
+    inv = (await erpGet<Record<string, unknown>>("Sales Invoice", invoiceName)) || inv;
+  }
+
+  const outstanding = Number(inv.outstanding_amount ?? inv.grand_total ?? 0) || 0;
+  if (outstanding <= 0) {
+    return { ok: true, status: "already_paid", method: "cash", invoice: invoiceName, amount: 0 };
+  }
+  const amount =
+    amountOverride && amountOverride > 0 && amountOverride <= outstanding + 0.02
+      ? amountOverride
+      : outstanding;
+
+  const pe = await erpCreate<Record<string, unknown>>("Payment Entry", {
+    payment_type: "Receive",
+    party_type: "Customer",
+    party: inv.customer,
+    paid_amount: amount,
+    received_amount: amount,
+    paid_to_account_currency: inv.currency ?? "USD",
+    company: inv.company,
+    mode_of_payment: "Cash",
+    reference_no: `CASH-${invoiceName}`.slice(0, 140),
+    reference_date: new Date().toISOString().slice(0, 10),
+    references: [
+      {
+        reference_doctype: "Sales Invoice",
+        reference_name: invoiceName,
+        allocated_amount: amount,
+      },
+    ],
+    docstatus: 1,
+  });
+
+  if (ticketName) {
+    try {
+      await erpUpdate("Alteration Ticket", ticketName, {
+        square_payment_method: "Cash",
+        square_transaction_id: pe?.name ? String(pe.name) : `CASH-${invoiceName}`,
+        paid_at: new Date().toISOString().slice(0, 19).replace("T", " "),
+      });
+    } catch {
+      /* ticket stamp is best-effort; PE is the source of truth */
+    }
+  }
+
+  return {
+    ok: true,
+    status: "cash_recorded",
+    method: "cash",
+    invoice: invoiceName,
+    amount,
+    payment_entry: pe?.name ? String(pe.name) : undefined,
+  };
 }
 
 async function applyCompletedSquareCheckout(
