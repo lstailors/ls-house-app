@@ -11,7 +11,7 @@ import {
 } from "../lib/ai";
 import type { MessageType } from "../lib/ai";
 
-import { getAuthedUser, resolveLocationCode, canCreateDelivery } from "../lib/scope";
+import { getAuthedUser, resolveLocationCode, canCreateDelivery, canUpdateDelivery } from "../lib/scope";
 import { uploadFile, erpFileAbsoluteUrl } from "../lib/erpnext/files";
 import { sendSms } from "../lib/twilio";
 import { createCustomer } from "../lib/erpnext/customers";
@@ -908,7 +908,10 @@ deliveriesRouter.patch("/:id", async (c) => {
   const existing = await erpGet<any>("LSH Delivery", docName);
   if (!existing) return c.json({ error: { message: "Not found" } }, 404);
 
-  // Write permission check
+  // Write permission — floor staff (salesperson/tailor) must cancel/dispatch too
+  if (!canUpdateDelivery(user.role)) {
+    return c.json({ error: { message: "Forbidden" } }, 403);
+  }
   if (user.role === "driver") {
     if (existing.lsh_courier_name !== user.name && existing.lsh_courier_name !== user.email) {
       return c.json({ error: { message: "Forbidden" } }, 403);
@@ -918,20 +921,47 @@ deliveriesRouter.patch("/:id", async (c) => {
     if (locCode && existing.lsh_origin_location !== locCode) {
       return c.json({ error: { message: "Forbidden" } }, 403);
     }
-  } else if (user.role !== "super_admin") {
-    return c.json({ error: { message: "Forbidden" } }, 403);
   }
 
   const body = (await c.req.json()) as any;
   const updates: Record<string, unknown> = {};
 
+  // ERP Select options only: Queued | Out for Delivery | Delivered | Cancelled | Failed
+  // (no "Ready for Pickup" on live DocType — map that to Queued)
+  const STATUS_MAP: Record<string, string> = {
+    queued: "Queued",
+    scheduled: "Queued",
+    Queued: "Queued",
+    ready_for_pickup: "Queued",
+    ready: "Queued",
+    "Ready for Pickup": "Queued",
+    out_for_delivery: "Out for Delivery",
+    "out for delivery": "Out for Delivery",
+    "In Flight": "Out for Delivery",
+    "Out for Delivery": "Out for Delivery",
+    delivered: "Delivered",
+    Delivered: "Delivered",
+    failed: "Failed",
+    Failed: "Failed",
+    cancelled: "Cancelled",
+    canceled: "Cancelled",
+    Cancelled: "Cancelled",
+    Canceled: "Cancelled",
+  };
+
   if (body.status) {
-    const erpSt = body.status === "out_for_delivery" ? "Out for Delivery"
-      : body.status === "delivered" ? "Delivered"
-      : body.status === "In Flight" ? "Out for Delivery"
-      : (body.status === "ready_for_pickup" || body.status === "ready") ? "Ready for Pickup"
-      : body.status;
+    const erpSt = STATUS_MAP[String(body.status)] || STATUS_MAP[String(body.status).toLowerCase()];
+    if (!erpSt) {
+      return c.json({
+        error: {
+          message: `Invalid status "${body.status}". Allowed: queued, out_for_delivery, delivered, failed, cancelled`,
+        },
+      }, 400);
+    }
     updates.lsh_status = erpSt;
+    if (erpSt === "Cancelled") {
+      updates.lsh_cancelled_at = erpDatetime();
+    }
     if (["delivered", "Delivered"].includes(body.status)) {
       // Part 1.5 — POD required to mark Delivered via status patch
       const probe = {
@@ -1159,9 +1189,9 @@ deliveriesRouter.patch("/:id/status", async (c) => {
   const ALLOWED_STATUSES: Record<string, string> = {
     "queued": "Queued",
     "scheduled": "Queued",   // frontend uses "scheduled" for Queued deliveries
-    "ready_for_pickup": "Ready for Pickup",
-    "ready": "Ready for Pickup",
-    "Ready for Pickup": "Ready for Pickup",
+    "ready_for_pickup": "Queued",
+    "ready": "Queued",
+    "Ready for Pickup": "Queued",
     "out_for_delivery": "Out for Delivery",
     "out for delivery": "Out for Delivery",
     "In Flight": "Out for Delivery",
