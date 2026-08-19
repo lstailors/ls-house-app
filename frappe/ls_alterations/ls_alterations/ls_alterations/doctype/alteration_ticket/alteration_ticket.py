@@ -30,12 +30,23 @@ def set_naming_series(doc, method=None):
 
 
 def ensure_rush_surcharge(doc, method=None):
-	"""NO-OP. Rush surcharge removed (C decision) — never auto-add $25.
+	RUSH_PRICE = 25.0
+	# Match both the new canonical description and the preset description
+	def _is_rush_line(l):
+		desc = (l.description or "").lower()
+		return "rush surcharge" in desc or "rush surcharge (24hr)" in desc
 
-	Kept as a named symbol so any stale hook path referencing it is harmless.
-	Hook registration was removed from hooks.py; do not re-add.
-	"""
-	return
+	has_rush_line = any(_is_rush_line(l) for l in (doc.lines or []))
+	if doc.is_rush and not has_rush_line:
+		garment_ref = (doc.garments[0].garment_id if doc.garments else "G1")
+		doc.append("lines", {
+			"garment_ref": garment_ref,
+			"description": "Rush Surcharge",
+			"price": RUSH_PRICE,
+		})
+	elif not doc.is_rush:
+		# Remove all rush lines (both naming variants) — idempotent
+		doc.lines = [l for l in (doc.lines or []) if not _is_rush_line(l)]
 
 
 def set_payment_status_na(doc, method=None):
@@ -46,19 +57,21 @@ def set_payment_status_na(doc, method=None):
 
 
 def compute_totals(doc, method=None):
-	"""Sum line prices onto garments + ticket_total.
-
-	Does NOT touch billing_status. billing_status is staff-set only
-	(Billable / Warranty / Included in Custom Order). Full dollar value
-	stays on the lines even when we do not charge — SI minting is gated
-	by billing_status in create_sales_invoice, never by price > 0 alone.
-	"""
 	garment_totals = {}
 	for line in doc.lines or []:
 		garment_totals[line.garment_ref] = garment_totals.get(line.garment_ref, 0) + (line.price or 0)
 	for g in doc.garments or []:
 		g.garment_total = garment_totals.get(g.garment_id, 0)
 	doc.ticket_total = sum(garment_totals.values())
+
+	# Auto-flip billing_status when a cost is entered on an "included" ticket.
+	# Staff flipping included_in_custom off manually is also respected — we
+	# only auto-set when the checkbox is on and total crosses the $0 boundary.
+	if doc.included_in_custom:
+		if (doc.ticket_total or 0) > 0:
+			doc.billing_status = "Billable"
+		else:
+			doc.billing_status = "Included in Custom Order"
 
 
 def rollup_line_to_garment(doc, method=None):
@@ -104,8 +117,6 @@ def rollup_line_to_garment(doc, method=None):
 
 def ensure_custom_alteration_item():
 	if frappe.db.exists("Item", "ALT-CUSTOM-ALTERATION"):
-		if frappe.db.get_value("Item", "ALT-CUSTOM-ALTERATION", "disabled"):
-			frappe.db.set_value("Item", "ALT-CUSTOM-ALTERATION", "disabled", 0, update_modified=False)
 		return
 	from ls_alterations.ls_alterations.doctype.alteration_preset.alteration_preset import ensure_item_group
 
@@ -120,41 +131,17 @@ def ensure_custom_alteration_item():
 			"is_stock_item": 0,
 			"standard_rate": 0,
 			"description": "Custom alteration not matching standard presets",
-			"is_sales_item": 1,
 		}
 	).insert(ignore_permissions=True)
 
 
-def _mint_payment_link_after_commit(invoice_name):
-	"""After ticket+SI commit: submit is already done — mint Square pay link.
-
-	Must run after_commit so Square Checkout mapping + SI field write don't
-	race the open ticket transaction (same pattern as notify_n8n).
-	"""
-	if not invoice_name:
-		return
-	try:
-		from ls_alterations.ls_square.pos import create_payment_link
-
-		create_payment_link(invoice=invoice_name)
-	except Exception as e:
-		frappe.log_error(
-			f"Auto pay-link mint failed for {invoice_name}: {e}",
-			"Alteration Ticket Pay Link",
-		)
-
-
 def create_sales_invoice(doc, method=None):
-	"""after_insert hook: create + submit Sales Invoice so pay links work at intake.
+	"""after_insert hook: create draft Sales Invoice mirroring ticket lines.
 
-	Billable tickets get a **submitted** SI immediately (not draft-until-pickup).
-	Square payment link is minted after_commit so FOH / thermal / SMS can charge
-	as soon as the ticket exists — not only after Ready/Picked Up.
-
-	Gated strictly by billing_status (staff-set). Warranty and Included in
-	Custom Order never mint an SI — even when lines carry full shop prices
-	(internal accounted value). Billable + $0 also skips (no empty invoice).
-	billing_status is never derived from ticket_total.
+	Skipped when the ticket is included in a custom order AND the total is $0
+	(staff warranty / complimentary work). If staff later adds a charge the
+	billing_status flips to Billable, but the invoice must be created manually
+	or via a future save-triggered path — we never auto-create a $0 invoice.
 	"""
 	if doc.sales_invoice:
 		return
@@ -167,20 +154,20 @@ def create_sales_invoice(doc, method=None):
 	if doc.billing_status == "Billable" and not (doc.ticket_total or 0) > 0:
 		return  # Billable but $0 — don't create invoice yet
 
-	from ls_alterations.ls_alterations.doctype.alteration_preset.alteration_preset import (
-		create_service_item,
-		item_code_for,
-	)
-	from frappe.utils import flt
+	from ls_alterations.ls_alterations.doctype.alteration_preset.alteration_preset import item_code_for
 
 	items = []
 	for line in doc.lines or []:
 		if line.preset:
-			# create_service_item also re-enables disabled items
-			preset_doc = frappe.get_cached_doc("Alteration Preset", line.preset)
-			item_code = create_service_item(
-				preset_doc.preset_name, preset_doc.default_price, preset_doc.garment_type
-			)
+			item_code = item_code_for(line.preset)
+			# Auto-create the Service Item if a new preset slipped past the hook
+			if not frappe.db.exists("Item", item_code):
+				preset_doc = frappe.get_cached_doc("Alteration Preset", line.preset)
+				from ls_alterations.ls_alterations.doctype.alteration_preset.alteration_preset import (
+					create_service_item,
+				)
+
+				create_service_item(preset_doc.preset_name, preset_doc.default_price, preset_doc.garment_type)
 		else:
 			item_code = "ALT-CUSTOM-ALTERATION"
 			ensure_custom_alteration_item()
@@ -224,38 +211,6 @@ def create_sales_invoice(doc, method=None):
 
 	doc.db_set("sales_invoice", invoice.name, update_modified=False)
 
-	# Submit + mint Square pay link at create so FOH can charge immediately.
-	# ensure_invoice_ready_for_pay normalizes posting/due dates (avoids
-	# "Due Date cannot be before Posting Date") then submits and mints link.
-	if flt(invoice.grand_total) > 0:
-		try:
-			from ls_alterations.ls_alterations.api.invoices import ensure_invoice_ready_for_pay
-
-			# after_commit: Square API + field writes outside the ticket TX
-			frappe.db.after_commit.add(
-				lambda inv=invoice.name: _ensure_ready_after_commit(inv)
-			)
-		except Exception as e:
-			frappe.log_error(
-				f"SI ready-for-pay schedule failed for ticket {doc.name} / {invoice.name}: {e}",
-				"Alteration Ticket SI Submit",
-			)
-
-
-def _ensure_ready_after_commit(invoice_name):
-	"""after_commit: submit SI (date-safe) + mint Square payment link."""
-	if not invoice_name:
-		return
-	try:
-		from ls_alterations.ls_alterations.api.invoices import ensure_invoice_ready_for_pay
-
-		ensure_invoice_ready_for_pay(invoice_name)
-	except Exception as e:
-		frappe.log_error(
-			f"Auto ready-for-pay failed for {invoice_name}: {e}",
-			"Alteration Ticket Pay Link",
-		)
-
 
 def handle_workflow_state_change(doc, method=None):
 	"""on_update hook: sync ticket workflow state to Sales Invoice docstatus."""
@@ -264,34 +219,38 @@ def handle_workflow_state_change(doc, method=None):
 	if not doc.sales_invoice:
 		return
 
-	from frappe.utils import flt
-
 	invoice = frappe.get_doc("Sales Invoice", doc.sales_invoice)
 
-	# Legacy path: older tickets still have draft SI until pickup.
-	# New tickets already submit at create — this is a no-op when docstatus=1.
 	if doc.workflow_state == "Picked Up" and invoice.docstatus == 0:
+		invoice.flags.ignore_permissions = True
 		invoice.submit()
-	elif doc.workflow_state == "Cancelled" and invoice.docstatus == 0:
-		invoice.cancel()
-	elif doc.workflow_state == "Cancelled" and invoice.docstatus == 1:
-		# Fully unpaid → cancel SI so open AR doesn't linger.
-		# Partial/full payment → needs credit note (don't auto-cancel).
-		outstanding = flt(invoice.outstanding_amount)
-		grand = flt(invoice.grand_total)
-		if grand > 0 and outstanding >= (grand - 0.01):
-			try:
-				invoice.cancel()
-			except Exception as e:
-				frappe.log_error(
-					f"Ticket {doc.name} cancel: could not cancel unpaid SI {invoice.name}: {e}",
-					"Alteration Ticket Cancel",
+	elif doc.workflow_state == "Cancelled":
+		# Draft SI cannot .cancel() (docstatus 0→2 invalid). Delete draft.
+		# Submitted unpaid SI: cancel. Paid/settled: leave + log.
+		from frappe.utils import flt
+		try:
+			if invoice.docstatus == 0:
+				frappe.delete_doc(
+					"Sales Invoice",
+					invoice.name,
+					force=1,
+					ignore_permissions=True,
 				)
-		else:
+				doc.db_set("sales_invoice", None, update_modified=False)
+			elif invoice.docstatus == 1:
+				outstanding = flt(invoice.outstanding_amount)
+				if outstanding > 0.02 and str(invoice.status) != "Paid":
+					invoice.flags.ignore_permissions = True
+					invoice.cancel()
+				else:
+					frappe.log_error(
+						f"Ticket {doc.name} cancelled; SI {invoice.name} paid/settled "
+						f"(outstanding={outstanding}). Left in place.",
+						"Alteration Ticket Cancel",
+					)
+		except Exception as e:
 			frappe.log_error(
-				f"Ticket {doc.name} cancelled but Sales Invoice {invoice.name} is submitted "
-				f"with payments (outstanding {outstanding} / grand {grand}). "
-				"Manual credit note required.",
+				f"Ticket {doc.name} cancel SI {getattr(invoice, 'name', '?')} failed: {e}",
 				"Alteration Ticket Cancel",
 			)
 
