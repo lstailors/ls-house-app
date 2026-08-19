@@ -64,9 +64,7 @@ type Line = {
   price: number;
   estMinutes?: number | null;
   presetId?: string;
-  /** per-line note → ERP line_notes */
   notes?: string;
-  /** local preview URLs until ticket exists; then uploaded */
   photoFiles?: File[];
   photoPreviewUrls?: string[];
 };
@@ -78,7 +76,6 @@ type Garment = {
   lines: Line[];
   soItemKey?: string;
   soItemName?: string;
-  /** intake condition photos (Lucia 023) — upload after ticket create */
   photoFiles?: File[];
   photoPreviewUrls?: string[];
 };
@@ -89,7 +86,6 @@ type CustomerHit = {
   email?: string;
   addressLine?: string;
 };
-
 
 type SellItem = {
   ref: string;
@@ -103,7 +99,6 @@ type SellItem = {
   eta?: string;
   source?: "erp" | "seed" | "house";
   kind?: "mtm" | "rtw";
-  /** attribute options from catalog at add-time */
   sizeOptions?: string[];
   colorOptions?: string[];
 };
@@ -124,3 +119,27 @@ type Preset = {
 };
 
 type Remind = "eod" | "3d" | "2w" | "never";
+
+function money(n?: number | string | null) {
+  return formatMoney(n);
+}
+
+function uid() {
+  return Math.random().toString(36).slice(2, 9);
+}
+
+function remindAtIso(remind: Remind): string | null {
+  if (remind === "never") return null;
+  const d = new Date();
+  if (remind === "eod") {
+    d.setHours(20, 0, 0, 0);
+    if (d.getTime() < Date.now()) d.setDate(d.getDate() + 1);
+    return d.toISOString();
+  }
+  if (remind === "3d") {
+    d.setDate(d.getDate() + 3);
+    return d.toISOString();
+  }
+  d.setDate(d.getDate() + 14);
+  return d.toISOString();
+}
