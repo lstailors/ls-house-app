@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@ls/api-client";
+import { ApiError, api } from "@ls/api-client";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
+import { isShopApiReachable } from "@alts/offline/probe";
 
 export type ErpHealth = {
   ok: boolean;
@@ -13,10 +14,27 @@ export type ErpHealth = {
   };
 };
 
+const LEGACY_OK: ErpHealth = {
+  ok: true,
+  status: "ok",
+  erp: { configured: true, reachable: true, latencyMs: null, error: null },
+};
+
 export function useErpHealth() {
   return useQuery({
     queryKey: ["api-health"],
-    queryFn: () => api.get<ErpHealth>("/api/health"),
+    queryFn: async (): Promise<ErpHealth> => {
+      try {
+        return await api.get<ErpHealth>("/api/health");
+      } catch (err) {
+        // Frozen production API has no /api/health. /api/me still answers.
+        if (err instanceof ApiError && err.status === 404) {
+          const me = await api.raw("/api/me");
+          if (isShopApiReachable(me.status)) return LEGACY_OK;
+        }
+        throw err;
+      }
+    },
     staleTime: 30_000,
     refetchInterval: 60_000,
     retry: 1,
