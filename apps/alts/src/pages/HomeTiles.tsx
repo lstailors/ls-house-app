@@ -39,3 +39,10 @@ function peelLeadingIcon(line: string): { icon: string | null; text: string } {
 function isSignatureLine(line: string) {
   return /^[—–-]\s*Rocco/i.test(line.trim());
 }
+
+function isActionLine(line: string) {
+  const t = line.trim();
+  if (/^(⚡|👉)/u.test(t)) return true;
+  if (/\bneeds eyes\b/i.test(t) || /\bChase\b/.test(t)) return true;
+  return false;
+}
