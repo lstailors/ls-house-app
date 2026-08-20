@@ -4,6 +4,8 @@ import { cn } from "@ls/design/utils";
 import { UniversalSearchInline } from "@alts/components/UniversalSearch";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { useKioskMode } from "@alts/lib/kiosk";
+import { canSeeHouseAdmin } from "@alts/lib/houseAdmin";
+import { HouseAdminLink } from "@alts/components/HouseAdminLink";
 
 /** Minimal chrome for FOH — tile home owns its own header; nested pages get a slim top bar + universal search. */
 export default function AltsShell() {
@@ -36,14 +38,10 @@ export default function AltsShell() {
           </span>
         </Link>
         <UniversalSearchInline className="mx-1" />
-        {me && (me.role === "super_admin" || me.role === "store_manager") && (
-          <Link
-            to="/admin"
-            className="text-[11px] sm:text-xs uppercase tracking-widest text-brass-light hover:text-cream px-2 sm:px-3 py-2 shrink-0"
-            aria-label="Admin"
-          >
+        {me && canSeeHouseAdmin(me.role) && (
+          <HouseAdminLink className="text-[11px] sm:text-xs uppercase tracking-widest text-brass-light hover:text-cream px-2 sm:px-3 py-2 shrink-0">
             Admin
-          </Link>
+          </HouseAdminLink>
         )}
         {me && (
           <Link

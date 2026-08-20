@@ -181,7 +181,8 @@ describe("iPhone scale contract", () => {
     expect(app).toContain("NotFound");
     expect(routes).toContain('path="/reports/:tab?"');
     expect(app).not.toContain('Navigate to="/"');
-    expect(home).toContain('to="/admin"');
+    expect(home).toContain("HouseAdminLink");
+    expect(home).toContain("canSeeHouseAdmin");
     expect(home).not.toContain("app.lstailors.com/owner");
     expect(home).not.toContain("Store QC · makes only");
     const reports = readFileSync(new URL("../pages/Reports.tsx", import.meta.url), "utf8");

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
@@ -10,6 +10,8 @@ import { BrandSeal } from "@alts/components/BrandSeal";
 import { clearAltsPrivateStorage } from "@alts/lib/logoutPrivacy";
 import { recalledDocusealKey, rememberDocusealKey } from "@alts/lib/docusealKey";
 import { getShowTestData, setShowTestData } from "@alts/lib/showTestData";
+import { canSeeHouseAdmin, houseAdminIsExternal } from "@alts/lib/houseAdmin";
+import { HouseAdminLink } from "@alts/components/HouseAdminLink";
 import "@alts/styles/alts-pos.css";
 
 type SettingsData = {
@@ -24,7 +26,7 @@ export default function AltsSettings() {
   const qc = useQueryClient();
   const { data: me } = useMe();
   const isAdmin = me?.role === "super_admin";
-  const canOpenHouseAdmin = me?.role === "super_admin" || me?.role === "store_manager";
+  const canOpenHouseAdmin = canSeeHouseAdmin(me?.role);
   const [apiKey, setApiKey] = useState("");
   const [url, setUrl] = useState("");
   const [showTest, setShowTest] = useState(getShowTestData);
@@ -102,16 +104,15 @@ export default function AltsSettings() {
         </div>
 
         {canOpenHouseAdmin && (
-          <Link
-            to="/admin"
-            className="card-glass px-4 py-4 block hover:border-brass/40 transition-colors"
-          >
+          <HouseAdminLink className="card-glass px-4 py-4 block hover:border-brass/40 transition-colors">
             <div className="caps text-brass-light">House admin</div>
             <div className="display text-2xl mt-1">Open admin</div>
             <p className="text-sm text-cream-dim mt-1">
-              Users, financials, communications, and the full house desk — same app.
+              {houseAdminIsExternal()
+                ? "Opens the house desk on app.lstailors.com — users, financials, communications."
+                : "Users, financials, communications, and the full house desk — same app."}
             </p>
-          </Link>
+          </HouseAdminLink>
         )}
 
         {isAdmin && (

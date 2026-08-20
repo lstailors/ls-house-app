@@ -25,6 +25,8 @@ import { EMPTY_LIVE_HOME } from "@alts/lib/liveDashboard";
 import { useShopLink } from "@alts/offline/status";
 import { NeedsConnection } from "@alts/components/NeedsConnection";
 import { readCoverMoney, writeCoverMoney } from "@alts/lib/coverMoney";
+import { canSeeHouseAdmin } from "@alts/lib/houseAdmin";
+import { HouseAdminLink } from "@alts/components/HouseAdminLink";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
@@ -612,7 +614,7 @@ export default function HomeTiles() {
 
   const initials = clientInitials(me?.name ?? "LS");
   const canQc = me?.role === "super_admin" || me?.role === "tailor";
-  const canAdmin = me?.role === "super_admin" || me?.role === "store_manager";
+  const canAdmin = canSeeHouseAdmin(me?.role);
   const hour = storeHour();
   const ambient = kiosk && (hour >= 18 || hour < 9);
   const board = feed ?? EMPTY_LIVE_HOME;
@@ -1154,13 +1156,9 @@ export default function HomeTiles() {
         </div>
         <CoverMoneyButton on={coverMoney} onToggle={toggleCoverMoney} />
         {canAdmin && !kiosk && (
-          <Link
-            to="/admin"
-            className="h-8 px-3 rounded-full border border-brass/40 text-[10.5px] font-bold tracking-[0.12em] uppercase text-brass-light shrink-0 inline-flex items-center"
-            aria-label="Open admin"
-          >
+          <HouseAdminLink className="h-8 px-3 rounded-full border border-brass/40 text-[10.5px] font-bold tracking-[0.12em] uppercase text-brass-light shrink-0 inline-flex items-center">
             Admin
-          </Link>
+          </HouseAdminLink>
         )}
         {!kiosk && (
         <button
@@ -1372,9 +1370,9 @@ export default function HomeTiles() {
           <span aria-hidden>⌂</span> House
         </Link>
         {canAdmin && (
-          <Link to="/admin" className="qbtn" data-testid="qa-admin">
+          <HouseAdminLink className="qbtn" data-testid="qa-admin">
             <span aria-hidden>◆</span> Admin
-          </Link>
+          </HouseAdminLink>
         )}
       </div>
 
