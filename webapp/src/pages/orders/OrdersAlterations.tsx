@@ -8,6 +8,7 @@ import { StatusPill } from "@ls/design";
 import { EmptyState } from "@ls/design";
 import { Button } from "@ls/design/ui/button";
 import { useAlterations } from "@/lib/queries";
+import { matchesAlterationKpiFilter } from "@/lib/alterationKpiFilter";
 import { formatUSD, formatDate } from "@ls/design/format";
 import type { Alteration } from "@ls/types";
 import { AlterationKpiBar } from "@/components/alterations/AlterationKpiBar";
@@ -32,6 +33,7 @@ export default function OrdersAlterations() {
   const rows = useMemo(() => {
     const s = search.toLowerCase();
     return alterations.filter((a) => {
+      if (!matchesAlterationKpiFilter(a, kpiFilter)) return false;
       if (filter === "in_progress" && a.status !== "intake" && a.status !== "in_progress") return false;
       if (filter === "complete"    && a.status !== "ready")     return false;
       if (filter === "delivered"   && a.status !== "picked_up") return false;
@@ -42,7 +44,9 @@ export default function OrdersAlterations() {
         a.tailor?.name.toLowerCase().includes(s)
       );
     });
-  }, [alterations, search, filter]);
+  }, [alterations, search, filter, kpiFilter]);
+
+  const filteredEmpty = !isLoading && rows.length === 0 && alterations.length > 0;
 
   const columns: Column<Alteration>[] = [
     {
@@ -154,7 +158,13 @@ export default function OrdersAlterations() {
         }
       />
 
-      <AlterationKpiBar activeFilter={kpiFilter} onFilter={setKpiFilter} />
+      <AlterationKpiBar
+        activeFilter={kpiFilter}
+        onFilter={(key) => {
+          setKpiFilter(key);
+          setFilter("all");
+        }}
+      />
       <AlterationDailyBrief kpis={altKpis} />
 
       <FilterBar
@@ -171,12 +181,29 @@ export default function OrdersAlterations() {
       ) : rows.length === 0 ? (
         <EmptyState
           icon={Scissors}
-          title="No alteration tickets"
-          description="Tickets created in intake will appear here once synced from ERPNext."
+          title={filteredEmpty ? "No tickets match this filter" : "No alteration tickets"}
+          description={
+            filteredEmpty
+              ? "Try another tile or clear the search to see more tickets."
+              : "Tickets created in intake will appear here once synced from ERPNext."
+          }
           action={
-            <Button asChild className="btn-brass">
-              <Link to="/intake/alterations">New ticket</Link>
-            </Button>
+            filteredEmpty ? (
+              <Button
+                className="btn-brass"
+                onClick={() => {
+                  setKpiFilter("active");
+                  setFilter("all");
+                  setSearch("");
+                }}
+              >
+                Show active tickets
+              </Button>
+            ) : (
+              <Button asChild className="btn-brass">
+                <Link to="/intake/alterations">New ticket</Link>
+              </Button>
+            )
           }
         />
       ) : (
