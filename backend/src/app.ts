@@ -64,10 +64,11 @@ import { healthRouter } from "./routes/health";
 import { qcRouter } from "./routes/qc";
 import { metricsRouter } from "./routes/metrics";
 import { offlineRouter } from "./routes/offline";
+import { chatRouter } from "./routes/chat";
 
 const app = new Hono();
 
-// ─── CORS ─────────────────────────────────────────────────────────────────────
+// ─── CORS ─────────────────────────────────────────────────────────────────
 // Hard-coded allowed origins + optional ALLOWED_ORIGINS env var (comma-separated
 // literal origins, e.g. "https://app.lstailors.com,https://staging.lstailors.com").
 // On Vercel, frontend + backend share the same origin so CORS is moot for prod,
@@ -176,5 +177,6 @@ app.route("/api/places", placesRouter);
 app.route("/api/qc", qcRouter);
 app.route("/api/metrics", metricsRouter);
 app.route("/api/offline", offlineRouter);
+app.route("/api/chat", chatRouter);
 
 export default app;
