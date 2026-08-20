@@ -192,7 +192,7 @@ export default function CustomOrderDetail() {
     <div className="space-y-6 animate-fade-up">
       <div>
         <Link
-          to="/orders/custom"
+          to="/admin/orders/custom"
           className="inline-flex items-center gap-1.5 text-xs text-cream-dim hover:text-cream transition-colors mb-3"
         >
           <ArrowLeft className="h-3 w-3" /> Back to commissions

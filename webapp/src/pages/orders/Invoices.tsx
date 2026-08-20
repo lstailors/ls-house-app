@@ -195,7 +195,7 @@ export default function Invoices() {
           rows={rows}
           columns={columns}
           rowKey={(r) => r.id}
-          onRowClick={(row) => navigate(`/invoices/${encodeURIComponent(row.erpnextId ?? row.id)}`)}
+          onRowClick={(row) => navigate(`/admin/invoices/${encodeURIComponent(row.erpnextId ?? row.id)}`)}
           highlightRow={highlightId ? (r) => (r.erpnextId ?? r.id) === highlightId : undefined}
           highlightRef={highlightRef}
         />

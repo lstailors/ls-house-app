@@ -10,6 +10,7 @@ export default {
     "./components/**/*.{ts,tsx}",
     "./app/**/*.{ts,tsx}",
     "./src/**/*.{ts,tsx}",
+    "../apps/alts/src/**/*.{ts,tsx}",
     "../packages/design/src/**/*.{ts,tsx}",
   ],
   prefix: "",

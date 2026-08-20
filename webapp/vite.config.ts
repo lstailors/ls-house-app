@@ -9,6 +9,9 @@ export default defineConfig(({ mode }) => ({
     host: "0.0.0.0",
     port: Number(process.env.PORT) || 8000,
     allowedHosts: true,
+    fs: {
+      allow: [path.resolve(__dirname, "..")],
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:3000',
@@ -50,6 +53,7 @@ export default defineConfig(({ mode }) => ({
       { find: /^@ls\/design\/hooks\/(.*)$/, replacement: path.resolve(__dirname, "../packages/design/src/hooks") + "/$1" },
       { find: /^@ls\/design\/glass\/(.*)$/, replacement: path.resolve(__dirname, "../packages/design/src/glass") + "/$1" },
       { find: /^@ls\/design$/, replacement: path.resolve(__dirname, "../packages/design/src/index.ts") },
+      { find: /^@alts\/(.*)$/, replacement: path.resolve(__dirname, "../apps/alts/src") + "/$1" },
       { find: "@", replacement: path.resolve(__dirname, "./src") },
     ],
     dedupe: ["react", "react-dom", "@tanstack/react-query", "clsx", "tailwind-merge"],

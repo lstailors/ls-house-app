@@ -1,66 +1,23 @@
 import { Toaster as Sonner } from "@ls/design/ui/sonner";
 import { TooltipProvider } from "@ls/design/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { lazy, Suspense } from "react";
-import { AppShell } from "@/components/shell/AppShell";
-import { RoleGuard } from "@/components/shell/RoleGuard";
 import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
-import IntakeAlterations from "./pages/intake/IntakeAlterations";
-import IntakeCustom from "./pages/intake/IntakeCustom";
-import OrdersAlterations from "./pages/orders/OrdersAlterations";
-import OrdersCustom from "./pages/orders/OrdersCustom";
-import CustomOrderDetail from "./pages/orders/CustomOrderDetail";
-import TicketDetail from "./pages/intake/TicketDetail";
+import { AltsRouteTree } from "@alts/AltsRoutes";
+import { useAltsRuntime } from "@alts/AltsRuntime";
+import { AdminRouteTree } from "@/admin/AdminRoutes";
+import LandscapeGate from "@alts/components/LandscapeGate";
+import ScanFab from "@alts/components/ScanFab";
+import UniversalSearchHost from "@alts/components/UniversalSearch";
+import { OfflineBanner } from "@alts/components/OfflineBanner";
+import "@alts/styles/alts-pos.css";
 
-// Lazy-loaded pages — loaded on first visit only
-const SalesOrders = lazy(() => import('./pages/orders/SalesOrders'));
-const SalesOrderDetail = lazy(() => import('./pages/orders/SalesOrderDetail'));
-const Invoices = lazy(() => import('./pages/orders/Invoices'));
-const InvoiceDetail = lazy(() => import('./pages/orders/InvoiceDetail'));
-const Deliveries = lazy(() => import('./pages/Deliveries'));
-const DeliveryTracking = lazy(() => import('./pages/DeliveryTracking'));
-const DeliveryLabel = lazy(() => import('./pages/DeliveryLabel'));
-const DeliveryDetail = lazy(() => import('./pages/DeliveryDetail'));
-const Communications = lazy(() => import('./pages/Communications'));
-const Financials = lazy(() => import('./pages/Financials'));
-const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'));
-const Settings = lazy(() => import('./pages/Settings'));
-const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'));
-const AdminLocations = lazy(() => import('./pages/admin/AdminLocations'));
-const LocationSettings = lazy(() => import('./pages/admin/LocationSettings'));
-const AdminTailors = lazy(() => import('./pages/admin/AdminTailors'));
-const AdminOverview = lazy(() => import('./pages/admin/AdminOverview'));
-const AdminBoard = lazy(() => import('./pages/admin/AdminBoard'));
-const FabricPricingPage = lazy(() => import('./pages/reference/FabricPricingPage'));
-const StyleLibraryPage = lazy(() => import('./pages/reference/StyleLibraryPage'));
-const Academy = lazy(() => import('./pages/Academy'));
-const MissionControl = lazy(() => import('./pages/MissionControl'));
-const AgentDetail = lazy(() => import('./pages/mission-control/AgentDetail'));
-const ApprovalsPage = lazy(() => import('./pages/Approvals'));
-const House = lazy(() => import('./pages/house/House'));
-const AlterationTags = lazy(() => import('./pages/intake/AlterationTags'));
-const AlterationReceipt = lazy(() => import('./pages/intake/AlterationReceipt'));
-import GarmentTagRedirect from './components/garment/GarmentTagRedirect';
-import AltsGarmentRedirect from './pages/AltsGarmentRedirect';
-const PayInvoice = lazy(() => import('./pages/PayInvoice'));
-const ETicket = lazy(() => import('./pages/ETicket'));
+const DeliveryTracking = lazy(() => import("./pages/DeliveryTracking"));
+const PayInvoice = lazy(() => import("./pages/PayInvoice"));
 const CustomerHome = lazy(() => import("./pages/CustomerHome"));
 const CustomerProfile = lazy(() => import("./pages/CustomerProfile"));
-const Tasks = lazy(() => import('./pages/Tasks'));
-const Comms = lazy(() => import('./pages/Comms'));
-const SofiaChat = lazy(() => import('./pages/SofiaChat'));
-const SofiaDispatch = lazy(() => import('./pages/SofiaDispatch'));
-const Customers = lazy(() => import('./pages/Customers'));
-const CustomerDetail = lazy(() => import('./pages/CustomerDetail'));
-const CalendarPage = lazy(() => import('./pages/Calendar'));
-const AppointmentsPage = lazy(() => import('./pages/Appointments'));
-const Helpdesk = lazy(() => import('./pages/Helpdesk'));
-const HelpdeskTicketDetail = lazy(() => import('./pages/helpdesk/HelpdeskTicketDetail'));
-const Scanner = lazy(() => import('./pages/Scanner'));
-const ShopFloor = lazy(() => import('./pages/ShopFloor'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -68,10 +25,9 @@ const queryClient = new QueryClient({
   },
 });
 
-/** House has no /thermal page — send staff to the browser receipt (Epson is on the shop LAN). */
-function ThermalToReceipt() {
-  const { ticketName } = useParams<{ ticketName: string }>();
-  return <Navigate to={`/orders/alterations/${ticketName}/receipt`} replace />;
+function Runtime() {
+  useAltsRuntime(queryClient);
+  return null;
 }
 
 const App = () => (
@@ -87,330 +43,23 @@ const App = () => (
         }}
       />
       <BrowserRouter>
+        <Runtime />
+        <OfflineBanner />
         <Suspense fallback={<div className="flex items-center justify-center min-h-dvh"><div className="h-6 w-6 rounded-full border-2 border-brass/40 border-t-brass animate-spin" /></div>}>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/d/:token" element={<DeliveryTracking />} />
-          {/* Customer-facing payment page — no AppShell, works for unauthenticated users */}
-          <Route path="/pay/:invoiceId" element={<PayInvoice />} />
-          {/* Aligned public invoice route: /i/{erp_name}?t={token} (token-based, no login) */}
-          <Route path="/pay/:invoiceId" element={<PayInvoice />} />
-          {/* Customer portal invoice path (my.lstailors.com) — token-based, public */}
-          <Route path="/i/:invoiceId" element={<PayInvoice />} />
-          {/* Customer-facing e-ticket — public, no auth */}
-          <Route path="/e-ticket/:ticketName" element={<ETicket />} />
-          {/* Client portal (my.lstailors.com) — outside AppShell */}
-          <Route path="/home" element={<CustomerHome />} />
-          <Route path="/profile" element={<CustomerProfile />} />
-          {/* Full-screen in-app QR scanner — protected, but outside AppShell (no sidebar chrome) */}
-          <Route
-            path="/scanner"
-            element={
-              <RoleGuard allow={["super_admin", "store_manager", "salesperson", "driver", "tailor"]}>
-                <Scanner />
-              </RoleGuard>
-            }
-          />
-          {/* Standalone print pages — outside AppShell so only content renders */}
-          <Route path="/orders/alterations/:ticketName/tags" element={<AlterationTags />} />
-          <Route path="/orders/alterations/:ticketName/receipt" element={<AlterationReceipt />} />
-          <Route path="/orders/alterations/:ticketName/thermal" element={<ThermalToReceipt />} />
-          <Route path="/deliveries/:id/label" element={<DeliveryLabel />} />
-          <Route element={<AppShell />}>
-            <Route path="/" element={<Dashboard />} />
-
-            <Route
-              path="/mission-control"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager"]}>
-                  <MissionControl />
-                </RoleGuard>
-              }
-            />
-
-            <Route
-              path="/approvals"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager"]}>
-                  <ApprovalsPage />
-                </RoleGuard>
-              }
-            />
-
-            <Route
-              path="/house"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager"]}>
-                  <House />
-                </RoleGuard>
-              }
-            />
-
-            <Route
-              path="/mission-control/agents/:slug"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager"]}>
-                  <AgentDetail />
-                </RoleGuard>
-              }
-            />
-
-            <Route
-              path="/intake/alterations"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
-                  <IntakeAlterations />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/intake/custom"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
-                  <IntakeCustom />
-                </RoleGuard>
-              }
-            />
-
-            <Route
-              path="/orders/alterations"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
-                  <OrdersAlterations />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/orders/alterations/:ticketName"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
-                  <TicketDetail />
-                </RoleGuard>
-              }
-            />
-            {/* Old hang tags → alts FOH job card (canonical) */}
-            <Route path="/g/:ticket/:garmentId" element={<AltsGarmentRedirect />} />
-            <Route
-              path="/garments/:ticketId/:garmentId"
-              element={<GarmentTagRedirect />}
-            />
-            <Route
-              path="/shop-floor"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
-                  <ShopFloor />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/orders/custom"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
-                  <OrdersCustom />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/orders/custom/:id"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
-                  <CustomOrderDetail />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/sales-orders"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager"]}>
-                  <SalesOrders />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/sales-orders/:id"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager"]}>
-                  <SalesOrderDetail />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/invoices"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager"]}>
-                  <Invoices />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/invoices/:id"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager"]}>
-                  <InvoiceDetail />
-                </RoleGuard>
-              }
-            />
-
-            <Route path="/deliveries" element={<Deliveries />} />
-            <Route path="/deliveries/:id" element={<DeliveryDetail />} />
-            <Route
-              path="/communications"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
-                  <Communications />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/financials"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager"]}>
-                  <Financials />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/owner"
-              element={
-                <RoleGuard allow={["super_admin"]}>
-                  <OwnerDashboard />
-                </RoleGuard>
-              }
-            />
-
-            <Route path="/settings" element={<Settings />} />
-
-            <Route
-              path="/reference/fabrics"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager"]}>
-                  <FabricPricingPage />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/reference/styles"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager"]}>
-                  <StyleLibraryPage />
-                </RoleGuard>
-              }
-            />
-
-            <Route
-              path="/admin/users"
-              element={
-                <RoleGuard allow={["super_admin"]}>
-                  <AdminUsers />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/admin/locations"
-              element={
-                <RoleGuard allow={["super_admin"]}>
-                  <AdminLocations />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/admin/locations/:code"
-              element={
-                <RoleGuard allow={["super_admin"]}>
-                  <LocationSettings />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/admin/tailors"
-              element={
-                <RoleGuard allow={["super_admin"]}>
-                  <AdminTailors />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/admin/overview"
-              element={
-                <RoleGuard allow={["super_admin"]}>
-                  <AdminOverview />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/admin/board"
-              element={
-                <RoleGuard allow={["super_admin", "salesperson"]}>
-                  <AdminBoard />
-                </RoleGuard>
-              }
-            />
-
-            <Route path="/academy" element={<Academy />} />
-            <Route path="/tasks" element={<Tasks />} />
-            <Route path="/comms" element={<Comms />} />
-            <Route path="/sofia" element={<SofiaChat />} />
-            <Route path="/dispatch" element={<SofiaDispatch />} />
-            <Route
-              path="/customers"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
-                  <Customers />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/customers/new"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
-                  <CustomerDetail />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/customers/:id"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
-                  <CustomerDetail />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/calendar"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
-                  <CalendarPage />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/appointments"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson", "tailor"]}>
-                  <AppointmentsPage />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/helpdesk"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
-                  <Helpdesk />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/helpdesk/:id"
-              element={
-                <RoleGuard allow={["super_admin", "store_manager", "salesperson"]}>
-                  <HelpdeskTicketDetail />
-                </RoleGuard>
-              }
-            />
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/d/:token" element={<DeliveryTracking />} />
+            <Route path="/i/:invoiceId" element={<PayInvoice />} />
+            <Route path="/home" element={<CustomerHome />} />
+            <Route path="/profile" element={<CustomerProfile />} />
+            {AltsRouteTree()}
+            {AdminRouteTree()}
             <Route path="*" element={<NotFound />} />
-          </Route>
-        </Routes>
+          </Routes>
         </Suspense>
+        <LandscapeGate />
+        <UniversalSearchHost />
+        <ScanFab />
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

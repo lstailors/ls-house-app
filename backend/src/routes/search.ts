@@ -470,7 +470,7 @@ searchRouter.get("/", async (c) => {
         title: f.fabric_name,
         subtitle: f.mill ?? null,
         meta: f.name ? `#${f.name}` : null,
-        href: `https://app.lstailors.com/reference/fabrics`,
+        href: `/admin/reference/fabrics`,
       });
     }
   } catch {
@@ -486,7 +486,7 @@ searchRouter.get("/", async (c) => {
         title: n.summary,
         subtitle: `${n.agent_slug} · ${n.entry_type}`,
         meta: n.creation ? new Date(n.creation).toLocaleDateString() : null,
-        href: `https://app.lstailors.com/comms`,
+        href: `/admin/comms`,
       });
     }
   } catch {
@@ -503,7 +503,7 @@ searchRouter.get("/", async (c) => {
           (s.content?.slice(0, 80) ?? "") + ((s.content?.length ?? 0) > 80 ? "…" : ""),
         subtitle: s.client_phone,
         meta: s.direction,
-        href: `https://app.lstailors.com/sofia`,
+        href: `/admin/sofia`,
       });
     }
   } catch {

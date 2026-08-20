@@ -17,6 +17,7 @@
     "noImplicitAny": false,
     "baseUrl": ".",
     "paths": {
+      "@/*": ["../../webapp/src/*"],
       "@alts/*": ["./src/*"],
       "@ls/types": ["../../packages/types/src/index.ts"],
       "@ls/api-client": ["../../packages/api-client/src/index.ts"],

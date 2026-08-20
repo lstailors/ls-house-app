@@ -39,9 +39,10 @@ const SECTIONS: NavSection[] = [
   {
     title: "House",
     items: [
-      { to: "/", label: "Dashboard", icon: LayoutDashboard, roles: ALL },
-      { to: "/mission-control", label: "Mission Control", icon: Zap, roles: MGMT },
-      { to: "/house", label: "House", icon: Building2, roles: MGMT },
+      { to: "/", label: "Floor", icon: Factory, roles: ALL },
+      { to: "/admin", label: "Dashboard", icon: LayoutDashboard, roles: ALL },
+      { to: "/admin/mission-control", label: "Mission Control", icon: Zap, roles: MGMT },
+      { to: "/admin/house", label: "House", icon: Building2, roles: MGMT },
     ],
   },
   {
@@ -49,43 +50,43 @@ const SECTIONS: NavSection[] = [
     roles: STAFF,
     items: [
       { to: "/shop-floor", label: "Shop Floor", icon: Factory, roles: STAFF },
-      { to: "/orders/custom", label: "Custom Orders", icon: ClipboardList, roles: STAFF },
+      { to: "/admin/orders/custom", label: "Custom Orders", icon: ClipboardList, roles: STAFF },
       { to: "/orders/alterations", label: "Alterations", icon: Scissors, roles: STAFF },
       { to: "/scanner", label: "QR Scanner", icon: Zap, roles: ALL },
-      { to: "/sales-orders", label: "Sales Orders", icon: Receipt, roles: MGMT },
-      { to: "/invoices", label: "Invoices", icon: FileText, roles: MGMT },
+      { to: "/admin/sales-orders", label: "Sales Orders", icon: Receipt, roles: MGMT },
+      { to: "/admin/invoices", label: "Invoices", icon: FileText, roles: MGMT },
     ],
   },
   {
     title: "Ops",
     roles: [...MGMT, "tailor", "salesperson"] as UserRole[],
     items: [
-      { to: "/appointments", label: "Appointments", icon: CalendarCheck, roles: STAFF },
-      { to: "/calendar", label: "Calendar", icon: Calendar, roles: STAFF },
+      { to: "/admin/appointments", label: "Appointments", icon: CalendarCheck, roles: STAFF },
+      { to: "/admin/calendar", label: "Calendar", icon: Calendar, roles: STAFF },
       { to: "/deliveries", label: "Deliveries", icon: Truck, roles: ALL },
-      { to: "/tasks", label: "Tasks", icon: CheckSquare, roles: MGMT },
-      { to: "/comms", label: "Intelligence", icon: Radio, roles: [...MGMT, "salesperson"] as UserRole[] },
-      { to: "/communications", label: "Communications", icon: MessageSquare, roles: [...MGMT, "salesperson"] as UserRole[] },
-      { to: "/helpdesk", label: "Helpdesk", icon: Headphones, roles: [...MGMT, "salesperson"] as UserRole[] },
+      { to: "/admin/tasks", label: "Tasks", icon: CheckSquare, roles: MGMT },
+      { to: "/admin/comms", label: "Intelligence", icon: Radio, roles: [...MGMT, "salesperson"] as UserRole[] },
+      { to: "/admin/communications", label: "Communications", icon: MessageSquare, roles: [...MGMT, "salesperson"] as UserRole[] },
+      { to: "/admin/helpdesk", label: "Helpdesk", icon: Headphones, roles: [...MGMT, "salesperson"] as UserRole[] },
     ],
   },
   {
     title: "Clients",
     roles: STAFF,
     items: [
-      { to: "/sofia", label: "Sofia — SMS", icon: MessageSquare, roles: STAFF },
-      { to: "/dispatch", label: "Sofia Dispatch", icon: Send, roles: STAFF },
-      { to: "/customers", label: "Customers", icon: Users, roles: [...MGMT, "salesperson"] as UserRole[] },
+      { to: "/admin/sofia", label: "Sofia — SMS", icon: MessageSquare, roles: STAFF },
+      { to: "/admin/dispatch", label: "Sofia Dispatch", icon: Send, roles: STAFF },
+      { to: "/admin/customers", label: "Customers", icon: Users, roles: [...MGMT, "salesperson"] as UserRole[] },
     ],
   },
   {
     title: "Financials",
     roles: MGMT,
     items: [
-      { to: "/owner", label: "Owner Dashboard", icon: LayoutDashboard, roles: ["super_admin"] },
-      { to: "/financials", label: "Financials", icon: Wallet, roles: MGMT },
-      { to: "/reference/fabrics", label: "Fabric Pricing", icon: Palette, roles: MGMT },
-      { to: "/reference/styles", label: "Style Library", icon: Layers, roles: MGMT },
+      { to: "/admin/owner", label: "Owner Dashboard", icon: LayoutDashboard, roles: ["super_admin"] },
+      { to: "/admin/financials", label: "Financials", icon: Wallet, roles: MGMT },
+      { to: "/admin/reference/fabrics", label: "Fabric Pricing", icon: Palette, roles: MGMT },
+      { to: "/admin/reference/styles", label: "Style Library", icon: Layers, roles: MGMT },
     ],
   },
   {
@@ -194,8 +195,8 @@ export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: P
                 <ul className="space-y-0.5">
                   {items.map((item) => {
                     const Icon = item.icon;
-                    const isTasksItem = item.to === "/tasks";
-                    const isHelpdeskItem = item.to === "/helpdesk";
+                    const isTasksItem = item.to === "/admin/tasks";
+                    const isHelpdeskItem = item.to === "/admin/helpdesk";
                     const taskCount = taskCountData?.count ?? 0;
                     const taskOverdue = taskCountData?.overdue ?? 0;
                     const hdCount = helpdeskCount?.total ?? 0;
@@ -231,7 +232,7 @@ export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: P
                     ) : (
                       <NavLink
                         to={item.to}
-                        end={item.to === "/"}
+                        end={item.to === "/" || item.to === "/admin"}
                         onClick={onNavigate}
                         className={({ isActive }) => cn(linkClass, isActive && "sidebar-active")}
                       >
@@ -266,7 +267,7 @@ export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: P
             <div className="flex flex-col items-center gap-2">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <NavLink to="/settings" onClick={onNavigate}>
+                  <NavLink to="/admin/settings" onClick={onNavigate}>
                     <Avatar className="h-7 w-7 border border-brass/25">
                       <AvatarImage src={me?.image ?? undefined} />
                       <AvatarFallback className="bg-forest-raised text-brass-light text-[10px]">
@@ -291,7 +292,7 @@ export function Sidebar({ role, onNavigate, mode = "expanded", onModeChange }: P
             </div>
           ) : (
             <NavLink
-              to="/settings"
+              to="/admin/settings"
               onClick={onNavigate}
               className={({ isActive }) =>
                 cn(

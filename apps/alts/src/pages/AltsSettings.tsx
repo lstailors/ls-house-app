@@ -10,6 +10,8 @@ import { BrandSeal } from "@alts/components/BrandSeal";
 import { clearAltsPrivateStorage } from "@alts/lib/logoutPrivacy";
 import { recalledDocusealKey, rememberDocusealKey } from "@alts/lib/docusealKey";
 import { getShowTestData, setShowTestData } from "@alts/lib/showTestData";
+import { canSeeHouseAdmin, houseAdminIsExternal } from "@alts/lib/houseAdmin";
+import { HouseAdminLink } from "@alts/components/HouseAdminLink";
 import "@alts/styles/alts-pos.css";
 
 type SettingsData = {
@@ -24,6 +26,7 @@ export default function AltsSettings() {
   const qc = useQueryClient();
   const { data: me } = useMe();
   const isAdmin = me?.role === "super_admin";
+  const canOpenHouseAdmin = canSeeHouseAdmin(me?.role);
   const [apiKey, setApiKey] = useState("");
   const [url, setUrl] = useState("");
   const [showTest, setShowTest] = useState(getShowTestData);
@@ -99,6 +102,18 @@ export default function AltsSettings() {
           <div className="display text-2xl mt-1">{me?.name || "Staff"}</div>
           <p className="text-sm text-cream-dim mt-1">{me?.email}</p>
         </div>
+
+        {canOpenHouseAdmin && (
+          <HouseAdminLink className="card-glass px-4 py-4 block hover:border-brass/40 transition-colors">
+            <div className="caps text-brass-light">House admin</div>
+            <div className="display text-2xl mt-1">Open admin</div>
+            <p className="text-sm text-cream-dim mt-1">
+              {houseAdminIsExternal()
+                ? "Opens the house desk on app.lstailors.com — users, financials, communications."
+                : "Users, financials, communications, and the full house desk — same app."}
+            </p>
+          </HouseAdminLink>
+        )}
 
         {isAdmin && (
           <div className="card-glass px-4 py-4 space-y-3">

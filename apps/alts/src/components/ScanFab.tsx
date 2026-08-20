@@ -21,6 +21,7 @@ function shouldHide(pathname: string, search = ""): boolean {
   if (/^\/garments\//i.test(pathname)) return true;
   if (/^\/qc(\/|$)/i.test(pathname)) return true;
   if (/^\/settings(\/|$)/i.test(pathname)) return true;
+  if (/^\/admin(\/|$)/i.test(pathname)) return true;
   return false;
 }
 

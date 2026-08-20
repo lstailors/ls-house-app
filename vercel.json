@@ -5,26 +5,6 @@
   "outputDirectory": "webapp/dist",
   "redirects": [
     {
-      "source": "/g/:ticket/:garmentId",
-      "destination": "https://alts.lstailors.com/g/:ticket/:garmentId",
-      "permanent": false
-    },
-    {
-      "source": "/garments/:ticket/:garmentId",
-      "destination": "https://alts.lstailors.com/g/:ticket/:garmentId",
-      "permanent": false
-    },
-    {
-      "source": "/t/:ticket",
-      "destination": "https://alts.lstailors.com/t/:ticket",
-      "permanent": false
-    },
-    {
-      "source": "/e-ticket/:ticket",
-      "destination": "https://alts.lstailors.com/t/:ticket",
-      "permanent": false
-    },
-    {
       "source": "/account",
       "destination": "/login?portal=customer",
       "permanent": false

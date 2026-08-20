@@ -788,7 +788,7 @@ export default function CustomerDetail() {
 
   const deleteMutation = useMutation({
     mutationFn: () => api.delete(`/api/customers/${encodeURIComponent(id!)}`),
-    onSuccess: () => { navigate("/customers"); toast.success("Client archived."); },
+    onSuccess: () => { navigate("/admin/customers"); toast.success("Client archived."); },
     onError: (e: any) => toast.error(e?.message ?? "Archive failed"),
   });
 
@@ -797,7 +797,7 @@ export default function CustomerDetail() {
       <div className="p-6 max-w-lg mx-auto text-center space-y-3">
         <p className="text-cream-muted text-sm">Create clients from intake or lookup search.</p>
         <Button className="btn-brass" onClick={() => navigate("/intake/kind")}>New ticket</Button>
-        <Button variant="outline" onClick={() => navigate("/customers")} className="border-brass/20 text-cream-muted ml-2">
+        <Button variant="outline" onClick={() => navigate("/admin/customers")} className="border-brass/20 text-cream-muted ml-2">
           Back to list
         </Button>
       </div>
@@ -921,7 +921,7 @@ export default function CustomerDetail() {
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-start gap-4 min-w-0">
-          <button onClick={() => navigate("/customers")} className="mt-1 p-1.5 rounded-lg hover:bg-brass/10 text-cream-dim hover:text-cream transition-colors shrink-0">
+          <button onClick={() => navigate("/admin/customers")} className="mt-1 p-1.5 rounded-lg hover:bg-brass/10 text-cream-dim hover:text-cream transition-colors shrink-0">
             <ArrowLeft className="w-4 h-4" />
           </button>
 

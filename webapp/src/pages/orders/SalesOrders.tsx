@@ -403,7 +403,7 @@ export default function SalesOrders() {
             rows={filteredOrders}
             columns={soColumns}
             rowKey={(r) => r.id ?? r.erpnextId}
-            onRowClick={(r) => navigate("/sales-orders/" + (r.erpnextId ?? r.id))}
+            onRowClick={(r) => navigate("/admin/sales-orders/" + (r.erpnextId ?? r.id))}
             density="compact"
           />
         )

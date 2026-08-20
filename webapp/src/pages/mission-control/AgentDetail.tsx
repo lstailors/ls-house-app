@@ -892,7 +892,7 @@ export default function AgentDetail() {
       <div className="flex flex-col items-center justify-center py-24 space-y-4 animate-fade-up">
         <Bot className="h-12 w-12 text-cream-dim" />
         <div className="text-cream-muted text-sm">Agent not found.</div>
-        <Button variant="outline" onClick={() => navigate("/mission-control")}>
+        <Button variant="outline" onClick={() => navigate("/admin/mission-control")}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Mission Control
         </Button>
@@ -919,7 +919,7 @@ export default function AgentDetail() {
     <div className="space-y-8 animate-fade-up">
       {/* Back */}
       <button
-        onClick={() => navigate("/mission-control")}
+        onClick={() => navigate("/admin/mission-control")}
         className="flex items-center gap-1.5 text-base sm:text-sm text-cream-dim hover:text-cream transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />

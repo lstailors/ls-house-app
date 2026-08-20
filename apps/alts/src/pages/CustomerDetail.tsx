@@ -238,11 +238,9 @@ function OrdersTab({ customerId, erpnextCustomerId }: { customerId: string; erpn
           </div>
           <div className="divide-y divide-brass/8">
             {(orders ?? []).map((order: any) => (
-              <a
+              <Link
                 key={order.id}
-                href={`https://app.lstailors.com/orders/custom/${encodeURIComponent(order.id)}`}
-                target="_blank"
-                rel="noreferrer"
+                to={`/admin/orders/custom/${encodeURIComponent(order.id)}`}
                 className="flex items-center justify-between px-4 py-3 hover:bg-brass/5 transition-colors group"
               >
                 <div>
@@ -254,7 +252,7 @@ function OrdersTab({ customerId, erpnextCustomerId }: { customerId: string; erpn
                   <p className="text-brass-shimmer text-sm font-display italic">${Number(order.quotedPrice ?? 0).toFixed(0)}</p>
                   <ExternalLink className="w-3 h-3 text-cream-dim group-hover:text-brass transition-colors" />
                 </div>
-              </a>
+              </Link>
             ))}
           </div>
         </div>

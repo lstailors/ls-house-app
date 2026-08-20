@@ -446,7 +446,7 @@ export default function ApprovalsPage() {
           size="sm"
           variant="outline"
           className="border-brass/20 text-cream-dim"
-          onClick={() => navigate("/mission-control?tab=fleet")}
+          onClick={() => navigate("/admin/mission-control?tab=fleet")}
         >
           ← Mission Control
         </Button>

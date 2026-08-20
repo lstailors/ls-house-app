@@ -1,7 +1,7 @@
 // Liquid Glass — L&S House design tokens.
 // Single source of truth for palette, type, and glass surfaces. Both
-// app.lstailors.com (dashboard) and alts.lstailors.com (intake/day-to-day)
-// derive from this. No one-off colours outside these tokens.
+// app.lstailors.com (floor hub + admin) derives from this.
+// No one-off colours outside these tokens.
 //
 // HER-71 brighten (2026-07-29): lifted forest luminance ~+5–8% L so FOH
 // screens stay readable on iPhone with ambient light. Brass + cream unchanged

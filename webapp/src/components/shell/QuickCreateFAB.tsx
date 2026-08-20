@@ -18,7 +18,7 @@ export function QuickCreateFAB({ userEmail }: QuickCreateFABProps) {
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<"High" | "Medium" | "Low">("Medium");
 
-  const hidden = location.pathname === "/tasks";
+  const hidden = location.pathname === "/tasks" || location.pathname === "/admin/tasks";
 
   const create = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post("/api/tasks", body),

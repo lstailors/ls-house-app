@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 
 const css = readFileSync(new URL("./alts-pos.css", import.meta.url), "utf8");
 const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+const routes = readFileSync(new URL("../AltsRoutes.tsx", import.meta.url), "utf8");
 const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
 const pub = new URL("../../public/", import.meta.url);
 
@@ -103,27 +104,27 @@ describe("iPhone scale contract", () => {
   });
 
   test("appointments live on Alts, not a jump to the house app", () => {
-    expect(app).toContain("AppointmentsGlass");
-    expect(app).toContain('path="/appointments"');
+    expect(routes).toContain("AppointmentsGlass");
+    expect(routes).toContain('path="/appointments"');
   });
 
   test("house pages live on Alts for phone use", () => {
-    expect(app).toContain("TasksGlass");
-    expect(app).toContain('path="/tasks"');
-    expect(app).toContain("MessagesGlass");
-    expect(app).toContain('path="/messages"');
-    expect(app).toContain("ProgressBoard");
-    expect(app).toContain('path="/progress"');
-    expect(app).toContain("QcGlass");
-    expect(app).toContain('path="/qc"');
-    expect(app).toContain("QcInspection");
-    expect(app).toContain('path="/qc/:id"');
-    expect(app).toContain("StockGallery");
-    expect(app).toContain('path="/stock"');
-    expect(app).toContain("StockDetail");
-    expect(app).toContain('path="/stock/:id"');
-    expect(app).toContain("AltsSettings");
-    expect(app).toContain('path="/settings"');
+    expect(routes).toContain("TasksGlass");
+    expect(routes).toContain('path="/tasks"');
+    expect(routes).toContain("MessagesGlass");
+    expect(routes).toContain('path="/messages"');
+    expect(routes).toContain("ProgressBoard");
+    expect(routes).toContain('path="/progress"');
+    expect(routes).toContain("QcGlass");
+    expect(routes).toContain('path="/qc"');
+    expect(routes).toContain("QcInspection");
+    expect(routes).toContain('path="/qc/:id"');
+    expect(routes).toContain("StockGallery");
+    expect(routes).toContain('path="/stock"');
+    expect(routes).toContain("StockDetail");
+    expect(routes).toContain('path="/stock/:id"');
+    expect(routes).toContain("AltsSettings");
+    expect(routes).toContain('path="/settings"');
     const home = readFileSync(new URL("../pages/HomeTiles.tsx", import.meta.url), "utf8");
     expect(home).toContain('nav("/settings")');
     expect(home).not.toMatch(/onClick=\{logout\}/);
@@ -178,8 +179,12 @@ describe("iPhone scale contract", () => {
     const drawer = readFileSync(new URL("../components/intake/GarmentOptionsDrawer.tsx", import.meta.url), "utf8");
     expect(drawer).toContain("/qc");
     expect(app).toContain("NotFound");
-    expect(app).toContain('path="/reports/:tab?"');
+    expect(routes).toContain('path="/reports/:tab?"');
     expect(app).not.toContain('Navigate to="/"');
+    expect(home).toContain("HouseAdminLink");
+    expect(home).toContain("canSeeHouseAdmin");
+    expect(home).toContain('title: "Admin"');
+    expect(home).toContain('key: "admin-desk"');
     expect(home).not.toContain("app.lstailors.com/owner");
     expect(home).not.toContain("Store QC · makes only");
     const reports = readFileSync(new URL("../pages/Reports.tsx", import.meta.url), "utf8");

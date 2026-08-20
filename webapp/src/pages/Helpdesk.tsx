@@ -138,7 +138,7 @@ function TicketRow({ ticket }: { ticket: HDTicket }) {
   const navigate = useNavigate();
   return (
     <button
-      onClick={() => navigate(`/helpdesk/${ticket.name}`)}
+      onClick={() => navigate(`/admin/helpdesk/${ticket.name}`)}
       className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-brass/5 transition-colors border-b border-brass/8 last:border-0 text-left group"
     >
       {/* Priority dot */}

@@ -2,6 +2,7 @@
  * HER-75 / SPEC 043 — "On the board" card (Lucia 033-delivery-status).
  * Read-only board mirror for alts Dispatch. POD capture stays on driver/public flow.
  */
+import { Link } from "react-router-dom";
 import { StatusPill } from "@ls/design";
 import { cn } from "@ls/design/utils";
 
@@ -242,14 +243,12 @@ export default function BoardStatusCard({ board }: { board: BoardDelivery }) {
                 {board.hasSignature || board.signatureImageUrl ? "Signature + photo" : "Photo proof"}
               </i>
             </div>
-            <a
-              href={`https://app.lstailors.com/deliveries/${encodeURIComponent(board.id)}`}
-              target="_blank"
-              rel="noreferrer"
+            <Link
+              to={`/deliveries/${encodeURIComponent(board.id)}`}
               className="min-h-11 px-3 grid place-items-center text-[12px] font-semibold tracking-[0.1em] uppercase text-[var(--bl)]"
             >
               View
-            </a>
+            </Link>
           </div>
         ) : failed ? (
           <div
@@ -270,14 +269,12 @@ export default function BoardStatusCard({ board }: { board: BoardDelivery }) {
                 {board.notes || "Driver could not complete drop"}
               </i>
             </div>
-            <a
-              href={`https://app.lstailors.com/deliveries/${encodeURIComponent(board.id)}`}
-              target="_blank"
-              rel="noreferrer"
+            <Link
+              to={`/deliveries/${encodeURIComponent(board.id)}`}
               className="min-h-11 px-3 grid place-items-center text-[12px] font-semibold tracking-[0.1em] uppercase text-[var(--bl)]"
             >
               Reschedule
-            </a>
+            </Link>
           </div>
         ) : (
           <div

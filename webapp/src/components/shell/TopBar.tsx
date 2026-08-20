@@ -449,10 +449,10 @@ export function TopBar({ user, onMenuClick }: Props) {
               <div className="ui-label text-[9px] mt-0.5">{user.email}</div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator className="bg-brass/15" />
-            <DropdownMenuItem onClick={() => navigate("/settings")} className="text-cream-muted focus:bg-brass/10 focus:text-cream">
+            <DropdownMenuItem onClick={() => navigate("/admin/settings")} className="text-cream-muted focus:bg-brass/10 focus:text-cream">
               <UserRound className="mr-2 h-4 w-4" /> Profile
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate("/settings")} className="text-cream-muted focus:bg-brass/10 focus:text-cream">
+            <DropdownMenuItem onClick={() => navigate("/admin/settings")} className="text-cream-muted focus:bg-brass/10 focus:text-cream">
               <Settings className="mr-2 h-4 w-4" /> Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator className="bg-brass/15" />

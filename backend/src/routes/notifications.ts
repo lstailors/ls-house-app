@@ -25,7 +25,7 @@ notificationsRouter.get("/", async (c) => {
         body: a.summary ?? null,
         category: a.category ?? null,
         ts: a.creation,
-        href: `/approvals?id=${a.name}`,
+        href: `/admin/approvals?id=${a.name}`,
         read: false,
       });
     }
@@ -53,7 +53,7 @@ notificationsRouter.get("/", async (c) => {
         body: t.lsh_context ?? null,
         meta: t.date ? `Due ${t.date}` : null,
         ts: t.date ?? null,
-        href: `/tasks`,
+        href: `/admin/tasks`,
         read: false,
       });
     }
@@ -73,7 +73,7 @@ notificationsRouter.get("/", async (c) => {
         body: f.detail ?? null,
         meta: `${f.agent_slug} · ${f.entry_type}`,
         ts: f.creation,
-        href: `/comms?flag=${f.name}`,
+        href: `/admin/comms?flag=${f.name}`,
         read: false,
       });
     }
@@ -90,7 +90,7 @@ notificationsRouter.get("/", async (c) => {
         title: b.title ?? "Maestro Brief",
         body: b.summary?.slice(0, 120) + (b.summary?.length > 120 ? "…" : ""),
         ts: b.creation,
-        href: `/mission-control?tab=brief&id=${b.name}`,
+        href: `/admin/mission-control?tab=brief&id=${b.name}`,
         read: false,
       });
     }
@@ -119,7 +119,7 @@ notificationsRouter.get("/", async (c) => {
         body: t.allocated_to ? `→ ${t.allocated_to.split("@")[0]}` : null,
         meta: t.date ? `Due ${t.date}` : null,
         ts: t.date ?? null,
-        href: `/tasks`,
+        href: `/admin/tasks`,
         read: false,
       });
     }
@@ -142,7 +142,7 @@ notificationsRouter.get("/", async (c) => {
           title: `${o.customer_name}'s order is ready`,
           body: `${o.name} — ready to deliver`,
           ts: o.modified,
-          href: `/sales-orders/${o.name}`,
+          href: `/admin/sales-orders/${o.name}`,
           read: false,
         });
       }
@@ -167,7 +167,7 @@ notificationsRouter.get("/", async (c) => {
           title: `Overdue Invoice — ${i.name}`,
           body: `${i.customer_name} · $${Number(i.outstanding_amount).toLocaleString()} outstanding`,
           ts: i.due_date,
-          href: `/invoices?id=${i.name}`,
+          href: `/admin/invoices?id=${i.name}`,
           read: false,
         });
       }
@@ -200,7 +200,7 @@ notificationsRouter.get("/", async (c) => {
         body: `${t.name} · ${t.status}`,
         meta: `Helpdesk · ${daysOpen}d`,
         ts: t.creation,
-        href: `/helpdesk/${t.name}`,
+        href: `/admin/helpdesk/${t.name}`,
         read: false,
       });
     }

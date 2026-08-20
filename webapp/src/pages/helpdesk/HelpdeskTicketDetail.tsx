@@ -154,7 +154,7 @@ export default function HelpdeskTicketDetail() {
   if (!ticket) {
     return (
       <div className="space-y-4">
-        <Button variant="ghost" onClick={() => navigate("/helpdesk")} className="text-cream-dim hover:text-cream">
+        <Button variant="ghost" onClick={() => navigate("/admin/helpdesk")} className="text-cream-dim hover:text-cream">
           <ArrowLeft className="h-4 w-4 mr-2" /> Back to Helpdesk
         </Button>
         <GlassCard className="p-8 text-center text-cream-dim">Ticket not found.</GlassCard>
@@ -169,7 +169,7 @@ export default function HelpdeskTicketDetail() {
       {/* Back */}
       <Button
         variant="ghost"
-        onClick={() => navigate("/helpdesk")}
+        onClick={() => navigate("/admin/helpdesk")}
         className="text-cream-dim hover:text-cream -ml-2"
       >
         <ArrowLeft className="h-4 w-4 mr-2" /> Back to Helpdesk
