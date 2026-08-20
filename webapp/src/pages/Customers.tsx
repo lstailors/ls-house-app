@@ -194,7 +194,7 @@ export default function Customers() {
         title={<>Every <span className="text-brass-shimmer">gentleman</span> in the house.</>}
         description={`${bookTotal.toLocaleString()} clients in the book. Search the full ERP book — not just this page.`}
         actions={
-          <Button className="btn-brass" onClick={() => navigate("/customers/new")}>
+          <Button className="btn-brass" onClick={() => navigate("/admin/customers/new")}>
             <Plus className="w-4 h-4 mr-1.5" /> New Client
           </Button>
         }
@@ -320,12 +320,12 @@ export default function Customers() {
               ? `No match for “${debouncedQ}” in the full book`
               : "Add the first client to get started."
           }
-          action={<Button className="btn-brass" onClick={() => navigate("/customers/new")}>New Client</Button>}
+          action={<Button className="btn-brass" onClick={() => navigate("/admin/customers/new")}>New Client</Button>}
         />
       ) : (
         <div className="space-y-2">
           {customers.map(c => (
-            <CustomerCard key={c.id} c={c} onClick={() => navigate(`/customers/${c.id}`)} />
+            <CustomerCard key={c.id} c={c} onClick={() => navigate(`/admin/customers/${c.id}`)} />
           ))}
           {canLoadMore && (
             <button

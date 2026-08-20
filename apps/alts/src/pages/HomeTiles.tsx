@@ -612,6 +612,7 @@ export default function HomeTiles() {
 
   const initials = clientInitials(me?.name ?? "LS");
   const canQc = me?.role === "super_admin" || me?.role === "tailor";
+  const canAdmin = me?.role === "super_admin" || me?.role === "store_manager";
   const hour = storeHour();
   const ambient = kiosk && (hour >= 18 || hour < 9);
   const board = feed ?? EMPTY_LIVE_HOME;
@@ -1152,6 +1153,15 @@ export default function HomeTiles() {
           )}
         </div>
         <CoverMoneyButton on={coverMoney} onToggle={toggleCoverMoney} />
+        {canAdmin && !kiosk && (
+          <Link
+            to="/admin"
+            className="h-8 px-3 rounded-full border border-brass/40 text-[10.5px] font-bold tracking-[0.12em] uppercase text-brass-light shrink-0 inline-flex items-center"
+            aria-label="Open admin"
+          >
+            Admin
+          </Link>
+        )}
         {!kiosk && (
         <button
           type="button"
@@ -1361,6 +1371,11 @@ export default function HomeTiles() {
         <Link to="/house" className="qbtn">
           <span aria-hidden>⌂</span> House
         </Link>
+        {canAdmin && (
+          <Link to="/admin" className="qbtn" data-testid="qa-admin">
+            <span aria-hidden>◆</span> Admin
+          </Link>
+        )}
       </div>
 
       {(home.isError || erpDown) && !kiosk && !offline && (

@@ -398,14 +398,12 @@ export default function HouseFind() {
                   Open client
                 </Link>
               )}
-              <a
-                href={`https://app.lstailors.com/orders/custom/${encodeURIComponent(pickedCustom.id)}`}
-                target="_blank"
-                rel="noreferrer"
+              <Link
+                to={`/admin/orders/custom/${encodeURIComponent(pickedCustom.id)}`}
                 className="h-12 rounded-xl border border-brass/35 text-[11px] font-bold uppercase tracking-widest inline-flex items-center justify-center"
               >
                 Full order on the desk
-              </a>
+              </Link>
               <button type="button" onClick={() => setPickedCustom(null)} className="btn-ghost h-12 text-xs">
                 Close
               </button>
@@ -452,14 +450,12 @@ export default function HouseFind() {
               >
                 Find related tickets
               </Link>
-              <a
-                href={`https://app.lstailors.com/sales-orders/${encodeURIComponent(pickedSo.name)}`}
-                target="_blank"
-                rel="noreferrer"
+              <Link
+                to={`/admin/sales-orders/${encodeURIComponent(pickedSo.name)}`}
                 className="h-12 rounded-xl border border-brass/25 text-[11px] font-bold uppercase tracking-widest inline-flex items-center justify-center text-cream-dim"
               >
                 Full order on the desk
-              </a>
+              </Link>
               <button type="button" onClick={() => setPickedSo(null)} className="btn-ghost h-12 text-xs">
                 Close
               </button>

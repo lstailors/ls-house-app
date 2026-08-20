@@ -533,7 +533,7 @@ export default function OwnerDashboard() {
             <GlassCard variant="strong" className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="ui-label">Ticket Priority</div>
-                <button type="button" onClick={() => navigate("/helpdesk")} className="text-xs text-brass-light">
+                <button type="button" onClick={() => navigate("/admin/helpdesk")} className="text-xs text-brass-light">
                   Helpdesk →
                 </button>
               </div>
@@ -585,7 +585,7 @@ export default function OwnerDashboard() {
                     <button
                       key={c.customer + c.name}
                       type="button"
-                      onClick={() => navigate(`/customers`)}
+                      onClick={() => navigate(`/admin/customers`)}
                       className="w-full text-left group flex items-center gap-3 py-1.5 hover:bg-brass/5 rounded-lg px-1"
                     >
                       <span className="text-[10px] w-4 text-right text-cream-dim">{i + 1}</span>
@@ -628,7 +628,7 @@ export default function OwnerDashboard() {
                     <button
                       key={c.customer + c.name}
                       type="button"
-                      onClick={() => navigate("/invoices")}
+                      onClick={() => navigate("/admin/invoices")}
                       className="w-full text-left py-1.5 px-1 rounded-lg hover:bg-brass/5"
                     >
                       <div className="flex justify-between text-xs mb-1 gap-2">
@@ -758,7 +758,7 @@ export default function OwnerDashboard() {
                     <Activity className="h-3 w-3" /> 60s
                   </span>
                 </div>
-                <button type="button" onClick={() => navigate("/invoices")} className="text-xs text-brass-light">
+                <button type="button" onClick={() => navigate("/admin/invoices")} className="text-xs text-brass-light">
                   All invoices →
                 </button>
               </div>
@@ -767,7 +767,7 @@ export default function OwnerDashboard() {
                   <button
                     key={row.name}
                     type="button"
-                    onClick={() => navigate(`/invoices/${row.name}`)}
+                    onClick={() => navigate(`/admin/invoices/${row.name}`)}
                     className="w-full flex items-center gap-3 py-2.5 text-left hover:bg-brass/5 px-1 rounded-lg"
                   >
                     <span

@@ -1396,14 +1396,12 @@ export default function PickupCounter() {
                           On board ·{" "}
                           <span className="font-mono text-brass-light">{boardRow.id}</span>
                         </div>
-                        <a
-                          href={`https://app.lstailors.com/deliveries/${boardRow.id}`}
-                          target="_blank"
-                          rel="noreferrer"
+                        <Link
+                          to={`/deliveries/${boardRow.id}`}
                           className="inline-flex text-[12px] font-bold tracking-widest uppercase text-[#C4B5E0] pt-1"
                         >
-                          Open on dispatch board ↗
-                        </a>
+                          Open on dispatch board →
+                        </Link>
                       </div>
                     ) : (
                       <button

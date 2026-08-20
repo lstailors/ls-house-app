@@ -590,14 +590,12 @@ export default function Dispatch() {
                       " · " +
                       boardWindow(boardDoc)}
                   </div>
-                  <a
-                    href={`https://app.lstailors.com/deliveries/${encodeURIComponent(boardDoc.id)}`}
-                    target="_blank"
-                    rel="noreferrer"
+                  <Link
+                    to={`/deliveries/${encodeURIComponent(boardDoc.id)}`}
                     className="btn-ghost w-full min-h-11 h-11 text-[12px] mb-4 inline-flex items-center justify-center"
                   >
                     Open on dispatch board →
-                  </a>
+                  </Link>
                 </>
               )}
 

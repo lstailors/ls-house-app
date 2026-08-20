@@ -48,7 +48,7 @@ export default function AdminOverview() {
               icon={Sparkles}
               label="Custom Orders"
               value={data.totalCustomOrders}
-              to="/orders/custom"
+              to="/admin/orders/custom"
               accent="brass"
             />
             <OverviewCard

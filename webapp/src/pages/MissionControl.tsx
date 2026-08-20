@@ -160,7 +160,7 @@ function AgentStatusCard({ agent, costToday, onClick }: {
 
   return (
     <div
-      onClick={() => navigate(`/mission-control/agents/${agent.slug}`)}
+      onClick={() => navigate(`/admin/mission-control/agents/${agent.slug}`)}
       className={cn(
         "glass-panel rounded-2xl p-4 cursor-pointer border border-brass/10 transition-all duration-200 group",
         glow,
@@ -289,7 +289,7 @@ function FleetPanel({ agents, costs }: { agents: any[]; costs: any }) {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
           {internal.map(a => (
-            <AgentStatusCard key={a.id} agent={a} costToday={getCostToday(a.slug)} onClick={() => navigate(`/mission-control/agents/${a.slug}`)} />
+            <AgentStatusCard key={a.id} agent={a} costToday={getCostToday(a.slug)} onClick={() => navigate(`/admin/mission-control/agents/${a.slug}`)} />
           ))}
         </div>
       </div>
@@ -330,7 +330,7 @@ function FleetPanel({ agents, costs }: { agents: any[]; costs: any }) {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => navigate("/mission-control/agents/sofia")}
+                onClick={() => navigate("/admin/mission-control/agents/sofia")}
                 className="ml-auto border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/20"
               >
                 Sofia Detail →
@@ -1070,7 +1070,7 @@ export default function MissionControl() {
 
   const selectTab = (id: Tab) => {
     if (id === "approvals") {
-      navigate("/approvals");
+      navigate("/admin/approvals");
       return;
     }
     setTab(id);

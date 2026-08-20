@@ -253,7 +253,7 @@ export default function SalesOrderDetail() {
       <div className="space-y-4 animate-fade-up">
         <div className="text-cream-muted text-sm">Order not found.</div>
         <button
-          onClick={() => navigate("/sales-orders")}
+          onClick={() => navigate("/admin/sales-orders")}
           className="inline-flex items-center gap-1.5 text-xs text-cream-dim hover:text-cream transition-colors"
         >
           <ArrowLeft className="h-3 w-3" /> Back to orders
@@ -285,7 +285,7 @@ export default function SalesOrderDetail() {
       {/* Back + Header bar */}
       <div className="flex flex-col gap-3">
         <button
-          onClick={() => navigate("/sales-orders")}
+          onClick={() => navigate("/admin/sales-orders")}
           className="inline-flex items-center gap-1.5 text-xs text-cream-dim hover:text-cream transition-colors self-start"
         >
           <ArrowLeft className="h-3 w-3" /> Back to orders

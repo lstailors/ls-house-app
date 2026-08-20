@@ -130,8 +130,7 @@ export default defineConfig({
       { find: /^@ls\/design\/hooks\/(.*)$/, replacement: path.join(pkgs, "design/src/hooks") + "/$1" },
       { find: /^@ls\/design\/glass\/(.*)$/, replacement: path.join(pkgs, "design/src/glass") + "/$1" },
       { find: /^@ls\/design$/, replacement: path.join(pkgs, "design/src/index.ts") },
-      // HER-64 step 2: all @/ deps extracted — alts is now self-contained
-      // { find: "@", replacement: path.resolve(__dirname, "../../webapp/src") }, // REMOVED — no @/ imports remain
+      { find: "@", replacement: path.resolve(__dirname, "../../webapp/src") },
     ],
     dedupe: ["react", "react-dom", "@tanstack/react-query", "clsx", "tailwind-merge"],
   },

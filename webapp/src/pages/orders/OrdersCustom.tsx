@@ -153,7 +153,7 @@ export default function OrdersCustom() {
         description="Every custom order, from quote to delivery."
         actions={
           <Button asChild className="btn-brass">
-            <Link to="/intake/custom">
+            <Link to="/admin/intake/custom">
               <Plus className="h-4 w-4 mr-1.5" /> New commission
             </Link>
           </Button>
@@ -226,7 +226,7 @@ export default function OrdersCustom() {
           description="A bespoke commission begins at the counter — open the Custom Made POS."
           action={
             <Button asChild className="btn-brass">
-              <Link to="/intake/custom">Start commission</Link>
+              <Link to="/admin/intake/custom">Start commission</Link>
             </Button>
           }
         />
@@ -235,7 +235,7 @@ export default function OrdersCustom() {
           rows={rows}
           columns={columns}
           rowKey={(r) => r.id}
-          onRowClick={(r) => navigate(`/orders/custom/${r.id}`)}
+          onRowClick={(r) => navigate(`/admin/orders/custom/${r.id}`)}
         />
       )}
     </div>

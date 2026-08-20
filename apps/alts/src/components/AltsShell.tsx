@@ -36,6 +36,15 @@ export default function AltsShell() {
           </span>
         </Link>
         <UniversalSearchInline className="mx-1" />
+        {me && (me.role === "super_admin" || me.role === "store_manager") && (
+          <Link
+            to="/admin"
+            className="text-[11px] sm:text-xs uppercase tracking-widest text-brass-light hover:text-cream px-2 sm:px-3 py-2 shrink-0"
+            aria-label="Admin"
+          >
+            Admin
+          </Link>
+        )}
         {me && (
           <Link
             to="/settings"

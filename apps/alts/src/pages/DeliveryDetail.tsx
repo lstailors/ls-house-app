@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Phone, MapPin, Clock, CheckCircle2, Truck, Printer,
@@ -164,14 +164,12 @@ export default function DeliveryDetail() {
             {delivery.deliveryNo ?? `#${delivery.id.slice(-6).toUpperCase()}`}
           </div>
           {delivery.orderRef ? (
-            <a
-              href={`https://app.lstailors.com/sales-orders/${encodeURIComponent(delivery.orderRef)}`}
-              target="_blank"
-              rel="noreferrer"
+            <Link
+              to={`/admin/sales-orders/${encodeURIComponent(delivery.orderRef)}`}
               className="text-xs text-brass-light/70 hover:text-brass-light font-mono flex items-center gap-1 mt-1"
             >
               <ExternalLink className="h-3 w-3" /> {delivery.orderRef}
-            </a>
+            </Link>
           ) : null}
         </div>
         <div className="flex items-center gap-2 shrink-0">

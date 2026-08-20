@@ -56,7 +56,7 @@ export function RevenueTrend({ trend, revenueMTD, revenueChange, avgOrderValue, 
           </div>
         </div>
         <button
-          onClick={() => navigate("/financials")}
+          onClick={() => navigate("/admin/financials")}
           className="text-xs text-brass-light hover:text-brass transition-colors"
         >
           Full report →

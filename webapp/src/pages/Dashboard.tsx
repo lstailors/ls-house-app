@@ -131,7 +131,7 @@ function DailyEspresso() {
           <div className={`kpi-number text-4xl mb-1 ${approvals.total > 0 ? "text-signal-amber" : "text-cream"}`}>
             {approvals.total}
           </div>
-          <button onClick={() => navigate("/approvals")}
+          <button onClick={() => navigate("/admin/approvals")}
             className="text-xs text-brass-light hover:text-brass transition-colors">
             Review →
           </button>
@@ -164,7 +164,7 @@ function DailyEspresso() {
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="ui-label">Open Tasks</div>
-              <button onClick={() => navigate("/mission-control")}
+              <button onClick={() => navigate("/admin/mission-control")}
                 className="text-xs text-brass-light hover:text-brass transition-colors">
                 View all →
               </button>
@@ -271,7 +271,7 @@ export default function Dashboard() {
           </div>
         </GlassCard>
         <div className="flex gap-3">
-          <Button className="btn-brass" onClick={() => navigate("/intake/custom")}>New Custom Order</Button>
+          <Button className="btn-brass" onClick={() => navigate("/admin/intake/custom")}>New Custom Order</Button>
           <Button variant="outline" className="border-brass/30 text-cream hover:bg-brass/10" onClick={() => navigate("/intake/alterations")}>New Alteration</Button>
         </div>
       </div>
@@ -343,7 +343,7 @@ export default function Dashboard() {
             <span className="sm:hidden">Transfer</span>
           </button>
           <button
-            onClick={() => navigate("/dispatch")}
+            onClick={() => navigate("/admin/dispatch")}
             className="inline-flex items-center gap-1.5 rounded-full border border-brass/30 bg-brass/8 px-3.5 py-2 text-xs font-medium text-brass-shimmer hover:bg-brass/15 hover:border-brass/50 transition-all"
           >
             <MessageSquare className="h-3.5 w-3.5" />
@@ -423,7 +423,7 @@ export default function Dashboard() {
         <GlassCard variant="strong" className="p-6">
           <div className="flex items-center justify-between mb-5">
             <div className="ui-label">Custom Orders Pipeline</div>
-            <button onClick={() => navigate("/orders/custom")}
+            <button onClick={() => navigate("/admin/orders/custom")}
               className="text-xs text-brass-light hover:text-brass transition-colors">
               View all →
             </button>
@@ -436,7 +436,7 @@ export default function Dashboard() {
               return (
                 <div
                   key={stage}
-                  onClick={() => navigate("/orders/custom")}
+                  onClick={() => navigate("/admin/orders/custom")}
                   className={cn(
                     "flex flex-col gap-1.5 p-3.5 rounded-xl border cursor-pointer transition-colors",
                     isActive ? "bg-signal-amber/8 border-signal-amber/25 hover:bg-signal-amber/12"
@@ -506,7 +506,7 @@ export default function Dashboard() {
             {isLoading ? "—" : unansweredSms}
           </div>
           <div className="text-xs text-cream-muted mb-3">unanswered thread{unansweredSms !== 1 ? "s" : ""}</div>
-          <button onClick={() => navigate("/comms")}
+          <button onClick={() => navigate("/admin/comms")}
             className="text-xs text-brass-light hover:text-brass transition-colors">
             Open inbox →
           </button>
@@ -545,7 +545,7 @@ export default function Dashboard() {
           <div className="kpi-number text-4xl mb-1">{isLoading ? "—" : (kpis?.todayIntakeCount ?? 0)}</div>
           <div className="text-xs text-cream-muted mb-3">orders created today</div>
           <div className="flex gap-3">
-            <button onClick={() => navigate("/intake/custom")}
+            <button onClick={() => navigate("/admin/intake/custom")}
               className="text-xs text-brass-light hover:text-brass transition-colors">
               New custom →
             </button>

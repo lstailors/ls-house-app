@@ -134,7 +134,7 @@ export default function InvoiceDetail() {
       <div className="space-y-4 animate-fade-up p-6">
         <div className="text-cream-muted text-sm">Invoice not found.</div>
         <button
-          onClick={() => navigate("/invoices")}
+          onClick={() => navigate("/admin/invoices")}
           className="inline-flex items-center gap-1.5 text-xs text-cream-dim hover:text-cream transition-colors"
         >
           <ArrowLeft className="h-3 w-3" /> Back to invoices
@@ -152,7 +152,7 @@ export default function InvoiceDetail() {
       {/* ── Header ── */}
       <div className="flex flex-col gap-3">
         <button
-          onClick={() => navigate("/invoices")}
+          onClick={() => navigate("/admin/invoices")}
           className="inline-flex items-center gap-1.5 text-xs text-cream-dim hover:text-cream transition-colors self-start"
         >
           <ArrowLeft className="h-3 w-3" /> Back to invoices

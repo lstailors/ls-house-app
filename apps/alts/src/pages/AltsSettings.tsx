@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
@@ -24,6 +24,7 @@ export default function AltsSettings() {
   const qc = useQueryClient();
   const { data: me } = useMe();
   const isAdmin = me?.role === "super_admin";
+  const canOpenHouseAdmin = me?.role === "super_admin" || me?.role === "store_manager";
   const [apiKey, setApiKey] = useState("");
   const [url, setUrl] = useState("");
   const [showTest, setShowTest] = useState(getShowTestData);
@@ -99,6 +100,19 @@ export default function AltsSettings() {
           <div className="display text-2xl mt-1">{me?.name || "Staff"}</div>
           <p className="text-sm text-cream-dim mt-1">{me?.email}</p>
         </div>
+
+        {canOpenHouseAdmin && (
+          <Link
+            to="/admin"
+            className="card-glass px-4 py-4 block hover:border-brass/40 transition-colors"
+          >
+            <div className="caps text-brass-light">House admin</div>
+            <div className="display text-2xl mt-1">Open admin</div>
+            <p className="text-sm text-cream-dim mt-1">
+              Users, financials, communications, and the full house desk — same app.
+            </p>
+          </Link>
+        )}
 
         {isAdmin && (
           <div className="card-glass px-4 py-4 space-y-3">
