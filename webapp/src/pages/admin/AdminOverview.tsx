@@ -55,7 +55,7 @@ export default function AdminOverview() {
               icon={Scissors}
               label="Alterations"
               value={data.totalAlterations}
-              to="/orders/alterations"
+              to="/admin/orders/alterations"
               accent="emerald"
             />
             <OverviewCard

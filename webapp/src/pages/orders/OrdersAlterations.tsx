@@ -184,7 +184,7 @@ export default function OrdersAlterations() {
           rows={rows}
           columns={columns}
           rowKey={(r) => r.id}
-          onRowClick={(r) => navigate(`/orders/alterations/${r.id}`)}
+          onRowClick={(r) => navigate(`/admin/orders/alterations/${r.id}`)}
         />
       )}
 

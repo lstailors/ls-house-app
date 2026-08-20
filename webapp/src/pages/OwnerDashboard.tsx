@@ -658,7 +658,7 @@ export default function OwnerDashboard() {
             <GlassCard variant="strong" className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="ui-label">Alteration Pipeline</div>
-                <button type="button" onClick={() => navigate("/orders/alterations")} className="text-xs text-brass-light">
+                <button type="button" onClick={() => navigate("/admin/orders/alterations")} className="text-xs text-brass-light">
                   View →
                 </button>
               </div>

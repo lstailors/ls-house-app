@@ -22,6 +22,8 @@ const LocationSettings = lazy(() => import("@/pages/admin/LocationSettings"));
 const AdminTailors = lazy(() => import("@/pages/admin/AdminTailors"));
 const AdminOverview = lazy(() => import("@/pages/admin/AdminOverview"));
 const AdminBoard = lazy(() => import("@/pages/admin/AdminBoard"));
+const OrdersAlterations = lazy(() => import("@/pages/orders/OrdersAlterations"));
+const TicketDetail = lazy(() => import("@/pages/intake/TicketDetail"));
 const FabricPricingPage = lazy(() => import("@/pages/reference/FabricPricingPage"));
 const StyleLibraryPage = lazy(() => import("@/pages/reference/StyleLibraryPage"));
 const Academy = lazy(() => import("@/pages/Academy"));
@@ -69,6 +71,8 @@ export function AdminRouteTree() {
         <Route path="intake/custom" element={guard(SALES, <IntakeCustom />)} />
         <Route path="orders/custom" element={guard(SALES, <OrdersCustom />)} />
         <Route path="orders/custom/:id" element={guard(SALES, <CustomOrderDetail />)} />
+        <Route path="orders/alterations" element={guard([...SALES, "tailor"], <OrdersAlterations />)} />
+        <Route path="orders/alterations/:ticketName" element={guard([...SALES, "tailor"], <TicketDetail />)} />
         <Route path="sales-orders" element={guard(MGMT, <SalesOrders />)} />
         <Route path="sales-orders/:id" element={guard(MGMT, <SalesOrderDetail />)} />
         <Route path="invoices" element={guard(MGMT, <Invoices />)} />
