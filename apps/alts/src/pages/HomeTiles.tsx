@@ -567,8 +567,6 @@ export default function HomeTiles() {
     if (code <= 1) return "☀️";
     if (code === 2) return "🌤";
     if (code === 3) return "☁️";
-    if (code >= 45 && code <= 48) return "� return "🌤";
-    if (code === 3) return "☁️";
     if (code >= 45 && code <= 48) return "🌫";
     if (code >= 51 && code <= 67) return "🌧";
     if (code >= 71 && code <= 77) return "❄️";
