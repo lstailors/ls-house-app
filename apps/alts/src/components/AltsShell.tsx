@@ -7,7 +7,8 @@ import { useKioskMode } from "@alts/lib/kiosk";
 import { canSeeHouseAdmin } from "@alts/lib/houseAdmin";
 import { HouseAdminLink } from "@alts/components/HouseAdminLink";
 
-/** Minimal chrome for FOH — tile home owns its own header; nested pages get a slim top bar + universal search. */
+/** Minimal chrome for FOH — tile home owns its own header; nested pages get a slim top bar + universal search.
+ *  Pepe FAB/panel is mounted in App.tsx (portal to body) so Intake and other routes outside this shell still get it. */
 export default function AltsShell() {
   const { data: me } = useMe();
   const loc = useLocation();
