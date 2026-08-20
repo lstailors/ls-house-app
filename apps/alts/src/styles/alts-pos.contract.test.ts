@@ -183,6 +183,8 @@ describe("iPhone scale contract", () => {
     expect(app).not.toContain('Navigate to="/"');
     expect(home).toContain("HouseAdminLink");
     expect(home).toContain("canSeeHouseAdmin");
+    expect(home).toContain('title: "Admin"');
+    expect(home).toContain('key: "admin-desk"');
     expect(home).not.toContain("app.lstailors.com/owner");
     expect(home).not.toContain("Store QC · makes only");
     const reports = readFileSync(new URL("../pages/Reports.tsx", import.meta.url), "utf8");

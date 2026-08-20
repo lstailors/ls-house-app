@@ -25,7 +25,7 @@ import { EMPTY_LIVE_HOME } from "@alts/lib/liveDashboard";
 import { useShopLink } from "@alts/offline/status";
 import { NeedsConnection } from "@alts/components/NeedsConnection";
 import { readCoverMoney, writeCoverMoney } from "@alts/lib/coverMoney";
-import { canSeeHouseAdmin } from "@alts/lib/houseAdmin";
+import { canSeeHouseAdmin, houseAdminHref, houseAdminIsExternal } from "@alts/lib/houseAdmin";
 import { HouseAdminLink } from "@alts/components/HouseAdminLink";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
@@ -422,6 +422,7 @@ type TileDef = {
   key: string;
   to?: string;
   href?: string;
+  sameWindow?: boolean;
   title: string;
   sub: string;
   primary?: boolean;
@@ -821,6 +822,25 @@ export default function HomeTiles() {
 
   const tiles: TileDef[] = [
     {
+      key: "admin-desk",
+      href: houseAdminIsExternal() ? houseAdminHref() : undefined,
+      to: houseAdminIsExternal() ? undefined : "/admin",
+      sameWindow: true,
+      title: "Admin",
+      sub: "House desk · users · money",
+      primary: true,
+      admin: true,
+      live: houseAdminIsExternal() ? "Opens app.lstailors.com" : "This app",
+      liveTone: "em",
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10 22L26 10l16 12v20a3 3 0 0 1-3 3H13a3 3 0 0 1-3-3z" />
+          <path d="M22 45V30h8v15" />
+          <circle cx="26" cy="24" r="3.5" />
+        </svg>
+      ),
+    },
+    {
       key: "new",
       to: "/intake/kind",
       title: "New Ticket",
@@ -1139,6 +1159,11 @@ export default function HomeTiles() {
           <div className="display text-[24px] leading-tight">L&S House</div>
           <div className="text-[11px] tracking-[0.16em] uppercase text-[var(--cd)]">Alterations</div>
         </div>
+        {canAdmin && !kiosk && (
+          <HouseAdminLink className="h-9 px-4 rounded-full bg-brass text-[#0D1A10] text-[11px] font-bold tracking-[0.14em] uppercase shrink-0 inline-flex items-center">
+            Admin
+          </HouseAdminLink>
+        )}
         {!kiosk && <UniversalSearchInline className="mx-0.5 sm:mx-1 flex-1 min-w-0 max-w-[min(100%,280px)]" />}
         <div className="flex-1 min-w-0 hidden lg:block" />
         <div className="hidden xl:flex items-center rounded-full border border-brass/35 px-3 py-1.5 text-[10.5px] font-bold tracking-[0.1em] text-brass-light shrink-0">
@@ -1155,11 +1180,6 @@ export default function HomeTiles() {
           )}
         </div>
         <CoverMoneyButton on={coverMoney} onToggle={toggleCoverMoney} />
-        {canAdmin && !kiosk && (
-          <HouseAdminLink className="h-8 px-3 rounded-full border border-brass/40 text-[10.5px] font-bold tracking-[0.12em] uppercase text-brass-light shrink-0 inline-flex items-center">
-            Admin
-          </HouseAdminLink>
-        )}
         {!kiosk && (
         <button
           type="button"
@@ -1354,6 +1374,11 @@ export default function HomeTiles() {
 
       {/* Quick actions */}
       <div className={cn("home-040-qa shrink-0 flex gap-2.5", kiosk && "hidden")} data-testid="quick-actions">
+        {canAdmin && (
+          <HouseAdminLink className="qbtn primary" data-testid="qa-admin">
+            <span aria-hidden>◆</span> Admin
+          </HouseAdminLink>
+        )}
         <Link to="/dispatch" className="qbtn primary">
           <span aria-hidden>⚡</span> Charge &amp; Dispatch
         </Link>
@@ -1369,11 +1394,6 @@ export default function HomeTiles() {
         <Link to="/house" className="qbtn">
           <span aria-hidden>⌂</span> House
         </Link>
-        {canAdmin && (
-          <HouseAdminLink className="qbtn" data-testid="qa-admin">
-            <span aria-hidden>◆</span> Admin
-          </HouseAdminLink>
-        )}
       </div>
 
       {(home.isError || erpDown) && !kiosk && !offline && (
@@ -1395,7 +1415,7 @@ export default function HomeTiles() {
       ) : (
       <div className="home-040-grid flex-1 min-h-0" data-testid="tile-grid">
         {tiles
-          .filter((t) => t.key !== "qc" || canQc)
+          .filter((t) => (t.key !== "qc" || canQc) && (t.key !== "admin-desk" || canAdmin))
           .map((t) => {
           const className = cn(
             "home-040-tile",
@@ -1437,7 +1457,13 @@ export default function HomeTiles() {
 
           if (t.href) {
             return (
-              <a key={t.key} href={t.href} target="_blank" rel="noreferrer" className={className}>
+              <a
+                key={t.key}
+                href={t.href}
+                target={t.sameWindow ? undefined : "_blank"}
+                rel={t.sameWindow ? undefined : "noreferrer"}
+                className={className}
+              >
                 {tileBody}
               </a>
             );
