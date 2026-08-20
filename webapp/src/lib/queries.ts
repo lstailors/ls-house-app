@@ -626,7 +626,16 @@ export type SofiaChatResponse = {
 
 export function useSofiaChat() {
   return useMutation({
-    mutationFn: (message: string) => api.post<SofiaChatResponse>("/api/sofia/chat", { message }),
+    mutationFn: (input: {
+      message: string;
+      history?: { role: "user" | "assistant" | "staff" | "sofia"; content?: string; text?: string }[];
+      context_phone?: string | null;
+    }) =>
+      api.post<SofiaChatResponse>("/api/sofia/chat", {
+        message: input.message,
+        history: input.history,
+        context_phone: input.context_phone ?? null,
+      }),
   });
 }
 

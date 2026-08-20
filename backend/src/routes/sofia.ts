@@ -19,6 +19,7 @@ import { approveEmailDraft, discardEmailDraft } from "../lib/erpnext/email-draft
 import { getAuthedUser } from "../lib/scope";
 import { requireCronOrSession } from "../lib/require-secret";
 import { dispatchSms } from "../lib/outbound";
+import { parseContextPhone, parseSofiaChatHistory, type SofiaChatTurn } from "../lib/sofia-chat";
 // sendSms and alertCarl defined locally below
 
 // ── Constants ──
@@ -1412,13 +1413,20 @@ async function runSofiaAgent(
   isStaff: boolean,
   mode: string,
   customer: Record<string, unknown> | null,
-  fromDigits: string
+  fromDigits: string,
+  opts?: { history?: SofiaChatTurn[]; focusPhone?: string | null },
 ): Promise<{ finalText: string; toolCalls: SofiaToolCallRecord[] }> {
   const messages: { role: string; content: string }[] = [];
-  try {
-    const hist = await listSmsMessagesFiltered({ phone: from, limit: 10 });
-    hist.reverse().forEach((h: any) => messages.push({ role: h.direction === "inbound" ? "user" : "assistant", content: String(h.content) }));
-  } catch (_) {}
+  if (opts?.history?.length) {
+    for (const turn of opts.history) {
+      messages.push({ role: turn.role, content: turn.content });
+    }
+  } else {
+    try {
+      const hist = await listSmsMessagesFiltered({ phone: from, limit: 10 });
+      hist.reverse().forEach((h: any) => messages.push({ role: h.direction === "inbound" ? "user" : "assistant", content: String(h.content) }));
+    } catch (_) {}
+  }
 
   // Phase 2.1 — unified customer timeline (SMS + calls + Plaud) so Sofia is not blind
   let commsTimelineBlock = "";
@@ -1432,7 +1440,7 @@ async function runSofiaAgent(
       null;
     const feed = await getCommsEvents({
       customer: custId ? String(custId) : null,
-      phone: from,
+      phone: opts?.focusPhone || from,
       source: "all",
       limit: 25,
       role: "super_admin", // Sofia brain needs full summaries for context
@@ -1623,6 +1631,22 @@ IMPORTANT: get_fitting_history auto-searches by the caller's inbound phone as fa
     : `\nContact: ${from} (not in database)`;
   const ownerCtx = isAssistant ? "\nYou are speaking with Carl Viola. Address him as \"C\". Skip pleasantries." : "";
 
+  const webChatCtx =
+    mode === "STAFF_WEB_CHAT"
+      ? `\n\n[ASK SOFIA — LIVE WEB CHAT]
+This is the Communications "Ask Sofia" panel. Staff is talking to you in a back-and-forth chat (not SMS). Use the prior turns in this thread as conversation memory.
+${
+  opts?.focusPhone
+    ? `They currently have the client thread ${opts.focusPhone}${
+        customer
+          ? ` (${customerDisplayName(customer) ?? `${(customer as any).first_name ?? ""} ${(customer as any).last_name ?? ""}`.trim()})`
+          : ""
+      } open. Treat that person as the default client for lookups, texts, and status unless they name someone else.`
+    : "No client thread is selected. Ask which client if a send/lookup needs a recipient."
+}
+Reply as Sofia in this chat. When you send a client SMS, confirm what you sent.`
+      : "";
+
   const fullSystem =
     GROK_IDENTITY +
     timeBlock +
@@ -1632,6 +1656,7 @@ IMPORTANT: get_fitting_history auto-searches by the caller's inbound phone as fa
     modePreamble +
     customerCtx +
     ownerCtx +
+    webChatCtx +
     (kbContext ? `\n\nKnowledge Base:\n${kbContext}` : "") +
     commsTimelineBlock;
 
@@ -2099,6 +2124,9 @@ sofiaRouter.post("/chat", async (c) => {
   const message = String(body?.message ?? "").trim();
   if (!message) return c.json({ error: { message: "message required" } }, 400);
 
+  const history = parseSofiaChatHistory(body?.history);
+  const contextPhone = parseContextPhone(body?.context_phone);
+
   // Identify as Carl's assistant identity so the brain runs the EXACT same
   // system-prompt branch (isAssistant=true) as Carl's SMS path -- same
   // no-draft/never-lie guardrails, same tool access. `from` here is used
@@ -2113,10 +2141,18 @@ sofiaRouter.post("/chat", async (c) => {
   const mode = "STAFF_WEB_CHAT";
 
   let customer: Record<string, unknown> | null = null;
+  if (contextPhone) {
+    try {
+      customer = await lookupClientByPhone(contextPhone);
+    } catch (_) {}
+  }
 
   let agentResult: { finalText: string; toolCalls: { name: string; args: Record<string, unknown>; result: unknown }[] };
   try {
-    agentResult = await runSofiaAgent(from, message, isAssistant, isStaff, mode, customer, fromDigits);
+    agentResult = await runSofiaAgent(from, message, isAssistant, isStaff, mode, customer, fromDigits, {
+      history,
+      focusPhone: contextPhone,
+    });
   } catch (e) {
     console.error("[sofia/chat] runSofiaAgent error:", e);
     return c.json({ error: { message: "Sofia is briefly unavailable. Try again in a moment." } }, 502);
