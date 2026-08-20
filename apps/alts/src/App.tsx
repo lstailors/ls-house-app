@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import Login from "@ls/auth/Login";
 import LandscapeGate from "@alts/components/LandscapeGate";
 import ScanFab from "@alts/components/ScanFab";
+import PepeHost, { PepeProvider } from "@alts/components/pepe/PepeHost";
 import UniversalSearchHost from "@alts/components/UniversalSearch";
 import { OfflineBanner } from "@alts/components/OfflineBanner";
 import TimedSpinner from "@alts/components/TimedSpinner";
@@ -43,19 +44,22 @@ export default function App() {
           }}
         />
         <BrowserRouter>
-          <Runtime />
-          <OfflineBanner />
-          <Suspense fallback={<Spin />}>
-            <Routes>
-              <Route path="/login" element={<div className="alts-root"><Login /></div>} />
-              {AltsRouteTree()}
-              {AdminRouteTree()}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
-          <LandscapeGate />
-          <UniversalSearchHost />
-          <ScanFab />
+          <PepeProvider>
+            <Runtime />
+            <OfflineBanner />
+            <Suspense fallback={<Spin />}>
+              <Routes>
+                <Route path="/login" element={<div className="alts-root"><Login /></div>} />
+                {AltsRouteTree()}
+                {AdminRouteTree()}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
+            <LandscapeGate />
+            <UniversalSearchHost />
+            <ScanFab />
+            <PepeHost />
+          </PepeProvider>
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>

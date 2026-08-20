@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@ls/design/utils";
 import { kioskFromSearch } from "@alts/lib/kiosk";
+import { usePepePanelOptional } from "@alts/components/pepe/PepeContext";
 
 /**
  * Global corner scan control for alts FOH.
@@ -27,7 +28,8 @@ function shouldHide(pathname: string, search = ""): boolean {
 
 export default function ScanFab() {
   const { pathname, search } = useLocation();
-  if (shouldHide(pathname, search)) return null;
+  const pepe = usePepePanelOptional();
+  if (shouldHide(pathname, search) || pepe?.open) return null;
 
   return (
     <Link
