@@ -414,7 +414,7 @@ export default function SalesOrders() {
           rows={filteredAlts as Alteration[]}
           columns={altColumns}
           rowKey={(a) => a.id}
-          onRowClick={(a) => navigate("/orders/alterations/" + a.id)}
+          onRowClick={(a) => navigate("/admin/orders/alterations/" + a.id)}
           density="compact"
         />
       )}

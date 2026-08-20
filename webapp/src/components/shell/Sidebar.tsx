@@ -51,7 +51,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: "/shop-floor", label: "Shop Floor", icon: Factory, roles: STAFF },
       { to: "/admin/orders/custom", label: "Custom Orders", icon: ClipboardList, roles: STAFF },
-      { to: "/orders/alterations", label: "Alterations", icon: Scissors, roles: STAFF },
+      { to: "/admin/orders/alterations", label: "Alterations", icon: Scissors, roles: STAFF },
       { to: "/scanner", label: "QR Scanner", icon: Zap, roles: ALL },
       { to: "/admin/sales-orders", label: "Sales Orders", icon: Receipt, roles: MGMT },
       { to: "/admin/invoices", label: "Invoices", icon: FileText, roles: MGMT },

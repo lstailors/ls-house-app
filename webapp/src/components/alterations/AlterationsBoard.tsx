@@ -86,7 +86,7 @@ export function AlterationsBoard({ rows }: { rows: AlterationRow[] }) {
         const blocked = isPickupBlocked(r);
         return (
           <div key={r.name} title={blocked ? "Ready but unpaid — collect payment before pickup" : r.name}
-            onClick={() => navigate(`/orders/alterations/${r.name}`)}
+            onClick={() => navigate(`/admin/orders/alterations/${r.name}`)}
             style={{ display: "grid", gridTemplateColumns: GRID, gap: 10, alignItems: "center", padding: "14px 4px 14px 8px",
               borderBottom: "0.5px solid rgba(241,233,214,0.07)", borderLeft: blocked ? `2px solid ${RED}` : "2px solid transparent",
               cursor: "pointer" }}>

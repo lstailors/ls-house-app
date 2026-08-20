@@ -38,7 +38,7 @@ export function AlterationsPipeline({ altByStatus, altOverdue, altRush }: Props)
       <div className="flex items-center justify-between mb-5">
         <div className="ui-label">Alterations Pipeline</div>
         <button
-          onClick={() => navigate("/orders/alterations")}
+          onClick={() => navigate("/admin/orders/alterations")}
           className="text-xs text-brass-light hover:text-brass transition-colors"
         >
           View all →
