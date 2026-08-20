@@ -74,6 +74,73 @@ export function liveFingerprint(data: LiveHome | undefined | null): Record<strin
   };
 }
 
+/** Older deployed house API — `/api/dashboard/alts-home` — before live-home shipped. */
+export type AltsHomePayload = {
+  location?: string;
+  syncedAt?: number;
+  strip?: Partial<LiveHome["strip"]>;
+  counts?: Partial<LiveHome["counts"]>;
+  feeds?: Partial<LiveHome["feeds"]>;
+};
+
+export function hydrateFromAltsHome(raw: AltsHomePayload, now = Date.now()): LiveHome {
+  const strip = { ...EMPTY_LIVE_HOME.strip, ...raw.strip };
+  const counts = { ...EMPTY_LIVE_HOME.counts, ...raw.counts };
+  const feeds = { ...EMPTY_LIVE_HOME.feeds, ...raw.feeds };
+  return {
+    ...EMPTY_LIVE_HOME,
+    generated_at: new Date(raw.syncedAt || now).toISOString(),
+    today: new Date(now).toISOString().slice(0, 10),
+    syncedAt: raw.syncedAt || now,
+    location: raw.location || "NYC",
+    strip,
+    counts,
+    feeds,
+    todayRail: {
+      ...EMPTY_LIVE_HOME.todayRail,
+      chips: {
+        comingIn: 0,
+        mustLeave: strip.dueToday ?? 0,
+        readyPickup: counts.ready ?? 0,
+        readyAllTexted: (counts.readyNotTexted ?? 0) === 0,
+      },
+    },
+    glimpses: {
+      ...EMPTY_LIVE_HOME.glimpses,
+      floor: { tailors: [], stalled: counts.stalledCount ?? 0 },
+      pickup: { names: [], ready: counts.ready ?? 0 },
+      invoices: {
+        unpaid: counts.openInvoices ?? 0,
+        aging: EMPTY_LIVE_HOME.glimpses.invoices.aging,
+      },
+      deliveries: {
+        queued: 0,
+        out: strip.outForDelivery ?? 0,
+        deliveredToday: strip.deliveredToday ?? 0,
+      },
+    },
+  };
+}
+
+export function parseLiveHomeResponse(
+  liveStatus: number,
+  liveJson: unknown,
+  altsHomeJson?: unknown,
+): LiveHome {
+  if (liveStatus >= 200 && liveStatus < 300) {
+    const j = liveJson as { data?: LiveHome };
+    return ((j && typeof j === "object" && "data" in j ? j.data : j) ?? liveJson) as LiveHome;
+  }
+  if (liveStatus === 404 && altsHomeJson) {
+    const j = altsHomeJson as { data?: AltsHomePayload };
+    const payload = ((j && typeof j === "object" && "data" in j ? j.data : j) ??
+      altsHomeJson) as AltsHomePayload;
+    return hydrateFromAltsHome(payload);
+  }
+  const err = liveJson as { error?: { message?: string } };
+  throw new Error(err?.error?.message || "Live home failed");
+}
+
 export const EMPTY_LIVE_HOME: LiveHome = {
   generated_at: new Date(0).toISOString(),
   today: "2026-08-15",

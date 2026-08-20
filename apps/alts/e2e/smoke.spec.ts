@@ -151,6 +151,47 @@ async function mockApis(page: Page, opts: { authed?: boolean } = { authed: true 
       });
     }
     if (path === "/api/dashboard/alts-home") return json(HOME);
+    if (path === "/api/yz/production") {
+      return json([
+        {
+          name: "YZ-1",
+          order_no: "LST-26-323C",
+          production_status: "In Production",
+          customer_name: "Stern",
+          customer: null,
+          mtmpro_order: "LST-122506-1",
+          fabric_number: "F-12",
+          process_category: "Machine",
+          garment_summary: "Coat + Trouser",
+          total_pieces: 2,
+          qty_suit_coat: 1,
+          qty_suit_pant: 1,
+          qty_suit_vest: 0,
+          qty_overcoat: 0,
+          qty_shirt: 0,
+          qty_tux_coat: 0,
+          qty_tux_pant: 0,
+          qty_tux_vest: 0,
+          date_received: "2026-07-01",
+          date_placed: "2026-07-02",
+          ship_date_planned: "2026-08-21",
+          rush_days: 0,
+          embroidery_name: null,
+          embroidery_qty: 0,
+          tracking_no: null,
+          customs_flag: null,
+          delivery_manner: null,
+          solid_fabric: true,
+          fully_lined: true,
+          half_canvas: false,
+          basted_note: null,
+          comment: null,
+          remarks: null,
+          erpUrl: "https://erp.lstailors.com/app/yz-production-tracker/YZ-1",
+          attention: [],
+        },
+      ]);
+    }
     if (path === "/api/metrics/live-home" || path === "/api/metrics/exceptions") return json(LIVE_HOME);
     if (path === "/api/metrics") return json(LIVE_HOME.metrics);
     if (path === "/api/offline/snapshot") {
@@ -278,6 +319,7 @@ test("login renders without console explosions", async ({ page }) => {
 const ROUTES = [
   "/",
   "/shop-floor",
+  "/production",
   "/pickup",
   "/orders/alterations",
   "/house",

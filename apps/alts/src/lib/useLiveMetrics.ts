@@ -11,6 +11,7 @@ import {
   liveAgeLabel,
   liveFeedStatus,
   liveFingerprint,
+  parseLiveHomeResponse,
   readLiveCache,
   writeLiveCache,
   type LiveFeedStatus,
@@ -40,8 +41,18 @@ export function useLiveMetrics() {
     queryFn: async (): Promise<LiveHome> => {
       const res = await api.raw("/api/metrics/live-home");
       const j = await res.json().catch(() => ({} as { data?: LiveHome; error?: { message?: string } }));
-      if (!res.ok) throw new Error(j?.error?.message || "Live home failed");
-      const data = (j?.data ?? j) as LiveHome;
+      let data: LiveHome;
+      if (res.status === 404) {
+        // Live house API still serves the older alts-home feed.
+        const fallback = await api.raw("/api/dashboard/alts-home");
+        const fb = await fallback.json().catch(() => ({}));
+        if (!fallback.ok) throw new Error(fb?.error?.message || "Live home failed");
+        data = parseLiveHomeResponse(404, j, fb);
+      } else if (!res.ok) {
+        throw new Error(j?.error?.message || "Live home failed");
+      } else {
+        data = parseLiveHomeResponse(res.status, j);
+      }
       writeLiveCache(data);
       return data;
     },

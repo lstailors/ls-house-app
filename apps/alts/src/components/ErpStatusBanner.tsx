@@ -16,7 +16,17 @@ export type ErpHealth = {
 export function useErpHealth() {
   return useQuery({
     queryKey: ["api-health"],
-    queryFn: () => api.get<ErpHealth>("/api/health"),
+    queryFn: async (): Promise<ErpHealth | null> => {
+      try {
+        return await api.get<ErpHealth>("/api/health");
+      } catch (err) {
+        // Deployed API is older than this route — don't paint ERP as down.
+        if (err && typeof err === "object" && "status" in err && (err as { status: number }).status === 404) {
+          return null;
+        }
+        throw err;
+      }
+    },
     staleTime: 30_000,
     refetchInterval: 60_000,
     retry: 1,
