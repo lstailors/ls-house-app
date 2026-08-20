@@ -5,6 +5,7 @@ import "@alts/styles/alts-pos.css";
 const LINKS: Array<{ to: string; label: string; hint: string }> = [
   { to: "/", label: "Home", hint: "Tiles" },
   { to: "/shop-floor", label: "Shop floor", hint: "Work in progress" },
+  { to: "/production", label: "Production", hint: "YZ factory board" },
   { to: "/intake/kind", label: "New ticket", hint: "Walk-in · order · redo" },
   { to: "/pickup", label: "Pickup", hint: "Ready bags" },
   { to: "/qc", label: "QC", hint: "MTM inspections" },

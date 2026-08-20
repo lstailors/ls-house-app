@@ -24,6 +24,7 @@ import QcGlass from "@alts/pages/QcGlass";
 import QcInspection from "@alts/pages/QcInspection";
 import AltsSettings from "@alts/pages/AltsSettings";
 import TicketDetail from "@alts/pages/intake/TicketDetail";
+import ProductionSheet from "@alts/pages/production/ProductionSheet";
 
 const AlterationTags = lazy(() => import("@alts/pages/print/GarmentTagPrint"));
 const AlterationReceipt = lazy(() => import("@alts/pages/intake/AlterationReceipt"));
@@ -75,6 +76,30 @@ export function AltsRouteTree() {
         element={
           <RoleGuard allow={[...FOH]}>
             <ShopFloorBoard />
+          </RoleGuard>
+        }
+      />
+      <Route
+        path="/production"
+        element={
+          <RoleGuard allow={[...FOH]}>
+            <ProductionSheet />
+          </RoleGuard>
+        }
+      />
+      <Route
+        path="/production/week"
+        element={
+          <RoleGuard allow={[...FOH]}>
+            <ProductionSheet />
+          </RoleGuard>
+        }
+      />
+      <Route
+        path="/production/:orderNo"
+        element={
+          <RoleGuard allow={[...FOH]}>
+            <ProductionSheet />
           </RoleGuard>
         }
       />

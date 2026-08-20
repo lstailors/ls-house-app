@@ -3,7 +3,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { useActiveLocation, locationQueryString } from "@alts/lib/locationContext";
-import type { Customer, Delivery } from "@ls/types";
+import type { Customer, Delivery, YZOrder } from "@ls/types";
+
+export function useYzProduction() {
+  return useQuery({
+    queryKey: ["yz", "production"],
+    queryFn: () => api.get<YZOrder[]>("/api/yz/production"),
+    staleTime: 60_000,
+  });
+}
 
 export function useDeliveries() {
   const { activeLocationId } = useActiveLocation();

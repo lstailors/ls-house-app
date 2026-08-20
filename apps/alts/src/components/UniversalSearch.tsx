@@ -157,6 +157,7 @@ export default function UniversalSearchHost() {
     !pathname.startsWith("/orders/alterations") &&
     !pathname.startsWith("/reports") &&
     !pathname.startsWith("/shop-floor") &&
+    !pathname.startsWith("/production") &&
     !pathname.startsWith("/pickup") &&
     !pathname.startsWith("/intake") &&
     !pathname.startsWith("/lookup") &&

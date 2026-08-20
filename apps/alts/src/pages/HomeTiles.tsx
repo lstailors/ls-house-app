@@ -27,6 +27,8 @@ import { NeedsConnection } from "@alts/components/NeedsConnection";
 import { readCoverMoney, writeCoverMoney } from "@alts/lib/coverMoney";
 import { canSeeHouseAdmin, houseAdminHref, houseAdminIsExternal } from "@alts/lib/houseAdmin";
 import { HouseAdminLink } from "@alts/components/HouseAdminLink";
+import { useYzProduction } from "@alts/lib/queries";
+import { kpiCounts, yzAsRecord } from "@alts/lib/productionSheet";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
 
@@ -469,6 +471,8 @@ export default function HomeTiles() {
   const [params] = useSearchParams();
   const kiosk = params.get("kiosk") === "1";
   const live = useLiveMetrics();
+  const yzProd = useYzProduction();
+  const yzKpis = Array.isArray(yzProd.data) && yzProd.data.length ? kpiCounts(yzProd.data.map(yzAsRecord)) : null;
   const [espressoOpen, setEspressoOpen] = useState(readEspressoOpenDefault);
   const [coverMoney, setCoverMoney] = useState(readCoverMoney);
   const espressoMotion = usePresence(espressoOpen);
@@ -855,6 +859,33 @@ export default function HomeTiles() {
           <path d="M16 25h14M16 32h14M16 39h8" />
           <circle cx="39" cy="38" r="9" strokeWidth="1.4" />
           <path d="M39 34v8M35 38h8" strokeWidth="1.4" />
+        </svg>
+      ),
+    },
+    {
+      key: "production",
+      to: "/production",
+      title: "Production",
+      sub: yzKpis
+        ? `${yzKpis.prod} in house · ${yzKpis.fab} fabric · ${yzKpis.rush} rush`
+        : "YZ factory board",
+      badge: yzKpis?.prod || null,
+      badgeKind: "shop",
+      primary: true,
+      live: yzProd.isError ? (
+        "ERP feed failed"
+      ) : yzKpis ? (
+        <>
+          <b>{yzKpis.all}</b> on tracker · <b>{yzKpis.ship}</b> shipped
+        </>
+      ) : (
+        "Connecting to ERPNext…"
+      ),
+      liveTone: yzProd.isError ? "ro" : yzKpis && yzKpis.rush > 0 ? "am" : "em",
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="7" y="10" width="38" height="32" rx="3" />
+          <path d="M7 20h38M16 10v32M28 26h12M28 32h8" />
         </svg>
       ),
     },
