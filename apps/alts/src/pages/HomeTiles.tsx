@@ -31,3 +31,9 @@ import { useYzProduction } from "@alts/lib/queries";
 import { kpiCounts, yzAsRecord } from "@alts/lib/productionSheet";
 
 const ESPRESSO_OPEN_KEY = "alts.espresso.open";
+
+function peelLeadingIcon(line: string): { icon: string | null; text: string } {
+  const m = line.match(/^((?:[\p{Extended_Pictographic}\p{Emoji_Presentation}]|\uFE0F|\u200D)+)\s*(.*)$/u);
+  if (m) return { icon: m[1], text: m[2] ?? "" };
+  return { icon: null, text: line };
+}
