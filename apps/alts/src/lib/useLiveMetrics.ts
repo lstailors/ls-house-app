@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import type { LiveHome } from "@ls/types";
 import {
+  EMPTY_LIVE_HOME,
   LIVE_CACHE_KEY,
   LIVE_EXCEPTIONS_MS,
   LIVE_FRESH_MS,
@@ -40,7 +41,19 @@ export function useLiveMetrics() {
     queryFn: async (): Promise<LiveHome> => {
       const res = await api.raw("/api/metrics/live-home");
       const j = await res.json().catch(() => ({} as { data?: LiveHome; error?: { message?: string } }));
-      if (!res.ok) throw new Error(j?.error?.message || "Live home failed");
+      if (!res.ok) {
+        // Frozen production API has no live-home feed. Do not mark ERPNext down.
+        if (res.status === 404) {
+          const fallback = cached ?? {
+            ...EMPTY_LIVE_HOME,
+            generated_at: new Date().toISOString(),
+            today: new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date()),
+            syncedAt: Date.now(),
+          };
+          return fallback;
+        }
+        throw new Error(j?.error?.message || "Live home failed");
+      }
       const data = (j?.data ?? j) as LiveHome;
       writeLiveCache(data);
       return data;

@@ -513,7 +513,7 @@ export default function HomeTiles() {
 
   const home = live;
   const shop = useShopLink();
-  const erpDown = live.isError || (erpHealth.data ? !erpHealth.data.erp.reachable : false);
+  const erpDown = Boolean(erpHealth.data && !erpHealth.data.erp.reachable);
   const offline = shop === "offline" || live.status === "offline";
 
   type FloorBrief = {

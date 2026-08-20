@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { probeShopApi } from "./probe";
 
 export type ShopLink = "online" | "offline";
 
@@ -21,8 +22,8 @@ async function ping() {
   }
   try {
     const { api } = await import("@ls/api-client");
-    const res = await api.raw("/api/health");
-    if (!res.ok) {
+    const up = await probeShopApi((path) => api.raw(path));
+    if (!up) {
       fails += 1;
       if (fails >= 2) setLink("offline");
       return;
