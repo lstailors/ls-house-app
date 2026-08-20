@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Send, Sparkles, X, XCircle } from "lucide-react";
 import { Button } from "@ls/design/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from "@ls/design/ui/sheet";
 import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
 import { useSofiaChat, type SofiaChatAction } from "@/lib/queries";
@@ -80,7 +86,7 @@ function greetingFor(phone?: string | null): AskChatMsg {
   };
 }
 
-/** Ask Sofia — live conversation with the house AI (same brain as SMS). */
+/** Ask Sofia — slide-out chat with the house AI (same brain as SMS). */
 export function AskSofiaDrawer({
   open,
   onClose,
@@ -103,7 +109,7 @@ export function AskSofiaDrawer({
       const saved = loadSaved();
       return saved.length > 0 ? saved : [greetingFor(contextPhone)];
     });
-    const t = window.setTimeout(() => inputRef.current?.focus(), 80);
+    const t = window.setTimeout(() => inputRef.current?.focus(), 420);
     return () => window.clearTimeout(t);
   }, [open, contextPhone]);
 
@@ -158,116 +164,115 @@ export function AskSofiaDrawer({
     }
   };
 
-  if (!open) return null;
-
   return (
-    <>
-      <button
-        type="button"
-        aria-label="Close Ask Sofia"
-        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
-        onClick={onClose}
-      />
-      <aside
-        className="fixed top-0 right-0 z-50 h-full w-full max-w-md border-l border-brass/20 bg-forest shadow-2xl flex flex-col animate-fade-up"
-        role="dialog"
-        aria-label="Ask Sofia"
+    <Sheet open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <SheetContent
+        side="right"
+        className={cn(
+          "flex flex-col gap-0 border-brass/25 bg-forest p-0 text-cream shadow-2xl",
+          "w-full sm:max-w-md",
+          "md:inset-y-4 md:right-4 md:h-[calc(100dvh-2rem)] md:max-h-[calc(100dvh-2rem)] md:rounded-2xl md:border",
+          "[&>button.absolute]:hidden",
+        )}
       >
-        <div className="p-4 border-b border-brass/10 flex items-start justify-between gap-3">
-          <div className="flex items-start gap-2 min-w-0">
-            <Sparkles className="h-4 w-4 text-brass-light shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <div className="text-cream font-medium text-sm">Ask Sofia</div>
-              <div className="text-[10px] text-cream-dim leading-snug">
-                Talk to the house AI. She can look things up and text a client when you ask.
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="p-4 border-b border-brass/10 flex items-start justify-between gap-3 shrink-0">
+            <div className="flex items-start gap-2 min-w-0">
+              <Sparkles className="h-4 w-4 text-brass-light shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <SheetTitle className="text-cream font-medium text-sm">Ask Sofia</SheetTitle>
+                <SheetDescription className="text-[10px] text-cream-dim leading-snug">
+                  Talk to the house AI. She can look things up and text a client when you ask.
+                </SheetDescription>
+                {contextPhone ? (
+                  <div className="text-[10px] text-brass mt-1 truncate">Looking at · {contextPhone}</div>
+                ) : null}
               </div>
-              {contextPhone ? (
-                <div className="text-[10px] text-brass mt-1 truncate">Looking at · {contextPhone}</div>
-              ) : null}
             </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-md border border-brass/20 text-cream-muted hover:text-cream hover:bg-brass/10 min-h-[44px] min-w-[44px] flex items-center justify-center"
+            >
+              <X className="h-4 w-4" />
+              <span className="sr-only">Close</span>
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-md border border-brass/20 text-cream-muted hover:text-cream hover:bg-brass/10 min-h-[44px] min-w-[44px] flex items-center justify-center"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
 
-        <div ref={scrollRef} className="flex-1 p-4 space-y-3 overflow-y-auto min-h-0">
-          {messages.map((m) => (
-            <div key={m.id} className={cn("flex", m.role === "staff" ? "justify-end" : "justify-start")}>
-              <div
-                className={cn(
-                  "max-w-[90%] rounded-lg p-3 border",
-                  m.role === "staff"
-                    ? "bg-brass/15 border-brass/30"
-                    : m.error
-                      ? "border-signal-crimson/30 bg-signal-crimson/5"
-                      : "bg-forest-raised/60 border-brass/15",
-                )}
-              >
-                <div className="ui-label text-[9px] mb-1 text-brass-light">
-                  {m.role === "staff" ? "You" : "Sofia"}
-                </div>
-                <div className="text-sm text-cream leading-relaxed whitespace-pre-wrap">{m.text}</div>
-                {m.actions && m.actions.length > 0
-                  ? m.actions.map((a, i) => <ActionReceipt key={i} action={a} />)
-                  : null}
-              </div>
-            </div>
-          ))}
-          {chat.isPending ? (
-            <div className="flex justify-start">
-              <div className="rounded-lg p-3 border border-brass/15 bg-forest-raised/60 text-xs text-cream-dim">
-                Sofia is working…
-              </div>
-            </div>
-          ) : null}
-
-          {messages.length <= 1 && !chat.isPending ? (
-            <div className="flex flex-wrap gap-2 pt-2">
-              {starters.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => send(s)}
-                  className="text-left text-[11px] text-cream-muted border border-brass/20 rounded-full px-3 py-1.5 hover:bg-brass/10 hover:text-cream"
+          <div ref={scrollRef} className="flex-1 p-4 space-y-3 overflow-y-auto min-h-0">
+            {messages.map((m) => (
+              <div key={m.id} className={cn("flex", m.role === "staff" ? "justify-end" : "justify-start")}>
+                <div
+                  className={cn(
+                    "max-w-[90%] rounded-lg p-3 border",
+                    m.role === "staff"
+                      ? "bg-brass/15 border-brass/30"
+                      : m.error
+                        ? "border-signal-crimson/30 bg-signal-crimson/5"
+                        : "bg-forest-raised/60 border-brass/15",
+                  )}
                 >
-                  {s}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
+                  <div className="ui-label text-[9px] mb-1 text-brass-light">
+                    {m.role === "staff" ? "You" : "Sofia"}
+                  </div>
+                  <div className="text-sm text-cream leading-relaxed whitespace-pre-wrap">{m.text}</div>
+                  {m.actions && m.actions.length > 0
+                    ? m.actions.map((a, i) => <ActionReceipt key={i} action={a} />)
+                    : null}
+                </div>
+              </div>
+            ))}
+            {chat.isPending ? (
+              <div className="flex justify-start">
+                <div className="rounded-lg p-3 border border-brass/15 bg-forest-raised/60 text-xs text-cream-dim">
+                  Sofia is working…
+                </div>
+              </div>
+            ) : null}
 
-        <div className="p-3 border-t border-brass/10 flex items-center gap-2">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void send(input);
-              }
-            }}
-            placeholder="Talk to Sofia…"
-            disabled={chat.isPending}
-            className="flex-1 px-3 py-2 bg-forest-raised/50 border border-brass/15 rounded-md text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40 disabled:opacity-50"
-          />
-          <Button
-            size="sm"
-            onClick={() => void send(input)}
-            disabled={chat.isPending || !input.trim()}
-            className="h-9 px-3 bg-brass/20 border border-brass/30 text-cream hover:bg-brass/30"
-          >
-            <Send className="h-3.5 w-3.5" />
-          </Button>
+            {messages.length <= 1 && !chat.isPending ? (
+              <div className="flex flex-wrap gap-2 pt-2">
+                {starters.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => send(s)}
+                    className="text-left text-[11px] text-cream-muted border border-brass/20 rounded-full px-3 py-1.5 hover:bg-brass/10 hover:text-cream"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="p-3 border-t border-brass/10 flex items-center gap-2 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void send(input);
+                }
+              }}
+              placeholder="Talk to Sofia…"
+              disabled={chat.isPending}
+              className="flex-1 px-3 py-2 bg-forest-raised/50 border border-brass/15 rounded-md text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40 disabled:opacity-50"
+            />
+            <Button
+              size="sm"
+              onClick={() => void send(input)}
+              disabled={chat.isPending || !input.trim()}
+              className="h-9 px-3 bg-brass/20 border border-brass/30 text-cream hover:bg-brass/30"
+            >
+              <Send className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
-      </aside>
-    </>
+      </SheetContent>
+    </Sheet>
   );
 }
