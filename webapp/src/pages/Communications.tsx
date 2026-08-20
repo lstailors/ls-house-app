@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo } from "react";
 import {
   MessageSquare,
   Search,
@@ -6,12 +6,7 @@ import {
   Eye,
   UserCheck,
   Star,
-  Send,
-  Sparkles,
-  CheckCircle2,
-  XCircle,
   PanelRightOpen,
-  X,
 } from "lucide-react";
 import { SectionHeader } from "@ls/design";
 import { GlassCard } from "@ls/design";
@@ -24,15 +19,14 @@ import {
   useSofiaThread,
   useSofiaHandoff,
   useSofiaVoiceApprovals,
-  useSofiaChat,
   useCommsEvents,
-  type SofiaChatAction,
   type CommsEvent,
 } from "@/lib/queries";
 import { formatDateTime } from "@ls/design/format";
 import type { Communication, Customer } from "@ls/types";
 import { cn } from "@ls/design/utils";
 import { toast } from "sonner";
+import { AskSofiaDrawer } from "@/components/communications/AskSofiaDrawer";
 
 // ─── Tab types (Ask Sofia is a right drawer — not a center tab) ─────────────
 type Tab = "sofia" | "voice" | "all";
@@ -287,189 +281,6 @@ function SofiaTab({
         </GlassCard>
       )}
     </div>
-  );
-}
-
-// ─── Ask Sofia (staff AI chat) Tab ─────────────────────────────────────────────
-type AskChatMsg = {
-  id: string;
-  role: "staff" | "sofia";
-  text: string;
-  actions?: SofiaChatAction[];
-  error?: boolean;
-};
-
-function ActionReceipt({ action }: { action: SofiaChatAction }) {
-  const label = action.tool === "send_mms_card" ? "MMS" : "SMS";
-  return (
-    <div
-      className={cn(
-        "mt-2 rounded-md border px-3 py-2 text-xs",
-        action.ok ? "border-signal-emerald/30 bg-signal-emerald/5" : "border-signal-crimson/30 bg-signal-crimson/5",
-      )}
-    >
-      <div className="flex items-center gap-1.5 font-medium">
-        {action.ok ? (
-          <CheckCircle2 className="h-3.5 w-3.5 text-signal-emerald shrink-0" />
-        ) : (
-          <XCircle className="h-3.5 w-3.5 text-signal-crimson shrink-0" />
-        )}
-        <span className="text-cream">
-          {label} {action.ok ? "sent" : "failed"}
-          {action.recipient_name ? ` to ${action.recipient_name}` : action.sent_to ? ` to ${action.sent_to}` : ""}
-        </span>
-      </div>
-      {action.message ? (
-        <div className="mt-1 text-cream-muted italic">"{action.message}"</div>
-      ) : null}
-      <div className="mt-1 flex flex-wrap gap-x-3 text-[10px] text-cream-dim">
-        {action.sent_to ? <span>To: {action.sent_to}</span> : null}
-        {action.twilio_sid ? <span>SID: {action.twilio_sid}</span> : null}
-        {action.error ? <span className="text-signal-crimson">{action.error}</span> : null}
-      </div>
-    </div>
-  );
-}
-
-/** Plan A Phase 3.4 — Ask Sofia as collapsible right drawer (not a 5th tab). */
-function AskSofiaDrawer({
-  open,
-  onClose,
-  contextPhone,
-}: {
-  open: boolean;
-  onClose: () => void;
-  contextPhone?: string | null;
-}) {
-  const [messages, setMessages] = useState<AskChatMsg[]>([]);
-  const [input, setInput] = useState("");
-  const chat = useSofiaChat();
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, chat.isPending]);
-
-  const handleSend = async () => {
-    const text = input.trim();
-    if (!text || chat.isPending) return;
-    const staffMsg: AskChatMsg = { id: `${Date.now()}-staff`, role: "staff", text };
-    setMessages((prev) => [...prev, staffMsg]);
-    setInput("");
-    try {
-      const res = await chat.mutateAsync(text);
-      setMessages((prev) => [
-        ...prev,
-        { id: `${Date.now()}-sofia`, role: "sofia", text: res.reply, actions: res.actions },
-      ]);
-    } catch (e: any) {
-      const msg = e?.message ?? "Sofia is briefly unavailable.";
-      setMessages((prev) => [...prev, { id: `${Date.now()}-err`, role: "sofia", text: msg, error: true }]);
-      toast.error("Ask Sofia failed");
-    }
-  };
-
-  if (!open) return null;
-
-  return (
-    <>
-      <button
-        type="button"
-        aria-label="Close Ask Sofia"
-        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
-        onClick={onClose}
-      />
-      <aside
-        className="fixed top-0 right-0 z-50 h-full w-full max-w-md border-l border-brass/20 bg-forest shadow-2xl flex flex-col animate-fade-up"
-        role="dialog"
-        aria-label="Ask Sofia"
-      >
-        <div className="p-4 border-b border-brass/10 flex items-start justify-between gap-3">
-          <div className="flex items-start gap-2 min-w-0">
-            <Sparkles className="h-4 w-4 text-brass-light shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <div className="text-cream font-medium text-sm">Ask Sofia</div>
-              <div className="text-[10px] text-cream-dim leading-snug">
-                Same brain + tools as SMS assistant mode. Real sends when she texts a client.
-              </div>
-              {contextPhone ? (
-                <div className="text-[10px] text-brass mt-1 truncate">Context phone · {contextPhone}</div>
-              ) : null}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-md border border-brass/20 text-cream-muted hover:text-cream hover:bg-brass/10"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div ref={scrollRef} className="flex-1 p-4 space-y-3 overflow-y-auto min-h-0">
-          {messages.length === 0 ? (
-            <div className="text-cream-dim text-xs text-center py-10 px-4">
-              e.g. &quot;text Sal that his suit is ready&quot; or &quot;who&apos;s on the schedule today&quot;
-            </div>
-          ) : (
-            messages.map((m) => (
-              <div key={m.id} className={cn("flex", m.role === "staff" ? "justify-end" : "justify-start")}>
-                <div
-                  className={cn(
-                    "max-w-[90%] rounded-lg p-3 border",
-                    m.role === "staff"
-                      ? "bg-brass/15 border-brass/30"
-                      : m.error
-                        ? "border-signal-crimson/30 bg-signal-crimson/5"
-                        : "bg-forest-raised/60 border-brass/15",
-                  )}
-                >
-                  <div className="ui-label text-[9px] mb-1 text-brass-light">
-                    {m.role === "staff" ? "You" : "Sofia"}
-                  </div>
-                  <div className="text-sm text-cream leading-relaxed whitespace-pre-wrap">{m.text}</div>
-                  {m.actions && m.actions.length > 0
-                    ? m.actions.map((a, i) => <ActionReceipt key={i} action={a} />)
-                    : null}
-                </div>
-              </div>
-            ))
-          )}
-          {chat.isPending ? (
-            <div className="flex justify-start">
-              <div className="rounded-lg p-3 border border-brass/15 bg-forest-raised/60 text-xs text-cream-dim">
-                Sofia is working…
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="p-3 border-t border-brass/10 flex items-center gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            placeholder="Tell Sofia what to do…"
-            disabled={chat.isPending}
-            className="flex-1 px-3 py-2 bg-forest-raised/50 border border-brass/15 rounded-md text-sm text-cream placeholder:text-cream-dim focus:outline-none focus:border-brass/40 disabled:opacity-50"
-          />
-          <Button
-            size="sm"
-            onClick={handleSend}
-            disabled={chat.isPending || !input.trim()}
-            className="h-9 px-3 bg-brass/20 border border-brass/30 text-cream hover:bg-brass/30"
-          >
-            <Send className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </aside>
-    </>
   );
 }
 
@@ -788,7 +599,7 @@ export default function Communications() {
               The <span className="text-brass-shimmer">conversation</span> centre.
             </>
           }
-          description="Attention queue · unified timeline · Ask Sofia drawer. SMS + calls + Plaud on one customer."
+          description="Attention queue · unified timeline · Ask Sofia to talk to the house AI."
         />
         <Button
           size="sm"

@@ -1815,3 +1815,49 @@ export const UpdateTicketDeliveryResponse = z.object({
   warning: z.string().nullable().optional(),
 });
 export type UpdateTicketDeliveryResponse = z.infer<typeof UpdateTicketDeliveryResponse>;
+
+export const SofiaChatHistoryTurn = z.object({
+  role: z.enum(["user", "assistant", "staff", "sofia"]),
+  content: z.string().optional(),
+  text: z.string().optional(),
+});
+export type SofiaChatHistoryTurn = z.infer<typeof SofiaChatHistoryTurn>;
+
+export const SofiaChatRequest = z.object({
+  message: z.string().min(1),
+  history: z.array(SofiaChatHistoryTurn).optional(),
+  context_phone: z.string().optional().nullable(),
+});
+export type SofiaChatRequest = z.infer<typeof SofiaChatRequest>;
+
+export const SofiaChatAction = z.object({
+  tool: z.string(),
+  ok: z.boolean(),
+  sent_to: z.string().nullable(),
+  recipient_name: z.string().nullable(),
+  message: z.string().nullable(),
+  twilio_sid: z.string().nullable(),
+  message_name: z.string().nullable(),
+  error: z.string().nullable(),
+});
+export type SofiaChatAction = z.infer<typeof SofiaChatAction>;
+
+export const SofiaChatResponse = z.object({
+  reply: z.string(),
+  tool_calls: z.array(
+    z.object({
+      name: z.string(),
+      args: z.record(z.string(), z.unknown()),
+      result: z.unknown(),
+    }),
+  ),
+  actions: z.array(SofiaChatAction),
+  lookups: z.array(
+    z.object({
+      tool: z.string(),
+      query: z.unknown(),
+      result: z.unknown(),
+    }),
+  ),
+});
+export type SofiaChatResponse = z.infer<typeof SofiaChatResponse>;
