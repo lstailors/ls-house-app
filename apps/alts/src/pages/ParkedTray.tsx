@@ -5,7 +5,6 @@ import { api } from "@ls/api-client";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
-import { formatMoney } from "@alts/lib/money";
 
 type Parked = {
   id?: string;
@@ -24,8 +23,8 @@ type Parked = {
   cart?: any;
 };
 
-function money(n?: number | string | null) {
-  return formatMoney(n);
+function money(n: number) {
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
 export default function ParkedTray() {
@@ -118,6 +117,14 @@ export default function ParkedTray() {
                     className="btn-brass flex-1 h-11 text-[12px]"
                   >
                     Resume
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => nav(`/parked/${encodeURIComponent(id)}/print`)}
+                    className="btn-ghost h-11 px-4 text-[12px]"
+                    title="Print hold slip (not a ticket)"
+                  >
+                    Print
                   </button>
                   <button
                     type="button"

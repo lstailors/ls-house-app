@@ -37,6 +37,7 @@ const CustomerDetail = lazy(() => import("@alts/pages/CustomerDetail"));
 const Deliveries = lazy(() => import("@alts/pages/Deliveries"));
 const DeliveryDetail = lazy(() => import("@alts/pages/DeliveryDetail"));
 const DeliveryLabel = lazy(() => import("@alts/pages/print/DeliveryLabelPrint"));
+const ParkedCartPrint = lazy(() => import("@alts/pages/print/ParkedCartPrint"));
 const GarmentTagRedirect = lazy(() => import("@alts/components/garment/GarmentTagRedirect"));
 const PayInvoice = lazy(() => import("@alts/pages/PayInvoice"));
 const PodCapture = lazy(() => import("@alts/pages/PodCapture"));
@@ -107,6 +108,14 @@ export function AltsRouteTree() {
         element={
           <RoleGuard allow={[...FOH]}>
             <ParkedTray />
+          </RoleGuard>
+        }
+      />
+      <Route
+        path="/parked/:id/print"
+        element={
+          <RoleGuard allow={[...FOH]}>
+            {printSurface(<ParkedCartPrint />, "Parked hold slip")}
           </RoleGuard>
         }
       />

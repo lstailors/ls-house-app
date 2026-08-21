@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import {
@@ -12,9 +13,24 @@ import {
 import { REDO_DISPLAY } from "@alts/lib/billingLabels";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import "@alts/styles/alts-pos.css";
-import { formatMoney } from "@alts/lib/money";
 
-type Kind = "walk_in" | "on_order" | "redo";
+type Kind = "walk_in" | "on_order" | "redo" | "parked";
+
+type ParkedHit = {
+  id?: string;
+  name?: string;
+  label?: string;
+  customer_label?: string;
+  customer_ref?: string | null;
+  location?: string;
+  garment_count?: number;
+  line_count?: number;
+  total?: number;
+  modified?: string;
+  creation?: string;
+  updated_at?: string;
+  cart?: any;
+};
 
 type SoHit = {
   id: string;
@@ -26,8 +42,13 @@ type SoHit = {
   customerName?: string;
 };
 
-function money(n?: number | string | null) {
-  return formatMoney(n);
+function money(n?: number) {
+  if (n == null || Number.isNaN(n)) return "—";
+  return Number(n).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
 }
 
 function mapSoRow(r: any): SoHit {
@@ -44,13 +65,33 @@ function mapSoRow(r: any): SoHit {
 
 export default function TicketKind() {
   const nav = useNavigate();
-  const [kind, setKind] = useState<Kind | null>(null);
+  const qc = useQueryClient();
+  const [kind, setKind] = useState<Kind>("walk_in");
   const [q, setQ] = useState("");
   /** Multi-select sales orders (same customer preferred). */
   const [selectedSos, setSelectedSos] = useState<SoHit[]>([]);
   const [cartPieces, setCartPieces] = useState<SoPiece[]>([]);
   const [loadingSoIds, setLoadingSoIds] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [parkedQ, setParkedQ] = useState("");
+
+  const parked = useQuery({
+    queryKey: ["parked-carts"],
+    enabled: kind === "parked",
+    queryFn: async () => {
+      const rows = await api.get<ParkedHit[]>("/api/carts");
+      return rows ?? [];
+    },
+  });
+
+  const dropParked = useMutation({
+    mutationFn: (id: string) => api.delete(`/api/carts/${encodeURIComponent(id)}`),
+    onSuccess: () => {
+      toast.success("Parked cart removed");
+      qc.invalidateQueries({ queryKey: ["parked-carts"] });
+    },
+    onError: () => toast.error("Could not remove parked cart"),
+  });
 
   const search = useQuery({
     queryKey: ["so-search-kind", q],
@@ -247,6 +288,30 @@ export default function TicketKind() {
     );
   }, [hits, primarySo]);
 
+  const parkedList = useMemo(() => {
+    const rows = parked.data ?? [];
+    const needle = parkedQ.trim().toLowerCase();
+    if (!needle) return rows;
+    return rows.filter((c) => {
+      const intake = c.cart?.intake;
+      const label = String(c.label || intake?.parkLabel || c.customer_label || "").toLowerCase();
+      const note = String(intake?.parkNote || "").toLowerCase();
+      const id = String(c.id || c.name || "").toLowerCase();
+      const cust = String(c.customer_ref || intake?.customer?.name || "").toLowerCase();
+      return (
+        label.includes(needle) ||
+        note.includes(needle) ||
+        id.includes(needle) ||
+        cust.includes(needle)
+      );
+    });
+  }, [parked.data, parkedQ]);
+
+  const resumeParked = (id: string) => {
+    if (!id) return;
+    nav(`/intake/alterations?parked=${encodeURIComponent(id)}`);
+  };
+
   return (
     <div className="alts-root flex flex-col min-h-dvh">
       <header className="flex items-center gap-3 px-5 py-3.5 border-b border-brass/20 bg-black/20">
@@ -284,6 +349,7 @@ export default function TicketKind() {
           <button
             type="button"
             onClick={() => {
+              setKind("walk_in");
               setSelectedSos([]);
               setCartPieces([]);
               continueWalkIn();
@@ -349,17 +415,18 @@ export default function TicketKind() {
           </button>
 
           <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedSos([]);
-                          setCartPieces([]);
-                          continueRedo();
-                        }}
-                        className={cn(
-                          "w-full text-left rounded-[18px] p-[18px] mb-3 border transition-all",
-                          "border-brass/25 bg-black/20 hover:border-signal-emerald/50 hover:bg-gradient-to-br hover:from-signal-emerald/15 hover:to-transparent active:scale-[0.99]",
-                        )}
-                      >
+            type="button"
+            onClick={() => {
+              setKind("redo");
+              setSelectedSos([]);
+              setCartPieces([]);
+              continueRedo();
+            }}
+            className={cn(
+              "w-full text-left rounded-[18px] p-[18px] mb-3 border transition-all",
+              "border-brass/25 bg-black/20 hover:border-signal-emerald/50 hover:bg-gradient-to-br hover:from-signal-emerald/15 hover:to-transparent active:scale-[0.99]",
+            )}
+          >
             <div className="flex items-center gap-3">
               <span className="text-signal-emerald text-xl">✓</span>
               <span className="display text-[22px] flex-1">{REDO_DISPLAY.kindTitle}</span>
@@ -376,6 +443,37 @@ export default function TicketKind() {
             </div>
           </button>
 
+          <button
+            type="button"
+            onClick={() => {
+              setKind("parked");
+              setSelectedSos([]);
+              setCartPieces([]);
+              setLoadError(null);
+            }}
+            className={cn(
+              "w-full text-left rounded-[18px] p-[18px] mb-3 border transition-all",
+              kind === "parked"
+                ? "border-brass/55 bg-gradient-to-br from-brass/20 to-brass/5 ring-1 ring-brass/25"
+                : "border-brass/25 bg-black/20 hover:border-brass/50 hover:bg-gradient-to-br hover:from-brass/12 hover:to-transparent active:scale-[0.99]",
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <span className={cn("text-xl", kind === "parked" ? "text-brass-light" : "text-brass-light/90")}>
+                ⌁
+              </span>
+              <span className="display text-[22px] flex-1">Parked tickets</span>
+              <span className={cn(kind === "parked" ? "text-brass-light" : "text-brass/70")}>→</span>
+            </div>
+            <p className="text-[12px] text-[var(--cd)] mt-2 leading-relaxed">
+              Pull a held cart back — no ticket number burned. Resume where you left off and finish the work.
+            </p>
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              <span className="chip">Retrieve</span>
+              <span className="chip">Resume · no new #</span>
+            </div>
+          </button>
+
           <div className="mt-auto pt-4">
             <div className="rounded-xl border border-brass/20 bg-brass/10 px-4 py-3 text-[12px] leading-relaxed text-cream-muted">
               <div className="caps text-brass-light mb-1">Why this is step one</div>
@@ -386,12 +484,163 @@ export default function TicketKind() {
         </aside>
 
         <main className="overflow-hidden min-w-0 flex flex-col bg-black/15">
-          {kind == null && (
+          {kind === "walk_in" && (
             <div className="max-w-xl mx-auto pt-8 text-center p-5">
-              <h2 className="display text-3xl mb-2">Pick a kind</h2>
-              <p className="text-sm text-cream-dim leading-relaxed">
-                Choose Walk-in, Custom order, or Redo on the left. Nothing loads until you tap.
+              <h2 className="display text-3xl mb-2">Walk-in</h2>
+              <p className="text-sm text-cream-dim mb-4">
+                Opening client & cart…
               </p>
+              <div className="h-10 w-10 mx-auto rounded-full border-2 border-brass/40 border-t-brass animate-spin" />
+            </div>
+          )}
+
+          {kind === "redo" && (
+            <div className="max-w-xl mx-auto pt-8 text-center p-5">
+              <h2 className="display text-3xl mb-2">{REDO_DISPLAY.kindTitle}</h2>
+              <p className="text-sm text-cream-dim mb-4">Opening client & cart…</p>
+              <div className="h-10 w-10 mx-auto rounded-full border-2 border-signal-emerald/40 border-t-signal-emerald animate-spin" />
+            </div>
+          )}
+
+          {kind === "parked" && (
+            <div className="flex-1 overflow-y-auto p-5 min-w-0">
+              <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
+                <div>
+                  <h2 className="display text-[27px] leading-tight">Retrieve parked</h2>
+                  <p className="text-[12px] text-[var(--cd)] mt-2 max-w-xl">
+                    Held carts with no ticket number. Tap <b className="text-brass-light">Resume</b> to
+                    open the full cart and finish.
+                  </p>
+                </div>
+                <Link
+                  to="/parked"
+                  className="h-10 px-4 rounded-full border border-brass/30 text-[11px] font-bold tracking-widest uppercase text-cream-dim hover:text-cream hover:border-brass/50 inline-flex items-center"
+                >
+                  Full tray →
+                </Link>
+              </div>
+
+              <div className="relative mb-4 mt-4 max-w-xl">
+                <span className="absolute left-5 top-1/2 -translate-y-1/2 text-brass/70 text-lg">⌕</span>
+                <input
+                  value={parkedQ}
+                  onChange={(e) => setParkedQ(e.target.value)}
+                  placeholder="Search label, client, note…"
+                  className="w-full h-[56px] rounded-2xl bg-black/35 border border-brass/30 pl-14 pr-5 text-base text-cream outline-none focus:border-brass/60 focus:shadow-[0_0_0_3px_rgba(176,141,87,0.16)] placeholder:text-[var(--cd)]"
+                  autoFocus
+                />
+              </div>
+
+              <div className="caps mb-3">
+                {parked.isFetching
+                  ? "Loading…"
+                  : `${parkedList.length} parked${parkedList.length === 1 ? "" : ""}`}
+              </div>
+
+              {parked.isError && (
+                <QueryErrorPanel title="Could not load parked carts" onRetry={() => parked.refetch()} />
+              )}
+
+              {!parked.isLoading && !parked.isError && parkedList.length === 0 && (
+                <div className="card-glass p-8 text-center max-w-lg">
+                  <div className="display text-3xl mb-2">Nothing parked</div>
+                  <p className="text-cream-dim text-sm mb-4">
+                    Park from intake when you need to hold a cart. It shows up here to pull back.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={continueWalkIn}
+                    className="btn-brass inline-flex h-12 px-6 items-center text-[12px]"
+                  >
+                    Start walk-in
+                  </button>
+                </div>
+              )}
+
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-2 max-w-4xl">
+                {parkedList.map((c) => {
+                  const id = c.id || c.name || "";
+                  const intake = c.cart?.intake;
+                  const total =
+                    Number(c.total) || Number(intake?.total) || Number(c.cart?.total) || 0;
+                  const label =
+                    c.label || intake?.parkLabel || c.customer_label || "Parked cart";
+                  const gCount =
+                    intake?.garments?.length ?? c.garment_count ?? c.cart?.garments?.length ?? 0;
+                  const expected = intake?.expectedGarmentCount ?? gCount;
+                  const lines = intake?.garments
+                    ? intake.garments.reduce(
+                        (s: number, g: any) => s + (g.lines?.length || 0),
+                        0,
+                      )
+                    : c.line_count ?? c.cart?.lines?.length ?? "—";
+                  const when = c.updated_at || c.modified || c.creation;
+                  const billing = intake?.billing as string | undefined;
+                  const billingChip =
+                    billing === "redo"
+                      ? "Re-do"
+                      : billing === "on_order"
+                        ? "On order"
+                        : billing === "billable"
+                          ? "Billable"
+                          : null;
+
+                  return (
+                    <div
+                      key={id}
+                      className="rounded-2xl border border-brass/20 bg-black/25 p-5 flex flex-col hover:border-brass/40 transition-colors"
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-lg leading-snug text-cream">{label}</div>
+                          <div className="text-[12px] text-cream-dim mt-1">
+                            {c.location || "NYC"}
+                            {when ? ` · ${new Date(when).toLocaleString()}` : ""}
+                          </div>
+                        </div>
+                        <div className="ml-auto display text-2xl text-brass-light shrink-0">
+                          {money(total)}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2 mt-3 text-[12px] text-cream-dim">
+                        <span>
+                          {gCount}
+                          {expected > gCount ? ` of ${expected}` : ""} garments
+                        </span>
+                        <span>·</span>
+                        <span>{lines} lines</span>
+                        {billingChip ? (
+                          <span className="chip border-brass/30 text-brass-light bg-brass/10">
+                            {billingChip}
+                          </span>
+                        ) : null}
+                        {intake?.parkNote ? (
+                          <span className="w-full text-cream-muted mt-1">{intake.parkNote}</span>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap gap-2 mt-5">
+                        <button
+                          type="button"
+                          onClick={() => resumeParked(id)}
+                          className="btn-brass flex-1 h-11 text-[12px]"
+                        >
+                          Resume · work on it
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm("Remove this parked cart?")) dropParked.mutate(id);
+                          }}
+                          disabled={dropParked.isPending}
+                          className="h-11 px-4 rounded-xl border border-brass/25 text-[12px] font-semibold text-cream-dim hover:text-cream disabled:opacity-50"
+                        >
+                          Drop
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
