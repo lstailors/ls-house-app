@@ -46,6 +46,7 @@ import {
 import { Textarea } from "@ls/design/ui/textarea"
 import { Button } from "@ls/design/ui/button"
 import { Input } from "@ls/design/ui/input"
+import { usePepePanelOptional } from "@alts/components/pepe/PepeContext"
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -1020,6 +1021,7 @@ export default function TicketDetail() {
   const [cancelOpen, setCancelOpen] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
   const { data: me } = useMe()
+  const pepe = usePepePanelOptional()
 
   const [autoNotify, setAutoNotify] = useState<boolean>(() => {
     try { return localStorage.getItem(`notify-ready-${ticketName}`) === 'true' } catch { return false }
@@ -1428,6 +1430,19 @@ export default function TicketDetail() {
                     Add work / piece
                   </Link>
                 </>
+              )}
+              {pepe && (
+                <button
+                  type="button"
+                  onClick={() => pepe.openAsk({ doctype: "Alteration Ticket", name: ticketName! })}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all min-h-11',
+                    'bg-forest-raised border-brass/40 text-brass hover:bg-brass/15',
+                  )}
+                >
+                  <MessageSquare size={12} />
+                  Ask Pepe about this
+                </button>
               )}
               <button
                 type="button"
