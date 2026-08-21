@@ -13,6 +13,15 @@ import {
 import { listLocations } from "../lib/erpnext/locations";
 import { DT } from "../lib/erpnext/doctypes";
 import { grokChat } from "../lib/grok";
+import {
+  isMtmInProduction,
+  isYzActive,
+  monthStartYmd,
+  pctChange,
+  pickProductionCount,
+  previousMonthStartYmd,
+  sumInvoicesInRange,
+} from "../lib/dashboard-home-kpis";
 
 export const dashboardRouter = new Hono();
 
@@ -85,14 +94,19 @@ dashboardRouter.get("/kpis", async (c) => {
     return "other";
   }
 
-  const monthStartStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const monthStartStr = monthStartYmd(now);
+  const lastMonthStartStr = previousMonthStartYmd(now);
 
   // ERPNext Sales Orders for ordersByStage, revenue, depositsPending
   const soFilters: any[] = [["docstatus", "=", 1]];
   if (locCode) soFilters.push(["company", "like", locCode === "HOU" ? "%TX%" : "%NY%"]);
 
-  // ERPNext Paid Sales Invoices for revenueMTD
-  const siFilters: any[] = [["docstatus", "=", 1], ["status", "=", "Paid"], ["posting_date", ">=", monthStartStr]];
+  // Billed invoices (any open/paid status) — Paid-only misses the live book
+  const siFilters: any[] = [
+    ["docstatus", "=", 1],
+    ["status", "not in", ["Cancelled", "Credit Note Issued"]],
+    ["posting_date", ">=", lastMonthStartStr],
+  ];
   if (locCode) siFilters.push(["company", "like", locCode === "HOU" ? "%TX%" : "%NY%"]);
 
   // LSH Delivery for deliveriesDue + day split
@@ -113,15 +127,15 @@ dashboardRouter.get("/kpis", async (c) => {
   const todayFilters: any[] = [["docstatus", "=", 1], ["transaction_date", "=", todayDate]];
   if (locCode) todayFilters.push(["company", "like", locCode === "HOU" ? "%TX%" : "%NY%"]);
 
-  const [erpSalesOrders, erpPaidInvoices, erpDeliveriesDue, erpDeliveredToday, erpOutForDelivery, erpTodaySOs] = await Promise.all([
-    erpList<{ name: string; grand_total: number; status: string; transaction_date: string }>("Sales Order", {
+  const [erpSalesOrders, erpInvoices, erpDeliveriesDue, erpDeliveredToday, erpOutForDelivery, erpTodaySOs] = await Promise.all([
+    erpList<{ name: string; grand_total: number; status: string; transaction_date: string; advance_paid?: number }>("Sales Order", {
       filters: soFilters,
-      fields: ["name", "grand_total", "status", "transaction_date"],
+      fields: ["name", "grand_total", "status", "transaction_date", "advance_paid"],
       limit: 2000,
     }).catch(() => []),
-    erpList<{ name: string; grand_total: number }>("Sales Invoice", {
+    erpList<{ name: string; grand_total: number; posting_date: string; status: string; outstanding_amount?: number }>("Sales Invoice", {
       filters: siFilters,
-      fields: ["name", "grand_total"],
+      fields: ["name", "grand_total", "posting_date", "status", "outstanding_amount"],
       limit: 2000,
     }).catch(() => []),
     erpList<{ name: string }>("LSH Delivery", {
@@ -164,15 +178,50 @@ dashboardRouter.get("/kpis", async (c) => {
 
   const customInProduction = ordersByStage["in_production"] ?? 0;
 
-  const garmentRows = await erpList<any>(DT.CUSTOM_ORDER_GARMENT, {
-    filters: [["garment_status", "in", ["Ordered", "Pattern Draft", "Cutting", "Sewing", "Basting", "First Fitting", "Alterations", "Second Fitting"]]],
-    fields: ["name", "garment_status"],
-    limit: 500,
-  }).catch(() => []);
-  const garmentsProd = garmentRows.length;
+  const mtmFilters: any[] = [["order_status", "not in", ["Delivered", "Cancelled", "Ready for Pickup"]]];
+  if (locCode) mtmFilters.push(["company", "like", locCode === "HOU" ? "%TX%" : "%NY%"]);
+
+  const [garmentRows, yzRows, mtmRows] = await Promise.all([
+    erpList<any>(DT.CUSTOM_ORDER_GARMENT, {
+      filters: [["garment_status", "in", ["Ordered", "Pattern Draft", "Cutting", "Sewing", "Basting", "First Fitting", "Alterations", "Second Fitting"]]],
+      fields: ["name", "garment_status"],
+      limit: 500,
+    }).catch(() => []),
+    erpList<{ name: string; production_status: string }>("YZ Production Tracker", {
+      fields: ["name", "production_status"],
+      limit: 500,
+    }).catch(() => []),
+    erpList<{ name: string; order_status: string }>("MTMPro Order", {
+      filters: mtmFilters,
+      fields: ["name", "order_status"],
+      limit: 1000,
+    }).catch(() => []),
+  ]);
+
+  const yzActive = yzRows.filter((r) => isYzActive(r.production_status)).length;
+  const mtmInProduction = mtmRows.filter((r) => isMtmInProduction(r.order_status)).length;
+  const garmentsProd = pickProductionCount({
+    lshGarments: garmentRows.length,
+    mtmInProduction,
+    yzActive,
+    salesOrdersInProduction: customInProduction,
+  });
   const garmentsByStage: Record<string, number> = {};
-  for (const g of garmentRows) {
-    garmentsByStage[g.garment_status] = (garmentsByStage[g.garment_status] ?? 0) + 1;
+  if (garmentRows.length) {
+    for (const g of garmentRows) {
+      garmentsByStage[g.garment_status] = (garmentsByStage[g.garment_status] ?? 0) + 1;
+    }
+  } else if (mtmRows.length) {
+    for (const row of mtmRows) {
+      const stage = (row.order_status || "In Production").trim() || "In Production";
+      garmentsByStage[stage] = (garmentsByStage[stage] ?? 0) + 1;
+    }
+  } else {
+    for (const row of yzRows) {
+      if (!isYzActive(row.production_status)) continue;
+      const stage = (row.production_status || "In Production").trim() || "In Production";
+      garmentsByStage[stage] = (garmentsByStage[stage] ?? 0) + 1;
+    }
   }
 
   let lowActivityLocations: any[] | undefined;
@@ -216,13 +265,16 @@ dashboardRouter.get("/kpis", async (c) => {
     erpList("Alteration Ticket", { filters: [...erpLocFilter, ["workflow_state", "=", "Ready"]], fields: ["name"], limit: 500 }).catch(() => []),
     erpList("Alteration Ticket", { filters: [...erpLocFilter, ["workflow_state", "in", ["Received", "In Progress"]], ["due_date", "<", todayStr]], fields: ["name"], limit: 200 }).catch(() => []),
     erpList("Alteration Ticket", { filters: [...erpLocFilter, ["workflow_state", "in", ["Received", "In Progress"]], ["is_rush", "=", 1]], fields: ["name"], limit: 200 }).catch(() => []),
-    erpList<{ name: string; ticket_total: number }>("Alteration Ticket", { filters: [...erpLocFilter, ["ticket_date", ">=", monthStartStr]], fields: ["name", "ticket_total"], limit: 500 }).catch(() => []),
+    erpList<{ name: string; ticket_total: number; sales_invoice?: string | null }>("Alteration Ticket", { filters: [...erpLocFilter, ["ticket_date", ">=", monthStartStr]], fields: ["name", "ticket_total", "sales_invoice"], limit: 500 }).catch(() => []),
   ]);
 
   const altReady = altReadyTickets.length;
   const altOverdue = altOverdueTickets.length;
   const altRush = altRushTickets.length;
-  const altRevenueMTD = (altRevTickets as any[]).reduce((s: number, t) => s + Number(t.ticket_total ?? 0), 0);
+  const altRevenueMTD = (altRevTickets as any[]).reduce((s: number, t) => {
+    if (t.sales_invoice) return s;
+    return s + Number(t.ticket_total ?? 0);
+  }, 0);
   const altByStatus = {
     received: altWithStatus.filter((t) => t.workflow_state === "Received").length,
     inProgress: altWithStatus.filter((t) => t.workflow_state === "In Progress").length,
@@ -239,11 +291,23 @@ dashboardRouter.get("/kpis", async (c) => {
     unansweredSms = Array.from(lastByPhone.values()).filter((d) => d === "inbound").length;
   } catch {}
 
-  // revenueMTD: paid invoices this month (custom) + alteration revenue MTD
+  // revenueMTD: billed invoices this month (not Paid-only) + alteration tickets MTD
   const customRevenueMTD = canSeeFinancials(user.role)
-    ? (erpPaidInvoices as any[]).reduce((s: number, i) => s + Number(i.grand_total ?? 0), 0)
+    ? sumInvoicesInRange(erpInvoices, monthStartStr)
+    : 0;
+  const lastMonthInvoiceRevenue = canSeeFinancials(user.role)
+    ? sumInvoicesInRange(erpInvoices, lastMonthStartStr, monthStartStr)
     : 0;
   const revenueMTD = customRevenueMTD + altRevenueMTD;
+  const revenueChange = pctChange(revenueMTD, lastMonthInvoiceRevenue);
+
+  if (depositsPendingAmount === 0) {
+    for (const invoice of erpInvoices) {
+      if (invoice.status !== "Unpaid") continue;
+      depositsPending++;
+      depositsPendingAmount += Number(invoice.outstanding_amount ?? invoice.grand_total ?? 0);
+    }
+  }
 
   return c.json({
     data: {
@@ -266,6 +330,7 @@ dashboardRouter.get("/kpis", async (c) => {
       altByStatus,
       altRevenueMTD,
       revenueMTD,
+      revenueChange,
       unansweredSms,
       depositsPendingAmount,
     },
@@ -285,7 +350,16 @@ dashboardRouter.get("/financials", async (c) => {
   const soFilters: any[] = [["docstatus", "=", 1]]; // submitted only
   if (locCode) soFilters.push(["company", "like", locCode === "HOU" ? "%TX%" : "%NY%"]);
 
-  const [allSalesOrders, arInvoices] = await Promise.all([
+  const monthStartStr = monthStartYmd(now);
+  const lastMonthStartStr = previousMonthStartYmd(now);
+  const siMonthFilters: any[] = [
+    ["docstatus", "=", 1],
+    ["status", "not in", ["Cancelled", "Credit Note Issued"]],
+    ["posting_date", ">=", lastMonthStartStr],
+  ];
+  if (locCode) siMonthFilters.push(["company", "like", locCode === "HOU" ? "%TX%" : "%NY%"]);
+
+  const [allSalesOrders, arInvoices, monthInvoices] = await Promise.all([
     erpList<any>("Sales Order", {
       filters: soFilters,
       fields: ["name", "grand_total", "total", "advance_paid", "status", "transaction_date", "customer_name", "owner"],
@@ -297,9 +371,16 @@ dashboardRouter.get("/financials", async (c) => {
       fields: ["name", "outstanding_amount"],
       limit: 500,
     }).catch(() => []),
+    erpList<any>("Sales Invoice", {
+      filters: siMonthFilters,
+      fields: ["name", "grand_total", "posting_date", "status", "outstanding_amount"],
+      limit: 2000,
+    }).catch(() => []),
   ]);
 
-  if (!allSalesOrders.length) return c.json({ data: empty });
+  if (!allSalesOrders.length && !arInvoices.length && !monthInvoices.length) {
+    return c.json({ data: empty });
+  }
 
   // Child table: MUST pass parent=Sales Order or Frappe returns name-only
   // (item_name/amount stripped → one "Other" bucket at $0).
@@ -335,14 +416,26 @@ dashboardRouter.get("/financials", async (c) => {
 
   const mtdOrders = allSalesOrders.filter((o: any) => (o.transaction_date ?? "") >= startOfMonth);
   const lmOrders = allSalesOrders.filter((o: any) => (o.transaction_date ?? "") >= startOfLastMonth && (o.transaction_date ?? "") <= samePointLastMonth);
-  const revenueMTD = mtdOrders.reduce((s: number, o: any) => s + Number(o.grand_total ?? 0), 0);
-  const revenueLastMonth = lmOrders.reduce((s: number, o: any) => s + Number(o.grand_total ?? 0), 0);
-  const revenueChange = revenueLastMonth > 0 ? Math.round(((revenueMTD - revenueLastMonth) / revenueLastMonth) * 100) : 0;
+  const soRevenueMTD = mtdOrders.reduce((s: number, o: any) => s + Number(o.grand_total ?? 0), 0);
+  const soRevenueLastMonth = lmOrders.reduce((s: number, o: any) => s + Number(o.grand_total ?? 0), 0);
+  const invoiceRevenueMTD = sumInvoicesInRange(monthInvoices, monthStartStr);
+  const invoiceRevenueLastMonth = sumInvoicesInRange(monthInvoices, lastMonthStartStr, monthStartStr);
+  const revenueMTD = invoiceRevenueMTD > 0 ? invoiceRevenueMTD : soRevenueMTD;
+  const revenueLastMonth = invoiceRevenueLastMonth > 0 ? invoiceRevenueLastMonth : soRevenueLastMonth;
+  const revenueChange = pctChange(revenueMTD, revenueLastMonth);
 
   // ── Deposits pending (quote stage) ──────────────────────────────────────
   const pendingOrders = allSalesOrders.filter((o: any) => soStage(o.status) === "quote");
-  const depositsPendingTotal = pendingOrders.reduce((s: number, o: any) => s + Number(o.grand_total ?? 0), 0);
-  const depositsPendingCount = pendingOrders.length;
+  let depositsPendingTotal = pendingOrders.reduce((s: number, o: any) => s + Number(o.grand_total ?? 0), 0);
+  let depositsPendingCount = pendingOrders.length;
+  if (depositsPendingTotal === 0) {
+    const awaiting = monthInvoices.filter((i: any) => i.status === "Unpaid");
+    depositsPendingCount = awaiting.length;
+    depositsPendingTotal = awaiting.reduce(
+      (s: number, i: any) => s + Number(i.outstanding_amount ?? i.grand_total ?? 0),
+      0,
+    );
+  }
 
   // ── 6-month trend ────────────────────────────────────────────────────────
   const trendMap = new Map<string, { revenue: number; orders: number }>();
