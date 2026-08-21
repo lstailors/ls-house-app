@@ -194,8 +194,8 @@ describe("iPhone scale contract", () => {
     const search = readFileSync(new URL("../components/UniversalSearch.tsx", import.meta.url), "utf8");
     expect(search).toContain('!pathname.startsWith("/reports")');
     const kind = readFileSync(new URL("../pages/TicketKind.tsx", import.meta.url), "utf8");
-    expect(kind).toContain("useState<Kind | null>(null)");
-    expect(kind).not.toContain("Opening client & cart");
+    expect(kind).toContain('useState<Kind>("walk_in")');
+    expect(kind).toContain('kind === "parked"');
     const customers = readFileSync(new URL("../pages/Customers.tsx", import.meta.url), "utf8");
     expect(customers).not.toContain("VIP (page)");
     expect(customers).not.toContain("Casa (page)");
