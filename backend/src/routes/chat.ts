@@ -4,20 +4,16 @@ import { erpCreate, erpGet, erpList, erpRunMethod, erpUpdate } from "../lib/erp"
 import { uploadFile } from "../lib/erpnext/files";
 import { photoProxyUrl, safeErpFilePath } from "../lib/fabric-stock";
 import {
-  PEPE_EMAIL,
   applyContextPrefix,
   isImageType,
   normalizeRavenMessages,
-  pickPepeChannelId,
+  pepeChannelIdForEmail,
   unwrapGetMessages,
   type ChatContext,
   type RawRavenMessage,
 } from "../lib/pepe-chat";
 
 export const chatRouter = new Hono();
-
-type ChannelMember = { channel_id?: string; user_id?: string; user?: string };
-type RavenChannel = { name?: string; is_direct_message?: number | boolean | string };
 
 const TODO_FIELDS = ["name", "description", "status", "priority", "date", "allocated_to", "reference_type", "reference_name"];
 
@@ -37,40 +33,9 @@ function authHeaders(key: string, secret: string): Record<string, string> {
   };
 }
 
-async function memberChannelIds(email: string): Promise<string[]> {
-  const rows = await erpList<ChannelMember>("Raven Channel Member", {
-    filters: [["user_id", "=", email]],
-    fields: ["channel_id", "user_id"],
-    limit: 200,
-  });
-  const ids = rows.map((r) => String(r.channel_id ?? "")).filter(Boolean);
-  if (ids.length) return ids;
-  const fallback = await erpList<ChannelMember>("Raven Channel Member", {
-    filters: [["user", "=", email]],
-    fields: ["channel_id", "user"],
-    limit: 200,
-  });
-  return fallback.map((r) => String(r.channel_id ?? "")).filter(Boolean);
-}
-
-async function directMessageIds(channelIds: string[]): Promise<string[]> {
-  if (!channelIds.length) return [];
-  const rows = await erpList<RavenChannel>("Raven Channel", {
-    filters: [
-      ["name", "in", channelIds],
-      ["is_direct_message", "=", 1],
-    ],
-    fields: ["name", "is_direct_message"],
-    limit: 200,
-  });
-  return rows.map((r) => String(r.name ?? "")).filter(Boolean);
-}
-
-async function resolvePepeChannelId(staffEmail: string): Promise<string | null> {
-  const [staffIds, pepeIds] = await Promise.all([memberChannelIds(staffEmail), memberChannelIds(PEPE_EMAIL)]);
-  const candidates = staffIds.filter((id) => pepeIds.includes(id));
-  const dms = await directMessageIds(candidates);
-  return pickPepeChannelId(staffIds, pepeIds, dms);
+/** Hard-map only. Channel Member REST is empty / 409s — do not list or create. */
+function resolvePepeChannelId(staffEmail: string): string | null {
+  return pepeChannelIdForEmail(staffEmail);
 }
 
 async function requireUser(c: Parameters<typeof getAuthedUser>[0]) {

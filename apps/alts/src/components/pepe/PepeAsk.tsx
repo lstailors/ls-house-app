@@ -101,6 +101,7 @@ export default function PepeAsk({ wired }: { wired: boolean }) {
             key={m.name}
             msg={m}
             mine={isMine(m, me?.email)}
+            pepe={isPepeMsg(m)}
             thinking={thinking && i === lastStaffIdx}
           />
         ))}
@@ -191,8 +192,12 @@ export default function PepeAsk({ wired }: { wired: boolean }) {
   );
 }
 
+function isPepeMsg(m: PepeMessage) {
+  return m.is_pepe === true || m.owner?.toLowerCase() === PEPE_EMAIL;
+}
+
 function isMine(m: PepeMessage, email?: string) {
-  if (m.is_pepe || m.owner?.toLowerCase() === PEPE_EMAIL) return false;
+  if (isPepeMsg(m)) return false;
   if (!email) return true;
   return m.owner?.toLowerCase() === email.toLowerCase();
 }
@@ -207,10 +212,20 @@ function lastStaffMessageIndex(messages: PepeMessage[], email?: string): number 
 function staffAwaitingPepe(messages: PepeMessage[], email?: string): boolean {
   const lastStaff = lastStaffMessageIndex(messages, email);
   if (lastStaff < 0) return false;
-  return !messages.slice(lastStaff + 1).some((m) => m.is_pepe || m.owner?.toLowerCase() === PEPE_EMAIL);
+  return !messages.slice(lastStaff + 1).some((m) => isPepeMsg(m));
 }
 
-function MessageBubble({ msg, mine, thinking }: { msg: PepeMessage; mine: boolean; thinking?: boolean }) {
+function MessageBubble({
+  msg,
+  mine,
+  pepe,
+  thinking,
+}: {
+  msg: PepeMessage;
+  mine: boolean;
+  pepe?: boolean;
+  thinking?: boolean;
+}) {
   return (
     <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
       <div
@@ -221,10 +236,10 @@ function MessageBubble({ msg, mine, thinking }: { msg: PepeMessage; mine: boolea
             : "border-brass/20 bg-forest-raised/80 text-cream",
         )}
       >
-        {mine ? (
-          <p className="whitespace-pre-wrap text-[14px] leading-relaxed">{msg.text}</p>
-        ) : (
+        {pepe ? (
           <PepeMarkdown text={msg.text} />
+        ) : (
+          <p className="whitespace-pre-wrap text-[14px] leading-relaxed">{msg.text}</p>
         )}
         {msg.file_url && (
           <a

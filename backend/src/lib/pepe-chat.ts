@@ -2,6 +2,17 @@
 
 export const PEPE_EMAIL = "pepe@lstailors.com";
 
+/** Live Raven DMs (Maestro). Channel Member REST is empty / 409s — do not intersect. */
+export const PEPE_DM_BY_EMAIL: Record<string, string> = {
+  "carl@lstailors.com": "lgrkaihbcd",
+  "gianna@lstailors.com": "lgs0shpjio",
+};
+
+export function pepeChannelIdForEmail(email: string | null | undefined): string | null {
+  const key = String(email ?? "").trim().toLowerCase();
+  return PEPE_DM_BY_EMAIL[key] ?? null;
+}
+
 export type ChatContext = { doctype: string; name: string };
 
 export type RawRavenMessage = {
@@ -48,10 +59,13 @@ export function oldestFirst<T extends { creation?: string }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => String(a.creation ?? "").localeCompare(String(b.creation ?? "")));
 }
 
-export function isPepeOwner(owner: string | null | undefined, isBot?: unknown): boolean {
-  const o = String(owner ?? "").trim().toLowerCase();
-  if (o === PEPE_EMAIL) return true;
-  return isBot === 1 || isBot === true || isBot === "1";
+/** Pepe only. Sofia posts as bot=concierge@ — never treat is_bot_message as Pepe. */
+export function isPepeOwner(owner: string | null | undefined, _isBot?: unknown): boolean {
+  return String(owner ?? "").trim().toLowerCase() === PEPE_EMAIL;
+}
+
+function truthyFlag(v: unknown): boolean {
+  return v === 1 || v === true || v === "1";
 }
 
 export function applyContextPrefix(text: string, ctx?: ChatContext | null): string {
@@ -83,7 +97,7 @@ export function normalizeRavenMessages(
           ? Number(sizeRaw) || null
           : null;
     const owner = String(m.owner ?? "");
-    const is_bot = isPepeOwner(owner, m.is_bot_message);
+    const is_pepe = isPepeOwner(owner);
     return {
       name: String(m.name ?? `msg-${i}`),
       text: String(m.text ?? ""),
@@ -94,8 +108,8 @@ export function normalizeRavenMessages(
       file_url: file ? proxyFileUrl(file) : null,
       file_name: fileNameFromPath(file),
       file_size,
-      is_bot_message: is_bot,
-      is_pepe: is_bot,
+      is_bot_message: truthyFlag(m.is_bot_message),
+      is_pepe,
     };
   });
 }

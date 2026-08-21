@@ -39,7 +39,9 @@ function PepeChrome() {
   });
   const last = unreadQ.data?.[unreadQ.data.length - 1];
   const unread = Boolean(
-    last && (last.is_pepe || last.owner?.toLowerCase() === PEPE_EMAIL) && last.owner?.toLowerCase() !== me?.email?.toLowerCase(),
+    last &&
+      last.owner?.toLowerCase() === PEPE_EMAIL &&
+      last.owner?.toLowerCase() !== me?.email?.toLowerCase(),
   );
 
   if (hidden) return null;
