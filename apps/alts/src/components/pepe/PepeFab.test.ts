@@ -6,6 +6,9 @@ describe("shouldHidePepeFab", () => {
     expect(shouldHidePepeFab("/login")).toBe(true);
     expect(shouldHidePepeFab("/e-ticket/AT-1")).toBe(true);
     expect(shouldHidePepeFab("/pay/INV-1")).toBe(true);
+    expect(shouldHidePepeFab("/d/token")).toBe(true);
+    expect(shouldHidePepeFab("/home")).toBe(true);
+    expect(shouldHidePepeFab("/profile")).toBe(true);
     expect(shouldHidePepeFab("/orders/alterations/AT-1/thermal")).toBe(true);
   });
 

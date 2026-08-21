@@ -10,6 +10,7 @@ import { useAltsRuntime } from "@alts/AltsRuntime";
 import { AdminRouteTree } from "@/admin/AdminRoutes";
 import LandscapeGate from "@alts/components/LandscapeGate";
 import ScanFab from "@alts/components/ScanFab";
+import PepeHost, { PepeProvider } from "@alts/components/pepe/PepeHost";
 import UniversalSearchHost from "@alts/components/UniversalSearch";
 import { OfflineBanner } from "@alts/components/OfflineBanner";
 import "@alts/styles/alts-pos.css";
@@ -43,23 +44,26 @@ const App = () => (
         }}
       />
       <BrowserRouter>
-        <Runtime />
-        <OfflineBanner />
-        <Suspense fallback={<div className="flex items-center justify-center min-h-dvh"><div className="h-6 w-6 rounded-full border-2 border-brass/40 border-t-brass animate-spin" /></div>}>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/d/:token" element={<DeliveryTracking />} />
-            <Route path="/i/:invoiceId" element={<PayInvoice />} />
-            <Route path="/home" element={<CustomerHome />} />
-            <Route path="/profile" element={<CustomerProfile />} />
-            {AltsRouteTree()}
-            {AdminRouteTree()}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Suspense>
-        <LandscapeGate />
-        <UniversalSearchHost />
-        <ScanFab />
+        <PepeProvider>
+          <Runtime />
+          <OfflineBanner />
+          <Suspense fallback={<div className="flex items-center justify-center min-h-dvh"><div className="h-6 w-6 rounded-full border-2 border-brass/40 border-t-brass animate-spin" /></div>}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/d/:token" element={<DeliveryTracking />} />
+              <Route path="/i/:invoiceId" element={<PayInvoice />} />
+              <Route path="/home" element={<CustomerHome />} />
+              <Route path="/profile" element={<CustomerProfile />} />
+              {AltsRouteTree()}
+              {AdminRouteTree()}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+          <LandscapeGate />
+          <UniversalSearchHost />
+          <ScanFab />
+          <PepeHost />
+        </PepeProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
