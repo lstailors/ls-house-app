@@ -1832,6 +1832,23 @@ body {
   transform: none;
 }
 
+/* Pepe — always a corner circle, portaled to body. Never inherit page flow
+   (home-007 is height:100dvh; overflow:hidden — in-flow FAB clips into a corner). */
+.pepe-fab {
+  box-sizing: border-box;
+  position: fixed !important;
+  z-index: 55 !important;
+  width: 56px !important;
+  height: 56px !important;
+  min-width: 56px !important;
+  min-height: 56px !important;
+  max-width: 56px !important;
+  max-height: 56px !important;
+  border-radius: 999px !important;
+  transform: none;
+  pointer-events: auto;
+}
+
 .lux-layer {
   position: fixed;
   inset: 0;

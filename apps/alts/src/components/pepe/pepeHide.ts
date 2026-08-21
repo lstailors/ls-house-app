@@ -5,3 +5,8 @@ export function shouldHidePepeFab(pathname: string, search = ""): boolean {
   if (/\/(tags|thermal|receipt|label)(\/|$)/i.test(pathname)) return true;
   return false;
 }
+
+/** Home has no ScanFab — sit on the floor. Nested pages sit above the camera FAB. */
+export function isAltsHome(pathname: string): boolean {
+  return pathname === "/" || pathname === "";
+}

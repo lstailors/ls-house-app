@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { shouldHidePepeFab } from "./pepeHide";
+import { isAltsHome, shouldHidePepeFab } from "./pepeHide";
 
 describe("shouldHidePepeFab", () => {
   test("hides on login and public surfaces", () => {
@@ -14,5 +14,14 @@ describe("shouldHidePepeFab", () => {
     expect(shouldHidePepeFab("/intake/alterations")).toBe(false);
     expect(shouldHidePepeFab("/orders/alterations/AT-001")).toBe(false);
     expect(shouldHidePepeFab("/customers")).toBe(false);
+  });
+});
+
+describe("isAltsHome", () => {
+  test("home sits on the floor; nested pages do not", () => {
+    expect(isAltsHome("/")).toBe(true);
+    expect(isAltsHome("")).toBe(true);
+    expect(isAltsHome("/intake")).toBe(false);
+    expect(isAltsHome("/customers")).toBe(false);
   });
 });
