@@ -50,4 +50,6 @@ export const DT = {
   FILE: "File",
   QC_INSPECTION: "LSH QC Inspection",
   MTM_PRO_ORDER: "MTMPro Order",
+  FABRIC_SWATCH: "Fabric Swatch",
+  ITEM_PRICE: "Item Price",
 } as const;
