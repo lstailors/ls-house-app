@@ -191,11 +191,24 @@ export default function LookbookPriceReviewPage() {
       {isLoading ? (
         <div className="text-cream-muted text-sm">Reading the lookbook from Desk…</div>
       ) : isError || !data ? (
-        <EmptyState
-          icon={BookOpen}
-          title="Desk unavailable"
-          description="Could not build the price review. Retry in a moment."
-        />
+        <div className="space-y-3">
+          <EmptyState
+            icon={BookOpen}
+            title="Desk unavailable"
+            description="Could not build the price review. The first load reads the whole lookbook and can take a minute."
+          />
+          <div className="flex justify-center">
+            <button
+              type="button"
+              className="text-brass-light text-sm underline underline-offset-2 inline-flex items-center gap-1.5"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
+              {isFetching ? "Reading Desk…" : "Retry now"}
+            </button>
+          </div>
+        </div>
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
