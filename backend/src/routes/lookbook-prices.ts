@@ -21,7 +21,10 @@ lookbookPricesRouter.get("/review", async (c) => {
     const data = await getLookbookPriceReview(refresh);
     return c.json({ data });
   } catch (e: any) {
-    console.error("lookbook-prices review error:", e?.message ?? e);
-    return c.json({ error: { message: "Failed to build lookbook price review" } }, 502);
+    const detail = typeof e?.message === "string" ? e.message : String(e);
+    console.error("lookbook-prices review error:", detail);
+    // Route is auth-gated (MGMT users), so the underlying reason is safe to
+    // surface — it is the only way to see what Desk rejected in production.
+    return c.json({ error: { message: `Failed to build lookbook price review: ${detail}` } }, 502);
   }
 });

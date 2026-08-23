@@ -211,8 +211,38 @@ export function computeLshGap(
 
 // ── Live fetch (Desk read-only) ────────────────────────────────────────────────
 
-const PAGE_SIZE = 2000;
-const CONCURRENCY = 6;
+// Large pages keep the request count low (~16 total for all three doctypes):
+// the whole build has to fit inside one serverless invocation, and every extra
+// roundtrip to Desk through the tunnel is latency plus a chance to flake.
+const PAGE_SIZE = 5000;
+const CONCURRENCY = 4;
+const PAGE_RETRIES = 2;
+
+async function fetchPage<T>(
+  doctype: string,
+  fields: string[],
+  filters: unknown[],
+  start: number,
+): Promise<T[]> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= PAGE_RETRIES; attempt++) {
+    try {
+      return await erpList<T>(doctype, {
+        fields,
+        filters,
+        limit: PAGE_SIZE,
+        start,
+        order_by: "name asc",
+        throwOnError: true,
+      });
+    } catch (e) {
+      lastError = e;
+      // Tunnel hiccups and rate-limit blips recover on a short backoff.
+      await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+}
 
 async function fetchAll<T>(
   doctype: string,
@@ -228,14 +258,7 @@ async function fetchAll<T>(
   const worker = async () => {
     while (next < starts.length) {
       const i = next++;
-      pages[i] = await erpList<T>(doctype, {
-        fields,
-        filters,
-        limit: PAGE_SIZE,
-        start: starts[i],
-        order_by: "name asc",
-        throwOnError: true,
-      });
+      pages[i] = await fetchPage<T>(doctype, fields, filters, starts[i]!);
     }
   };
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, starts.length) }, worker));

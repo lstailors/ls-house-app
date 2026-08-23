@@ -3,6 +3,12 @@
   "installCommand": "bun install && cd backend && bun install && cd ../webapp && bun install",
   "buildCommand": "cd webapp && bun run build",
   "outputDirectory": "webapp/dist",
+  "functions": {
+    "api/lookbook-prices/[...path].ts": {
+      "maxDuration": 120,
+      "memory": 1024
+    }
+  },
   "redirects": [
     {
       "source": "/account",
