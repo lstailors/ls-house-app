@@ -15,6 +15,7 @@ import type {
   Delivery,
   FabricPricing,
   Invoice,
+  LookbookPriceReview,
   Location,
   Profile,
   SalesOrder,
@@ -223,6 +224,17 @@ export function useFabrics() {
   return useQuery({
     queryKey: ["fabrics"],
     queryFn: () => api.get<FabricPricing[]>("/api/reference/fabrics"),
+    staleTime: 10 * 60_000,
+  });
+}
+
+export function useLookbookPriceReview(refresh = false) {
+  return useQuery({
+    queryKey: ["lookbook-price-review", refresh],
+    queryFn: () =>
+      api.get<LookbookPriceReview>(
+        `/api/lookbook-prices/review${refresh ? "?refresh=1" : ""}`,
+      ),
     staleTime: 10 * 60_000,
   });
 }

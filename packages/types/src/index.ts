@@ -1671,3 +1671,62 @@ export const SofiaChatResponse = z.object({
   ),
 });
 export type SofiaChatResponse = z.infer<typeof SofiaChatResponse>;
+
+// ── Lookbook price review (read-only, SPEC: house lookbook pricing) ────────────
+
+export const LookbookExampleRow = z.object({
+  swatchNumber: z.string(),
+  articleId: z.string().nullable(),
+  collection: z.string().nullable(),
+  bookPrice: z.number().nullable(),
+  joinRate: z.number().nullable(),
+  conflictRates: z.array(z.number()).optional(),
+  /** ERP-hosted path (`/lookbook/...`); render as https://erp.lstailors.com + path. */
+  photoUrl: z.string().nullable(),
+});
+export type LookbookExampleRow = z.infer<typeof LookbookExampleRow>;
+
+export const LookbookBucketCounts = z.object({
+  book: z.number(),
+  joined: z.number(),
+  /** Subset of `joined`: article matched one USD rate but price_per_meter is still 0. */
+  joinedPending: z.number(),
+  conflict: z.number(),
+  noListino: z.number(),
+});
+export type LookbookBucketCounts = z.infer<typeof LookbookBucketCounts>;
+
+export const LookbookMillReview = z.object({
+  mill: z.string(),
+  swatchCount: z.number(),
+  buckets: LookbookBucketCounts,
+  examples: z.object({
+    book: z.array(LookbookExampleRow),
+    joined: z.array(LookbookExampleRow),
+    conflict: z.array(LookbookExampleRow),
+    noListino: z.array(LookbookExampleRow),
+  }),
+});
+export type LookbookMillReview = z.infer<typeof LookbookMillReview>;
+
+export const LshPricingGapMill = z.object({
+  mill: z.string(),
+  rows: z.number(),
+  distinctKeys: z.number(),
+  /** Keys with more than one distinct price after de-duping identical (key, price) rows. */
+  internalConflicts: z.number(),
+  /** True only when this exact mill name also exists on lookbook swatches. */
+  reachable: z.boolean(),
+});
+export type LshPricingGapMill = z.infer<typeof LshPricingGapMill>;
+
+export const LookbookPriceReview = z.object({
+  generatedAt: z.string(),
+  totals: LookbookBucketCounts.extend({
+    swatches: z.number(),
+    swExcluded: z.number(),
+  }),
+  mills: z.array(LookbookMillReview),
+  lshGap: z.array(LshPricingGapMill),
+});
+export type LookbookPriceReview = z.infer<typeof LookbookPriceReview>;
