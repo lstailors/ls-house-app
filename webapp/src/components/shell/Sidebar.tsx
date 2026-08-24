@@ -2,7 +2,7 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, Zap, ClipboardList, Scissors, Receipt,
   Truck, CheckSquare, Radio, MessageSquare, Users, Wallet,
-  Palette, Layers, Shield, Building2, Settings, Bell,
+  Palette, Layers, BookOpen, Shield, Building2, Settings, Bell,
   ChevronLeft, ChevronRight, FileText, Calendar, Headphones, CalendarCheck, Factory, Send, type LucideIcon,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@ls/design/ui/avatar";
@@ -86,6 +86,7 @@ const SECTIONS: NavSection[] = [
       { to: "/admin/owner", label: "Owner Dashboard", icon: LayoutDashboard, roles: ["super_admin"] },
       { to: "/admin/financials", label: "Financials", icon: Wallet, roles: MGMT },
       { to: "/admin/reference/fabrics", label: "Fabric Pricing", icon: Palette, roles: MGMT },
+      { to: "/admin/reference/lookbook-prices", label: "Lookbook Prices", icon: BookOpen, roles: MGMT },
       { to: "/admin/reference/styles", label: "Style Library", icon: Layers, roles: MGMT },
     ],
   },

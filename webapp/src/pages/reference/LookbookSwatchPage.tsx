@@ -1,10 +1,9 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { BookOpen } from "lucide-react";
 import { SectionHeader, GlassCard, EmptyState } from "@ls/design";
-import { formatUSD } from "@ls/design/format";
 import { cn } from "@ls/design/utils";
 import { useLookbookSwatch } from "@/lib/queries";
-import { BUCKET_META, BucketChip, ERP_ORIGIN } from "./lookbook-shared";
+import { BUCKET_META, BucketChip, ERP_ORIGIN, formatLookbookUSD } from "./lookbook-shared";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -18,7 +17,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 export default function LookbookSwatchPage() {
   const [params] = useSearchParams();
   const id = params.get("id");
-  const { data: row, isLoading, isError } = useLookbookSwatch(id);
+  const { data: row, isLoading, isError, error } = useLookbookSwatch(id);
+  const deskError = error instanceof Error ? error.message : null;
 
   return (
     <div className="space-y-6 animate-fade-up">
@@ -45,8 +45,10 @@ export default function LookbookSwatchPage() {
       ) : isError || !row ? (
         <EmptyState
           icon={BookOpen}
-          title="Swatch not found"
-          description="Not in the lookbook (SW- stock is excluded), or Desk is unavailable."
+          title={deskError?.includes("Failed to build") ? "Desk unavailable" : "Swatch not found"}
+          description={
+            deskError ?? "Not in the lookbook (SW- stock is excluded), or Desk is unavailable."
+          }
         />
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
@@ -76,18 +78,18 @@ export default function LookbookSwatchPage() {
               <Field label="Fabric">{row.fabricName ?? "—"}</Field>
               <Field label="Book price / m">
                 <span className="font-display italic text-brass-shimmer text-base">
-                  {row.bookPrice != null ? formatUSD(row.bookPrice) : "—"}
+                  {row.bookPrice != null ? formatLookbookUSD(row.bookPrice) : "—"}
                 </span>
               </Field>
               <Field label="Fabric Buying USD rate">
                 <span className="font-display italic text-brass-shimmer text-base">
-                  {row.joinRate != null ? formatUSD(row.joinRate) : "—"}
+                  {row.joinRate != null ? formatLookbookUSD(row.joinRate) : "—"}
                 </span>
               </Field>
             </div>
             {row.bucket === "conflict" ? (
               <div className={cn("text-sm font-mono", "text-signal-amber")}>
-                Prices in play: {(row.conflictRates ?? []).map((v) => formatUSD(v)).join(" vs ")}
+                Prices in play: {(row.conflictRates ?? []).map((v) => formatLookbookUSD(v)).join(" vs ")}
               </div>
             ) : null}
             {row.bucket === "joined" && row.joinedPending ? (

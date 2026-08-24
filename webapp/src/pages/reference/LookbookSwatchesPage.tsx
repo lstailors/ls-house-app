@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Layers, X } from "lucide-react";
+import { Layers, RefreshCw, X } from "lucide-react";
 import { SectionHeader, DataTable, FilterBar, EmptyState } from "@ls/design";
 import { cn } from "@ls/design/utils";
 import { useLookbookSwatches } from "@/lib/queries";
@@ -22,13 +22,14 @@ export default function LookbookSwatchesPage() {
   const start = Math.max(0, Number(params.get("start")) || 0);
   const dq = useDebounced(q, 300);
 
-  const { data, isLoading, isError, isFetching } = useLookbookSwatches({
+  const { data, isLoading, isError, error, isFetching, refetch } = useLookbookSwatches({
     q: dq.trim().length >= 2 ? dq.trim() : undefined,
     mill: mill || undefined,
     bucket: bucket || undefined,
     start,
     limit: PAGE,
   });
+  const deskError = error instanceof Error ? error.message : null;
 
   const set = (key: string, value: string | null) => {
     const next = new URLSearchParams(params);
@@ -70,27 +71,45 @@ export default function LookbookSwatchesPage() {
         onFilterChange={(v) => set("bucket", v || null)}
         filterOptions={filterOptions}
         right={
-          mill ? (
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 text-xs text-brass-light border border-brass/25 rounded-full px-3 py-1.5"
-              onClick={() => set("mill", null)}
-            >
-              {mill}
-              <X className="h-3 w-3" />
-            </button>
-          ) : (
+          <>
+            {mill ? (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 text-xs text-brass-light border border-brass/25 rounded-full px-3 py-1.5"
+                onClick={() => set("mill", null)}
+              >
+                {mill}
+                <X className="h-3 w-3" />
+              </button>
+            ) : null}
             <Link to="/admin/reference/lookbook-prices" className="text-cream-dim text-xs underline underline-offset-2">
               ← Price review
             </Link>
-          )
+          </>
         }
       />
 
       {isLoading ? (
         <div className="text-cream-muted text-sm">Reading the lookbook from Desk…</div>
       ) : isError || !data ? (
-        <EmptyState icon={Layers} title="Desk unavailable" description="Could not load swatches. Retry in a moment." />
+        <div className="space-y-3">
+          <EmptyState
+            icon={Layers}
+            title="Desk unavailable"
+            description={deskError ?? "Could not load swatches. Retry in a moment."}
+          />
+          <div className="flex justify-center">
+            <button
+              type="button"
+              className="text-brass-light text-sm underline underline-offset-2 inline-flex items-center gap-1.5"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
+              {isFetching ? "Reading Desk…" : "Retry now"}
+            </button>
+          </div>
+        </div>
       ) : data.rows.length === 0 ? (
         <EmptyState icon={Layers} title="No matches" description="Nothing in the lookbook matches that search." />
       ) : (

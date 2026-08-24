@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react";
 import type { Column } from "@ls/design";
-import { formatUSD } from "@ls/design/format";
 import { cn } from "@ls/design/utils";
 import type { LookbookSwatchRow } from "@ls/types";
+
+/** Fabric Buying USD rates are not whole dollars — house formatUSD rounds them away. */
+export function formatLookbookUSD(n: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+}
 
 // Lookbook photos live on the ERP host, not on alts — an alts-origin link 404s.
 export const ERP_ORIGIN = "https://erp.lstailors.com";
@@ -53,10 +62,10 @@ export function swatchDetailPath(swatchNumber: string): string {
 
 export function swatchPrice(row: LookbookSwatchRow): string {
   if (row.bucket === "conflict") {
-    return (row.conflictRates ?? []).map((v) => formatUSD(v)).join(" vs ") || "—";
+    return (row.conflictRates ?? []).map((v) => formatLookbookUSD(v)).join(" vs ") || "—";
   }
-  if (row.bucket === "joined") return row.joinRate != null ? formatUSD(row.joinRate) : "—";
-  return row.bookPrice != null ? formatUSD(row.bookPrice) : "—";
+  if (row.bucket === "joined") return row.joinRate != null ? formatLookbookUSD(row.joinRate) : "—";
+  return row.bookPrice != null ? formatLookbookUSD(row.bookPrice) : "—";
 }
 
 /** Columns for a clickable swatch listing (list + search results). */

@@ -7,7 +7,7 @@
  * No Desk writes anywhere on this router.
  */
 import { Hono } from "hono";
-import { getAuthedUser } from "../lib/scope";
+import { canSeeFinancials, getAuthedUser } from "../lib/scope";
 import {
   getLookbookData,
   getLookbookPriceReview,
@@ -19,6 +19,13 @@ export const lookbookPricesRouter = new Hono();
 
 const BUCKETS = new Set(["book", "joined", "conflict", "noListino"]);
 
+async function requireMgmt(c: any) {
+  const user = await getAuthedUser(c);
+  if (!user) return { error: c.json({ error: { message: "Unauthorized" } }, 401) };
+  if (!canSeeFinancials(user.role)) return { error: c.json({ error: { message: "Forbidden" } }, 403) };
+  return { user };
+}
+
 function deskError(c: any, e: any) {
   const detail = typeof e?.message === "string" ? e.message : String(e);
   console.error("lookbook-prices error:", detail);
@@ -28,8 +35,8 @@ function deskError(c: any, e: any) {
 }
 
 lookbookPricesRouter.get("/review", async (c) => {
-  const user = await getAuthedUser(c);
-  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  const gate = await requireMgmt(c);
+  if (gate.error) return gate.error;
 
   try {
     const refresh = c.req.query("refresh") === "1";
@@ -41,8 +48,8 @@ lookbookPricesRouter.get("/review", async (c) => {
 });
 
 lookbookPricesRouter.get("/swatches", async (c) => {
-  const user = await getAuthedUser(c);
-  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  const gate = await requireMgmt(c);
+  if (gate.error) return gate.error;
 
   try {
     const bucketParam = c.req.query("bucket");
@@ -63,8 +70,8 @@ lookbookPricesRouter.get("/swatches", async (c) => {
 // Query param instead of a path param: swatch numbers can contain "/"
 // (Marzoni articles like 120-721/700).
 lookbookPricesRouter.get("/swatch", async (c) => {
-  const user = await getAuthedUser(c);
-  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  const gate = await requireMgmt(c);
+  if (gate.error) return gate.error;
 
   const id = (c.req.query("id") ?? "").trim();
   if (!id) return c.json({ error: { message: "Missing id" } }, 400);
