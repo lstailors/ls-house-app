@@ -10,6 +10,7 @@ import {
   SwatchThumb,
   deskSwatchUrl,
   lookbookPhotoSrc,
+  swatchListPath,
 } from "./lookbook-shared";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -24,6 +25,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 export default function LookbookSwatchPage() {
   const [params] = useSearchParams();
   const id = params.get("id");
+  const back = params.get("back");
   const { data: row, isLoading, isError, error } = useLookbookSwatch(id);
   const deskError = error instanceof Error ? error.message : null;
 
@@ -36,7 +38,7 @@ export default function LookbookSwatchPage() {
       />
 
       <div className="text-xs">
-        <Link to="/admin/reference/lookbook-prices/all" className="text-cream-dim underline underline-offset-2">
+        <Link to={swatchListPath(back)} className="text-cream-dim underline underline-offset-2">
           ← All swatches
         </Link>
         <span className="text-cream-dim"> · </span>

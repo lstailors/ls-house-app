@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { LayoutGrid, LayoutList, Layers, RefreshCw, X } from "lucide-react";
 import { SectionHeader, DataTable, FilterBar, EmptyState, GlassCard } from "@ls/design";
@@ -8,6 +8,7 @@ import {
   BUCKET_META,
   BucketChip,
   DownloadPhotoLink,
+  PhotoLightbox,
   PricePair,
   SwatchThumb,
   swatchColumns,
@@ -26,6 +27,8 @@ export default function LookbookSwatchesPage() {
   const start = Math.max(0, Number(params.get("start")) || 0);
   const dq = useDebounced(q, 300);
   const page = view === "gallery" ? 36 : 50;
+  const listSearch = params.toString();
+  const [lite, setLite] = useState<number | null>(null);
 
   const { data, isLoading, isError, error, isFetching, refetch } = useLookbookSwatches({
     q: dq.trim().length >= 2 ? dq.trim() : undefined,
@@ -54,6 +57,8 @@ export default function LookbookSwatchesPage() {
   );
 
   const mills = data?.mills ?? [];
+  const photoRows = useMemo(() => (data?.rows ?? []).filter((r) => r.photoUrl), [data]);
+  const goDetail = (id: string) => navigate(swatchDetailPath(id, listSearch));
   const total = data?.total ?? 0;
   const from = total === 0 ? 0 : start + 1;
   const to = Math.min(start + page, total);
@@ -170,35 +175,50 @@ export default function LookbookSwatchesPage() {
               rows={data.rows}
               columns={swatchColumns()}
               rowKey={(r) => r.swatchNumber}
-              onRowClick={(r) => navigate(swatchDetailPath(r.swatchNumber))}
+              onRowClick={(r) => goDetail(r.swatchNumber)}
             />
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
               {data.rows.map((r) => (
-                <button
-                  key={r.swatchNumber}
-                  type="button"
-                  onClick={() => navigate(swatchDetailPath(r.swatchNumber))}
-                  className="text-left"
-                >
-                  <GlassCard className="overflow-hidden hover:bg-brass/[0.04] transition-colors h-full">
+                <GlassCard key={r.swatchNumber} className="overflow-hidden hover:bg-brass/[0.04] transition-colors h-full">
+                  <button
+                    type="button"
+                    className="block w-full"
+                    onClick={() => {
+                      if (!r.photoUrl) {
+                        goDetail(r.swatchNumber);
+                        return;
+                      }
+                      const i = photoRows.findIndex((p) => p.swatchNumber === r.swatchNumber);
+                      setLite(i >= 0 ? i : 0);
+                    }}
+                  >
                     <SwatchThumb photoUrl={r.photoUrl} alt={r.swatchNumber} className="aspect-square w-full" />
-                    <div className="p-3 space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="text-cream text-xs font-mono truncate">{r.swatchNumber}</div>
-                          <div className="text-[11px] text-cream-dim italic truncate">{r.mill}</div>
-                        </div>
-                        <BucketChip bucket={r.bucket} />
+                  </button>
+                  <button type="button" className="block w-full text-left p-3 space-y-2" onClick={() => goDetail(r.swatchNumber)}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-cream text-xs font-mono truncate">{r.swatchNumber}</div>
+                        <div className="text-[11px] text-cream-dim italic truncate">{r.mill}</div>
                       </div>
-                      <PricePair {...r} compact />
-                      <DownloadPhotoLink swatchNumber={r.swatchNumber} photoUrl={r.photoUrl} />
+                      <BucketChip bucket={r.bucket} />
                     </div>
-                  </GlassCard>
-                </button>
+                    <PricePair {...r} compact />
+                    <DownloadPhotoLink swatchNumber={r.swatchNumber} photoUrl={r.photoUrl} />
+                  </button>
+                </GlassCard>
               ))}
             </div>
           )}
+          {lite != null && photoRows[lite] ? (
+            <PhotoLightbox
+              rows={photoRows}
+              index={lite}
+              onClose={() => setLite(null)}
+              onChange={setLite}
+              backSearch={listSearch}
+            />
+          ) : null}
           <div className="flex items-center justify-between text-sm">
             <button
               type="button"
