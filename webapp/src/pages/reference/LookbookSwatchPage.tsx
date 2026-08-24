@@ -1,10 +1,16 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { BookOpen } from "lucide-react";
+import { BookOpen, ExternalLink } from "lucide-react";
 import { SectionHeader, GlassCard, EmptyState } from "@ls/design";
-import { formatUSD } from "@ls/design/format";
-import { cn } from "@ls/design/utils";
 import { useLookbookSwatch } from "@/lib/queries";
-import { BUCKET_META, BucketChip, ERP_ORIGIN } from "./lookbook-shared";
+import {
+  BUCKET_META,
+  BucketChip,
+  DownloadPhotoLink,
+  PricePair,
+  SwatchThumb,
+  deskSwatchUrl,
+  lookbookPhotoSrc,
+} from "./lookbook-shared";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -18,7 +24,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 export default function LookbookSwatchPage() {
   const [params] = useSearchParams();
   const id = params.get("id");
-  const { data: row, isLoading, isError } = useLookbookSwatch(id);
+  const { data: row, isLoading, isError, error } = useLookbookSwatch(id);
+  const deskError = error instanceof Error ? error.message : null;
 
   return (
     <div className="space-y-6 animate-fade-up">
@@ -45,28 +52,52 @@ export default function LookbookSwatchPage() {
       ) : isError || !row ? (
         <EmptyState
           icon={BookOpen}
-          title="Swatch not found"
-          description="Not in the lookbook (SW- stock is excluded), or Desk is unavailable."
+          title={deskError?.includes("Failed to build") ? "Desk unavailable" : "Swatch not found"}
+          description={
+            deskError ?? "Not in the lookbook (SW- stock is excluded), or Desk is unavailable."
+          }
         />
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          <GlassCard className="p-5 flex items-center justify-center min-h-56">
+          <GlassCard className="p-5 space-y-3">
             {row.photoUrl ? (
-              <a href={`${ERP_ORIGIN}${row.photoUrl}`} target="_blank" rel="noreferrer" className="block w-full">
-                <img
-                  src={`${ERP_ORIGIN}${row.photoUrl}`}
+              <a href={lookbookPhotoSrc(row.photoUrl)} target="_blank" rel="noreferrer" className="block">
+                <SwatchThumb
+                  photoUrl={row.photoUrl}
                   alt={row.swatchNumber}
-                  className="w-full max-h-96 object-contain rounded"
-                  loading="lazy"
+                  className="w-full max-h-[28rem] object-contain rounded"
                 />
               </a>
             ) : (
-              <div className="text-cream-dim text-sm italic">No lookbook photo</div>
+              <div className="min-h-56 flex items-center justify-center text-cream-dim text-sm italic">
+                No lookbook photo
+              </div>
             )}
+            <div className="flex flex-wrap items-center gap-4">
+              <DownloadPhotoLink swatchNumber={row.swatchNumber} photoUrl={row.photoUrl} />
+              <a
+                href={deskSwatchUrl(row.swatchNumber)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-brass-light underline underline-offset-2"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Open in Desk
+              </a>
+              {row.mill ? (
+                <Link
+                  to={`/admin/reference/lookbook-prices/all?mill=${encodeURIComponent(row.mill)}`}
+                  className="text-xs text-cream-dim underline underline-offset-2"
+                >
+                  All {row.mill} →
+                </Link>
+              ) : null}
+            </div>
           </GlassCard>
 
           <GlassCard className="p-5 space-y-4">
             <BucketChip bucket={row.bucket} />
+            <PricePair {...row} />
             <div className="grid grid-cols-2 gap-4">
               <Field label="Mill">{row.mill}</Field>
               <Field label="Article">
@@ -74,22 +105,12 @@ export default function LookbookSwatchPage() {
               </Field>
               <Field label="Collection">{row.collection ?? "—"}</Field>
               <Field label="Fabric">{row.fabricName ?? "—"}</Field>
-              <Field label="Book price / m">
-                <span className="font-display italic text-brass-shimmer text-base">
-                  {row.bookPrice != null ? formatUSD(row.bookPrice) : "—"}
-                </span>
-              </Field>
-              <Field label="Fabric Buying USD rate">
-                <span className="font-display italic text-brass-shimmer text-base">
-                  {row.joinRate != null ? formatUSD(row.joinRate) : "—"}
-                </span>
-              </Field>
+              <Field label="Composition">{row.composition ?? "—"}</Field>
+              <Field label="Availability">{row.availability ?? "—"}</Field>
+              <Field label="Weight">{row.weightGrams != null ? `${row.weightGrams} g/m` : "—"}</Field>
+              <Field label="Width">{row.widthCm != null ? `${row.widthCm} cm` : "—"}</Field>
+              <Field label="Season">{row.season ?? "—"}</Field>
             </div>
-            {row.bucket === "conflict" ? (
-              <div className={cn("text-sm font-mono", "text-signal-amber")}>
-                Prices in play: {(row.conflictRates ?? []).map((v) => formatUSD(v)).join(" vs ")}
-              </div>
-            ) : null}
             {row.bucket === "joined" && row.joinedPending ? (
               <div className="text-[11px] text-cream-dim italic">
                 Matched, not yet written — this is what a future write job would fill.

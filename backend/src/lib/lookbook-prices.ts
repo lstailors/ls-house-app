@@ -252,6 +252,7 @@ export type SwatchQuery = {
   q?: string;
   mill?: string;
   bucket?: Bucket;
+  hasPhoto?: boolean;
   start?: number;
   limit?: number;
 };
@@ -299,6 +300,7 @@ export function searchSwatches(rows: LookbookSwatchRow[], query: SwatchQuery): L
   let candidates = rows;
   if (query.mill) candidates = candidates.filter((r) => r.mill === query.mill);
   if (query.bucket) candidates = candidates.filter((r) => r.bucket === query.bucket);
+  if (query.hasPhoto) candidates = candidates.filter((r) => !!r.photoUrl);
 
   let matched: LookbookSwatchRow[];
   if (q.length >= 2) {

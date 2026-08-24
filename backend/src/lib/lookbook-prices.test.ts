@@ -26,6 +26,8 @@ describe("articleFromItemCode", () => {
     expect(articleFromItemCode("FAB-COL-109301")).toBe("109301");
     expect(articleFromItemCode("FAB-SOL-NS04005")).toBe("NS04005");
     expect(articleFromItemCode("FAB-STV-353107")).toBe("353107");
+    expect(articleFromItemCode("FAB-GV-502353")).toBe("502353");
+    expect(articleFromItemCode("FAB-FW24-N763009")).toBe("N763009");
   });
   test("rejects legacy codes without an article part", () => {
     expect(articleFromItemCode("FAB-00001")).toBeNull();
@@ -71,6 +73,14 @@ describe("bucketSwatch", () => {
 
   test("NO LISTINO when blank with no match — never invents", () => {
     expect(bucketSwatch(swatch({ fabric_article_id: "ZZZ" }), rates).bucket).toBe("noListino");
+  });
+
+  test("does not join a colorway-suffixed lookbook article to a mill-only item code", () => {
+    const tallia = buildArticleRates([{ item_code: "FAB-TAL-7048M", price_list_rate: 90 }]);
+    // Live Desk: lookbook article is 07048M-0300-0001, item code article is 7048M.
+    expect(bucketSwatch(swatch({ fabric_article_id: "07048M-0300-0001", price_per_meter: 90 }), tallia).bucket).toBe(
+      "book",
+    );
   });
 });
 
@@ -151,6 +161,15 @@ describe("computeData rows and searchSwatches", () => {
   test("mill and bucket filters apply", () => {
     expect(searchSwatches(data.rows, { mill: "Artextile" }).total).toBe(2);
     expect(searchSwatches(data.rows, { bucket: "joined" }).total).toBe(1);
+  });
+
+  test("hasPhoto keeps only rows with a lookbook path", () => {
+    const withPhotos = data.rows.map((r, i) => ({
+      ...r,
+      photoUrl: i === 0 ? "/lookbook/x.jpg" : null,
+    }));
+    expect(searchSwatches(withPhotos, { hasPhoto: true }).total).toBe(1);
+    expect(searchSwatches(withPhotos, { hasPhoto: true }).rows[0]!.swatchNumber).toBe("ARTEXTILE-109301");
   });
 
   test("prefix beats substring beats subsequence", () => {

@@ -1,4 +1,4 @@
-import { Route, Navigate, useParams } from "react-router-dom";
+import { Route, Navigate, useParams, useLocation } from "react-router-dom";
 import { lazy } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { RoleGuard } from "@/components/shell/RoleGuard";
@@ -61,6 +61,11 @@ function RedirectKeepParams({ to }: { to: string }) {
   return <Navigate to={dest} replace />;
 }
 
+function RedirectKeepSearch({ to }: { to: string }) {
+  const { search } = useLocation();
+  return <Navigate to={`${to}${search}`} replace />;
+}
+
 /** House admin (webapp) nested under /admin — floor hub stays at /. */
 export function AdminRouteTree() {
   return (
@@ -118,6 +123,9 @@ export function AdminRouteTree() {
       <Route path="/financials" element={<Navigate to="/admin/financials" replace />} />
       <Route path="/owner" element={<Navigate to="/admin/owner" replace />} />
       <Route path="/reference/fabrics" element={<Navigate to="/admin/reference/fabrics" replace />} />
+      <Route path="/reference/lookbook-prices" element={<Navigate to="/admin/reference/lookbook-prices" replace />} />
+      <Route path="/reference/lookbook-prices/all" element={<RedirectKeepSearch to="/admin/reference/lookbook-prices/all" />} />
+      <Route path="/reference/lookbook-prices/swatch" element={<RedirectKeepSearch to="/admin/reference/lookbook-prices/swatch" />} />
       <Route path="/reference/styles" element={<Navigate to="/admin/reference/styles" replace />} />
       <Route path="/sales-orders" element={<Navigate to="/admin/sales-orders" replace />} />
       <Route path="/sales-orders/:id" element={<RedirectKeepParams to="/admin/sales-orders/:id" />} />

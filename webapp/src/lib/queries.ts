@@ -1,6 +1,7 @@
 // Centralized data hooks. Every page reads through here so a future swap to
 // Data layer: ERPNext via backend API routes.
 
+import { useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { useActiveLocation, locationQueryString } from "./locationContext";
@@ -16,8 +17,8 @@ import type {
   FabricPricing,
   Invoice,
   LookbookPriceReview,
+  LookbookSwatchDetail,
   LookbookSwatchList,
-  LookbookSwatchRow,
   Location,
   Profile,
   SalesOrder,
@@ -234,20 +235,25 @@ export function useLookbookSwatches(params: {
   q?: string;
   mill?: string;
   bucket?: string;
+  photo?: boolean;
   start?: number;
   limit?: number;
+  enabled?: boolean;
 }) {
+  const { enabled = true, ...filters } = params;
   const qs = new URLSearchParams();
-  if (params.q) qs.set("q", params.q);
-  if (params.mill) qs.set("mill", params.mill);
-  if (params.bucket) qs.set("bucket", params.bucket);
-  if (params.start) qs.set("start", String(params.start));
-  if (params.limit) qs.set("limit", String(params.limit));
+  if (filters.q) qs.set("q", filters.q);
+  if (filters.mill) qs.set("mill", filters.mill);
+  if (filters.bucket) qs.set("bucket", filters.bucket);
+  if (filters.photo) qs.set("photo", "1");
+  if (filters.start) qs.set("start", String(filters.start));
+  if (filters.limit) qs.set("limit", String(filters.limit));
   return useQuery({
-    queryKey: ["lookbook-swatches", params],
+    queryKey: ["lookbook-swatches", filters],
     queryFn: () => api.get<LookbookSwatchList>(`/api/lookbook-prices/swatches?${qs.toString()}`),
     staleTime: 60_000,
     placeholderData: (prev) => prev,
+    enabled,
   });
 }
 
@@ -255,21 +261,36 @@ export function useLookbookSwatch(id: string | null) {
   return useQuery({
     queryKey: ["lookbook-swatch", id],
     queryFn: () =>
-      api.get<LookbookSwatchRow>(`/api/lookbook-prices/swatch?id=${encodeURIComponent(id!)}`),
+      api.get<LookbookSwatchDetail>(`/api/lookbook-prices/swatch?id=${encodeURIComponent(id!)}`),
     enabled: !!id,
     staleTime: 60_000,
   });
 }
 
-export function useLookbookPriceReview(refresh = false) {
-  return useQuery({
-    queryKey: ["lookbook-price-review", refresh],
-    queryFn: () =>
-      api.get<LookbookPriceReview>(
+export function useLookbookPriceReview() {
+  const qc = useQueryClient();
+  const bypassCache = useRef(false);
+  const query = useQuery({
+    queryKey: ["lookbook-price-review"],
+    queryFn: () => {
+      const refresh = bypassCache.current;
+      bypassCache.current = false;
+      return api.get<LookbookPriceReview>(
         `/api/lookbook-prices/review${refresh ? "?refresh=1" : ""}`,
-      ),
+      );
+    },
     staleTime: 10 * 60_000,
   });
+
+  const refreshNow = async () => {
+    bypassCache.current = true;
+    const result = await query.refetch();
+    await qc.invalidateQueries({ queryKey: ["lookbook-swatches"] });
+    await qc.invalidateQueries({ queryKey: ["lookbook-swatch"] });
+    return result;
+  };
+
+  return { ...query, refreshNow };
 }
 
 export function useStyleOptions() {
