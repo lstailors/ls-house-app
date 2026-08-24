@@ -9,6 +9,8 @@ import type {
   LookbookExampleRow,
   LookbookMillReview,
   LookbookPriceReview,
+  LookbookSwatchList,
+  LookbookSwatchRow,
   LshPricingGapMill,
 } from "@ls/types";
 import { erpCount, erpList } from "./erp";
@@ -19,6 +21,7 @@ export type SwatchRow = {
   mill: string | null;
   collection: string | null;
   fabric_article_id: string | null;
+  fabric_name: string | null;
   price_per_meter: number | null;
   swatch_photo_url: string | null;
 };
@@ -32,6 +35,12 @@ export type LshPricingRow = {
   fabric_name: string | null;
   mill: string | null;
   price: number | null;
+};
+
+export type LookbookData = {
+  review: LookbookPriceReview;
+  rows: LookbookSwatchRow[];
+  bySwatch: Map<string, LookbookSwatchRow>;
 };
 
 const FABRIC_ITEM_CODE = /^FAB-[A-Z0-9]{2,4}-(.+)$/;
@@ -86,28 +95,43 @@ export function bucketSwatch(
   return { bucket: "noListino", joinRate: null, pending: false };
 }
 
-function toExample(
+function toSwatchRow(
   swatch: SwatchRow,
-  joinRate: number | null,
-  conflictRates?: number[],
-): LookbookExampleRow {
+  b: ReturnType<typeof bucketSwatch>,
+): LookbookSwatchRow {
   const photo = swatch.swatch_photo_url ?? "";
   return {
     swatchNumber: swatch.swatch_number,
-    articleId: swatch.fabric_article_id ?? null,
+    mill: swatch.mill?.trim() || "(no mill)",
     collection: swatch.collection ?? null,
+    articleId: swatch.fabric_article_id ?? null,
+    fabricName: swatch.fabric_name ?? null,
+    bucket: b.bucket,
+    joinedPending: b.pending,
     bookPrice: swatch.price_per_meter && swatch.price_per_meter > 0 ? swatch.price_per_meter : null,
-    joinRate,
-    conflictRates,
+    joinRate: b.joinRate,
+    conflictRates: b.conflictRates,
     photoUrl: photo.startsWith("/lookbook/") ? photo : null,
   };
 }
 
-export function computeReview(
+function toExample(row: LookbookSwatchRow): LookbookExampleRow {
+  return {
+    swatchNumber: row.swatchNumber,
+    articleId: row.articleId,
+    collection: row.collection,
+    bookPrice: row.bookPrice,
+    joinRate: row.joinRate,
+    conflictRates: row.conflictRates,
+    photoUrl: row.photoUrl,
+  };
+}
+
+export function computeData(
   swatches: SwatchRow[],
   itemPrices: ItemPriceRow[],
   lshPricing: LshPricingRow[],
-): LookbookPriceReview {
+): LookbookData {
   const articleRates = buildArticleRates(itemPrices);
 
   type MillAcc = {
@@ -118,33 +142,37 @@ export function computeReview(
   const mills = new Map<string, MillAcc>();
   const totals = { book: 0, joined: 0, joinedPending: 0, conflict: 0, noListino: 0 };
   let swExcluded = 0;
+  const rows: LookbookSwatchRow[] = [];
+  const bySwatch = new Map<string, LookbookSwatchRow>();
 
   for (const swatch of swatches) {
     if (swatch.swatch_number.startsWith("SW-")) {
       swExcluded += 1; // SW- house stock: do not touch, do not bucket.
       continue;
     }
-    const millName = swatch.mill?.trim() || "(no mill)";
-    let acc = mills.get(millName);
+    const b = bucketSwatch(swatch, articleRates);
+    const row = toSwatchRow(swatch, b);
+    rows.push(row);
+    bySwatch.set(row.swatchNumber, row);
+
+    let acc = mills.get(row.mill);
     if (!acc) {
       acc = {
         swatchCount: 0,
         buckets: { book: 0, joined: 0, joinedPending: 0, conflict: 0, noListino: 0 },
         examples: { book: [], joined: [], conflict: [], noListino: [] },
       };
-      mills.set(millName, acc);
+      mills.set(row.mill, acc);
     }
     acc.swatchCount += 1;
-
-    const { bucket, joinRate, conflictRates, pending } = bucketSwatch(swatch, articleRates);
-    acc.buckets[bucket] += 1;
-    totals[bucket] += 1;
-    if (pending) {
+    acc.buckets[b.bucket] += 1;
+    totals[b.bucket] += 1;
+    if (b.pending) {
       acc.buckets.joinedPending += 1;
       totals.joinedPending += 1;
     }
-    if (acc.examples[bucket].length < EXAMPLES_PER_BUCKET) {
-      acc.examples[bucket].push(toExample(swatch, joinRate, conflictRates));
+    if (acc.examples[b.bucket].length < EXAMPLES_PER_BUCKET) {
+      acc.examples[b.bucket].push(toExample(row));
     }
   }
 
@@ -153,7 +181,7 @@ export function computeReview(
     .sort((a, b) => b[1].swatchCount - a[1].swatchCount)
     .map(([mill, acc]) => ({ mill, ...acc }));
 
-  return {
+  const review: LookbookPriceReview = {
     generatedAt: new Date().toISOString(),
     totals: {
       ...totals,
@@ -163,6 +191,15 @@ export function computeReview(
     mills: millReviews,
     lshGap: computeLshGap(lshPricing, swatchMills),
   };
+  return { review, rows, bySwatch };
+}
+
+export function computeReview(
+  swatches: SwatchRow[],
+  itemPrices: ItemPriceRow[],
+  lshPricing: LshPricingRow[],
+): LookbookPriceReview {
+  return computeData(swatches, itemPrices, lshPricing).review;
 }
 
 /**
@@ -207,6 +244,79 @@ export function computeLshGap(
       internalConflicts: [...keys.values()].filter((prices) => prices.size > 1).length,
       reachable: swatchMills.has(mill),
     }));
+}
+
+// ── Fuzzy search over the cached rows ─────────────────────────────────────────
+
+export type SwatchQuery = {
+  q?: string;
+  mill?: string;
+  bucket?: Bucket;
+  start?: number;
+  limit?: number;
+};
+
+/** Higher is better; 0 means no match. Fields weighted: id/article > names. */
+function scoreField(hayUpper: string, needleUpper: string): number {
+  if (!hayUpper) return 0;
+  if (hayUpper.startsWith(needleUpper)) return 100;
+  const idx = hayUpper.indexOf(needleUpper);
+  if (idx > 0) {
+    const prevChar = hayUpper[idx - 1]!;
+    return /[A-Z0-9]/.test(prevChar) ? 40 : 60; // word-boundary substring beats mid-token
+  }
+  // In-order subsequence, e.g. "ART1093" over "ARTEXTILE-109301".
+  let i = 0;
+  for (const ch of hayUpper) {
+    if (ch === needleUpper[i]) i++;
+    if (i === needleUpper.length) return 15;
+  }
+  return 0;
+}
+
+export function scoreSwatch(row: LookbookSwatchRow, needleUpper: string): number {
+  const parts: Array<[string | null, number]> = [
+    [row.swatchNumber, 3],
+    [row.articleId, 3],
+    [row.collection, 2],
+    [row.fabricName, 2],
+    [row.mill, 1],
+  ];
+  let best = 0;
+  for (const [value, weight] of parts) {
+    if (!value) continue;
+    const s = scoreField(value.toUpperCase(), needleUpper) * weight;
+    if (s > best) best = s;
+  }
+  return best;
+}
+
+export function searchSwatches(rows: LookbookSwatchRow[], query: SwatchQuery): LookbookSwatchList {
+  const start = Math.max(0, query.start ?? 0);
+  const limit = Math.min(100, Math.max(1, query.limit ?? 50));
+  const q = (query.q ?? "").trim().toUpperCase();
+
+  let candidates = rows;
+  if (query.mill) candidates = candidates.filter((r) => r.mill === query.mill);
+  if (query.bucket) candidates = candidates.filter((r) => r.bucket === query.bucket);
+
+  let matched: LookbookSwatchRow[];
+  if (q.length >= 2) {
+    matched = candidates
+      .map((row) => ({ row, score: scoreSwatch(row, q) }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score || a.row.swatchNumber.localeCompare(b.row.swatchNumber))
+      .map((x) => x.row);
+  } else {
+    matched = [...candidates].sort((a, b) => a.swatchNumber.localeCompare(b.swatchNumber));
+  }
+
+  return {
+    total: matched.length,
+    start,
+    limit,
+    rows: matched.slice(start, start + limit),
+  };
 }
 
 // ── Live fetch (Desk read-only) ────────────────────────────────────────────────
@@ -265,13 +375,14 @@ async function fetchAll<T>(
   return pages.flat();
 }
 
-export async function fetchLookbookPriceReview(): Promise<LookbookPriceReview> {
+export async function fetchLookbookData(): Promise<LookbookData> {
   const [swatches, itemPrices, lshPricing] = await Promise.all([
     fetchAll<SwatchRow>(DT.FABRIC_SWATCH, [
       "swatch_number",
       "mill",
       "collection",
       "fabric_article_id",
+      "fabric_name",
       "price_per_meter",
       "swatch_photo_url",
     ]),
@@ -282,18 +393,22 @@ export async function fetchLookbookPriceReview(): Promise<LookbookPriceReview> {
     ),
     fetchAll<LshPricingRow>(DT.FABRIC_PRICING, ["fabric_name", "mill", "price"]),
   ]);
-  return computeReview(swatches, itemPrices, lshPricing);
+  return computeData(swatches, itemPrices, lshPricing);
+}
+
+export async function fetchLookbookPriceReview(): Promise<LookbookPriceReview> {
+  return (await fetchLookbookData()).review;
 }
 
 // Module-level cache: Desk holds ~62k swatch rows; don't refetch per request.
 const CACHE_TTL_MS = 10 * 60_000;
-let cache: { data: LookbookPriceReview; at: number } | null = null;
-let inflight: Promise<LookbookPriceReview> | null = null;
+let cache: { data: LookbookData; at: number } | null = null;
+let inflight: Promise<LookbookData> | null = null;
 
-export async function getLookbookPriceReview(refresh = false): Promise<LookbookPriceReview> {
+export async function getLookbookData(refresh = false): Promise<LookbookData> {
   if (!refresh && cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.data;
   if (!inflight) {
-    inflight = fetchLookbookPriceReview()
+    inflight = fetchLookbookData()
       .then((data) => {
         cache = { data, at: Date.now() };
         return data;
@@ -303,4 +418,8 @@ export async function getLookbookPriceReview(refresh = false): Promise<LookbookP
       });
   }
   return inflight;
+}
+
+export async function getLookbookPriceReview(refresh = false): Promise<LookbookPriceReview> {
+  return (await getLookbookData(refresh)).review;
 }

@@ -1730,3 +1730,31 @@ export const LookbookPriceReview = z.object({
   lshGap: z.array(LshPricingGapMill),
 });
 export type LookbookPriceReview = z.infer<typeof LookbookPriceReview>;
+
+export const LookbookSwatchBucket = z.enum(["book", "joined", "conflict", "noListino"]);
+export type LookbookSwatchBucket = z.infer<typeof LookbookSwatchBucket>;
+
+export const LookbookSwatchRow = z.object({
+  swatchNumber: z.string(),
+  mill: z.string(),
+  collection: z.string().nullable(),
+  articleId: z.string().nullable(),
+  fabricName: z.string().nullable(),
+  bucket: LookbookSwatchBucket,
+  /** True for joined swatches whose price is matched but not yet written. */
+  joinedPending: z.boolean(),
+  bookPrice: z.number().nullable(),
+  joinRate: z.number().nullable(),
+  conflictRates: z.array(z.number()).optional(),
+  /** ERP-hosted path (`/lookbook/...`); render as https://erp.lstailors.com + path. */
+  photoUrl: z.string().nullable(),
+});
+export type LookbookSwatchRow = z.infer<typeof LookbookSwatchRow>;
+
+export const LookbookSwatchList = z.object({
+  total: z.number(),
+  start: z.number(),
+  limit: z.number(),
+  rows: z.array(LookbookSwatchRow),
+});
+export type LookbookSwatchList = z.infer<typeof LookbookSwatchList>;

@@ -1,16 +1,20 @@
 import { useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { BookOpen, Layers, RefreshCw } from "lucide-react";
 import { SectionHeader } from "@ls/design";
 import { GlassCard } from "@ls/design";
-import { DataTable, type Column } from "@ls/design";
+import { DataTable, FilterBar, type Column } from "@ls/design";
 import { EmptyState } from "@ls/design";
-import { useLookbookPriceReview } from "@/lib/queries";
+import { useLookbookPriceReview, useLookbookSwatches } from "@/lib/queries";
 import { formatUSD } from "@ls/design/format";
 import type { LookbookExampleRow, LookbookMillReview, LshPricingGapMill } from "@ls/types";
 import { cn } from "@ls/design/utils";
-
-// Lookbook photos live on the ERP host, not on alts — an alts-origin link 404s.
-const ERP_ORIGIN = "https://erp.lstailors.com";
+import {
+  ERP_ORIGIN,
+  swatchColumns,
+  swatchDetailPath,
+  useDebounced,
+} from "./lookbook-shared";
 
 const BUCKETS = [
   { key: "book", label: "Book", accent: "text-signal-emerald", dot: "bg-signal-emerald" },
@@ -83,8 +87,13 @@ function exampleColumns(bucket: BucketKey): Column<LookbookExampleRow>[] {
 }
 
 export default function LookbookPriceReviewPage() {
+  const navigate = useNavigate();
   const { data, isLoading, isError, refetch, isFetching } = useLookbookPriceReview();
   const [selectedMill, setSelectedMill] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const dq = useDebounced(search, 300).trim();
+  const searching = dq.length >= 2;
+  const results = useLookbookSwatches({ q: searching ? dq : undefined, limit: 50 });
 
   const mills = data?.mills ?? [];
   const selected = useMemo(
@@ -188,7 +197,54 @@ export default function LookbookPriceReviewPage() {
         description="Read-only against live Desk. Book prices stand; joins come from the Fabric Buying USD price list; conflicts pick nothing; blanks stay blank."
       />
 
-      {isLoading ? (
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Fuzzy search — swatch, article, collection, mill"
+        right={
+          <Link
+            to="/admin/reference/lookbook-prices/all"
+            className="text-brass-light text-xs underline underline-offset-2 whitespace-nowrap"
+          >
+            Browse all swatches →
+          </Link>
+        }
+      />
+
+      {searching ? (
+        results.isLoading ? (
+          <div className="text-cream-muted text-sm">Searching the lookbook…</div>
+        ) : results.isError || !results.data ? (
+          <EmptyState icon={Layers} title="Desk unavailable" description="Search failed. Retry in a moment." />
+        ) : results.data.rows.length === 0 ? (
+          <EmptyState icon={Layers} title="No matches" description={`Nothing in the lookbook matches “${dq}”.`} />
+        ) : (
+          <div className="space-y-2">
+            <div className="text-[11px] text-cream-dim">
+              {results.data.total.toLocaleString()} match{results.data.total === 1 ? "" : "es"}
+              {results.data.total > results.data.rows.length ? (
+                <>
+                  {" · showing "}
+                  {results.data.rows.length}
+                  {" · "}
+                  <Link
+                    to={`/admin/reference/lookbook-prices/all?q=${encodeURIComponent(dq)}`}
+                    className="text-brass-light underline underline-offset-2"
+                  >
+                    see all →
+                  </Link>
+                </>
+              ) : null}
+            </div>
+            <DataTable
+              rows={results.data.rows}
+              columns={swatchColumns()}
+              rowKey={(r) => r.swatchNumber}
+              onRowClick={(r) => navigate(swatchDetailPath(r.swatchNumber))}
+            />
+          </div>
+        )
+      ) : isLoading ? (
         <div className="text-cream-muted text-sm">Reading the lookbook from Desk…</div>
       ) : isError || !data ? (
         <div className="space-y-3">
@@ -245,7 +301,13 @@ export default function LookbookPriceReviewPage() {
               <div className="flex items-center justify-between">
                 <div className="text-cream font-medium">
                   {selected.mill}
-                  <span className="text-cream-dim text-sm"> — example rows per bucket</span>
+                  <span className="text-cream-dim text-sm"> — example rows per bucket · </span>
+                  <Link
+                    to={`/admin/reference/lookbook-prices/all?mill=${encodeURIComponent(selected.mill)}`}
+                    className="text-brass-light text-sm underline underline-offset-2"
+                  >
+                    all {selected.swatchCount.toLocaleString()} →
+                  </Link>
                 </div>
                 <button
                   type="button"
@@ -264,7 +326,12 @@ export default function LookbookPriceReviewPage() {
                       <span className={cn("h-1.5 w-1.5 rounded-full", b.dot)} />
                       {b.label}
                     </div>
-                    <DataTable rows={rows} columns={exampleColumns(b.key)} rowKey={(r) => r.swatchNumber} />
+                    <DataTable
+                      rows={rows}
+                      columns={exampleColumns(b.key)}
+                      rowKey={(r) => r.swatchNumber}
+                      onRowClick={(r) => navigate(swatchDetailPath(r.swatchNumber))}
+                    />
                   </div>
                 );
               })}
