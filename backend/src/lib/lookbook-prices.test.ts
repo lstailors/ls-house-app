@@ -26,6 +26,8 @@ describe("articleFromItemCode", () => {
     expect(articleFromItemCode("FAB-COL-109301")).toBe("109301");
     expect(articleFromItemCode("FAB-SOL-NS04005")).toBe("NS04005");
     expect(articleFromItemCode("FAB-STV-353107")).toBe("353107");
+    expect(articleFromItemCode("FAB-GV-502353")).toBe("502353");
+    expect(articleFromItemCode("FAB-FW24-N763009")).toBe("N763009");
   });
   test("rejects legacy codes without an article part", () => {
     expect(articleFromItemCode("FAB-00001")).toBeNull();
@@ -71,6 +73,14 @@ describe("bucketSwatch", () => {
 
   test("NO LISTINO when blank with no match — never invents", () => {
     expect(bucketSwatch(swatch({ fabric_article_id: "ZZZ" }), rates).bucket).toBe("noListino");
+  });
+
+  test("does not join a colorway-suffixed lookbook article to a mill-only item code", () => {
+    const tallia = buildArticleRates([{ item_code: "FAB-TAL-7048M", price_list_rate: 90 }]);
+    // Live Desk: lookbook article is 07048M-0300-0001, item code article is 7048M.
+    expect(bucketSwatch(swatch({ fabric_article_id: "07048M-0300-0001", price_per_meter: 90 }), tallia).bucket).toBe(
+      "book",
+    );
   });
 });
 
