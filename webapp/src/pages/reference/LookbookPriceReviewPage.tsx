@@ -9,8 +9,9 @@ import { useLookbookPriceReview, useLookbookSwatches } from "@/lib/queries";
 import type { LookbookExampleRow, LookbookMillReview, LshPricingGapMill } from "@ls/types";
 import { cn } from "@ls/design/utils";
 import {
-  ERP_ORIGIN,
-  formatLookbookUSD,
+  DownloadPhotoLink,
+  PricePair,
+  SwatchThumb,
   swatchColumns,
   swatchDetailPath,
   useDebounced,
@@ -27,6 +28,11 @@ type BucketKey = (typeof BUCKETS)[number]["key"];
 
 function exampleColumns(bucket: BucketKey): Column<LookbookExampleRow>[] {
   return [
+    {
+      key: "photo",
+      header: "",
+      cell: (r) => <SwatchThumb photoUrl={r.photoUrl} alt={r.swatchNumber} className="h-11 w-11 rounded" />,
+    },
     {
       key: "swatch",
       header: "Swatch",
@@ -46,47 +52,23 @@ function exampleColumns(bucket: BucketKey): Column<LookbookExampleRow>[] {
     },
     {
       key: "price",
-      header: bucket === "conflict" ? "Prices in play" : bucket === "joined" ? "USD rate" : "Book price",
+      header: "Price",
       align: "right",
-      cell: (r) =>
-        bucket === "conflict" ? (
-          <span className="text-signal-amber text-sm font-mono">
-            {(r.conflictRates ?? []).map((v) => formatLookbookUSD(v)).join(" vs ") || "—"}
-          </span>
-        ) : (
-          <span className="font-display italic text-brass-shimmer">
-            {bucket === "joined" ? (
-              <>
-                {r.joinRate != null ? formatLookbookUSD(r.joinRate) : "—"}
-                {r.bookPrice == null ? (
-                  <span className="text-cream-dim text-[11px] not-italic font-sans"> pending</span>
-                ) : null}
-              </>
-            ) : r.bookPrice != null ? (
-              formatLookbookUSD(r.bookPrice)
-            ) : (
-              "—"
-            )}
-          </span>
-        ),
+      cell: (r) => (
+        <PricePair
+          bookPrice={r.bookPrice}
+          joinRate={r.joinRate}
+          conflictRates={r.conflictRates}
+          bucket={bucket}
+          joinedPending={bucket === "joined" && r.bookPrice == null}
+          compact
+        />
+      ),
     },
     {
-      key: "photo",
-      header: "Photo",
-      cell: (r) =>
-        r.photoUrl ? (
-          <a
-            href={`${ERP_ORIGIN}${r.photoUrl}`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-brass-light text-xs underline underline-offset-2"
-            onClick={(e) => e.stopPropagation()}
-          >
-            view
-          </a>
-        ) : (
-          <span className="text-cream-dim text-xs">—</span>
-        ),
+      key: "photoLink",
+      header: "",
+      cell: (r) => <DownloadPhotoLink swatchNumber={r.swatchNumber} photoUrl={r.photoUrl} label="Save" />,
     },
   ];
 }

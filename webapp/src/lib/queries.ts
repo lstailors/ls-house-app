@@ -17,8 +17,8 @@ import type {
   FabricPricing,
   Invoice,
   LookbookPriceReview,
+  LookbookSwatchDetail,
   LookbookSwatchList,
-  LookbookSwatchRow,
   Location,
   Profile,
   SalesOrder,
@@ -235,6 +235,7 @@ export function useLookbookSwatches(params: {
   q?: string;
   mill?: string;
   bucket?: string;
+  photo?: boolean;
   start?: number;
   limit?: number;
   enabled?: boolean;
@@ -244,6 +245,7 @@ export function useLookbookSwatches(params: {
   if (filters.q) qs.set("q", filters.q);
   if (filters.mill) qs.set("mill", filters.mill);
   if (filters.bucket) qs.set("bucket", filters.bucket);
+  if (filters.photo) qs.set("photo", "1");
   if (filters.start) qs.set("start", String(filters.start));
   if (filters.limit) qs.set("limit", String(filters.limit));
   return useQuery({
@@ -259,7 +261,7 @@ export function useLookbookSwatch(id: string | null) {
   return useQuery({
     queryKey: ["lookbook-swatch", id],
     queryFn: () =>
-      api.get<LookbookSwatchRow>(`/api/lookbook-prices/swatch?id=${encodeURIComponent(id!)}`),
+      api.get<LookbookSwatchDetail>(`/api/lookbook-prices/swatch?id=${encodeURIComponent(id!)}`),
     enabled: !!id,
     staleTime: 60_000,
   });

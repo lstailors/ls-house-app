@@ -1,17 +1,19 @@
 import { useMemo } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Layers, RefreshCw, X } from "lucide-react";
-import { SectionHeader, DataTable, FilterBar, EmptyState } from "@ls/design";
+import { LayoutGrid, LayoutList, Layers, RefreshCw, X } from "lucide-react";
+import { SectionHeader, DataTable, FilterBar, EmptyState, GlassCard } from "@ls/design";
 import { cn } from "@ls/design/utils";
 import { useLookbookSwatches } from "@/lib/queries";
 import {
   BUCKET_META,
+  BucketChip,
+  DownloadPhotoLink,
+  PricePair,
+  SwatchThumb,
   swatchColumns,
   swatchDetailPath,
   useDebounced,
 } from "./lookbook-shared";
-
-const PAGE = 50;
 
 export default function LookbookSwatchesPage() {
   const navigate = useNavigate();
@@ -19,15 +21,19 @@ export default function LookbookSwatchesPage() {
   const q = params.get("q") ?? "";
   const mill = params.get("mill") ?? "";
   const bucket = params.get("bucket") ?? "";
+  const photo = params.get("photo") === "1";
+  const view = params.get("view") === "list" ? "list" : "gallery";
   const start = Math.max(0, Number(params.get("start")) || 0);
   const dq = useDebounced(q, 300);
+  const page = view === "gallery" ? 36 : 50;
 
   const { data, isLoading, isError, error, isFetching, refetch } = useLookbookSwatches({
     q: dq.trim().length >= 2 ? dq.trim() : undefined,
     mill: mill || undefined,
     bucket: bucket || undefined,
+    photo: photo || undefined,
     start,
-    limit: PAGE,
+    limit: page,
   });
   const deskError = error instanceof Error ? error.message : null;
 
@@ -47,9 +53,10 @@ export default function LookbookSwatchesPage() {
     [],
   );
 
+  const mills = data?.mills ?? [];
   const total = data?.total ?? 0;
   const from = total === 0 ? 0 : start + 1;
-  const to = Math.min(start + PAGE, total);
+  const to = Math.min(start + page, total);
 
   return (
     <div className="space-y-6 animate-fade-up">
@@ -60,7 +67,7 @@ export default function LookbookSwatchesPage() {
             Every <span className="text-brass-shimmer">swatch</span>.
           </>
         }
-        description="All non-SW lookbook swatches with their price bucket. Search by swatch number, article, collection, fabric or mill. Click a row for the detail page."
+        description="Photo gallery of the lookbook. Filter by mill, bucket, or photo. Click a card for the detail page — download lives there and on each tile."
       />
 
       <FilterBar
@@ -72,6 +79,47 @@ export default function LookbookSwatchesPage() {
         filterOptions={filterOptions}
         right={
           <>
+            <select
+              value={mill}
+              onChange={(e) => set("mill", e.target.value || null)}
+              className="h-9 rounded-full border border-brass/15 bg-forest-raised/40 px-3 text-xs text-cream"
+            >
+              <option value="">All mills</option>
+              {mill && !mills.includes(mill) ? <option value={mill}>{mill}</option> : null}
+              {mills.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => set("photo", photo ? null : "1")}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-xs border",
+                photo ? "border-brass bg-brass/15 text-cream" : "border-brass/15 text-cream-muted",
+              )}
+            >
+              With photo
+            </button>
+            <div className="inline-flex rounded-full border border-brass/15 overflow-hidden">
+              <button
+                type="button"
+                className={cn("px-2.5 py-1.5", view === "gallery" ? "bg-brass/15 text-cream" : "text-cream-dim")}
+                onClick={() => set("view", null)}
+                title="Gallery"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className={cn("px-2.5 py-1.5", view === "list" ? "bg-brass/15 text-cream" : "text-cream-dim")}
+                onClick={() => set("view", "list")}
+                title="List"
+              >
+                <LayoutList className="h-3.5 w-3.5" />
+              </button>
+            </div>
             {mill ? (
               <button
                 type="button"
@@ -117,18 +165,46 @@ export default function LookbookSwatchesPage() {
           <div className={cn("text-[11px] text-cream-dim", isFetching && "opacity-60")}>
             {from.toLocaleString()}–{to.toLocaleString()} of {total.toLocaleString()} swatches
           </div>
-          <DataTable
-            rows={data.rows}
-            columns={swatchColumns()}
-            rowKey={(r) => r.swatchNumber}
-            onRowClick={(r) => navigate(swatchDetailPath(r.swatchNumber))}
-          />
+          {view === "list" ? (
+            <DataTable
+              rows={data.rows}
+              columns={swatchColumns()}
+              rowKey={(r) => r.swatchNumber}
+              onRowClick={(r) => navigate(swatchDetailPath(r.swatchNumber))}
+            />
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+              {data.rows.map((r) => (
+                <button
+                  key={r.swatchNumber}
+                  type="button"
+                  onClick={() => navigate(swatchDetailPath(r.swatchNumber))}
+                  className="text-left"
+                >
+                  <GlassCard className="overflow-hidden hover:bg-brass/[0.04] transition-colors h-full">
+                    <SwatchThumb photoUrl={r.photoUrl} alt={r.swatchNumber} className="aspect-square w-full" />
+                    <div className="p-3 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-cream text-xs font-mono truncate">{r.swatchNumber}</div>
+                          <div className="text-[11px] text-cream-dim italic truncate">{r.mill}</div>
+                        </div>
+                        <BucketChip bucket={r.bucket} />
+                      </div>
+                      <PricePair {...r} compact />
+                      <DownloadPhotoLink swatchNumber={r.swatchNumber} photoUrl={r.photoUrl} />
+                    </div>
+                  </GlassCard>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex items-center justify-between text-sm">
             <button
               type="button"
               className="text-brass-light underline underline-offset-2 disabled:opacity-30"
               disabled={start === 0}
-              onClick={() => set("start", start - PAGE > 0 ? String(start - PAGE) : null)}
+              onClick={() => set("start", start - page > 0 ? String(start - page) : null)}
             >
               ← Previous
             </button>
@@ -136,7 +212,7 @@ export default function LookbookSwatchesPage() {
               type="button"
               className="text-brass-light underline underline-offset-2 disabled:opacity-30"
               disabled={to >= total}
-              onClick={() => set("start", String(start + PAGE))}
+              onClick={() => set("start", String(start + page))}
             >
               Next →
             </button>

@@ -163,6 +163,15 @@ describe("computeData rows and searchSwatches", () => {
     expect(searchSwatches(data.rows, { bucket: "joined" }).total).toBe(1);
   });
 
+  test("hasPhoto keeps only rows with a lookbook path", () => {
+    const withPhotos = data.rows.map((r, i) => ({
+      ...r,
+      photoUrl: i === 0 ? "/lookbook/x.jpg" : null,
+    }));
+    expect(searchSwatches(withPhotos, { hasPhoto: true }).total).toBe(1);
+    expect(searchSwatches(withPhotos, { hasPhoto: true }).rows[0]!.swatchNumber).toBe("ARTEXTILE-109301");
+  });
+
   test("prefix beats substring beats subsequence", () => {
     const out = searchSwatches(data.rows, { q: "109301" });
     expect(out.rows[0]!.swatchNumber).toBe("ARTEXTILE-109301"); // article prefix match

@@ -1751,10 +1751,21 @@ export const LookbookSwatchRow = z.object({
 });
 export type LookbookSwatchRow = z.infer<typeof LookbookSwatchRow>;
 
+export const LookbookSwatchDetail = LookbookSwatchRow.extend({
+  composition: z.string().nullable().optional(),
+  weightGrams: z.number().nullable().optional(),
+  widthCm: z.number().nullable().optional(),
+  season: z.string().nullable().optional(),
+  availability: z.string().nullable().optional(),
+});
+export type LookbookSwatchDetail = z.infer<typeof LookbookSwatchDetail>;
+
 export const LookbookSwatchList = z.object({
   total: z.number(),
   start: z.number(),
   limit: z.number(),
   rows: z.array(LookbookSwatchRow),
+  /** Mills in swatch-count order, for the mill picker. */
+  mills: z.array(z.string()).optional(),
 });
 export type LookbookSwatchList = z.infer<typeof LookbookSwatchList>;
