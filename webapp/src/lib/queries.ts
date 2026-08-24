@@ -16,6 +16,8 @@ import type {
   FabricPricing,
   Invoice,
   LookbookPriceReview,
+  LookbookSwatchList,
+  LookbookSwatchRow,
   Location,
   Profile,
   SalesOrder,
@@ -225,6 +227,37 @@ export function useFabrics() {
     queryKey: ["fabrics"],
     queryFn: () => api.get<FabricPricing[]>("/api/reference/fabrics"),
     staleTime: 10 * 60_000,
+  });
+}
+
+export function useLookbookSwatches(params: {
+  q?: string;
+  mill?: string;
+  bucket?: string;
+  start?: number;
+  limit?: number;
+}) {
+  const qs = new URLSearchParams();
+  if (params.q) qs.set("q", params.q);
+  if (params.mill) qs.set("mill", params.mill);
+  if (params.bucket) qs.set("bucket", params.bucket);
+  if (params.start) qs.set("start", String(params.start));
+  if (params.limit) qs.set("limit", String(params.limit));
+  return useQuery({
+    queryKey: ["lookbook-swatches", params],
+    queryFn: () => api.get<LookbookSwatchList>(`/api/lookbook-prices/swatches?${qs.toString()}`),
+    staleTime: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useLookbookSwatch(id: string | null) {
+  return useQuery({
+    queryKey: ["lookbook-swatch", id],
+    queryFn: () =>
+      api.get<LookbookSwatchRow>(`/api/lookbook-prices/swatch?id=${encodeURIComponent(id!)}`),
+    enabled: !!id,
+    staleTime: 60_000,
   });
 }
 

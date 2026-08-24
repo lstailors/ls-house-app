@@ -26,6 +26,8 @@ const OrdersAlterations = lazy(() => import("@/pages/orders/OrdersAlterations"))
 const TicketDetail = lazy(() => import("@/pages/intake/TicketDetail"));
 const FabricPricingPage = lazy(() => import("@/pages/reference/FabricPricingPage"));
 const LookbookPriceReviewPage = lazy(() => import("@/pages/reference/LookbookPriceReviewPage"));
+const LookbookSwatchesPage = lazy(() => import("@/pages/reference/LookbookSwatchesPage"));
+const LookbookSwatchPage = lazy(() => import("@/pages/reference/LookbookSwatchPage"));
 const StyleLibraryPage = lazy(() => import("@/pages/reference/StyleLibraryPage"));
 const Academy = lazy(() => import("@/pages/Academy"));
 const MissionControl = lazy(() => import("@/pages/MissionControl"));
@@ -84,6 +86,8 @@ export function AdminRouteTree() {
         <Route path="settings" element={<Settings />} />
         <Route path="reference/fabrics" element={guard(MGMT, <FabricPricingPage />)} />
         <Route path="reference/lookbook-prices" element={guard(MGMT, <LookbookPriceReviewPage />)} />
+        <Route path="reference/lookbook-prices/all" element={guard(MGMT, <LookbookSwatchesPage />)} />
+        <Route path="reference/lookbook-prices/swatch" element={guard(MGMT, <LookbookSwatchPage />)} />
         <Route path="reference/styles" element={guard(MGMT, <StyleLibraryPage />)} />
         <Route path="users" element={guard(["super_admin"], <AdminUsers />)} />
         <Route path="locations" element={guard(["super_admin"], <AdminLocations />)} />

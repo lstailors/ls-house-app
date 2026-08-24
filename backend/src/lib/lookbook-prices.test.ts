@@ -3,7 +3,9 @@ import {
   articleFromItemCode,
   buildArticleRates,
   bucketSwatch,
+  computeData,
   computeReview,
+  searchSwatches,
   type ItemPriceRow,
   type SwatchRow,
 } from "./lookbook-prices";
@@ -13,6 +15,7 @@ const swatch = (over: Partial<SwatchRow>): SwatchRow => ({
   mill: "Testmill",
   collection: null,
   fabric_article_id: null,
+  fabric_name: null,
   price_per_meter: 0,
   swatch_photo_url: null,
   ...over,
@@ -116,5 +119,55 @@ describe("computeReview", () => {
     const examples = review.mills[0]!.examples.book;
     expect(examples[0]!.photoUrl).toBe("/lookbook/tallia/images/x.jpg");
     expect(examples[1]!.photoUrl).toBeNull();
+  });
+});
+
+describe("computeData rows and searchSwatches", () => {
+  const data = computeData(
+    [
+      swatch({ swatch_number: "ARTEXTILE-109301", mill: "Artextile", fabric_article_id: "109301", price_per_meter: 192.3077 }),
+      swatch({ swatch_number: "ARTEXTILE-100200", mill: "Artextile", fabric_article_id: "100200" }),
+      swatch({ swatch_number: "SAVIERO-100100", mill: "Saviero", fabric_article_id: "100100", price_per_meter: 720, fabric_name: "Zegna Tropical" }),
+      swatch({ swatch_number: "HS-2111001", mill: "Holland & Sherry", collection: "HS2111" }),
+      swatch({ swatch_number: "SW-1", mill: "House" }),
+    ],
+    [{ item_code: "FAB-COL-109301", price_list_rate: 192.3077 }],
+    [],
+  );
+
+  test("rows exclude SW- and index by swatch number", () => {
+    expect(data.rows.length).toBe(4);
+    expect(data.bySwatch.has("SW-1")).toBe(false);
+    expect(data.bySwatch.get("ARTEXTILE-109301")!.bucket).toBe("joined");
+    expect(data.bySwatch.get("SAVIERO-100100")!.bucket).toBe("book");
+  });
+
+  test("empty query lists all, sorted, paginated", () => {
+    const page = searchSwatches(data.rows, { start: 1, limit: 2 });
+    expect(page.total).toBe(4);
+    expect(page.rows.map((r) => r.swatchNumber)).toEqual(["ARTEXTILE-109301", "HS-2111001"]);
+  });
+
+  test("mill and bucket filters apply", () => {
+    expect(searchSwatches(data.rows, { mill: "Artextile" }).total).toBe(2);
+    expect(searchSwatches(data.rows, { bucket: "joined" }).total).toBe(1);
+  });
+
+  test("prefix beats substring beats subsequence", () => {
+    const out = searchSwatches(data.rows, { q: "109301" });
+    expect(out.rows[0]!.swatchNumber).toBe("ARTEXTILE-109301"); // article prefix match
+    const sub = searchSwatches(data.rows, { q: "ART1093" }); // subsequence only
+    expect(sub.total).toBe(1);
+    expect(sub.rows[0]!.swatchNumber).toBe("ARTEXTILE-109301");
+  });
+
+  test("matches collection and fabric name", () => {
+    expect(searchSwatches(data.rows, { q: "zegna" }).rows[0]!.swatchNumber).toBe("SAVIERO-100100");
+    expect(searchSwatches(data.rows, { q: "hs2111" }).rows[0]!.swatchNumber).toBe("HS-2111001");
+  });
+
+  test("no match returns empty, short query lists", () => {
+    expect(searchSwatches(data.rows, { q: "zzzzzz" }).total).toBe(0);
+    expect(searchSwatches(data.rows, { q: "z" }).total).toBe(4); // <2 chars -> listing
   });
 });
