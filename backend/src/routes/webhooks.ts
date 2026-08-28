@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { logErpCommunication, matchCustomerByPhone } from "./comms";
-import { insertCallLog, updateCallLog, insertSmsMessage } from "../lib/erpnext/agents";
+import { insertCallLog, insertSmsMessage, upsertCallLog } from "../lib/erpnext/agents";
 import { parseDocusealWebhook } from "../lib/docuseal";
 import { attachDocusealResultFiles, markQcSignedBySubmission } from "./qc";
 
@@ -66,27 +66,41 @@ webhooksRouter.post("/unifi", async (c) => {
   };
   const status = statusMap[type] ?? "webhook";
 
-  // ── Save/update in unifi_call_logs ──────────────────────────────────────
-  if (callId) {
-    await updateCallLog(callId, {
-      transcript_raw: transcript,
-      transcript_whisper: summary,
-      recording: recordingUrl,
-      status: type === "transcript" ? "accepted" : status,
-    }).catch(() => {});
-  } else {
-    await insertCallLog({
-      time: new Date().toISOString(),
-      from: callerPhone ?? "unknown",
-      from_caller_name: callerName ?? null,
-      to: "unknown",
-      direction: "in",
-      duration: duration,
-      status,
-      transcript_raw: transcript,
-      transcript_whisper: summary,
-      recording: recordingUrl,
-    }).catch(() => {});
+  // ── Save/update call log (upsert by external_id when UniFi sends call_id) ─
+  const callStatus = type === "transcript" ? "accepted" : status;
+  try {
+    if (callId) {
+      await upsertCallLog({
+        external_id: callId,
+        time: new Date().toISOString(),
+        from: callerPhone ?? "unknown",
+        from_caller_name: callerName ?? null,
+        to: "unknown",
+        direction: "in",
+        duration,
+        status: callStatus,
+        transcript_raw: transcript,
+        transcript_whisper: summary,
+        recording: recordingUrl,
+        ...(matchedCustomerId ? { customer: matchedCustomerId } : {}),
+      });
+    } else {
+      await insertCallLog({
+        time: new Date().toISOString(),
+        from: callerPhone ?? "unknown",
+        from_caller_name: callerName ?? null,
+        to: "unknown",
+        direction: "in",
+        duration,
+        status: callStatus,
+        transcript_raw: transcript,
+        transcript_whisper: summary,
+        recording: recordingUrl,
+        ...(matchedCustomerId ? { customer: matchedCustomerId } : {}),
+      });
+    }
+  } catch (e: any) {
+    console.warn("[unifi.webhook] call log", e?.message);
   }
 
   // ── Log to ERPNext Customer Communication ───────────────────────────────
@@ -146,7 +160,9 @@ webhooksRouter.post("/unifi", async (c) => {
     }
   }
 
-  // ── Forward normalized event to n8n → Hermes (fire-and-forget) ──────────
+  // ── Forward normalized event to n8n → Hermes (best-effort) ─────────────
+  // Await with a hard timeout so Vercel does not freeze the isolate before
+  // the outbound POST lands. Failures never change the UniFi response.
   const n8nUrl = process.env.N8N_COMMS_WEBHOOK_URL;
   if (n8nUrl) {
     const fwd = {
@@ -163,14 +179,22 @@ webhooksRouter.post("/unifi", async (c) => {
       duration,
       occurred_at: new Date().toISOString(),
     };
-    fetch(n8nUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Webhook-Token": process.env.N8N_COMMS_WEBHOOK_SECRET ?? "",
-      },
-      body: JSON.stringify(fwd),
-    }).catch((e) => console.warn("[unifi→n8n]", e?.message));
+    try {
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 2500);
+      await fetch(n8nUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Token": process.env.N8N_COMMS_WEBHOOK_SECRET ?? "",
+        },
+        body: JSON.stringify(fwd),
+        signal: ac.signal,
+      }).catch((e) => console.warn("[unifi→n8n]", e?.message));
+      clearTimeout(timer);
+    } catch (e: any) {
+      console.warn("[unifi→n8n]", e?.message);
+    }
   }
 
   return c.json({ ok: true });
