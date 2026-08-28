@@ -1,0 +1,11 @@
+{
+  "call_id": "test-failed-001",
+  "from": "+12125550104",
+  "from_name": "Test Caller",
+  "to": "+12125550100",
+  "direction": "inbound",
+  "duration": 0,
+  "summary": "Inbound call failed",
+  "transcript": null,
+  "recording_url": null
+}

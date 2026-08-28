@@ -1,0 +1,8 @@
+{
+  "id": "test-sms-001",
+  "from": "+12125550105",
+  "from_name": "Test Caller",
+  "to": "+12125550100",
+  "direction": "inbound",
+  "message": "Can I move tomorrow's fitting?"
+}

@@ -34,6 +34,8 @@ function parseUnifiPayload(body: any) {
 //   Voicemail         → https://app.lstailors.com/api/webhooks/unifi?type=voicemail
 //   Missed Calls      → https://app.lstailors.com/api/webhooks/unifi?type=missed
 //   Inbound Failure   → https://app.lstailors.com/api/webhooks/unifi?type=failed
+//   SMS               → https://app.lstailors.com/api/webhooks/unifi?type=sms
+//   Emergency Calls   → https://app.lstailors.com/api/webhooks/unifi?type=emergency
 // (type param is optional — we auto-detect if not provided)
 
 webhooksRouter.post("/unifi", async (c) => {
@@ -45,8 +47,14 @@ webhooksRouter.post("/unifi", async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ ok: false, error: "Invalid JSON" }, 400);
 
-  const type = c.req.query("type") ?? "transcript"; // transcript | voicemail | missed | failed
+  const type = c.req.query("type") ?? "transcript";
   const { callId, transcript, summary, recordingUrl, callerPhone, callerName, duration, rawText } = parseUnifiPayload(body);
+  const customerPhone = callerPhone ?? (type === "sms" ? body.sender ?? null : null);
+  const matchedCustomer = customerPhone
+    ? await matchCustomerByPhone(customerPhone).catch(() => null)
+    : null;
+  const matchedCustomerId = matchedCustomer?.id ?? null;
+  const matchedCustomerName = matchedCustomer?.name ?? null;
 
   // ── Determine status from type ──────────────────────────────────────────
   const statusMap: Record<string, string> = {
@@ -54,6 +62,7 @@ webhooksRouter.post("/unifi", async (c) => {
     voicemail:  "voicemail",
     missed:     "missed",
     failed:     "failed",
+    emergency:  "emergency",
   };
   const status = statusMap[type] ?? "webhook";
 
@@ -81,31 +90,28 @@ webhooksRouter.post("/unifi", async (c) => {
   }
 
   // ── Log to ERPNext Customer Communication ───────────────────────────────
-  if (callerPhone) {
-    const customer = await matchCustomerByPhone(callerPhone).catch(() => null);
-    if (customer) {
-      const erpSubject = {
-        transcript: `Call transcript — ${summary ?? callerName ?? callerPhone}`,
-        voicemail:  `Voicemail from ${callerName ?? callerPhone}`,
-        missed:     `Missed call from ${callerName ?? callerPhone}`,
-        failed:     `Inbound call failed — ${callerPhone}`,
-      }[type] ?? `Call — ${callerPhone}`;
+  if (callerPhone && matchedCustomerId) {
+    const erpSubject = {
+      transcript: `Call transcript — ${summary ?? callerName ?? callerPhone}`,
+      voicemail:  `Voicemail from ${callerName ?? callerPhone}`,
+      missed:     `Missed call from ${callerName ?? callerPhone}`,
+      failed:     `Inbound call failed — ${callerPhone}`,
+    }[type] ?? `Call — ${callerPhone}`;
 
-      const erpContent = transcript
-        ?? (type === "missed" ? `Missed call from ${callerName ?? callerPhone}. No answer.` : null)
-        ?? (type === "voicemail" ? `Voicemail received. ${recordingUrl ? "Recording available." : ""}` : null)
-        ?? rawText ?? "No transcript available.";
+    const erpContent = transcript
+      ?? (type === "missed" ? `Missed call from ${callerName ?? callerPhone}. No answer.` : null)
+      ?? (type === "voicemail" ? `Voicemail received. ${recordingUrl ? "Recording available." : ""}` : null)
+      ?? rawText ?? "No transcript available.";
 
-      await logErpCommunication({
-        customerId: customer.id,
-        medium: "Phone",
-        subject: erpSubject,
-        content: erpContent,
-        direction: "Received",
-        date: new Date().toISOString(),
-        phoneNo: callerPhone,
-      });
-    }
+    await logErpCommunication({
+      customerId: matchedCustomerId,
+      medium: "Phone",
+      subject: erpSubject,
+      content: erpContent,
+      direction: "Received",
+      date: new Date().toISOString(),
+      phoneNo: callerPhone,
+    });
   }
 
   // ── SMS handling ──────────────────────────────────────────────────────────
@@ -126,10 +132,9 @@ webhooksRouter.post("/unifi", async (c) => {
       }).catch(() => {});
 
       // Log to ERPNext customer timeline
-      const customer = await matchCustomerByPhone(fromPhone).catch(() => null);
-      if (customer) {
+      if (matchedCustomerId) {
         await logErpCommunication({
-          customerId: customer.id,
+          customerId: matchedCustomerId,
           medium: "SMS",
           subject: `SMS via UniFi — ${callerName ?? fromPhone}`,
           content: messageBody,
@@ -139,7 +144,33 @@ webhooksRouter.post("/unifi", async (c) => {
         });
       }
     }
-    return c.json({ ok: true });
+  }
+
+  // ── Forward normalized event to n8n → Hermes (fire-and-forget) ──────────
+  const n8nUrl = process.env.N8N_COMMS_WEBHOOK_URL;
+  if (n8nUrl) {
+    const fwd = {
+      source: "unifi_talk",
+      type,
+      call_id: callId,
+      caller_phone: callerPhone,
+      caller_name: callerName,
+      customer: matchedCustomerId ?? null,
+      customer_name: matchedCustomerName ?? null,
+      summary,
+      transcript,
+      recording_url: recordingUrl,
+      duration,
+      occurred_at: new Date().toISOString(),
+    };
+    fetch(n8nUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Webhook-Token": process.env.N8N_COMMS_WEBHOOK_SECRET ?? "",
+      },
+      body: JSON.stringify(fwd),
+    }).catch((e) => console.warn("[unifi→n8n]", e?.message));
   }
 
   return c.json({ ok: true });
