@@ -33,6 +33,8 @@ export type IntakeConfirmResult = {
 type Props = {
   result: IntakeConfirmResult;
   clientName: string;
+  /** Trade Account end-customer display name (optional) */
+  endCustomerName?: string | null;
   clientPhone?: string | null;
   clientEmail?: string | null;
   pieceCount: number;

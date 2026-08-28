@@ -343,8 +343,8 @@ export default function AppointmentsGlass() {
                     disabled={!cell.iso}
                     onClick={() => cell.iso && setCursor(cell.iso)}
                     className={cn(
-                      "min-h-[88px] rounded-xl border p-1.5 text-left align-top",
-                      cell.iso === today && "border-brass bg-brass/15",
+                      "appt-day min-h-[88px] rounded-xl border p-1.5 text-left align-top",
+                      cell.iso === today && "is-today border-brass bg-brass/15",
                       cell.iso && cell.iso !== today && "border-brass/15 bg-black/20",
                       !cell.iso && "border-transparent",
                     )}
@@ -374,7 +374,7 @@ export default function AppointmentsGlass() {
                     key={ev.id}
                     type="button"
                     onClick={() => openHouse(ev)}
-                    className="og-row sf-card w-full text-left card-glass px-4 py-3.5 mb-2"
+                    className="og-row sf-card appt-row w-full text-left card-glass px-4 py-3.5 mb-2"
                   >
                     <div className="flex items-center gap-2 flex-wrap">
                       <StatusBadge status={FEED_LABEL[ev.feed] || ev.feed} tone={FEED_TONES[ev.feed]} size="sm" />
@@ -390,7 +390,7 @@ export default function AppointmentsGlass() {
                     key={a.name}
                     type="button"
                     onClick={() => setPicked(a)}
-                    className="og-row sf-card w-full text-left card-glass px-4 py-3.5 mb-2"
+                    className="og-row sf-card appt-row w-full text-left card-glass px-4 py-3.5 mb-2"
                   >
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-xs text-brass-light">{fmtClock(a.scheduledTime)}</span>
@@ -469,7 +469,7 @@ export default function AppointmentsGlass() {
                   key={ev.id}
                   type="button"
                   onClick={() => openHouse(ev)}
-                  className="og-row sf-card w-full text-left card-glass px-4 py-3.5 mb-2"
+                  className="og-row sf-card appt-row w-full text-left card-glass px-4 py-3.5 mb-2"
                 >
                   <div className="flex items-center gap-2 flex-wrap">
                     <StatusBadge status={FEED_LABEL[ev.feed] || ev.feed} tone={FEED_TONES[ev.feed]} size="sm" />

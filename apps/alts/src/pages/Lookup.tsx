@@ -146,7 +146,7 @@ export default function Lookup() {
                     key={t.name}
                     type="button"
                     onClick={() => nav(t.href || `/orders/alterations/${t.name}`)}
-                    className="w-full text-left card-glass px-4 py-3.5 flex items-center gap-3"
+                    className="lk-row w-full text-left card-glass px-4 py-3.5 flex items-center gap-3"
                   >
                     <span className="sf-avatar">{clientInitials(t.customer_name)}</span>
                     <div className="min-w-0 flex-1">
@@ -177,7 +177,7 @@ export default function Lookup() {
                     key={c.name || c.id}
                     type="button"
                     onClick={() => nav(c.href || `/customers/${c.name || c.id}`)}
-                    className="w-full text-left card-glass px-4 py-3.5 flex items-center gap-3"
+                    className="lk-row w-full text-left card-glass px-4 py-3.5 flex items-center gap-3"
                   >
                     <span className="sf-avatar">{clientInitials(c.customer_name || c.name || c.title)}</span>
                     <div className="min-w-0">
@@ -206,7 +206,7 @@ export default function Lookup() {
                           `/intake/alterations?kind=on_order&so=${encodeURIComponent(r.id)}&customerName=${encodeURIComponent(r.subtitle || "")}`,
                         )
                       }
-                      className="w-full text-left card-glass px-4 py-3.5"
+                      className="lk-row w-full text-left card-glass px-4 py-3.5"
                     >
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-[13px] text-brass-light">{r.id || r.title}</span>

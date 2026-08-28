@@ -8,7 +8,7 @@ import { shouldHidePepeFab } from "./pepeHide";
 import PepePanel from "./PepePanel";
 import { PEPE_EMAIL, pepeApi } from "./pepeApi";
 
-/** Global Pepe chrome. Lives at App (not only AltsShell) so Intake / shop-floor also get the FAB. */
+/** Global Pepe chrome — top-bar AI orb + dropdown on every authenticated FOH route. */
 export default function PepeHost() {
   return <PepeChrome />;
 }
@@ -29,27 +29,43 @@ function PepeChrome() {
   });
   const wired = Boolean(meQ.data?.pepeChannelId);
 
-  const skipUnread = hidden || kioskFromSearch(search) || /^\/intake(\/|$)/i.test(pathname);
+  const skipPoll = hidden || kioskFromSearch(search) || /^\/intake(\/|$)/i.test(pathname);
+
   const unreadQ = useQuery({
     queryKey: ["pepe", "unread"],
     queryFn: () => pepeApi.messages(20),
-    enabled: Boolean(me) && wired && !open && !skipUnread,
-    refetchInterval: skipUnread ? false : 30_000,
+    enabled: Boolean(me) && wired && !open && !skipPoll,
+    refetchInterval: skipPoll ? false : 30_000,
     staleTime: 15_000,
   });
+
+  const todosQ = useQuery({
+    queryKey: ["pepe", "todos"],
+    queryFn: () => pepeApi.todos(),
+    enabled: Boolean(me) && wired && !skipPoll,
+    refetchInterval: skipPoll || open ? false : 45_000,
+    staleTime: 20_000,
+  });
+
   const last = unreadQ.data?.[unreadQ.data.length - 1];
-  const unread = Boolean(
+  const unreadMsg = Boolean(
     last &&
-      last.owner?.toLowerCase() === PEPE_EMAIL &&
+      (last.is_pepe || last.owner?.toLowerCase() === PEPE_EMAIL) &&
       last.owner?.toLowerCase() !== me?.email?.toLowerCase(),
   );
+
+  const openTodos = (todosQ.data ?? []).filter(
+    (t) => !/^(closed|cancelled|completed|done)$/i.test(t.status || ""),
+  ).length;
+
+  const badge = openTodos + (unreadMsg ? 1 : 0);
 
   if (hidden) return null;
 
   return (
     <>
-      <PepeFab unread={unread} />
-      <PepePanel wired={wired} />
+      <PepeFab badge={badge} unread={unreadMsg} />
+      <PepePanel wired={wired} todoCount={openTodos} />
     </>
   );
 }

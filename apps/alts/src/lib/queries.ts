@@ -27,12 +27,26 @@ export function useUpdateDelivery() {
       podMethod?: string;
       receivedBy?: string;
       signatureName?: string;
+      method?: string;
+      courierName?: string;
+      driverName?: string;
+      courierPhone?: string;
+      carrier?: string;
+      trackingNumber?: string;
+      trackingUrl?: string;
+      addressLine?: string;
+      city?: string;
+      state?: string;
+      zip?: string;
+      notes?: string;
+      garmentSummary?: string;
     }) => {
       const { id, ...patch } = input;
       return api.patch<Delivery>(`/api/deliveries/${id}`, patch);
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["deliveries"] });
+      if (vars?.id) qc.invalidateQueries({ queryKey: ["delivery", vars.id] });
     },
   });
 }
@@ -163,7 +177,31 @@ export function useDeliveryGenerateMessage() {
         type: string;
         channel: string;
         model: string;
+        phone?: string | null;
+        customerName?: string | null;
       }>(`/api/deliveries/${id}/generate-message`, body);
+    },
+  });
+}
+
+/** Staff confirm-send of edited draft SMS from the message dialog. */
+export function useDeliverySendMessage() {
+  return useMutation({
+    mutationFn: (input: {
+      id: string;
+      message: string;
+      channel?: "sms" | "email";
+      phone?: string;
+      confirm: boolean;
+    }) => {
+      const { id, ...body } = input;
+      return api.post<{
+        ok: boolean;
+        deliveryId: string;
+        phone: string;
+        twilio_sid: string;
+        channel: string;
+      }>(`/api/deliveries/${id}/send-message`, body);
     },
   });
 }

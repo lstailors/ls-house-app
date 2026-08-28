@@ -303,7 +303,7 @@ export default function FloorPerformance() {
                   ].map((k) => (
                     <div
                       key={k.label}
-                      className="rounded-[10px] border border-brass/20 bg-forest-base/80 px-4 py-4"
+                      className="fp-kpi rounded-[10px] border border-brass/20 bg-forest-base/80 px-4 py-4"
                     >
                       <div className="text-[10px] uppercase tracking-[0.12em] text-cream-dim mb-1.5">{k.label}</div>
                       <div
@@ -365,7 +365,7 @@ export default function FloorPerformance() {
                             setSelectedId(t.workerId);
                             setLocFilter("all");
                           }}
-                          className="text-left rounded-xl border border-brass/20 bg-forest-base/70 p-[18px] hover:border-brass transition-colors min-h-[44px]"
+                          className="fp-tailor text-left rounded-xl border border-brass/20 bg-forest-base/70 p-[18px] hover:border-brass transition-colors min-h-[44px]"
                         >
                           <div className="flex items-center gap-3 mb-3.5">
                             <div className="h-11 w-11 rounded-full bg-forest-deep border border-brass/30 flex items-center justify-center text-sm font-semibold text-brass-light shrink-0">

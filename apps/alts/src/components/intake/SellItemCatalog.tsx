@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "@ls/design/utils";
 import { formatMoney } from "@alts/lib/money";
 
-export type SellFilterId = "all" | "mtm" | "in" | "order" | "tops" | "bottoms";
+export type SellFilterId = "all" | "mtm" | "wholesale" | "in" | "order" | "tops" | "bottoms";
 
 export type SellableItem = {
   item_code: string;
@@ -29,6 +29,7 @@ function money(n?: number | string | null) {
 const FILTERS: { id: SellFilterId; label: string }[] = [
   { id: "all", label: "All" },
   { id: "mtm", label: "MTM" },
+  { id: "wholesale", label: "Wholesale" },
   { id: "in", label: "In stock" },
   { id: "order", label: "Special order" },
   { id: "tops", label: "Tops" },
@@ -42,10 +43,22 @@ const HOUSE_MTM_FALLBACK: SellableItem[] = [
   { item_code: "MTM-VEST", item_name: "MTM Vest", item_group: "MTM Vest", rate: 1100, is_stock_item: false, stock_qty: null, availability: "order", has_variants: false, attributes: { Size: ["36", "38", "40", "42", "44", "46"] }, ui_group: "tops", source: "house", eta: "Made to measure", kind: "mtm" },
   { item_code: "MTM-OVERCOAT", item_name: "MTM Overcoat", item_group: "MTM Overcoat", rate: 3200, is_stock_item: false, stock_qty: null, availability: "order", has_variants: false, attributes: { Size: ["36", "38", "40", "42", "44", "46"] }, ui_group: "tops", source: "house", eta: "Made to measure", kind: "mtm" },
   { item_code: "MTM-SHIRT", item_name: "MTM Shirt", item_group: "MTM Shirt", rate: 380, is_stock_item: false, stock_qty: null, availability: "order", has_variants: false, attributes: { Size: ["14.5", "15", "15.5", "16", "16.5", "17"] }, ui_group: "tops", source: "house", eta: "Made to measure", kind: "mtm" },
+  { item_code: "WH-JACKET", item_name: "Wholesale Jacket", item_group: "RTW Wholesale - Jacket", rate: 0, is_stock_item: false, stock_qty: null, availability: "order", has_variants: false, attributes: { Size: ["36", "38", "40", "42", "44", "46"] }, ui_group: "tops", source: "house", eta: "Set price on add", kind: "rtw" },
+  { item_code: "WH-SUIT", item_name: "Wholesale Suit", item_group: "RTW Wholesale - Suit", rate: 0, is_stock_item: false, stock_qty: null, availability: "order", has_variants: false, attributes: { Size: ["36", "38", "40", "42", "44", "46"] }, ui_group: "other", source: "house", eta: "Set price on add", kind: "rtw" },
+  { item_code: "WH-TROUSER", item_name: "Wholesale Trouser", item_group: "RTW Wholesale - Trouser", rate: 0, is_stock_item: false, stock_qty: null, availability: "order", has_variants: false, attributes: { Size: ["28", "30", "32", "34", "36", "38"] }, ui_group: "bottoms", source: "house", eta: "Set price on add", kind: "rtw" },
+  { item_code: "CUSTOM-AMOUNT", item_name: "Custom charge / other", item_group: "Custom Made", rate: 0, is_stock_item: false, stock_qty: null, availability: "order", has_variants: false, attributes: { Size: ["One"] }, ui_group: "other", source: "house", eta: "Enter amount", kind: "rtw" },
 ];
 
 function isMtmTile(it: SellableItem) {
   return it.kind === "mtm" || /^mtm[-_]/i.test(it.item_code);
+}
+
+function isWholesaleTile(it: SellableItem) {
+  return (
+    /^wh[-_]/i.test(it.item_code) ||
+    /wholesale/i.test(it.item_group || "") ||
+    /wholesale/i.test(it.item_name || "")
+  );
 }
 
 function catalogItems(items: SellableItem[]): SellableItem[] {
@@ -81,12 +94,21 @@ export default function SellItemCatalog({
   modeSwitch,
 }: Props) {
   const shown = (() => {
-    const has = items.some(isMtmTile);
-    const base =
-      has || (filter !== "all" && filter !== "mtm")
-        ? items
-        : [...HOUSE_MTM_FALLBACK, ...items];
+    const hasMtm = items.some(isMtmTile);
+    const hasWh = items.some(isWholesaleTile);
+    let base = items;
+    if (!hasMtm || !hasWh || filter === "mtm" || filter === "wholesale" || filter === "all") {
+      // Always surface house MTM + wholesale tiles when ERP list is thin
+      const codes = new Set(items.map((i) => i.item_code));
+      const extras = HOUSE_MTM_FALLBACK.filter((h) => !codes.has(h.item_code));
+      base = [...extras, ...items];
+    }
     if (filter === "mtm") return base.filter(isMtmTile);
+    if (filter === "wholesale") return base.filter(isWholesaleTile);
+    if (filter === "in") return base.filter((d) => d.availability === "in");
+    if (filter === "order") return base.filter((d) => d.availability === "order");
+    if (filter === "tops") return base.filter((d) => d.ui_group === "tops");
+    if (filter === "bottoms") return base.filter((d) => d.ui_group === "bottoms");
     return base;
   })();
 
@@ -98,7 +120,7 @@ export default function SellItemCatalog({
             What are we selling {firstName}?
           </h2>
           <p className="text-[11.5px] text-cream-dim mt-1.5 leading-snug max-w-md">
-            Stock, MTM, and special-order pieces on the same Walk-in ticket.
+            Stock, MTM, wholesale, and custom charges — billed on the invoice, not as alterations.
             {seeded ? " · Demo catalog until RTW is stocked in ERP." : ""}
           </p>
         </div>

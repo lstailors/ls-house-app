@@ -67,8 +67,8 @@ export type IntakeDraftPayload = {
   step: number;
   billing: "billable" | "on_order" | "redo";
   linkedSo: string | null;
-  /** Store origin — always NYC for alts FOH */
-  origin?: "NYC";
+  /** Store origin — NYC FOH or PB (Palm Beach) */
+  origin?: "NYC" | "PB";
   promiseDate?: string | null;
   promiseTime?: string | null;
   isRush?: boolean;

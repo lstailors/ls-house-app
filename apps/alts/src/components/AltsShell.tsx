@@ -29,6 +29,7 @@ export default function AltsShell() {
         className={cn(
           "flex items-center gap-2.5 sm:gap-3 px-3 sm:px-4 py-2.5 border-b border-brass/20",
           "bg-forest-deep/90 backdrop-blur-xl sticky top-0 z-40",
+          "pr-14 sm:pr-16", /* room for Pepe AI orb */
         )}
       >
         <Link to="/" className="flex items-center gap-2 min-w-0 shrink-0" aria-label="Home">

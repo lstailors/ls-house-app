@@ -250,7 +250,7 @@ export default function HouseFind() {
               key={o.name}
               type="button"
               onClick={() => setPickedSo(o)}
-              className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
+              className="og-row sf-card hf-row w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
             >
               <span className="sf-avatar" aria-hidden>
                 {clientInitials(o.customer_name || o.customer)}
@@ -277,7 +277,7 @@ export default function HouseFind() {
             <Link
               key={t.name}
               to={`/orders/alterations/${encodeURIComponent(t.name)}`}
-              className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
+              className="og-row sf-card hf-row w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
             >
               <span className="sf-avatar" aria-hidden>
                 {clientInitials(t.customer_name || t.customer)}
@@ -310,7 +310,7 @@ export default function HouseFind() {
                   key={o.id}
                   type="button"
                   onClick={() => setPickedCustom(o)}
-                  className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
+                  className="og-row sf-card hf-row w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
                 >
                   <span className="sf-avatar" aria-hidden>
                     {clientInitials(name)}
@@ -337,7 +337,7 @@ export default function HouseFind() {
                 key={o.name}
                 type="button"
                 onClick={() => setPickedSo(o)}
-                className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
+                className="og-row sf-card hf-row w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
               >
                 <span className="sf-avatar" aria-hidden>
                   {clientInitials(o.customer_name || o.customer)}

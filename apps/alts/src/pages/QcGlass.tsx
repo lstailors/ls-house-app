@@ -137,7 +137,7 @@ export default function QcGlass() {
             key={row.inspectionId || row.id}
             type="button"
             onClick={() => openRow(row)}
-            className="og-row sf-card card-glass px-4 py-3.5 w-full text-left flex items-center gap-3"
+            className="og-row sf-card qc-row card-glass px-4 py-3.5 w-full text-left flex items-center gap-3"
           >
             <span className="sf-avatar" aria-hidden>
               {clientInitials(row.customerName || "QC")}

@@ -55,6 +55,8 @@ export default defineConfig({
         navigateFallbackAllowlist: [/^\/(?!api\/).*/],
         // Shell + hashed assets always; POS navigations via navigateFallback
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,webp}"],
+        // Main bundle can exceed default 2 MiB — still precache for floor offline shell
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,

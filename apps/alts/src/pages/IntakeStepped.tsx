@@ -3,8 +3,8 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@ls/api-client";
-import { localFirstCatalog, localFirstCustomerSearch } from "@alts/offline/localFirst";
 import { useMe } from "@ls/auth/session";
+import { useActiveLocation } from "@alts/lib/locationContext";
 import { cn } from "@ls/design/utils";
 import ParkDrawer from "@alts/components/ParkDrawer";
 import CustomerEditSheet, { SelectedCustomerCard } from "@alts/components/CustomerEditSheet";
@@ -29,7 +29,7 @@ import SellItemCatalog, {
   type SellableItem,
 } from "@alts/components/intake/SellItemCatalog";
 import SellItemDrawer from "@alts/components/intake/SellItemDrawer";
-import PromiseSchedule, { type DayLoad } from "@alts/components/intake/PromiseSchedule";
+import PromiseSchedule, { type DayLoad, PROMISE_TIME_DEFAULT, normalizePromiseTime } from "@alts/components/intake/PromiseSchedule";
 import DeliveryBlock, {
   emptyDelivery,
   type DeliverySelection,
@@ -38,8 +38,6 @@ import IntakeConfirm, {
   type IntakeConfirmResult,
 } from "@alts/components/intake/IntakeConfirm";
 import { enqueueIntakeTicket } from "@alts/lib/offlineQueue";
-import AddressAutocomplete from "@alts/components/intake/AddressAutocomplete";
-import { formatMoney } from "@alts/lib/money";
 
 const GARMENT_TYPES = [
   "Jacket",
@@ -84,6 +82,8 @@ type CustomerHit = {
   phone?: string;
   email?: string;
   addressLine?: string;
+  /** ERP customer_group — Trade Account triggers End Customer field */
+  customerGroup?: string;
 };
 
 
@@ -121,8 +121,8 @@ type Preset = {
 
 type Remind = "eod" | "3d" | "2w" | "never";
 
-function money(n?: number | string | null) {
-  return formatMoney(n);
+function money(n: number) {
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
 function uid() {
@@ -272,8 +272,13 @@ export default function IntakeStepped() {
 
   const [step, setStep] = useState(0);
   const { data: me } = useMe();
-  /** Alts FOH is NYC-only — ignore HOU location claims from /me. */
-  const origin = "NYC" as const;
+  const { activeLocationId } = useActiveLocation();
+  /** Active shops: NYC (default) + PB (Palm Beach). Both books → LSTNY. */
+  const origin = (
+    String(activeLocationId || me?.locationId || "NYC").toUpperCase() === "PB"
+      ? "PB"
+      : "NYC"
+  ) as "NYC" | "PB";
   const [q, setQ] = useState("");
   const [customer, setCustomer] = useState<CustomerHit | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -291,6 +296,8 @@ export default function IntakeStepped() {
 
   const [garments, setGarments] = useState<Garment[]>([]);
   const [activeRef, setActiveRef] = useState<string | null>(null);
+  /** Same work × N pieces — expands on garment drawer Done (pants shorten ×5). */
+  const [pieceQty, setPieceQty] = useState(1);
   const [notifyReady, setNotifyReady] = useState(true);
   const [cartOpen, setCartOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -304,7 +311,7 @@ export default function IntakeStepped() {
   const [activeSellRef, setActiveSellRef] = useState<string | null>(null);
   /** Last step — promised due date/time */
   const [promiseDate, setPromiseDate] = useState<string | null>(null);
-  const [promiseTime, setPromiseTime] = useState<string | null>("18:00");
+  const [promiseTime, setPromiseTime] = useState<string | null>(PROMISE_TIME_DEFAULT);
   const [isRush, setIsRush] = useState(false);
   const [delivery, setDelivery] = useState<DeliverySelection>(() => emptyDelivery());
   const [billing, setBilling] = useState<"billable" | "on_order" | "redo">(initialBilling);
@@ -325,6 +332,8 @@ export default function IntakeStepped() {
   const [noteOpenFor, setNoteOpenFor] = useState<string | null>(null);
   const [ticketNote, setTicketNote] = useState("");
   const [ticketNoteKind, setTicketNoteKind] = useState<"internal" | "customer">("internal");
+  /** Trade/house: end client name only (bill-to stays Customer) */
+  const [endCustomer, setEndCustomer] = useState("");
   /** gates draft writes until hydrate + SO seed settle */
   const [draftReady, setDraftReady] = useState(false);
   /** Real submit idempotency key — survives double-click / flaky wifi retry. Rotated only on success. */
@@ -339,28 +348,27 @@ export default function IntakeStepped() {
   const search = useQuery({
     queryKey: ["cust-search", q],
     enabled: q.trim().length >= 2 && !customer,
-    queryFn: async () =>
-      localFirstCustomerSearch<CustomerHit>(q.trim(), async () => {
-        const rows = await api.get<any[]>(
-          `/api/intake-alterations/customers/search?q=${encodeURIComponent(q.trim())}`,
-        );
-        return (rows ?? []).map((r: any) => {
-          const addr = [r.address, r.city, r.state].filter(Boolean).join(", ");
-          return {
-            id: r.name ?? r.id,
-            name: r.customer_name ?? r.name,
-            phone: r.mobile_no ?? r.phone ?? "",
-            email: r.email_id ?? r.email ?? "",
-            addressLine: addr || r.address_line || "",
-          } as CustomerHit;
-        });
-      }),
+    queryFn: async () => {
+      const rows = await api.get<any[]>(
+        `/api/intake-alterations/customers/search?q=${encodeURIComponent(q.trim())}`,
+      );
+      return (rows ?? []).map((r: any) => {
+        const addr = [r.address, r.city, r.state].filter(Boolean).join(", ");
+        return {
+          id: r.name ?? r.id,
+          name: r.customer_name ?? r.name,
+          phone: r.mobile_no ?? r.phone ?? "",
+          email: r.email_id ?? r.email ?? "",
+          addressLine: addr || r.address_line || "",
+          customerGroup: r.customer_group ?? r.customerGroup ?? "",
+        } as CustomerHit;
+      });
+    },
   });
 
   const presets = useQuery({
     queryKey: ["presets", origin],
-    queryFn: () =>
-      localFirstCatalog(() => api.get<Preset[]>(`/api/intake-alterations/presets?origin=${origin}`)),
+    queryFn: () => api.get<Preset[]>(`/api/intake-alterations/presets?origin=${origin}`),
   });
 
   const sellable = useQuery({
@@ -370,7 +378,7 @@ export default function IntakeStepped() {
       const qs = new URLSearchParams({
         origin,
         filter: sellFilter,
-        limit: "100",
+        limit: "60",
       });
       if (sellQuery.trim()) qs.set("q", sellQuery.trim());
       const res = await api.raw(`/api/alts/sellable-items?${qs.toString()}`);
@@ -385,7 +393,7 @@ export default function IntakeStepped() {
     enabled: step === 3,
     queryFn: async () => {
       const from = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-      const res = await api.raw(`/api/alts/schedule-load?origin=${origin}&from=${from}&days=56`);
+      const res = await api.raw(`/api/alts/schedule-load?origin=${origin}&from=${from}&days=21`);
       if (!res.ok) throw new Error(`schedule-load ${res.status}`);
       const json = (await res.json()) as {
         data?: { days?: DayLoad[]; origin?: string } | DayLoad[];
@@ -395,27 +403,6 @@ export default function IntakeStepped() {
       return { days: (d?.days ?? []) as DayLoad[] };
     },
   });
-
-  // Seed delivery address from the customer card / new-customer form once, on this step.
-  useEffect(() => {
-    if (step !== 3) return;
-    setDelivery((prev) => {
-      if (prev.delivery_address?.trim() || prev.delivery_zip) return prev;
-      const street =
-        newLine1.trim() || (customer?.addressLine || "").split(",")[0]?.trim() || "";
-      const zip = (newZip || "").replace(/\D/g, "").slice(0, 5);
-      if (!street && !zip) return prev;
-      return {
-        ...prev,
-        delivery_address: street || prev.delivery_address,
-        delivery_apt: newLine2.trim() || prev.delivery_apt,
-        delivery_city: newCity.trim() || prev.delivery_city || "New York",
-        delivery_state: newState.trim() || prev.delivery_state || "NY",
-        delivery_zip: zip || prev.delivery_zip,
-      };
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
 
   // Resume parked cart
   useEffect(() => {
@@ -458,7 +445,7 @@ export default function IntakeStepped() {
         if (typeof intake.notifyReady === "boolean") setNotifyReady(intake.notifyReady);
         if (intake.expectedGarmentCount) setExpectedGarments(Number(intake.expectedGarmentCount) || 0);
         if (typeof intake.promiseDate === "string" && intake.promiseDate) setPromiseDate(intake.promiseDate);
-        if (typeof intake.promiseTime === "string" && intake.promiseTime) setPromiseTime(intake.promiseTime);
+        if (typeof intake.promiseTime === "string" && intake.promiseTime) setPromiseTime(normalizePromiseTime(intake.promiseTime));
         if (typeof intake.isRush === "boolean") setIsRush(intake.isRush);
         if (typeof intake.ticketNote === "string" && intake.ticketNote) setTicketNote(intake.ticketNote);
         if (intake.ticketNoteKind === "customer" || intake.ticketNoteKind === "internal") {
@@ -565,7 +552,7 @@ export default function IntakeStepped() {
             /* ignore legacy HOU drafts — origin locked NYC */
           }
           if (draft!.promiseDate) setPromiseDate(draft!.promiseDate);
-          if (draft!.promiseTime) setPromiseTime(draft!.promiseTime);
+          if (draft!.promiseTime) setPromiseTime(normalizePromiseTime(draft!.promiseTime));
           if (typeof draft!.isRush === "boolean") setIsRush(draft!.isRush);
           if (draft!.customer) setCustomer(draft!.customer);
           if (draft!.q) setQ(draft!.q);
@@ -719,7 +706,8 @@ export default function IntakeStepped() {
     customPrice,
   ]);
 
-  const allowSellMode = billing === "billable" && kindParam !== "on_order" && kindParam !== "redo" && kindParam !== "warranty" && kindParam !== "custom";
+  /** Sell / MTM / wholesale catalog — always on (not only walk-in). Warranty can still open Sell for rare RTW. */
+  const allowSellMode = true;
   const workTotal = useMemo(
     () => garments.reduce((s, g) => s + g.lines.reduce((a, l) => a + (Number(l.price) || 0), 0), 0),
     [garments],
@@ -741,6 +729,7 @@ export default function IntakeStepped() {
     setActiveSellRef(null);
     setSellDrawerOpen(false);
     setCartOpen(false);
+    setPieceQty(1);
     setExpectedGarments((n) => Math.max(n, garments.length + 1));
     setDrawerOpen(true);
     toast.success(`${type} added`);
@@ -766,9 +755,8 @@ export default function IntakeStepped() {
       qty: 1,
       rate: Number(item.rate) || 0,
       availability: item.availability,
-      eta: item.eta || (item.kind === "mtm" ? "Made to measure" : item.availability === "order" ? "Special order" : undefined),
+      eta: item.eta || (item.availability === "order" ? "Special order" : undefined),
       source: item.source,
-      kind: item.kind,
       sizeOptions: sizes,
       colorOptions: colors,
     };
@@ -778,7 +766,13 @@ export default function IntakeStepped() {
     setDrawerOpen(false);
     setCartOpen(false);
     setSellDrawerOpen(true);
-    toast.success(`${item.item_name} added`);
+    if (billing === "on_order" || billing === "redo") {
+      toast.success(`${item.item_name} added · will bill & charge`, {
+        description: "Sell / MTM / wholesale creates an SI (not an alteration line).",
+      });
+    } else {
+      toast.success(`${item.item_name} added`);
+    }
   };
 
   const openSellDrawer = (ref: string) => {
@@ -840,21 +834,76 @@ export default function IntakeStepped() {
     setActiveSellRef(null);
     setSellDrawerOpen(false);
     setCartOpen(false);
+    setPieceQty(1);
     setDrawerOpen(true);
   };
 
   const closeGarmentDrawer = () => {
     setDrawerOpen(false);
     setNoteOpenFor(null);
+    setPieceQty(1);
   };
 
-  useEffect(() => {
-    return () => {
-      setDrawerOpen(false);
-      setSellDrawerOpen(false);
-      setNoteOpenFor(null);
-    };
-  }, []);
+  /**
+   * Done on alter options — if piece qty > 1, clone this garment (same type, color,
+   * notes, work lines) into G2…Gn so 5 identical pant shortens is one build.
+   */
+  const finishGarmentDrawer = () => {
+    const srcRef = activeRef;
+    const src = srcRef ? garments.find((g) => g.ref === srcRef) : null;
+    const qty = Math.max(1, Math.min(30, Math.floor(Number(pieceQty) || 1)));
+
+    if (src && qty > 1) {
+      if (src.lines.length < 1) {
+        toast.error("Add the work first, then set quantity");
+        return;
+      }
+      setGarments((prev) => {
+        const idx = prev.findIndex((g) => g.ref === src.ref);
+        if (idx < 0) return prev;
+        const template = prev[idx]!;
+        const clones: Garment[] = [];
+        for (let i = 1; i < qty; i++) {
+          clones.push({
+            ref: `TMP-${i}`,
+            garmentType: template.garmentType,
+            color: template.color,
+            notes: template.notes,
+            soItemKey: template.soItemKey,
+            soItemName: template.soItemName,
+            // Previews ok to share for staff; files stay on original only
+            photoPreviewUrls: template.photoPreviewUrls
+              ? [...template.photoPreviewUrls]
+              : undefined,
+            lines: template.lines.map((l) => ({
+              id: uid(),
+              description: l.description,
+              price: l.price,
+              estMinutes: l.estMinutes,
+              presetId: l.presetId,
+              notes: l.notes,
+              photoPreviewUrls: l.photoPreviewUrls ? [...l.photoPreviewUrls] : undefined,
+            })),
+          });
+        }
+        const merged = [...prev.slice(0, idx + 1), ...clones, ...prev.slice(idx + 1)];
+        return merged.map((g, i) => ({ ...g, ref: `G${i + 1}` }));
+      });
+      setExpectedGarments((n) => Math.max(n, garments.length + qty - 1));
+      const workHint = src.lines[0]?.description
+        ? ` · ${src.lines[0].description}${src.lines.length > 1 ? ` +${src.lines.length - 1}` : ""}`
+        : "";
+      toast.success(`${qty}× ${src.garmentType}${workHint}`);
+    }
+
+    setPieceQty(1);
+    closeGarmentDrawer();
+    // Phone: show cart so multi-piece expansion is obvious
+    const phone = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
+    if (phone && qty > 1) {
+      window.setTimeout(() => setCartOpen(true), 280);
+    }
+  };
 
   const openCartSheet = () => {
     setDrawerOpen(false);
@@ -940,15 +989,18 @@ export default function IntakeStepped() {
       return;
     }
     const desc = customDesc.trim();
-    const price = Number(customPrice.replace(/[^0-9.]/g, ""));
+    const raw = customPrice.replace(/[^0-9.]/g, "").trim();
+    // Empty or 0 = open TBD amount (quote later). Negative rejected.
+    const price = raw === "" ? 0 : Number(raw);
     if (!desc) {
       toast.error("Describe the work");
       return;
     }
-    if (!(price > 0)) {
-      toast.error("$0 custom line is almost always a mistake — use Re-do for free work");
+    if (!Number.isFinite(price) || price < 0) {
+      toast.error("Price must be blank (TBD), $0, or a positive amount");
       return;
     }
+    const isTbd = price === 0;
     setGarments((prev) =>
       prev.map((g) => {
         if (g.ref !== active.ref) return g;
@@ -958,7 +1010,7 @@ export default function IntakeStepped() {
             ...g.lines,
             {
               id: uid(),
-              description: desc,
+              description: isTbd && !/\bTBD\b/i.test(desc) ? `${desc} · TBD` : desc,
               price,
               // no presetId → custom; default minutes so ERP capacity script doesn't block summit
               estMinutes: 15,
@@ -969,7 +1021,7 @@ export default function IntakeStepped() {
     );
     setCustomDesc("");
     setCustomPrice("");
-    toast.success("Custom line added");
+    toast.success(isTbd ? "Custom line added · amount TBD" : "Custom line added");
   };
 
   const updateLineNotes = (gRef: string, lineId: string, notes: string) => {
@@ -1041,7 +1093,9 @@ export default function IntakeStepped() {
   const filteredPresets = useMemo(() => {
     const all = presets.data ?? [];
     if (!active) return all;
-    return all.filter((p) => garmentMatchesPreset(p, active.garmentType));
+    // Use garmentMatchesPreset (fuzzy + All) — never strict includes-only
+    // which drops hierarchy / misfires on Suit → Jacket.
+    return all.filter((p) => garmentMatchesPreset(p as any, active.garmentType));
   }, [presets.data, active]);
 
   const selectCustomer = async (c: CustomerHit) => {
@@ -1166,16 +1220,24 @@ export default function IntakeStepped() {
         source: s.source,
       })),
       billing_status:
-        billing === "on_order" ? "Included in Custom Order" : billing === "redo" ? "Warranty" : "Billable",
-      included_in_custom: billing === "on_order" ? 1 : 0,
-      linked_sales_order: billing === "on_order" ? linkedSo || undefined : undefined,
+        // Sell / MTM / wholesale lines are always charged (SI). Pure alter custom/warranty keep their flags.
+        sellItems.length > 0
+          ? "Billable"
+          : billing === "on_order"
+            ? "Included in Custom Order"
+            : billing === "redo"
+              ? "Warranty"
+              : "Billable",
+      included_in_custom: sellItems.length > 0 ? 0 : billing === "on_order" ? 1 : 0,
+      linked_sales_order:
+        sellItems.length === 0 && billing === "on_order" ? linkedSo || undefined : undefined,
     };
     // Delivery (3 options)
     body.delivery_method = delivery.delivery_method;
-      if (delivery.delivery_method !== "Pickup") {
+    if (delivery.delivery_method !== "Pickup") {
       body.delivery_scheduled = 1;
-      body.delivery_requested_date =
-        delivery.delivery_requested_date || promiseDate || undefined;
+      if (delivery.delivery_requested_date) body.delivery_requested_date = delivery.delivery_requested_date;
+      else if (promiseDate) body.delivery_requested_date = promiseDate;
       if (delivery.delivery_time_window) body.delivery_time_window = delivery.delivery_time_window;
       if (delivery.delivery_address) body.delivery_address = delivery.delivery_address;
       if (delivery.delivery_apt) body.delivery_apt = delivery.delivery_apt;
@@ -1189,7 +1251,7 @@ export default function IntakeStepped() {
         if (delivery.delivery_fee_override_reason) {
           body.delivery_fee_override_reason = delivery.delivery_fee_override_reason;
         }
-      } else if (delivery.delivery_fee != null) {
+      } else if (delivery.delivery_method === "Ship (FedEx)" && delivery.delivery_fee != null) {
         body.delivery_fee = delivery.delivery_fee;
       }
     }
@@ -1197,6 +1259,8 @@ export default function IntakeStepped() {
       if (ticketNoteKind === "customer") body.customer_notes = ticketNote.trim();
       else body.internal_notes = ticketNote.trim();
     }
+    const endName = endCustomer.trim();
+    if (endName) body.end_customer = endName;
     if (customer?.id) body.customer = { id: customer.id, name: customer.name };
     else
       body.newCustomer = {
@@ -1225,13 +1289,6 @@ export default function IntakeStepped() {
         appPayUrl?: string | null;
         invoiceTotal?: number;
         sellWarnings?: string[];
-        delivery?: {
-          method?: string;
-          delivery_name?: string | null;
-          queued?: boolean;
-          shipping_record?: boolean;
-          fee?: number;
-        };
       }>("/api/intake-alterations/tickets", body);
       const ticketName = res.ticketName;
       // Upload garment + line photos after ticket exists (Lucia 023 / 030)
@@ -1314,13 +1371,6 @@ export default function IntakeStepped() {
           ? `Ticket ${res.ticketName} created${inv}${tot} — pay link ready`
           : `Ticket ${res.ticketName} created${inv}${tot}`,
       );
-      if (res.delivery?.queued) {
-        toast.success(
-          res.delivery.shipping_record
-            ? `FedEx shipping record ${res.delivery.delivery_name || ""} queued`.trim()
-            : `Hand delivery ${res.delivery.delivery_name || ""} added to the run`.trim(),
-        );
-      }
       if (res.sellWarnings?.length) {
         toast.warning(res.sellWarnings.join(" · "));
       }
@@ -1329,7 +1379,6 @@ export default function IntakeStepped() {
       }
       qc.invalidateQueries({ queryKey: ["alts-home-stats"] });
       qc.invalidateQueries({ queryKey: ["parked-carts"] });
-      qc.invalidateQueries({ queryKey: ["deliveries"] });
       // Stay on confirmation — SMS / email / print / checkout — not bare ticket hop
       setConfirmResult({
         ticketName: res.ticketName!,
@@ -1464,42 +1513,44 @@ export default function IntakeStepped() {
       const [hh, mm] = promiseTime.split(":").map(Number);
       const ampm = hh >= 12 ? "PM" : "AM";
       const h12 = ((hh + 11) % 12) + 1;
-      const t =
-        promiseTime === "18:00" ? "EOD" : `${h12}${mm ? `:${String(mm).padStart(2, "0")}` : ""} ${ampm}`;
+      const t = `${h12}${mm ? `:${String(mm).padStart(2, "0")}` : ""} ${ampm}`;
       return `${day} · ${t}`;
     } catch {
       return promiseDate;
     }
   }, [promiseDate, promiseTime]);
 
-  const catalogModeSwitch = allowSellMode ? (
-    <div className="flex w-full md:w-auto md:inline-flex p-0.5 rounded-full border border-brass/30 bg-black/35 mb-3 shrink-0">
+  const catalogModeSwitch = (
+    <div className="flex w-full p-1 rounded-2xl border border-brass/35 bg-black/40 mb-3 shrink-0 gap-1">
       <button
         type="button"
         onClick={() => setCatalogMode("alter")}
         className={cn(
-          "flex-1 md:flex-none h-11 md:h-9 px-4 rounded-full text-[10.5px] font-bold tracking-[0.14em] uppercase",
+          "flex-1 h-12 px-3 rounded-xl text-[11px] font-bold tracking-[0.12em] uppercase transition-colors",
           catalogMode === "alter"
-            ? "bg-brass/22 text-brass-light border border-brass/45"
-            : "text-cream-dim hover:text-cream",
+            ? "bg-brass/25 text-brass-light border border-brass/50 shadow-[0_0_0_1px_rgba(176,141,87,0.25)]"
+            : "text-cream-dim hover:text-cream border border-transparent",
         )}
       >
-        ◎ Alter
+        Alterations
       </button>
       <button
         type="button"
-        onClick={() => setCatalogMode("sell")}
+        onClick={() => {
+          setCatalogMode("sell");
+          setSellFilter("all");
+        }}
         className={cn(
-          "flex-1 md:flex-none h-11 md:h-9 px-4 rounded-full text-[10.5px] font-bold tracking-[0.14em] uppercase",
+          "flex-1 h-12 px-3 rounded-xl text-[11px] font-bold tracking-[0.12em] uppercase transition-colors",
           catalogMode === "sell"
-            ? "bg-brass/22 text-brass-light border border-brass/45"
-            : "text-cream-dim hover:text-cream",
+            ? "bg-brass/25 text-brass-light border border-brass/50 shadow-[0_0_0_1px_rgba(176,141,87,0.25)]"
+            : "text-cream-dim hover:text-cream border border-transparent",
         )}
       >
-        ◈ Sell
+        Sell · MTM · Stock
       </button>
     </div>
-  ) : null;
+  );
 
   return (
     <div className="alts-root flex flex-col h-dvh max-h-dvh overflow-hidden">
@@ -1632,7 +1683,7 @@ export default function IntakeStepped() {
               </Link>
             </div>
             {linkedSo && billing === "on_order" && (
-              <div className="card-glass px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
+              <div className="intake-panel card-glass px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
                 <span className="caps text-[var(--vi,#9B8BC4)]">
                   {linkedSoLabel ? "Linked orders" : "Linked order"}
                 </span>
@@ -1643,24 +1694,47 @@ export default function IntakeStepped() {
               </div>
             )}
             {billing === "redo" && (
-              <div className="card-glass px-4 py-3 text-sm text-signal-emerald border-signal-emerald/30">
+              <div className="intake-panel card-glass px-4 py-3 text-sm text-signal-emerald border-signal-emerald/30">
                 {REDO_DISPLAY.intakeHelper}
               </div>
             )}
 
             {customer ? (
-              <SelectedCustomerCard
-                name={customer.name}
-                phone={customer.phone}
-                email={customer.email}
-                addressLine={customer.addressLine}
-                onEdit={customer.id ? () => setEditOpen(true) : undefined}
-                onProfile={customer.id ? () => nav(`/customers/${encodeURIComponent(customer.id!)}`) : undefined}
-                onChange={() => {
-                  setCustomer(null);
-                  setQ("");
-                }}
-              />
+              <>
+                <SelectedCustomerCard
+                  name={customer.name}
+                  phone={customer.phone}
+                  email={customer.email}
+                  addressLine={customer.addressLine}
+                  onEdit={customer.id ? () => setEditOpen(true) : undefined}
+                  onProfile={customer.id ? () => nav(`/customers/${encodeURIComponent(customer.id!)}`) : undefined}
+                  onChange={() => {
+                    setCustomer(null);
+                    setEndCustomer("");
+                    setQ("");
+                  }}
+                />
+                {(
+                  /trade|wholesale|house|b2b|retailer/i.test(customer.customerGroup || "") ||
+                  /de\s*corato|atelier|\bckc\b/i.test(customer.name || "")
+                ) && (
+                  <div className="intake-panel card-glass px-4 py-4 space-y-2 border-brass/35">
+                    <label className="block text-[11px] font-bold tracking-[0.16em] uppercase text-brass-light">
+                      End customer (name only)
+                    </label>
+                    <p className="text-[12px] text-cream-dim">
+                      Bill-to stays <b className="text-cream">{customer.name}</b>. Tag the actual wearer here — no new customer record.
+                    </p>
+                    <input
+                      value={endCustomer}
+                      onChange={(e) => setEndCustomer(e.target.value)}
+                      placeholder="e.g. John Smith"
+                      className="w-full h-12 rounded-xl bg-black/35 border border-brass/30 px-4 text-[16px] text-cream outline-none focus:border-brass"
+                      autoCapitalize="words"
+                    />
+                  </div>
+                )}
+              </>
             ) : (
               <>
                 <div className="relative">
@@ -1682,7 +1756,7 @@ export default function IntakeStepped() {
                       key={c.id}
                       type="button"
                       onClick={() => selectCustomer(c)}
-                      className="w-full text-left card-glass px-4 py-3.5 flex items-center gap-3.5 hover:border-brass/50"
+                      className="intake-cust-row w-full text-left card-glass px-4 py-3.5 flex items-center gap-3.5 hover:border-brass/50"
                     >
                       <span className="w-[46px] h-[46px] rounded-full bg-forest-raised border border-brass/30 grid place-items-center display text-[17px] text-brass-light">
                         {c.name.slice(0, 2).toUpperCase()}
@@ -1718,7 +1792,7 @@ export default function IntakeStepped() {
                     </span>
                   </button>
                 ) : (
-                  <div className="card-glass p-5 space-y-3">
+                  <div className="intake-panel card-glass p-5 space-y-3">
                     <div className="display text-[21px]">New customer</div>
                     <p className="text-[12px] text-cream-dim -mt-1 mb-1">
                       Saved to ERPNext before intake continues — so delivery has phone, email, and address.
@@ -1760,18 +1834,11 @@ export default function IntakeStepped() {
                       <div className="caps mb-2 text-brass-light">Delivery address</div>
                       <label className="block mb-3">
                         <span className="caps mb-1.5 block">Street line 1</span>
-                        <AddressAutocomplete
+                        <input
                           value={newLine1}
-                          onChange={setNewLine1}
-                          onPick={(pick) => {
-                            setNewLine1(pick.street);
-                            if (pick.city) setNewCity(pick.city);
-                            if (pick.state) setNewState(pick.state);
-                            if (pick.zip) setNewZip(pick.zip);
-                          }}
-                          placeholder="Start typing a street…"
-                          zip={newZip}
-                          inputClassName="w-full h-[52px] rounded-xl bg-black/35 border border-brass/25 px-3.5 text-cream outline-none focus:border-brass placeholder:text-cream-dim"
+                          onChange={(e) => setNewLine1(e.target.value)}
+                          className="w-full h-[52px] rounded-xl bg-black/35 border border-brass/25 px-3.5 text-cream outline-none focus:border-brass"
+                          placeholder="123 E 61st St"
                         />
                       </label>
                       <label className="block mb-3">
@@ -1841,7 +1908,8 @@ export default function IntakeStepped() {
 
         {/* ── Cart: catalog + cart + drawer (SPEC 053 + 057 Sell) ── */}
         {step === 1 && (
-          <div className="relative flex flex-1 min-h-0 -mx-5 -my-6 overflow-hidden">
+          <div className="ticket-cart-stage relative flex flex-row flex-1 min-h-0 w-full -mx-5 -my-6 overflow-hidden">
+            <div className="ticket-cart-catalog flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
             {catalogMode === "sell" && allowSellMode ? (
               <SellItemCatalog
                 firstName={(displayName || "them").split(" ")[0] || "them"}
@@ -1873,17 +1941,18 @@ export default function IntakeStepped() {
                 icon={garmentIcon}
                 title={
                   allowSellMode
-                    ? `What are we doing for ${(displayName || "them").split(" ")[0] || "them"}?`
+                    ? `What did ${(displayName || "them").split(" ")[0] || "them"} bring in?`
                     : undefined
                 }
                 lede={
                   allowSellMode
-                    ? "Alter client garments, or switch to Sell for MTM / stock / special-order."
+                    ? "Alterations below — or tap Sell · MTM · Stock above for wholesale / MTM / RTW to bill & charge."
                     : undefined
                 }
                 modeSwitch={catalogModeSwitch}
               />
             )}
+            </div>
             <TicketCartRail
               garments={garments}
               sellItems={allowSellMode ? sellItems.map((s) => ({ ...s, kind: "sell" as const })) : []}
@@ -1932,7 +2001,10 @@ export default function IntakeStepped() {
               customDesc={customDesc}
               customPrice={customPrice}
               noteOpenFor={noteOpenFor}
+              pieceQty={pieceQty}
+              onPieceQty={setPieceQty}
               onClose={closeGarmentDrawer}
+              onDone={finishGarmentDrawer}
               onRemovePiece={() => {
                 if (!active) return;
                 const ref = active.ref;
@@ -2008,7 +2080,7 @@ export default function IntakeStepped() {
         {step === 2 && (
           <div className="max-w-2xl mx-auto">
             {customer && (
-              <div className="mb-5">
+              <div className="mb-5 space-y-3">
                 <SelectedCustomerCard
                   name={customer.name}
                   phone={customer.phone}
@@ -2017,6 +2089,12 @@ export default function IntakeStepped() {
                   onEdit={customer.id ? () => setEditOpen(true) : undefined}
                   onProfile={customer.id ? () => nav(`/customers/${encodeURIComponent(customer.id!)}`) : undefined}
                 />
+                {endCustomer.trim() ? (
+                  <div className="px-4 py-2 rounded-xl border border-brass/25 bg-black/25 text-sm">
+                    <span className="text-cream-dim text-[11px] uppercase tracking-widest font-bold">End customer · </span>
+                    <span className="font-semibold text-cream">{endCustomer.trim()}</span>
+                  </div>
+                ) : null}
               </div>
             )}
             <div className="flex items-end justify-between gap-3 mb-1 flex-wrap">
@@ -2032,7 +2110,7 @@ export default function IntakeStepped() {
               </button>
             </div>
             <p className="text-[12.5px] text-cream-dim mb-5">Confirm the work — next you pick the promised date & time.</p>
-            <div className="card-glass overflow-hidden">
+            <div className="intake-panel card-glass overflow-hidden">
               {garments.map((g) => (
                 <div key={g.ref}>
                   <div className="flex items-center gap-2.5 px-5 py-3.5 bg-black/25 border-b border-brass/15">
@@ -2205,7 +2283,38 @@ export default function IntakeStepped() {
 
         {/* ── Schedule (SPEC 058) — last step before write ── */}
         {step === 3 && !confirmResult && (
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto">
+            {/* End customer — always on checkout so trade/house tags the wearer before Finish */}
+            <div className="intake-panel card-glass px-4 py-4 space-y-2 border-brass/40 shrink-0">
+              <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                <label className="block text-[11px] font-bold tracking-[0.16em] uppercase text-brass-light">
+                  End customer name
+                </label>
+                {(displayName || customer?.name) && (
+                  <span className="text-[11px] text-cream-dim">
+                    Bill-to · <span className="text-cream font-semibold">{displayName || customer?.name}</span>
+                  </span>
+                )}
+              </div>
+              <p className="text-[12px] text-cream-dim">
+                Who is this ticket for? Name only — contact and billing stay on the store/customer above.
+              </p>
+              <input
+                value={endCustomer}
+                onChange={(e) => setEndCustomer(e.target.value)}
+                placeholder="e.g. John Smith"
+                className="w-full h-14 rounded-xl bg-black/40 border border-brass/35 px-4 text-[18px] text-cream outline-none focus:border-brass focus:shadow-[0_0_0_3px_rgba(176,141,87,0.14)] placeholder:text-cream-dim"
+                autoCapitalize="words"
+                autoComplete="name"
+              />
+            </div>
+            <DeliveryBlock
+              value={delivery}
+              onChange={setDelivery}
+              dueDate={promiseDate || undefined}
+              freeCustom={billing === "on_order"}
+              canOverrideFee={me?.role === "super_admin" || me?.role === "store_manager"}
+            />
             <PromiseSchedule
               origin={origin}
               days={scheduleLoad.data?.days ?? []}
@@ -2213,24 +2322,16 @@ export default function IntakeStepped() {
               selectedDate={promiseDate}
               selectedTime={promiseTime}
               isRush={isRush}
-              clientLabel={displayName}
-              lead={
-                <DeliveryBlock
-                  value={delivery}
-                  onChange={setDelivery}
-                  dueDate={promiseDate || undefined}
-                  freeCustom={billing === "on_order"}
-                  canOverrideFee={me?.role === "super_admin" || me?.role === "store_manager"}
-                />
-              }
+              clientLabel={endCustomer.trim() || displayName}
               onSelectDate={(d) => {
                 setPromiseDate(d);
-                if (!promiseTime) setPromiseTime("18:00");
-                if (delivery.delivery_method !== "Pickup") {
+                if (!promiseTime) setPromiseTime(PROMISE_TIME_DEFAULT);
+                else setPromiseTime(normalizePromiseTime(promiseTime));
+                if (delivery.delivery_method !== "Pickup" && !delivery.delivery_requested_date) {
                   setDelivery((prev) => ({ ...prev, delivery_requested_date: d }));
                 }
               }}
-              onSelectTime={setPromiseTime}
+              onSelectTime={(t) => setPromiseTime(normalizePromiseTime(t))}
               onRush={setIsRush}
               onBack={() => setStep(2)}
               confirming={create.isPending}
@@ -2249,31 +2350,16 @@ export default function IntakeStepped() {
                     toast.error("Enter delivery street address");
                     return;
                   }
-                  if (
-                    billing === "billable" &&
-                    delivery._status === "out_of_zone" &&
-                    (delivery.delivery_fee == null || Number(delivery.delivery_fee) < 0)
-                  ) {
-                    toast.error("Enter the hand-delivery fee quoted (or 0 if complimentary)");
-                    return;
-                  }
                 }
-                if (delivery.delivery_method === "Ship (FedEx)") {
-                  if (!delivery.delivery_address?.trim()) {
-                    toast.error("Enter ship-to street address");
+                if (delivery.delivery_method === "Ship (FedEx)" && billing === "billable") {
+                  if (delivery.delivery_fee == null || Number(delivery.delivery_fee) < 0) {
+                    toast.error("Enter FedEx fee (or 0 if complimentary)");
                     return;
-                  }
-                  if (billing === "billable") {
-                    if (delivery.delivery_fee == null || Number(delivery.delivery_fee) < 0) {
-                      toast.error("Enter FedEx fee (or 0 if complimentary)");
-                      return;
-                    }
                   }
                 }
                 if (
                   delivery.delivery_fee_override &&
                   delivery.delivery_method === "Hand Delivery" &&
-                  delivery._status === "in_zone" &&
                   billing === "billable"
                 ) {
                   if (!String(delivery.delivery_fee_override_reason || "").trim()) {
@@ -2293,6 +2379,7 @@ export default function IntakeStepped() {
             <IntakeConfirm
               result={confirmResult}
               clientName={displayName || "Client"}
+              endCustomerName={endCustomer.trim() || null}
               clientPhone={customer?.phone || newPhone || null}
               clientEmail={customer?.email || newEmail || null}
               pieceCount={garments.length}
@@ -2361,7 +2448,7 @@ export default function IntakeStepped() {
       </div>
       )}
 
-      {/* Ticket cart: phone bottom sheet, desktop right slide-out */}
+      {/* SPEC 057b — phone cart bottom sheet (cart step + peek from other steps) */}
       <TicketCartSheet
         open={cartOpen}
         onClose={() => setCartOpen(false)}
@@ -2434,9 +2521,8 @@ export default function IntakeStepped() {
         submitting={create.isPending}
       />
 
-      {customer?.id && (
+      {editOpen && customer?.id && (
         <CustomerEditSheet
-          open={editOpen}
           customerId={customer.id}
           customerName={customer.name}
           onClose={() => setEditOpen(false)}

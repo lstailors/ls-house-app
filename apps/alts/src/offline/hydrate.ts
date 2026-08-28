@@ -65,7 +65,11 @@ export async function seedQueryCache(qc: QueryClient) {
   const house = await readCollection("houseOrders");
   if (house.length) qc.setQueryData(["alts-custom-orders"], house.map(houseToUi));
   const catalog = await readCollection("catalog");
-  if (catalog.length) qc.setQueryData(["presets", "NYC"], catalog);
+  // Only seed when rows match the /presets picker contract (id + price).
+  // Raw ERP offline rows lack `id` → zone list collapses to one tile + "Quote" prices.
+  if (catalog.length && catalogLooksLikePresets(catalog)) {
+    qc.setQueryData(["presets", "NYC"], catalog);
+  }
   const qcRows = await readCollection("qc");
   if (qcRows.length) {
     const mapped = qcRows.map(qcToUi);
@@ -102,4 +106,16 @@ export async function startOfflineHydrate(qc: QueryClient) {
 
 export async function snapshotLabel(): Promise<string | null> {
   return (await collectionSyncedAt("tickets")) ?? (await oldestHotSync());
+}
+
+/** True when offline catalog rows already match GET /presets (id + price). */
+function catalogLooksLikePresets(rows: Record<string, unknown>[]): boolean {
+  const sample = rows.slice(0, 8);
+  let ok = 0;
+  for (const r of sample) {
+    const id = r.id ?? r.name;
+    const hasPrice = "price" in r || "display_price" in r;
+    if (id && hasPrice) ok += 1;
+  }
+  return ok >= Math.min(3, sample.length);
 }

@@ -9,8 +9,9 @@ import "@alts/styles/alts-pos.css";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import { AltsSearchField } from "@alts/components/AltsSearchField";
 import { ListSkeleton } from "@alts/components/skeletons";
-import { formatMoney } from "@alts/lib/money";
+import { formatMoney, formatCompactMoney } from "@alts/lib/money";
 import { AGING_BUCKETS, agingBucket, invoiceAgeDays, type AgingBucket } from "@alts/lib/invoiceAging";
+import { AgingDonutPanel } from "@alts/components/live/AgingDonut";
 
 type InvoiceRow = {
   id: string;
@@ -27,6 +28,9 @@ type InvoiceRow = {
   dueDate?: string | null;
   alterationTicketRef?: string | null;
   salesOrder?: string | null;
+  fulfillment?: string | null;
+  shop?: string | null;
+  whereDetail?: string | null;
 };
 
 type Summary = {
@@ -113,6 +117,23 @@ export default function Invoices() {
     return counts;
   }, [query.data]);
 
+  const agingAmounts = useMemo(() => {
+    const src = (query.data?.rows ?? []).filter((i) => Number(i.outstandingAmount) > 0.005);
+    const amounts: Record<AgingBucket, number> = { "0-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
+    for (const i of src) {
+      const b = agingBucket(invoiceAgeDays(i.postingDate, i.dueDate));
+      if (b) amounts[b] += Number(i.outstandingAmount) || 0;
+    }
+    return amounts;
+  }, [query.data]);
+
+  const setAging = (b: AgingBucket | null) => {
+    const next = new URLSearchParams(params);
+    if (!b) next.delete("aging");
+    else next.set("aging", b);
+    setParams(next, { replace: true });
+  };
+
   useEffect(() => {
     if (!focusId) return;
     const el = document.getElementById(`inv-${focusId}`);
@@ -171,6 +192,15 @@ export default function Invoices() {
           </div>
         </div>
 
+        <AgingDonutPanel
+          counts={agingCounts}
+          amounts={agingAmounts}
+          active={aging}
+          onSelect={setAging}
+          centerLabel="Open AR"
+          centerValue={formatCompactMoney(summary?.outstanding ?? 0)}
+        />
+
         <AltsSearchField value={q} onChange={setQ} scope="invoices" />
 
         <div className="flex gap-1.5 overflow-x-auto pb-1">
@@ -178,12 +208,7 @@ export default function Invoices() {
             <button
               key={b}
               type="button"
-              onClick={() => {
-                const next = new URLSearchParams(params);
-                if (aging === b) next.delete("aging");
-                else next.set("aging", b);
-                setParams(next, { replace: true });
-              }}
+              onClick={() => setAging(aging === b ? null : b)}
               className={cn(
                 "shrink-0 px-3.5 py-2 rounded-full text-[11px] font-bold uppercase tracking-widest border transition-colors",
                 aging === b
@@ -246,7 +271,7 @@ export default function Invoices() {
                   type="button"
                   onClick={() => nav(`/invoices/${encodeURIComponent(inv.id)}`)}
                   className={cn(
-                    "w-full text-left rounded-xl border bg-black/25 hover:border-brass/40 px-4 py-3.5 transition-colors",
+                    "inv-row w-full text-left rounded-xl border bg-black/25 hover:border-brass/40 px-4 py-3.5 transition-colors",
                     focusId === inv.id ? "border-signal-rose/60" : "border-brass/15",
                   )}
                 >
@@ -272,6 +297,12 @@ export default function Invoices() {
                         >
                           {inv.status.replace(/_/g, " ")}
                         </span>
+                        {inv.fulfillment && (
+                          <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded border border-brass/35 text-brass-light bg-brass/10">
+                            {inv.shop ? `${inv.shop} · ` : ""}
+                            {inv.fulfillment}
+                          </span>
+                        )}
                       </div>
                       <div className="text-cream text-sm mt-1 truncate">{name}</div>
                       <div className="text-[10px] text-cream-dim mt-0.5">
@@ -280,6 +311,7 @@ export default function Invoices() {
                           : "—"}
                         {inv.alterationTicketRef ? ` · ${inv.alterationTicketRef}` : ""}
                         {inv.salesOrder && !inv.alterationTicketRef ? ` · ${inv.salesOrder}` : ""}
+                        {inv.whereDetail ? ` · ${inv.whereDetail}` : ""}
                       </div>
                     </div>
                     <div className="text-right shrink-0">

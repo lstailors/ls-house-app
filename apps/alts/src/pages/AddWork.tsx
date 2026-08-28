@@ -221,21 +221,30 @@ export default function AddWork() {
 
   function addCustom() {
     const desc = customDesc.trim();
-    const price = Number(customPrice);
+    const raw = String(customPrice ?? "").replace(/[^0-9.]/g, "").trim();
+    const price = raw === "" ? 0 : Number(raw);
     if (!desc) {
       toast.error("Describe the custom line");
       return;
     }
-    if (!(price > 0)) {
-      toast.error("Custom line needs a price > $0 (free work = Re-do ticket)");
+    if (!Number.isFinite(price) || price < 0) {
+      toast.error("Price must be blank (TBD), $0, or a positive amount");
       return;
     }
+    const isTbd = price === 0;
     setPendingAdds((prev) => [
       ...prev,
-      { key: `c-${Date.now()}`, description: desc, price, preset: null, minutes: 15 },
+      {
+        key: `c-${Date.now()}`,
+        description: isTbd && !/\bTBD\b/i.test(desc) ? `${desc} · TBD` : desc,
+        price,
+        preset: null,
+        minutes: 15,
+      },
     ]);
     setCustomDesc("");
     setCustomPrice("");
+    if (isTbd) toast.message("Added · amount TBD");
   }
 
   const save = useMutation({

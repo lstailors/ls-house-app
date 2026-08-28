@@ -1157,6 +1157,15 @@ export default function CustomerDetail() {
       {/* Live spend KPIs from ERP Sales Invoices */}
       <SpendStrip customerId={c.id} />
 
+      <div className="flex flex-wrap gap-2">
+        <Link
+          to={`/wardrobe?customer=${encodeURIComponent(c.id)}`}
+          className="inline-flex items-center gap-2 rounded-xl border border-brass/40 bg-brass/15 px-3.5 py-2 text-xs font-semibold uppercase tracking-wider text-brass-light hover:bg-brass/25"
+        >
+          Wardrobe · closet
+        </Link>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Contact summary */}
         <Section

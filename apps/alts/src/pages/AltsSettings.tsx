@@ -97,14 +97,14 @@ export default function AltsSettings() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-4 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))]">
-        <div className="card-glass px-4 py-4">
+        <div className="set-card card-glass px-4 py-4">
           <div className="caps text-brass-light">Account</div>
           <div className="display text-2xl mt-1">{me?.name || "Staff"}</div>
           <p className="text-sm text-cream-dim mt-1">{me?.email}</p>
         </div>
 
         {canOpenHouseAdmin && (
-          <HouseAdminLink className="card-glass px-4 py-4 block hover:border-brass/40 transition-colors">
+          <HouseAdminLink className="set-card card-glass px-4 py-4 block hover:border-brass/40 transition-colors">
             <div className="caps text-brass-light">House admin</div>
             <div className="display text-2xl mt-1">Open admin</div>
             <p className="text-sm text-cream-dim mt-1">
@@ -116,7 +116,7 @@ export default function AltsSettings() {
         )}
 
         {isAdmin && (
-          <div className="card-glass px-4 py-4 space-y-3">
+          <div className="set-card card-glass px-4 py-4 space-y-3">
             <div className="caps text-brass-light">Operations</div>
             <p className="text-sm text-cream-dim">
               This server is in {me?.opsMode === "live" ? "LIVE" : "TEST"} mode.
@@ -142,7 +142,7 @@ export default function AltsSettings() {
         )}
 
         {!isAdmin && (
-          <div className="card-glass px-4 py-4 space-y-2">
+          <div className="set-card card-glass px-4 py-4 space-y-2">
             <div className="caps text-brass-light">DocuSeal</div>
             <p className="text-sm text-cream-dim">
               An admin turns this on in Settings with the API key. You can still sign on the cream pad on the QC ticket.
@@ -151,7 +151,7 @@ export default function AltsSettings() {
         )}
 
         {isAdmin && (
-          <div className="card-glass px-4 py-4 space-y-3">
+          <div className="set-card card-glass px-4 py-4 space-y-3">
             <div className="caps text-brass-light">DocuSeal</div>
             <p className="text-sm text-cream-dim">
               {settings.data?.apiKeySet

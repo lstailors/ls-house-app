@@ -3,7 +3,7 @@ import { useMe } from "@ls/auth/session";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
 import { useErpHealth } from "@alts/components/ErpStatusBanner";
 import "@alts/styles/alts-pos.css";
@@ -15,10 +15,11 @@ import { TileSkeleton } from "@alts/components/skeletons";
 import { usePresence } from "@alts/lib/luxuryMotion";
 import type { StatusTone } from "@alts/lib/statusTone";
 import { useLiveMetrics } from "@alts/lib/useLiveMetrics";
-import { NeedsYouNow } from "@alts/components/live/NeedsYouNow";
+import { FloorCommandStrip } from "@alts/components/live/FloorCommandStrip";
 import { TodayRail } from "@alts/components/live/TodayRail";
 import { MoneyStrip } from "@alts/components/live/MoneyStrip";
 import { CoverMoneyButton } from "@alts/components/live/CoverMoneyButton";
+import { StatusPipeline } from "@alts/components/live/StatusPipeline";
 import { ActivityTicker } from "@alts/components/live/ActivityTicker";
 import { TickNumber } from "@alts/components/live/TickNumber";
 import { EMPTY_LIVE_HOME } from "@alts/lib/liveDashboard";
@@ -106,6 +107,16 @@ function shortName(full?: string | null) {
   return `${parts[0]} ${parts[parts.length - 1]}`;
 }
 
+/** Minutes-from-midnight → 12h label for header next-up. */
+function clockish(min: number) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  const h12 = h % 12 || 12;
+  const ap = h < 12 ? "a" : "p";
+  if (m === 0) return `${h12}${ap}`;
+  return `${h12}:${String(m).padStart(2, "0")}${ap}`;
+}
+
 /** Render Daily Espresso lines — icon column + action brass wash. */
 function EspressoBody({ text }: { text: string }) {
   const lines = text
@@ -147,6 +158,59 @@ function EspressoBody({ text }: { text: string }) {
         );
       })}
     </ul>
+  );
+}
+
+type EspressoFeedItem = {
+  id: string;
+  text: string;
+  meta?: string;
+  href?: string;
+  tone?: "default" | "hot" | "warn" | "good";
+};
+
+function EspressoFeed({
+  items,
+  title,
+}: {
+  items: EspressoFeedItem[];
+  title: string;
+}) {
+  return (
+    <div className="espresso-feed-block">
+      <div className="espresso-feed-h">{title}</div>
+      {items.length === 0 ? (
+        <div className="espresso-feed-empty">Nothing here yet.</div>
+      ) : (
+        <ul className="espresso-feed-list">
+          {items.map((it) => {
+            const body = (
+              <>
+                <span className={cn("ef-dot", it.tone && it.tone !== "default" && `is-${it.tone}`)} aria-hidden />
+                <span className="ef-body">
+                  <span className="ef-text">{it.text}</span>
+                  {it.meta ? <span className="ef-meta">{it.meta}</span> : null}
+                </span>
+              </>
+            );
+            if (it.href) {
+              return (
+                <li key={it.id}>
+                  <Link to={it.href} className={cn("espresso-feed-item", it.tone && `is-${it.tone}`)}>
+                    {body}
+                  </Link>
+                </li>
+              );
+            }
+            return (
+              <li key={it.id} className={cn("espresso-feed-item", it.tone && `is-${it.tone}`)}>
+                {body}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -425,6 +489,10 @@ type TileDef = {
   sameWindow?: boolean;
   title: string;
   sub: string;
+  /** lg = hero FOH tile; sm = compact bar */
+  size?: "lg" | "sm";
+  /** desk: span N columns (Fabric Library hero) */
+  colSpan?: 1 | 2;
   primary?: boolean;
   admin?: boolean;
   dim?: boolean;
@@ -620,6 +688,190 @@ export default function HomeTiles() {
   const ambient = kiosk && (hour >= 18 || hour < 9);
   const board = feed ?? EMPTY_LIVE_HOME;
   const pulse = live.pulsed;
+
+  // Header center: live NYC clock
+  const [storeClock, setStoreClock] = useState(() => {
+    const d = new Date();
+    const label = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(d);
+    return { label, nowMin: storeHour() * 60 + d.getMinutes() };
+  });
+  useEffect(() => {
+    const tick = () => {
+      const d = new Date();
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        hour: "numeric",
+        minute: "2-digit",
+        hourCycle: "h23",
+      }).formatToParts(d);
+      const h = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+      const m = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+      const label = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      }).format(d);
+      setStoreClock({ label, nowMin: h * 60 + m });
+    };
+    tick();
+    const id = window.setInterval(tick, 15_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  /** Next appointment or must-leave after now — fills header dead space. */
+  const headerNext = useMemo(() => {
+    const now = storeClock.nowMin;
+    const rail = board.todayRail;
+    type Cand = { when: string; who: string; href: string; kind: string; tone: "default" | "warn" | "good"; minutes: number; detail: string };
+    const cands: Cand[] = [];
+    for (const a of rail.appointments ?? []) {
+      if (a.minutes + 20 < now) continue;
+      cands.push({
+        minutes: a.minutes,
+        when: clockish(a.minutes),
+        who: shortName(a.label),
+        href: a.href || "/appointments",
+        kind: "Appt",
+        tone: "default",
+        detail: a.label,
+      });
+    }
+    for (const d of rail.dueOuts ?? []) {
+      if (d.minutes + 15 < now) continue;
+      cands.push({
+        minutes: d.minutes,
+        when: clockish(d.minutes),
+        who: shortName(d.label),
+        href: d.href || "/shop-floor?filter=today",
+        kind: "Due",
+        tone: "warn",
+        detail: d.label,
+      });
+    }
+    for (const del of rail.deliveries ?? []) {
+      if (del.minutes + 15 < now) continue;
+      cands.push({
+        minutes: del.minutes,
+        when: clockish(del.minutes),
+        who: shortName(del.label),
+        href: del.href || "/deliveries",
+        kind: "Run",
+        tone: "good",
+        detail: del.label,
+      });
+    }
+    cands.sort((a, b) => a.minutes - b.minutes);
+    if (cands[0]) return cands[0];
+    const next = feed?.glimpses?.appointments?.next;
+    if (next) {
+      return {
+        when: next.time,
+        who: shortName(next.client),
+        href: "/appointments",
+        kind: next.type ? String(next.type).slice(0, 8) : "Appt",
+        tone: "default" as const,
+        detail: `${next.time} · ${next.client}`,
+        minutes: now,
+      };
+    }
+    return null;
+  }, [board.todayRail, storeClock.nowMin, feed?.glimpses?.appointments?.next]);
+
+  const espressoLiveItems = useMemo((): EspressoFeedItem[] => {
+    const out: EspressoFeedItem[] = [];
+    for (const ex of board.exceptions.slice(0, 6)) {
+      out.push({
+        id: `ex-${ex.id}`,
+        text: `${ex.icon ? `${ex.icon} ` : ""}${ex.name}`,
+        meta: [ex.subtitle, ex.number].filter(Boolean).join(" · ") || ex.action,
+        href: ex.href,
+        tone: ex.severity === "urgent" ? "hot" : "warn",
+      });
+    }
+    for (const ev of board.activity.slice(0, 8)) {
+      out.push({
+        id: `act-${ev.id}`,
+        text: coverMoney ? String(ev.text).replace(/\$[\d,.]+/g, "••") : ev.text,
+        meta: ev.at,
+        href: ev.href,
+        tone: "default",
+      });
+    }
+    // Desk pulse when live feed is thin
+    if (out.length < 3) {
+      const chips = board.todayRail.chips;
+      if (chips.comingIn > 0) {
+        out.push({
+          id: "desk-coming",
+          text: `${chips.comingIn} coming in today`,
+          meta: "Appointments",
+          href: "/appointments",
+        });
+      }
+      if (chips.mustLeave > 0) {
+        out.push({
+          id: "desk-leave",
+          text: `${chips.mustLeave} must leave today`,
+          meta: "Promised due",
+          href: "/shop-floor?filter=today",
+          tone: "warn",
+        });
+      }
+      if ((c?.readyNotTexted ?? 0) > 0) {
+        out.push({
+          id: "desk-text",
+          text: `${c!.readyNotTexted} ready · need text`,
+          meta: "Pickup",
+          href: "/shop-floor?filter=text",
+          tone: "warn",
+        });
+      }
+      if ((c?.stalledCount ?? 0) > 0) {
+        out.push({
+          id: "desk-stalled",
+          text: `${c!.stalledCount} stalled on floor`,
+          meta: "Shop floor",
+          href: "/shop-floor?filter=stalled",
+          tone: "hot",
+        });
+      }
+      if ((strip?.overdue ?? 0) > 0) {
+        out.push({
+          id: "desk-overdue",
+          text: `${strip!.overdue} overdue`,
+          meta: "Shop floor",
+          href: "/shop-floor?filter=overdue",
+          tone: "hot",
+        });
+      }
+    }
+    // de-dupe by id
+    const seen = new Set<string>();
+    return out.filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true))).slice(0, 12);
+  }, [board.exceptions, board.activity, board.todayRail.chips, c, strip, coverMoney]);
+
+  const espressoBriefItems = useMemo((): EspressoFeedItem[] => {
+    const body = floorBrief.data?.body;
+    if (!body) return [];
+    return espressoContentLines(body)
+      .filter((l) => !isSignatureLine(l))
+      .slice(0, 10)
+      .map((line, i) => {
+        const { icon, text } = peelLeadingIcon(line);
+        return {
+          id: `brief-${i}`,
+          text: text || line,
+          meta: icon || undefined,
+          tone: isActionLine(line) ? ("warn" as const) : ("default" as const),
+        };
+      });
+  }, [floorBrief.data?.body]);
 
   const lastTicketLive = (() => {
     const t = feeds?.lastTicket;
@@ -822,81 +1074,8 @@ export default function HomeTiles() {
 
   const tiles: TileDef[] = [
     {
-      key: "admin-desk",
-      href: houseAdminIsExternal() ? houseAdminHref() : undefined,
-      to: houseAdminIsExternal() ? undefined : "/admin",
-      sameWindow: true,
-      title: "Admin",
-      sub: "House desk · users · money",
-      primary: true,
-      admin: true,
-      live: houseAdminIsExternal() ? "Opens app.lstailors.com" : "This app",
-      liveTone: "em",
-      icon: (
-        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M10 22L26 10l16 12v20a3 3 0 0 1-3 3H13a3 3 0 0 1-3-3z" />
-          <path d="M22 45V30h8v15" />
-          <circle cx="26" cy="24" r="3.5" />
-        </svg>
-      ),
-    },
-    {
-      key: "new",
-      to: "/intake/kind",
-      title: "New Ticket",
-      sub: "Walk-in · custom · re-do",
-      primary: true,
-      live: lastTicketLive.text,
-      liveTone: lastTicketLive.tone,
-      icon: (
-        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M28 5H11a3 3 0 0 0-3 3v36a3 3 0 0 0 3 3h24a3 3 0 0 0 3-3V15z" />
-          <path d="M28 5v10h10" />
-          <path d="M16 25h14M16 32h14M16 39h8" />
-          <circle cx="39" cy="38" r="9" strokeWidth="1.4" />
-          <path d="M39 34v8M35 38h8" strokeWidth="1.4" />
-        </svg>
-      ),
-    },
-    {
-      key: "floor",
-      to: "/shop-floor",
-      title: "Shop Floor",
-      sub: feed?.glimpses.floor.tailors.length
-        ? feed.glimpses.floor.tailors
-            .slice(0, 4)
-            .map((t) => `${t.name} ${t.inProgress}${t.stalled ? "!" : ""}`)
-            .join(" · ")
-        : `${c?.openGarments ?? c?.open ?? 0} pcs · ${c?.ready ?? 0} ready`,
-      badge: c?.open || null,
-      badgeKind: "shop",
-      live: shopLive.text,
-      liveTone: shopLive.tone,
-      icon: (
-        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="5" y="9" width="12" height="34" rx="2.5" />
-          <rect x="20" y="9" width="12" height="34" rx="2.5" />
-          <rect x="35" y="9" width="12" height="34" rx="2.5" />
-        </svg>
-      ),
-    },
-    {
-      key: "progress",
-      to: "/progress",
-      title: "Mark Progress",
-      sub: "Board · scan · notes",
-      live: progressLive.text,
-      liveTone: progressLive.tone,
-      icon: (
-        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M28 5H11a3 3 0 0 0-3 3v36a3 3 0 0 0 3 3h24a3 3 0 0 0 3-3V15z" />
-          <path d="M28 5v10h10" />
-          <path d="M17 34l4 4 8-9" stroke="#4FBF8E" strokeWidth="2" />
-        </svg>
-      ),
-    },
-    {
       key: "pickup",
+      size: "sm",
       to: "/pickup",
       title: "Pickup",
       sub: feed?.glimpses.pickup.names.length
@@ -914,22 +1093,41 @@ export default function HomeTiles() {
       ),
     },
     {
-      key: "transfers",
-      to: "/transfers",
-      title: "Transfers",
-      sub: "Send · take back home",
-      live: xferLive.text,
-      liveTone: xferLive.tone,
+      key: "parked",
+      size: "sm",
+      to: "/parked",
+      title: "Parked",
+      sub: "Held carts · resume · no #",
+      primary: false,
+      live: "Retrieve held work",
+      liveTone: "em" as LiveTone,
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="4" y="14" width="19" height="15" rx="2.5" />
-          <rect x="29" y="26" width="19" height="15" rx="2.5" />
-          <path d="M27 10h13M35 5l5 5-5 5" />
+          <path d="M12 14h28v24H12z" />
+          <path d="M18 14V10h16v4" />
+          <path d="M20 24h12M20 30h8" />
+        </svg>
+      ),
+    },
+    {
+      key: "progress",
+      size: "sm",
+      to: "/progress",
+      title: "Mark Progress",
+      sub: "Board · scan · notes",
+      live: progressLive.text,
+      liveTone: progressLive.tone,
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M28 5H11a3 3 0 0 0-3 3v36a3 3 0 0 0 3 3h24a3 3 0 0 0 3-3V15z" />
+          <path d="M28 5v10h10" />
+          <path d="M17 34l4 4 8-9" stroke="#4FBF8E" strokeWidth="2" />
         </svg>
       ),
     },
     {
       key: "lookup",
+      size: "sm",
       to: "/lookup",
       title: "Find a Ticket",
       sub: "Name · phone · tag",
@@ -944,6 +1142,7 @@ export default function HomeTiles() {
     },
     {
       key: "deliveries",
+      size: "sm",
       to: "/deliveries",
       title: "Deliveries",
       sub: `Queued ${feed?.glimpses.deliveries.queued ?? 0} · Out ${feed?.glimpses.deliveries.out ?? 0} · ✓ ${feed?.glimpses.deliveries.deliveredToday ?? 0}`,
@@ -961,6 +1160,7 @@ export default function HomeTiles() {
     },
     {
       key: "customers",
+      size: "sm",
       to: "/customers",
       title: "Customers",
       sub: "Profiles · phones",
@@ -976,7 +1176,23 @@ export default function HomeTiles() {
       ),
     },
     {
+      key: "all-orders",
+      size: "sm",
+      to: "/orders",
+      title: "All orders",
+      sub: "Alts · MTM · lights",
+      live: "Desk list",
+      liveTone: "em",
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M8 12h36M8 26h36M8 40h24" />
+          <circle cx="40" cy="40" r="5" />
+        </svg>
+      ),
+    },
+    {
       key: "invoices",
+      size: "sm",
       to: c?.oldestUnpaidInvoiceId
         ? `/invoices/${encodeURIComponent(c.oldestUnpaidInvoiceId)}`
         : "/invoices",
@@ -995,7 +1211,24 @@ export default function HomeTiles() {
       ),
     },
     {
+      key: "transfers",
+      size: "sm",
+      to: "/transfers",
+      title: "Transfers",
+      sub: "Send · take back home",
+      live: xferLive.text,
+      liveTone: xferLive.tone,
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="4" y="14" width="19" height="15" rx="2.5" />
+          <rect x="29" y="26" width="19" height="15" rx="2.5" />
+          <path d="M27 10h13M35 5l5 5-5 5" />
+        </svg>
+      ),
+    },
+    {
       key: "appointments",
+      size: "sm",
       to: "/appointments",
       title: "Appointments",
       sub: feed?.glimpses.appointments.next
@@ -1020,7 +1253,79 @@ export default function HomeTiles() {
       ),
     },
     {
+      key: "stock",
+      size: "sm",
+      to: "/stock",
+      title: "Stock",
+      sub: "Remnants · use to remove",
+      primary: false,
+      live: (
+        <>
+          <b>Gallery</b> · lining · bolts
+        </>
+      ),
+      liveTone: "em",
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="6" y="10" width="18" height="24" rx="2.5" />
+          <rect x="28" y="16" width="18" height="24" rx="2.5" />
+          <path d="M10 18h10M10 24h8" strokeWidth="1.3" />
+        </svg>
+      ),
+    },
+    {
+      key: "fabric-library",
+      size: "lg",
+      colSpan: 2,
+      to: "/wardrobe",
+      title: "Fabric Library",
+      sub: "Client closet · mill · photo · history",
+      primary: true,
+      live: (
+        <>
+          <b>Wardrobe</b> · search client
+        </>
+      ),
+      liveTone: "em",
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10 8h22a4 4 0 0 1 4 4v32a3 3 0 0 0-3-3H10a4 4 0 0 1-4-4V12a4 4 0 0 1 4-4z" />
+          <path d="M36 12h6a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H33a3 3 0 0 1 3-3V12z" opacity=".85" />
+          <path d="M14 18h12M14 24h10M14 30h8" strokeWidth="1.3" />
+          <circle cx="40" cy="28" r="5" strokeWidth="1.4" />
+        </svg>
+      ),
+    },
+    {
+      key: "qc",
+      size: "sm",
+      to: "/qc",
+      title: "QC",
+      sub:
+        (feed?.glimpses.qc.waiting ?? 0) > 0
+          ? `${feed!.glimpses.qc.waiting} waiting · ${feed!.glimpses.qc.passRateWeek}% week`
+          : `${feed?.glimpses.qc.passRateWeek ?? 100}% pass this week`,
+      badge: feed?.glimpses.qc.waiting || null,
+      badgeKind: "qc",
+      live:
+        (feed?.glimpses.qc.waiting ?? 0) > 0 ? (
+          <>
+            <b>{feed!.glimpses.qc.waiting}</b> waiting · {feed!.glimpses.qc.passRateWeek}% week
+          </>
+        ) : (
+          `${feed?.glimpses.qc.passRateWeek ?? 100}% pass this week`
+        ),
+      liveTone: (feed?.glimpses.qc.waiting ?? 0) > 0 ? "am" : "em",
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="26" cy="26" r="18" />
+          <path d="M16 27l7 7 14-16" strokeWidth="2" />
+        </svg>
+      ),
+    },
+    {
       key: "tasks",
+      size: "sm",
       to: "/tasks",
       title: "Tasks",
       sub:
@@ -1047,7 +1352,27 @@ export default function HomeTiles() {
       ),
     },
     {
+      key: "new",
+      size: "lg",
+      to: "/intake/kind",
+      title: "New Ticket",
+      sub: "Walk-in · parked · custom · re-do",
+      primary: true,
+      live: lastTicketLive.text,
+      liveTone: lastTicketLive.tone,
+      icon: (
+        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M28 5H11a3 3 0 0 0-3 3v36a3 3 0 0 0 3 3h24a3 3 0 0 0 3-3V15z" />
+          <path d="M28 5v10h10" />
+          <path d="M16 25h14M16 32h14M16 39h8" />
+          <circle cx="39" cy="38" r="9" strokeWidth="1.4" />
+          <path d="M39 34v8M35 38h8" strokeWidth="1.4" />
+        </svg>
+      ),
+    },
+    {
       key: "messages",
+      size: "lg",
       to: "/messages",
       title: "Messages",
       sub: feed?.glimpses.messages.preview
@@ -1065,53 +1390,32 @@ export default function HomeTiles() {
       ),
     },
     {
-      key: "qc",
-      to: "/qc",
-      title: "QC",
-      sub:
-        (feed?.glimpses.qc.waiting ?? 0) > 0
-          ? `${feed!.glimpses.qc.waiting} waiting · ${feed!.glimpses.qc.passRateWeek}% week`
-          : `${feed?.glimpses.qc.passRateWeek ?? 100}% pass this week`,
-      badge: feed?.glimpses.qc.waiting || null,
-      badgeKind: "qc",
-      live:
-        (feed?.glimpses.qc.waiting ?? 0) > 0 ? (
-          <>
-            <b>{feed!.glimpses.qc.waiting}</b> waiting · {feed!.glimpses.qc.passRateWeek}% week
-          </>
-        ) : (
-          `${feed?.glimpses.qc.passRateWeek ?? 100}% pass this week`
-        ),
-      liveTone: (feed?.glimpses.qc.waiting ?? 0) > 0 ? "am" : "em",
-      icon: (
-        <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="26" cy="26" r="18" />
-          <path d="M16 27l7 7 14-16" strokeWidth="2" />
-        </svg>
-      ),
-    },
-    {
-      key: "stock",
-      to: "/stock",
-      title: "Stock",
-      sub: "Fabric · lining · remnants",
+      key: "floor",
+      size: "lg",
       primary: true,
-      live: (
-        <>
-          <b>Gallery</b> · use to remove
-        </>
-      ),
-      liveTone: "em",
+      to: "/shop-floor",
+      title: "Shop Floor",
+      sub: feed?.glimpses.floor.tailors.length
+        ? feed.glimpses.floor.tailors
+            .slice(0, 4)
+            .map((t) => `${t.name} ${t.inProgress}${t.stalled ? "!" : ""}`)
+            .join(" · ")
+        : `${c?.openGarments ?? c?.open ?? 0} pcs · ${c?.ready ?? 0} ready`,
+      badge: c?.open || null,
+      badgeKind: "shop",
+      live: shopLive.text,
+      liveTone: shopLive.tone,
       icon: (
         <svg viewBox="0 0 52 52" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="6" y="10" width="18" height="24" rx="2.5" />
-          <rect x="28" y="16" width="18" height="24" rx="2.5" />
-          <path d="M10 18h10M10 24h8" strokeWidth="1.3" />
+          <rect x="5" y="9" width="12" height="34" rx="2.5" />
+          <rect x="20" y="9" width="12" height="34" rx="2.5" />
+          <rect x="35" y="9" width="12" height="34" rx="2.5" />
         </svg>
       ),
     },
     {
       key: "house",
+      size: "lg",
       to: "/house",
       title: "House orders",
       sub: "RTW · alts · MTM Pro",
@@ -1126,10 +1430,10 @@ export default function HomeTiles() {
     },
     {
       key: "reports",
+      size: "lg",
       to: "/reports",
       title: "Floor Reports",
       sub: coverMoney ? "Pipeline · tally" : "Pipeline · tally · $",
-      admin: true,
       live: "On this phone",
       liveTone: "em",
       icon: (
@@ -1146,7 +1450,7 @@ export default function HomeTiles() {
   return (
     <div
       className={cn(
-        "alts-root home-040 flex flex-col min-h-dvh overflow-x-hidden px-[14px] sm:px-[22px] pt-[max(10px,env(safe-area-inset-top))] pb-[max(5.5rem,env(safe-area-inset-bottom))] gap-2.5",
+        "alts-root home-040 flex flex-col min-h-dvh overflow-x-hidden px-[12px] sm:px-[18px] pt-[max(8px,env(safe-area-inset-top))] pb-[max(4.75rem,env(safe-area-inset-bottom))] gap-2",
         kiosk && "is-kiosk",
         ambient && "is-ambient",
         coverMoney && "is-cover-money",
@@ -1164,8 +1468,38 @@ export default function HomeTiles() {
             Admin
           </HouseAdminLink>
         )}
-        {!kiosk && <UniversalSearchInline className="mx-0.5 sm:mx-1 flex-1 min-w-0 max-w-[min(100%,280px)]" />}
-        <div className="flex-1 min-w-0 hidden lg:block" />
+        {!kiosk && <UniversalSearchInline className="mx-0.5 sm:mx-1 flex-1 min-w-0 max-w-[min(100%,320px)]" />}
+        {/* Header center — store clock + next up (fills the dead green) */}
+        <div className="home-hd-mid hidden md:flex flex-1 min-w-0 items-center justify-center gap-2 px-1">
+          <div className="home-hd-clock shrink-0" aria-live="polite" title="Store time · New York">
+            <b className="display tabular-nums">{storeClock.label}</b>
+            <span>NYC</span>
+          </div>
+          {headerNext ? (
+            <Link
+              to={headerNext.href}
+              className={cn("home-hd-next min-w-0", headerNext.tone === "warn" && "is-warn", headerNext.tone === "good" && "is-good")}
+              title={headerNext.detail}
+            >
+              <em>{headerNext.kind}</em>
+              <b className="truncate">{headerNext.when}</b>
+              <span className="truncate">{headerNext.who}</span>
+            </Link>
+          ) : (
+            <div className="home-hd-next is-calm min-w-0">
+              <em>Next</em>
+              <span className="truncate">Clear desk</span>
+            </div>
+          )}
+          <div className="home-hd-actions shrink-0">
+            <Link to="/intake/kind" className="home-hd-act is-primary" title="New ticket">
+              + New
+            </Link>
+            <Link to="/pickup" className="home-hd-act" title="Pickup counter">
+              Pickup
+            </Link>
+          </div>
+        </div>
         <div className="hidden xl:flex items-center rounded-full border border-brass/35 px-3 py-1.5 text-[10.5px] font-bold tracking-[0.1em] text-brass-light shrink-0">
           NYC
         </div>
@@ -1194,13 +1528,15 @@ export default function HomeTiles() {
       </header>
 
       {/* Status strip — greeting + espresso + counts + live */}
-      <div className="home-040-strip shrink-0">
+      <div className="home-040-strip shrink-0" data-testid="status-strip">
         <div className="seg greet grow min-w-0">
           <div className="min-w-0">
             <b className="display block text-[22px] leading-tight truncate">
               {timeGreeting()}, {greetingName(me?.name)}
             </b>
-            <i className="block text-[10px] text-[var(--cd)] not-italic truncate">{storeHoursLine()}</i>
+            <i className="block text-[10.5px] text-[var(--cd)] not-italic truncate tracking-[0.02em]">
+              {storeHoursLine()}
+            </i>
           </div>
         </div>
 
@@ -1208,14 +1544,14 @@ export default function HomeTiles() {
           type="button"
           onClick={toggleEspresso}
           aria-expanded={espressoOpen}
-          className="seg esp min-w-0 flex-1 text-left cursor-pointer hover:bg-white/[0.03] transition-colors border-0 bg-transparent"
+          className="seg esp min-w-0 text-left"
         >
-          <span className="cup text-[15px]" aria-hidden>
+          <span className="cup text-[14px]" aria-hidden>
             ☕
           </span>
           <div className="min-w-0">
-            <b className="block text-[11.5px] text-cream font-semibold">Daily Espresso</b>
-            <i className="block text-[9.5px] text-[var(--cd)] not-italic truncate">
+            <b className="block text-[12px] text-cream font-semibold tracking-[0.02em]">Daily Espresso</b>
+            <i className="block text-[10px] text-[var(--cd)] not-italic truncate">
               {espressoSubline(floorBrief.data)}
             </i>
           </div>
@@ -1229,15 +1565,15 @@ export default function HomeTiles() {
           <b className="display tabular-nums">
             {strip?.overdue != null ? <TickNumber value={strip.overdue} /> : "—"}
           </b>
-          <span>OVERDUE</span>
+          <span>Overdue</span>
         </Link>
         <Link to="/deliveries" className="seg pill">
           <b className="display tabular-nums">{strip?.outForDelivery ?? "—"}</b>
-          <span>out for delivery</span>
+          <span>Out</span>
         </Link>
         <Link to="/deliveries" className="seg pill gr">
           <b className="display tabular-nums">{strip?.deliveredToday ?? "—"}</b>
-          <span>delivered today</span>
+          <span>Delivered</span>
         </Link>
         <button
           type="button"
@@ -1247,7 +1583,7 @@ export default function HomeTiles() {
           title={coverMoney ? "Show sales numbers" : "Hide sales numbers from customers"}
         >
           <b className="display">{coverMoney ? "SHOW" : "HIDE"}</b>
-          <span>numbers</span>
+          <span>Numbers</span>
         </button>
         <Link
           to={
@@ -1264,12 +1600,12 @@ export default function HomeTiles() {
                 ? formatCompactMoney(c.openInvoicesAmount)
                 : "—"}
           </b>
-          <span>{c?.openInvoices ? `${c.openInvoices} unpaid` : "all paid"}</span>
+          <span>{c?.openInvoices ? `${c.openInvoices} unpaid` : "All paid"}</span>
         </Link>
         <button
           type="button"
           onClick={() => void live.refetch()}
-          className={cn("seg refresh border-0 bg-transparent cursor-pointer", `is-${offline ? "offline" : live.status}`)}
+          className={cn("seg refresh border-0 cursor-pointer", `is-${offline ? "offline" : live.status}`)}
           data-testid="live-chip"
         >
           <span
@@ -1298,38 +1634,55 @@ export default function HomeTiles() {
         >
         <div className="lux-espresso-inner">
         <div className="home-040-espresso rounded-[14px] border border-brass/20 bg-black/35 px-3 sm:px-3.5 pt-2.5 pb-3 max-h-[min(42vh,420px)] overflow-y-auto">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-brass-light">☕</span>
-            <span className="font-semibold text-brass-light tracking-[0.08em] uppercase text-[11px]">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-brass-light text-[15px]" aria-hidden>
+              ☕
+            </span>
+            <span className="font-semibold text-brass-light tracking-[0.1em] uppercase text-[11px]">
               Daily Espresso
+            </span>
+            <span className="text-[10px] text-[var(--cd)] truncate hidden sm:inline">
+              {espressoSubline(floorBrief.data)}
             </span>
             <button
               type="button"
               disabled={refreshBrief.isPending || floorBrief.isFetching}
               onClick={() => refreshBrief.mutate()}
-              className="ml-auto text-[10px] px-2 py-0.5 rounded border border-brass/30 text-brass-light hover:border-brass disabled:opacity-50 shrink-0 min-h-0"
+              className="ml-auto text-[10px] px-2.5 py-1 rounded-lg border border-brass/30 text-brass-light hover:border-brass disabled:opacity-50 shrink-0 min-h-0"
             >
               {refreshBrief.isPending ? "…" : "Brew"}
             </button>
             <button
               type="button"
               onClick={toggleEspresso}
-              className="text-[10px] px-2 py-0.5 rounded border border-brass/25 text-[var(--cd)] hover:text-cream min-h-0"
+              className="text-[10px] px-2.5 py-1 rounded-lg border border-brass/25 text-[var(--cd)] hover:text-cream min-h-0"
             >
               Close
             </button>
           </div>
-          {floorBrief.isLoading && !floorBrief.data ? (
-            <p className="text-sm text-[var(--cd)] leading-relaxed">Brewing the floor read…</p>
-          ) : floorBrief.isError ? (
-            <p className="text-sm text-[var(--am)] leading-relaxed">
-              Espresso unavailable — counts still work. Try Brew now.
-            </p>
-          ) : floorBrief.data?.body ? (
-            <EspressoBody text={floorBrief.data.body} />
-          ) : (
-            <p className="text-sm text-[var(--cd)]">No espresso yet — tap Brew now.</p>
-          )}
+
+          <div className="espresso-feed">
+            <EspressoFeed title="Live floor feed" items={espressoLiveItems} />
+            {floorBrief.isLoading && !floorBrief.data ? (
+              <div className="espresso-feed-block">
+                <div className="espresso-feed-h">Rocco's read</div>
+                <div className="espresso-feed-empty">Brewing the floor read…</div>
+              </div>
+            ) : floorBrief.isError ? (
+              <div className="espresso-feed-block">
+                <div className="espresso-feed-h">Rocco's read</div>
+                <div className="espresso-feed-empty">Unavailable — tap Brew. Counts still work.</div>
+              </div>
+            ) : espressoBriefItems.length > 0 ? (
+              <EspressoFeed title="Rocco's read" items={espressoBriefItems} />
+            ) : (
+              <div className="espresso-feed-block">
+                <div className="espresso-feed-h">Rocco's read</div>
+                <div className="espresso-feed-empty">No brief yet — tap Brew for a floor sweep.</div>
+              </div>
+            )}
+          </div>
+
           <AskRoccoComposer
             isPending={askRocco.isPending}
             onAsk={runAskRocco}
@@ -1353,10 +1706,112 @@ export default function HomeTiles() {
         </div>
       ) : (
         <>
-          <NeedsYouNow items={board.exceptions} pulse={pulse.exceptions} coverMoney={coverMoney} />
+          {/* Desk → pipeline → timeline → compact money (one-screen hierarchy) */}
+          {!kiosk && (
+            <FloorCommandStrip
+              pulse={Boolean(pulse.comingIn || pulse.mustLeave || pulse.exceptions)}
+              coverMoney={coverMoney}
+              canAdmin={canAdmin}
+              stats={[
+                {
+                  key: "coming",
+                  label: "Coming in",
+                  value: board.todayRail.chips.comingIn,
+                  to: "/appointments",
+                  tone: "default",
+                },
+                {
+                  key: "leave",
+                  label: "Must leave",
+                  value: board.todayRail.chips.mustLeave,
+                  to: "/shop-floor?filter=today",
+                  tone: (board.todayRail.chips.mustLeave ?? 0) > 0 ? "warn" : "default",
+                },
+                {
+                  key: "text",
+                  label: "Need text",
+                  value: c?.readyNotTexted,
+                  to: "/shop-floor?filter=text",
+                  tone: (c?.readyNotTexted ?? 0) > 0 ? "warn" : "good",
+                },
+                {
+                  key: "stalled",
+                  label: "Stalled",
+                  value: c?.stalledCount,
+                  to: "/shop-floor?filter=stalled",
+                  tone: (c?.stalledCount ?? 0) > 0 ? "hot" : "default",
+                },
+                {
+                  key: "conflicts",
+                  label: "Conflicts",
+                  value: c?.doubleBookedSlots,
+                  to: "/appointments",
+                  tone: (c?.doubleBookedSlots ?? 0) > 0 ? "hot" : "default",
+                },
+                {
+                  key: "unpaid",
+                  label: coverMoney ? "Unpaid #" : "Unpaid $",
+                  value: coverMoney ? c?.openInvoices : c?.openInvoicesAmount,
+                  to: c?.oldestUnpaidInvoiceId
+                    ? `/invoices/${encodeURIComponent(c.oldestUnpaidInvoiceId)}`
+                    : "/invoices",
+                  tone: "money",
+                  money: !coverMoney,
+                },
+              ]}
+              actions={[
+                { key: "new", label: "New ticket", to: "/intake/kind", primary: true, icon: "+" },
+                { key: "dispatch", label: "Charge & Dispatch", to: "/dispatch", primary: true, icon: "⚡" },
+                { key: "pickup", label: "Pickup", to: "/pickup", icon: "✓" },
+                { key: "quote", label: "Quote", to: "/quote", icon: "✎" },
+                { key: "parked", label: "Parked", to: "/parked", icon: "⌁" },
+                { key: "stock", label: "Stock", to: "/stock", icon: "▣" },
+                { key: "admin", label: "Admin", admin: true, icon: "◆" },
+              ]}
+            />
+          )}
+          <StatusPipeline
+            title="Shop pipeline"
+            pulse={pulse.overdue || pulse.floor}
+            stages={[
+              {
+                key: "open",
+                label: "Open",
+                count: c?.open,
+                to: "/shop-floor",
+              },
+              {
+                key: "progress",
+                label: "In progress",
+                count: c?.inProgress,
+                to: "/shop-floor?filter=in_progress",
+                tone: "warn",
+              },
+              {
+                key: "ready",
+                label: "Ready",
+                count: c?.ready,
+                to: "/pickup",
+                tone: "good",
+              },
+              {
+                key: "overdue",
+                label: "Overdue",
+                count: strip?.overdue,
+                to: "/shop-floor?filter=overdue",
+                tone: (strip?.overdue ?? 0) > 0 ? "hot" : "default",
+              },
+              {
+                key: "out",
+                label: "Out",
+                count: strip?.outForDelivery,
+                to: "/deliveries",
+              },
+            ]}
+          />
           <TodayRail rail={board.todayRail} pulse={pulse.comingIn || pulse.mustLeave || pulse.ready} />
           {coverMoney ? (
-            <section className="live-band live-money is-covered" data-band="money" aria-label="Sales numbers covered">
+            <section className="live-band live-money is-covered is-compact" data-band="money" aria-label="Sales numbers covered">
               <div className="live-money-head">
                 <p className="live-money-covered">Sales numbers covered</p>
                 <CoverMoneyButton on={coverMoney} onToggle={toggleCoverMoney} size="band" />
@@ -1372,29 +1827,7 @@ export default function HomeTiles() {
         </>
       )}
 
-      {/* Quick actions */}
-      <div className={cn("home-040-qa shrink-0 flex gap-2.5", kiosk && "hidden")} data-testid="quick-actions">
-        {canAdmin && (
-          <HouseAdminLink className="qbtn primary" data-testid="qa-admin">
-            <span aria-hidden>◆</span> Admin
-          </HouseAdminLink>
-        )}
-        <Link to="/dispatch" className="qbtn primary">
-          <span aria-hidden>⚡</span> Charge &amp; Dispatch
-        </Link>
-        <Link to="/quote" className="qbtn">
-          <span aria-hidden>✎</span> Send Quote
-        </Link>
-        <Link to="/orders/alterations" className="qbtn">
-          <span aria-hidden>▤</span> Orders
-        </Link>
-        <Link to="/stock" className="qbtn primary" data-testid="qa-stock">
-          <span aria-hidden>▣</span> Stock
-        </Link>
-        <Link to="/house" className="qbtn">
-          <span aria-hidden>⌂</span> House
-        </Link>
-      </div>
+      {/* Quick actions moved into FloorCommandStrip */}
 
       {(home.isError || erpDown) && !kiosk && !offline && (
         <div className="shrink-0">
@@ -1409,19 +1842,21 @@ export default function HomeTiles() {
         </div>
       )}
 
-      {/* 5×2 tile grid — fills remaining height */}
+      {/* Tile grid — 2 / 3 / 4 col; scrolls; no fixed-row clip */}
       {!kiosk && (home.isLoading ? (
-        <TileSkeleton count={10} />
+        <TileSkeleton count={12} />
       ) : (
       <div className="home-040-grid flex-1 min-h-0" data-testid="tile-grid">
         {tiles
-          .filter((t) => (t.key !== "qc" || canQc) && (t.key !== "admin-desk" || canAdmin))
+          .filter((t) => t.key !== "qc" || canQc)
           .map((t) => {
           const className = cn(
             "home-040-tile",
+            t.size === "lg" ? "is-lg" : "is-sm",
+            t.colSpan === 2 && "is-span-2",
             t.primary && "pri",
-            t.admin && "admin",
             t.dim && "dim",
+            t.key === "fabric-library" && "is-fabric-lib",
             (pulse[t.key] || (t.key === "invoices" && pulse.invoices) || (t.key === "qc" && pulse.qc)) && "is-pulse",
           );
 
@@ -1443,8 +1878,10 @@ export default function HomeTiles() {
               )}
               <div className="mid">
                 <div className={cn("ic", t.primary && "text-[#E3C48F]")}>{t.icon}</div>
-                <h2>{t.title}</h2>
-                <div className="sub">{t.sub}</div>
+                <div className="tx">
+                  <h2>{t.title}</h2>
+                  <div className="sub">{t.sub}</div>
+                </div>
               </div>
               {t.live != null ? (
                 <div className={cn("live", t.liveTone === "am" && "am", t.liveTone === "ro" && "ro")}>

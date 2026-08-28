@@ -228,7 +228,7 @@ export default function MessagesGlass() {
                 key={r.name || r.recorded_at}
                 type="button"
                 onClick={() => setVoice(r)}
-                className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
+                className="og-row sf-card msg-row w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
               >
                 <span className="sf-avatar" aria-hidden>
                   {clientInitials(r.title || r.customer || "Voice")}
@@ -252,7 +252,7 @@ export default function MessagesGlass() {
         {(tab === "all" || tab === "fittings") && appts.length > 0 && (
           <Section title="Fittings today" tone="shop">
             {appts.map((a) => (
-              <div key={a.name} className="og-row sf-card card-glass px-4 py-3.5 flex items-center gap-3 mb-2">
+              <div key={a.name} className="og-row sf-card msg-row card-glass px-4 py-3.5 flex items-center gap-3 mb-2">
                 <span className="sf-avatar" aria-hidden>
                   {clientInitials(a.customerName)}
                 </span>
@@ -424,7 +424,7 @@ function SmsCard({ t, onOpen }: { t: SmsThread; onOpen: () => void }) {
     <button
       type="button"
       onClick={onOpen}
-      className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
+      className="og-row sf-card msg-row w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
     >
       <span className="sf-avatar" aria-hidden>
         {clientInitials(fmtPhone(t.phone))}
@@ -450,7 +450,7 @@ function CallCard({ c, onOpen }: { c: CallRow; onOpen: () => void }) {
     <button
       type="button"
       onClick={onOpen}
-      className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
+      className="og-row sf-card msg-row w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
     >
       <span className="sf-avatar" aria-hidden>
         {clientInitials(name)}

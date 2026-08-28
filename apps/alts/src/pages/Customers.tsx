@@ -112,14 +112,14 @@ function CustomerCard({ c, onClick }: { c: Customer; onClick: () => void }) {
     <button
       onClick={onClick}
       className={cn(
-        "w-full text-left glass-panel p-4 rounded-xl border hover:border-brass/40 transition-all group",
-        pan ? "border-signal-rose/35 bg-signal-rose/5" : flagged ? "border-brass/35 bg-brass/5" : "border-brass/10",
+        "cust-row w-full text-left glass-panel p-3.5 rounded-xl border hover:border-brass/40 transition-all group",
+        pan ? "border-signal-rose/35 bg-signal-rose/5" : flagged ? "border-brass/35 bg-brass/5" : "border-brass/15",
       )}
     >
       <div className="flex items-start gap-3">
         <div className={cn(
-          "w-10 h-10 rounded-full border flex items-center justify-center flex-shrink-0 text-sm font-semibold overflow-hidden",
-          pan ? "bg-signal-rose/15 border-signal-rose/40 text-signal-rose" : isVip ? VIP_COLORS[vipLabel] || VIP_COLORS.VIP : "bg-brass/10 border-brass/20 text-brass-shimmer"
+          "cust-avatar w-11 h-11 rounded-xl border flex items-center justify-center flex-shrink-0 text-sm font-semibold overflow-hidden",
+          pan ? "bg-signal-rose/15 border-signal-rose/40 text-signal-rose" : isVip ? VIP_COLORS[vipLabel] || VIP_COLORS.VIP : "bg-brass/10 border-brass/25 text-brass-shimmer"
         )}>
           {c.image && !pan ? (
             <img src={c.image} alt="" className="w-full h-full object-cover" />
@@ -132,7 +132,7 @@ function CustomerCard({ c, onClick }: { c: Customer; onClick: () => void }) {
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
-            <span className="text-cream font-semibold text-sm truncate">{label}</span>
+            <span className="text-cream font-semibold text-[15px] truncate display not-italic font-sans">{label}</span>
             {isVip && <Star className="w-3 h-3 text-brass fill-brass flex-shrink-0" />}
             {c.casaTier && (
               <span className="text-[9px] tracking-widest font-bold uppercase px-1.5 py-0.5 rounded border border-brass/30 text-brass-light bg-brass/5">
@@ -142,7 +142,7 @@ function CustomerCard({ c, onClick }: { c: Customer; onClick: () => void }) {
           </div>
           <FlagChips flags={c.reviewFlags} />
 
-          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
             {c.phone && (
               <span className="flex items-center gap-1 text-xs text-cream-muted">
                 <Phone className="w-2.5 h-2.5 text-brass-light/50" />{c.phone}

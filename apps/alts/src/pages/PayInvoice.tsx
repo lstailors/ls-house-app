@@ -298,7 +298,7 @@ export default function PayInvoice() {
         {/* Paid banner */}
         {paid && (
           <div
-            className="mb-5 rounded-xl border p-4 flex items-start gap-3"
+            className="pay-banner mb-5 rounded-xl border p-4 flex items-start gap-3"
             style={{
               ...glassPanel,
               borderColor: "rgba(143, 191, 159, 0.35)",
@@ -323,7 +323,7 @@ export default function PayInvoice() {
 
         {/* Invoice details — email parity (paid + unpaid) */}
         {invoice && (
-          <div className="mb-5 rounded-xl border p-5" style={glassPanel}>
+          <div className="pay-panel mb-5 rounded-xl border p-5" style={glassPanel}>
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
                 <div
