@@ -1,0 +1,11 @@
+{
+  "call_id": "test-voicemail-001",
+  "from": "+12125550102",
+  "from_name": "Test Caller",
+  "to": "+12125550100",
+  "direction": "inbound",
+  "duration": 18,
+  "summary": "Voicemail about a pickup",
+  "transcript": "Please call me about my pickup.",
+  "recording_url": "https://talk.example.test/recordings/test-voicemail-001"
+}

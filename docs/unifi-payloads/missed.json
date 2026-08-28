@@ -1,0 +1,11 @@
+{
+  "call_id": "test-missed-001",
+  "from": "+12125550103",
+  "from_name": "Test Caller",
+  "to": "+12125550100",
+  "direction": "inbound",
+  "duration": 0,
+  "summary": "Missed inbound call",
+  "transcript": null,
+  "recording_url": null
+}

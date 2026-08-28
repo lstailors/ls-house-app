@@ -1,0 +1,11 @@
+{
+  "call_id": "test-transcript-001",
+  "from": "+12125550101",
+  "from_name": "Test Caller",
+  "to": "+12125550100",
+  "direction": "inbound",
+  "duration": 42,
+  "summary": "Requested a fitting appointment",
+  "transcript": "I would like to book a fitting.",
+  "recording_url": "https://talk.example.test/recordings/test-transcript-001"
+}

@@ -1,0 +1,11 @@
+{
+  "call_id": "test-emergency-001",
+  "from": "+12125550106",
+  "from_name": "Test Caller",
+  "to": "+1911",
+  "direction": "outbound",
+  "duration": 0,
+  "summary": "Emergency call event",
+  "transcript": null,
+  "recording_url": null
+}
