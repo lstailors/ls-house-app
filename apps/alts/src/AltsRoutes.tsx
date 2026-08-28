@@ -48,6 +48,10 @@ const FloorPerformance = lazy(() => import("@alts/pages/FloorPerformance"));
 const Reports = lazy(() => import("@alts/pages/Reports"));
 const StockGallery = lazy(() => import("@alts/pages/StockGallery"));
 const StockDetail = lazy(() => import("@alts/pages/StockDetail"));
+const Wardrobe = lazy(() => import("@alts/pages/Wardrobe"));
+const WardrobeGarmentDetail = lazy(() =>
+  import("@alts/pages/Wardrobe").then((m) => ({ default: m.WardrobeGarmentDetailPage })),
+);
 
 const FOH = ["super_admin", "store_manager", "salesperson", "tailor"] as const;
 const QC = ["super_admin", "tailor"] as const;
@@ -120,6 +124,14 @@ export function AltsRouteTree() {
         }
       />
       <Route
+        path="/orders"
+        element={
+          <RoleGuard allow={[...FOH]}>
+            <OrdersGlass />
+          </RoleGuard>
+        }
+      />
+      <Route
         path="/orders/alterations"
         element={
           <RoleGuard allow={[...FOH]}>
@@ -172,6 +184,22 @@ export function AltsRouteTree() {
         element={
           <RoleGuard allow={[...FOH]}>
             <StockDetail />
+          </RoleGuard>
+        }
+      />
+      <Route
+        path="/wardrobe"
+        element={
+          <RoleGuard allow={[...FOH]}>
+            <Wardrobe />
+          </RoleGuard>
+        }
+      />
+      <Route
+        path="/wardrobe/garment/:id"
+        element={
+          <RoleGuard allow={[...FOH]}>
+            <WardrobeGarmentDetail />
           </RoleGuard>
         }
       />

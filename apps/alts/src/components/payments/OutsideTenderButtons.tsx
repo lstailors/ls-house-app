@@ -103,6 +103,7 @@ export function OutsideTenderButtons({
         typeof data.outstanding === "number" && data.outstanding > 0
           ? data.outstanding
           : amountDollars;
+      // Always prefer SI outstanding over bag total — PE rejects overpay.
       setAmount(String(out));
     } catch (e) {
       // Non-fatal — still allow record with local amount
@@ -120,9 +121,14 @@ export function OutsideTenderButtons({
     void load();
   }, [load]);
 
+  // Only seed from parent amount when we don't yet have an invoice outstanding.
   useEffect(() => {
-    setAmount(String(amountDollars || ""));
-  }, [amountDollars]);
+    if (typeof snap?.outstanding === "number" && snap.outstanding > 0) {
+      setAmount(String(snap.outstanding));
+      return;
+    }
+    if (amountDollars > 0) setAmount(String(amountDollars));
+  }, [amountDollars, snap?.outstanding, ticketId, invoiceId]);
 
   const canRecord =
     (snap?.can_record ?? amountDollars > 0) &&
@@ -135,9 +141,16 @@ export function OutsideTenderButtons({
       if (method === "check" && !checkNumber.trim()) {
         throw new Error("Check number is required");
       }
-      const amt = Number(amount);
+      let amt = Number(amount);
       if (!Number.isFinite(amt) || amt <= 0) {
         throw new Error("Amount must be positive");
+      }
+      // Hard clamp to outstanding so bag-total never blows past one SI.
+      if (typeof snap?.outstanding === "number" && snap.outstanding > 0.02) {
+        if (amt - snap.outstanding > 0.02) {
+          amt = snap.outstanding;
+          setAmount(String(snap.outstanding));
+        }
       }
       const res = await api.raw("/api/payments/outside", {
         method: "POST",
@@ -155,12 +168,25 @@ export function OutsideTenderButtons({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data?.ok === false) {
-        throw new Error(
+        const raw =
           data?.error?.message ||
-            data?.error ||
-            data?.message ||
-            data?.exception ||
-            "Could not record payment",
+          data?.error ||
+          data?.message ||
+          data?.exception ||
+          "";
+        // Prefer Frappe _server_messages when present
+        let detail = typeof raw === "string" ? raw : "";
+        if (!detail && typeof data?._server_messages === "string") {
+          try {
+            const arr = JSON.parse(data._server_messages) as unknown[];
+            const first = typeof arr[0] === "string" ? JSON.parse(arr[0] as string) : arr[0];
+            detail = String((first as any)?.message || "");
+          } catch {
+            detail = data._server_messages;
+          }
+        }
+        throw new Error(
+          (detail || "Could not record payment").replace(/<[^>]+>/g, " ").trim().slice(0, 280),
         );
       }
       setPrompt(null);
@@ -358,7 +384,13 @@ export function OutsideTenderButtons({
             )}
             {typeof snap?.outstanding === "number" && (
               <p className="text-xs text-cream-dim">
-                Outstanding on invoice: {money(snap.outstanding)}
+                Outstanding on invoice:{" "}
+                <span className="text-cream font-semibold tabular-nums">{money(snap.outstanding)}</span>
+                {(Number(amount) || 0) - snap.outstanding > 0.02 && (
+                  <span className="block text-signal-amber mt-1">
+                    Amount is higher than outstanding — ERP will reject. Match the invoice total.
+                  </span>
+                )}
               </p>
             )}
           </div>

@@ -1,9 +1,13 @@
 import type { ReactNode } from "react";
 import { cn } from "@ls/design/utils";
-import { formatMoney } from "@alts/lib/money";
+import { formatLineMoney, formatMoney } from "@alts/lib/money";
 
 function money(n?: number | string | null) {
   return formatMoney(n);
+}
+
+function lineMoney(n?: number | string | null) {
+  return formatLineMoney(n);
 }
 
 export type CartGarment = {

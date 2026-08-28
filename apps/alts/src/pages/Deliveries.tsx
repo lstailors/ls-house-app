@@ -382,14 +382,14 @@ export default function Deliveries() {
             <div
               key={col.key}
               className={cn(
-                "min-w-[260px] w-[min(100%,300px)] sm:min-w-0 sm:flex-1 snap-start flex flex-col rounded-2xl border max-h-[70vh]",
-                col.tone === "pickup" && "border-[rgba(79,191,142,0.35)] bg-[rgba(79,191,142,0.06)]",
-                col.tone === "qc" && "border-[rgba(232,168,92,0.4)] bg-[rgba(232,168,92,0.07)]",
-                col.tone === "tasks" && "border-[rgba(217,123,108,0.4)] bg-[rgba(217,123,108,0.07)]",
-                col.tone === "shop" && "border-brass/25 bg-black/20",
+                "del-col min-w-[260px] w-[min(100%,300px)] sm:min-w-0 sm:flex-1 snap-start flex flex-col rounded-2xl border max-h-[70vh]",
+                col.tone === "pickup" && "is-ready border-[rgba(79,191,142,0.35)]",
+                col.tone === "qc" && "is-progress border-[rgba(232,168,92,0.4)]",
+                col.tone === "tasks" && "is-hot border-[rgba(217,123,108,0.4)]",
+                col.tone === "shop" && "border-brass/25",
               )}
             >
-              <div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-3 py-2.5 border-b border-brass/10 bg-forest-deep/90 backdrop-blur rounded-t-2xl">
+              <div className="del-col-head sticky top-0 z-10 flex items-center justify-between gap-2 px-3 py-2.5 rounded-t-2xl">
                 <StatusBadge
                   status={
                     col.key === "delivered"
@@ -400,10 +400,7 @@ export default function Deliveries() {
                   }
                   tone={col.tone}
                 />
-                <span className="text-[11px] font-mono text-brass-light/80 tabular-nums">
-                  {col.items.length}
-                  <span className="text-cream-dim/70 font-sans font-normal"> · this view</span>
-                </span>
+                <span className="sf-col-count">{col.items.length}</span>
               </div>
               <div className="flex-1 overflow-y-auto p-2 space-y-2">
                 {col.items.length === 0 ? (
@@ -429,10 +426,11 @@ export default function Deliveries() {
                         hover
                         onClick={() => navigate(`/deliveries/${d.id}`)}
                         className={cn(
-                          "p-3 transition-transform hover:-translate-y-0.5 cursor-pointer",
+                          "del-card p-3 transition-transform hover:-translate-y-0.5 cursor-pointer",
                           d.status === "out_for_delivery" && "border-signal-amber/40",
                           d.status === "delivered" && "border-signal-emerald/30",
                           d.status === "failed" && "border-signal-rose/40",
+                          isOverdue && "border-l-2 border-l-signal-rose",
                         )}
                       >
                         <div className="flex items-start justify-between mb-2 gap-2">

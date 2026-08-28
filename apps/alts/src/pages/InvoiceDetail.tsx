@@ -6,6 +6,7 @@ import { cn } from "@ls/design/utils";
 import { ChargeTerminalButton } from "@alts/components/payments/ChargeTerminalButton";
 import { ChargeCardOnFileButton } from "@alts/components/payments/ChargeCardOnFileButton";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
+import { FulfillmentChip } from "@alts/components/FulfillmentChip";
 import { payUrl } from "@alts/lib/printUrls";
 import { formatMoney } from "@alts/lib/money";
 import "@alts/styles/alts-pos.css";
@@ -38,6 +39,9 @@ type Invoice = {
   remarks?: string | null;
   contactMobile?: string | null;
   contactEmail?: string | null;
+  fulfillment?: string | null;
+  shop?: string | null;
+  whereDetail?: string | null;
   squarePaymentLink?: string | null;
   items: Item[];
   netTotal?: number;
@@ -159,6 +163,19 @@ export default function InvoiceDetail() {
                     >
                       {kind === "alteration" ? "Alteration" : "Custom made"}
                     </span>
+                    {(inv.fulfillment || inv.alterationTicketRef) && (
+                      <FulfillmentChip
+                        compact
+                        showDetail={false}
+                        ticket={{
+                          lsh_fulfillment: inv.fulfillment,
+                          lsh_origin_location: inv.shop,
+                          lsh_where_detail: inv.whereDetail,
+                          workflow_state: inv.fulfillment || undefined,
+                          origin_location: inv.shop || undefined,
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
                 <div className="text-right text-[11px] text-cream-dim">

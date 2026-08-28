@@ -15,6 +15,7 @@ import { KanbanSkeleton, ListSkeleton } from "@alts/components/skeletons";
 import { storeToday } from "@alts/lib/storeDate";
 import { formatMoney } from "@alts/lib/money";
 import { TailorTallyStrip } from "@alts/components/TailorTallyStrip";
+import { FulfillmentChip } from "@alts/components/FulfillmentChip";
 import {
   clientInitials,
   daysLate,
@@ -40,6 +41,7 @@ type Ticket = {
   billing_status?: string;
   assigned_tailor?: string;
   origin_location?: string;
+  delivery_method?: string | null;
   linked_sales_order?: string;
   notified_ready_at?: string | null;
 };
@@ -111,6 +113,18 @@ function TicketCard({
           {due.kind === "soon" && <span className="badge-soon">{due.text}</span>}
         </div>
         <div className="display text-[22px] leading-none truncate">{t.customer_name || "—"}</div>
+        <div className="mt-2">
+          <FulfillmentChip
+            compact
+            showDetail={false}
+            ticket={{
+              workflow_state: t.workflow_state,
+              assigned_tailor: t.assigned_tailor,
+              delivery_method: t.delivery_method,
+              origin_location: t.origin_location,
+            }}
+          />
+        </div>
         <div className="flex items-center gap-2 mt-2 text-[12px] text-cream-dim">
           <span>
             {t.assigned_tailor ? (
@@ -560,18 +574,18 @@ export default function ShopFloorBoard() {
                   col === "Picked Up" && "is-done",
                 )}
               >
-                <div className="flex items-center gap-2 px-3 py-3 border-b border-brass/15">
+                <div className="sf-col-head">
                   <span
                     className={cn(
-                      "w-2 h-2 rounded-full",
+                      "w-2.5 h-2.5 rounded-full shrink-0",
                       col === "Received" && "bg-cream-dim",
                       col === "In Progress" && "bg-signal-amber",
                       col === "Ready" && "bg-signal-emerald",
                       col === "Picked Up" && "bg-brass/50",
                     )}
                   />
-                  <b className="text-sm font-semibold">{col}</b>
-                  <span className="ml-auto text-xs text-cream-dim">{byCol[col]?.length ?? 0}</span>
+                  <b className="text-sm font-semibold tracking-wide">{col}</b>
+                  <span className="sf-col-count">{byCol[col]?.length ?? 0}</span>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-2">
                   {(byCol[col] ?? []).map((t) => (

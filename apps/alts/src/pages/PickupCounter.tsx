@@ -27,6 +27,26 @@ import { ListSkeleton } from "@alts/components/skeletons";
 import { AltsSearchField } from "@alts/components/AltsSearchField";
 import "@alts/styles/alts-pos.css";
 
+type SearchHit = {
+  type: string;
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  meta?: string | null;
+  amount?: number | null;
+  outstanding?: number | null;
+  href?: string;
+};
+
+function useDebouncedValue<T>(value: T, ms = 240): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = window.setTimeout(() => setV(value), ms);
+    return () => window.clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
+
 type Ticket = {
   name: string;
   customer?: string;
@@ -110,14 +130,21 @@ function customerMatchKey(item: QueueItem) {
   return (item.customerId || item.customerName || "").trim().toLowerCase();
 }
 
-function ticketToQueueItem(t: Ticket): QueueItem {
+function ticketToQueueItem(t: Ticket, siOutstanding?: number | null): QueueItem {
   const total = Number(t.ticket_total) || 0;
-  const unpaid =
-    t.payment_status !== "Paid" &&
-    t.payment_status !== "N/A" &&
-    total > 0 &&
-    t.billing_status !== "Warranty" &&
-    t.billing_status !== "Included in Custom Order";
+  const pay = String(t.payment_status || "");
+  const bill = String(t.billing_status || "");
+  const nonBillable = bill === "Warranty" || bill === "Included in Custom Order";
+  // Prefer SI outstanding when known (partial pay / listino hydration).
+  let outstanding = 0;
+  if (!nonBillable && pay !== "Paid" && pay !== "N/A") {
+    if (typeof siOutstanding === "number" && Number.isFinite(siOutstanding)) {
+      outstanding = Math.max(0, siOutstanding);
+    } else {
+      outstanding = total > 0 ? total : 0;
+    }
+  }
+  const unpaid = outstanding > 0.005;
   return {
     key: ticketKey(t.name),
     kind: "ticket",
@@ -125,9 +152,9 @@ function ticketToQueueItem(t: Ticket): QueueItem {
     customerId: t.customer,
     customerName: t.customer_name || "—",
     phone: t.customer_mobile || t.customer_phone || "",
-    total,
-    outstanding: unpaid ? total : 0,
-    paymentLabel: t.payment_status || t.workflow_state || "—",
+    total: total > 0 ? total : outstanding,
+    outstanding,
+    paymentLabel: pay || t.workflow_state || "—",
     unpaid,
     billingStatus: t.billing_status,
     salesInvoice: t.sales_invoice,
@@ -193,8 +220,19 @@ export default function PickupCounter() {
   const [extras, setExtras] = useState<QueueItem[]>([]);
   const [confirmWho, setConfirmWho] = useState(true);
   const [collector, setCollector] = useState("");
+  /** Filters the Ready/open queue list only */
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "tickets" | "invoices" | "paid" | "unpaid">("all");
+  /** House search — add tickets/invoices/customer work to the checkout bag */
+  const [addQ, setAddQ] = useState("");
+  const debouncedAddQ = useDebouncedValue(addQ, 240);
+  const [addBusy, setAddBusy] = useState(false);
+  /** Checkout phase for the sticky final-bill rail */
+  const [checkoutPhase, setCheckoutPhase] = useState<"bag" | "collect" | "release">("bag");
+  const [filter, setFilter] = useState<
+    "all" | "tickets" | "invoices" | "paid" | "unpaid" | "need_release"
+  >("all");
+  /** Queue presentation: flat list or grouped by client (multi-order pickup). */
+  const [queueView, setQueueView] = useState<"flat" | "by_client">("by_client");
 
   // Persist bag for camera scanner round-trip
   useEffect(() => {
@@ -253,9 +291,37 @@ export default function PickupCounter() {
     refetchInterval: 45_000,
   });
 
+  const houseSearch = useQuery({
+    queryKey: ["pickup-add-search", debouncedAddQ],
+    enabled: debouncedAddQ.trim().length >= 2,
+    queryFn: async () => {
+      const res = await api.get<{ results?: SearchHit[]; query?: string }>(
+        `/api/search?q=${encodeURIComponent(debouncedAddQ.trim())}`,
+      );
+      return (res?.results ?? []) as SearchHit[];
+    },
+    staleTime: 8_000,
+  });
+
+  const addHits = useMemo(() => {
+    const hits = houseSearch.data ?? [];
+    return hits.filter((h) =>
+      ["alteration", "invoice", "customer"].includes(String(h.type || "")),
+    );
+  }, [houseSearch.data]);
+
   const queue = useMemo(() => {
     const tickets = ready.data ?? [];
     const invoices = openInvoices.data ?? [];
+
+    // SI outstanding by name — prefer real PE balance over ticket_total on Ready rows
+    const siOutById = new Map<string, number>();
+    const siGrandById = new Map<string, number>();
+    for (const inv of invoices) {
+      if (!inv.id) continue;
+      siOutById.set(inv.id, Math.max(0, Number(inv.outstandingAmount) || 0));
+      siGrandById.set(inv.id, Math.max(0, Number(inv.grandTotal) || 0));
+    }
 
     // Ready ticket SI names — avoid double-listing open alt invoices already on the Ready board
     const readySi = new Set(
@@ -266,7 +332,14 @@ export default function PickupCounter() {
     const items: QueueItem[] = [];
 
     for (const t of tickets) {
-      items.push(ticketToQueueItem(t));
+      const si = (t.sales_invoice || "").trim();
+      const siOut = si && siOutById.has(si) ? siOutById.get(si)! : undefined;
+      const item = ticketToQueueItem(t, siOut);
+      // If SI grand known and ticket_total is wrong/zero shell, prefer SI grand for display total
+      if (si && siGrandById.has(si) && (item.total <= 0 || (siOut != null && Math.abs(item.total - siGrandById.get(si)!) > 0.5))) {
+        item.total = siGrandById.get(si)! || item.total;
+      }
+      items.push(item);
     }
 
     for (const inv of invoices) {
@@ -379,8 +452,29 @@ export default function PickupCounter() {
     if (filter === "invoices") rows = rows.filter((r) => r.kind === "invoice");
     if (filter === "paid") rows = rows.filter((r) => !r.unpaid);
     if (filter === "unpaid") rows = rows.filter((r) => r.unpaid);
+    // Paid at counter but still Ready — need hand-over / release
+    if (filter === "need_release") {
+      rows = rows.filter((r) => r.kind === "ticket" && !r.unpaid);
+    }
     return rows;
   }, [queue, extras, q, filter]);
+
+  /** Grouped queue rows for by-client view (same client, many orders). */
+  const listGrouped = useMemo(() => {
+    const groups: { key: string; name: string; rows: QueueItem[] }[] = [];
+    const map = new Map<string, { name: string; rows: QueueItem[] }>();
+    for (const r of list) {
+      const ck = customerMatchKey(r) || r.customerName.toLowerCase() || r.id;
+      let g = map.get(ck);
+      if (!g) {
+        g = { name: r.customerName || "—", rows: [] };
+        map.set(ck, g);
+        groups.push({ key: ck, name: g.name, rows: g.rows });
+      }
+      g.rows.push(r);
+    }
+    return groups;
+  }, [list]);
 
   const selectedItems = useMemo(() => {
     const out: QueueItem[] = [];
@@ -506,6 +600,177 @@ export default function PickupCounter() {
     [catalog, collector],
   );
 
+  /** Add ticket/invoice/customer open work into the checkout bag via house search. */
+  const addHitToBag = useCallback(
+    async (hit: SearchHit) => {
+      const type = String(hit.type || "");
+      setAddBusy(true);
+      try {
+        if (type === "alteration" && hit.id) {
+          await addFromScan(hit.id);
+          return;
+        }
+        if (type === "invoice" && hit.id) {
+          await addFromScan(hit.id);
+          return;
+        }
+        if (type === "customer") {
+          const custId = (hit.id || "").trim();
+          const custName = (hit.title || hit.subtitle || "").trim();
+          const nameKey = custName.toLowerCase();
+          const fromQueue = queue.filter((r) => {
+            if (custId && r.customerId === custId) return true;
+            if (nameKey && customerMatchKey(r) === nameKey) return true;
+            if (nameKey && r.customerName.toLowerCase() === nameKey) return true;
+            return false;
+          });
+          let added = 0;
+          for (const row of fromQueue) {
+            if (!selected.has(row.key)) {
+              setSelected((prev) => new Set(prev).add(row.key));
+              setFocusKey(row.key);
+              added += 1;
+            }
+          }
+          // Pull open + recent paid (not yet collected) invoices for this client from API
+          if (custId) {
+            try {
+              const res = await api.raw(
+                `/api/invoices?customer=${encodeURIComponent(custId)}&status=all&limit=80`,
+              );
+              const json = await res.json().catch(() => ({}));
+              const rows = (Array.isArray(json?.data) ? json.data : []) as Array<{
+                id: string;
+                customer?: { id: string; name: string } | null;
+                customerName?: string | null;
+                status: string;
+                kind?: "alteration" | "custom" | "other";
+                grandTotal: number;
+                outstandingAmount: number;
+                alterationTicketRef?: string | null;
+                salesOrder?: string | null;
+                fulfillment?: string | null;
+              }>;
+              for (const inv of rows) {
+                if (!inv?.id) continue;
+                const ful = String(inv.fulfillment || "").toLowerCase();
+                const done =
+                  ful === "picked up" || ful === "delivered" || ful === "cancelled";
+                const outstanding = Number(inv.outstandingAmount) || 0;
+                // Skip fully closed (paid + already collected)
+                if (done && outstanding <= 0.005) continue;
+                // Paid with no money due: only if still on a floor light (not every historic SI)
+                if (outstanding <= 0.005) {
+                  const floorish =
+                    !ful ||
+                    ful === "ready rack" ||
+                    ful === "at store" ||
+                    ful === "in store" ||
+                    ful === "at home tailor" ||
+                    ful === "in production" ||
+                    ful === "custom order" ||
+                    ful === "out for delivery";
+                  if (!floorish) continue;
+                }
+                const row: InvoiceRow = {
+                  id: inv.id,
+                  customer: inv.customer ?? (custId ? { id: custId, name: custName } : null),
+                  customerName: inv.customerName || custName || "—",
+                  status: inv.status || "open",
+                  kind: inv.kind,
+                  grandTotal: Number(inv.grandTotal) || 0,
+                  outstandingAmount: outstanding,
+                  alterationTicketRef: inv.alterationTicketRef,
+                  salesOrder: inv.salesOrder,
+                };
+                // Prefer linked ticket when present
+                const altRef = (row.alterationTicketRef || "").trim();
+                if (altRef) {
+                  const tKey = ticketKey(altRef);
+                  if (!selected.has(tKey) && !catalog.has(tKey)) {
+                    try {
+                      const t = await api.get<Ticket>(
+                        `/api/intake-alterations/tickets/${encodeURIComponent(altRef)}`,
+                      );
+                      const tItem = ticketToQueueItem(t, outstanding);
+                      setExtras((prev) =>
+                        prev.some((p) => p.key === tKey) ? prev : [...prev, tItem],
+                      );
+                      setSelected((prev) => new Set(prev).add(tKey));
+                      setFocusKey(tKey);
+                      added += 1;
+                      continue;
+                    } catch {
+                      /* fall through to invoice line */
+                    }
+                  } else if (!selected.has(tKey)) {
+                    setSelected((prev) => new Set(prev).add(tKey));
+                    setFocusKey(tKey);
+                    added += 1;
+                    continue;
+                  } else {
+                    continue;
+                  }
+                }
+                const item = invoiceToQueueItem(row);
+                if (selected.has(item.key)) continue;
+                setExtras((prev) =>
+                  prev.some((p) => p.key === item.key) ? prev : [...prev, item],
+                );
+                setSelected((prev) => new Set(prev).add(item.key));
+                setFocusKey(item.key);
+                added += 1;
+              }
+            } catch {
+              /* house search fallback below */
+            }
+          }
+          // Fallback: house search under this client name
+          const qName = custName || custId;
+          if (qName && added === 0) {
+            try {
+              const res = await api.get<{ results?: SearchHit[] }>(
+                `/api/search?q=${encodeURIComponent(qName)}`,
+              );
+              const more = (res?.results ?? []).filter(
+                (h) => h.type === "alteration" || h.type === "invoice",
+              );
+              for (const h of more) {
+                if (!h.id) continue;
+                if (h.subtitle && custName && !String(h.subtitle).toLowerCase().includes(nameKey)) {
+                  if (!String(h.subtitle).toLowerCase().includes(nameKey.split(" ")[0] || nameKey)) {
+                    continue;
+                  }
+                }
+                await addFromScan(h.id);
+                added += 1;
+              }
+            } catch {
+              /* queue adds already applied */
+            }
+          }
+          if (added === 0 && fromQueue.length === 0) {
+            toast.message("No open/Ready work for this client — scan a tag or invoice #");
+          } else if (fromQueue.length && added === 0) {
+            toast.message("Already in bag", { description: custName || custId });
+          } else {
+            toast.success(`Added open work for ${custName || custId}`, {
+              description: `${added} line${added === 1 ? "" : "s"} in checkout cart`,
+            });
+          }
+          setConfirmWho(true);
+          if (!collector.trim() && custName) setCollector(custName);
+          setCheckoutPhase("bag");
+        }
+      } finally {
+        setAddBusy(false);
+      }
+    },
+    // addToBag is stable enough via selectedItems; include deps carefully
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [addFromScan, collector, queue, selected],
+  );
+
   const focusItem =
     selectedItems.find((r) => r.key === focusKey) || selectedItems[0] || null;
 
@@ -547,8 +812,14 @@ export default function PickupCounter() {
     }
     return out;
   })();
-  const bagInvoices = selectedItems.filter((i) => i.kind === "invoice" && !i.ticketRef);
+  /** All SI lines in the bag (custom/MTM or alt). */
+  const bagInvoiceLines = selectedItems.filter((i) => i.kind === "invoice");
+  /** SI without a linked Ready ticket — release stamps fulfillment directly. */
+  const bagStandaloneInvoices = bagInvoiceLines.filter((i) => !i.ticketRef);
+  /** @deprecated alias kept for charge receipt invoice lists */
+  const bagInvoices = bagStandaloneInvoices;
   const bagUnpaid = selectedItems.filter((i) => i.unpaid);
+  const canHandOver = bagTickets.length > 0 || bagInvoiceLines.length > 0;
 
   const sameCustomerOthers = useMemo(() => {
     if (!focusItem) return [] as QueueItem[];
@@ -613,7 +884,42 @@ export default function PickupCounter() {
     setSelected(new Set());
     setFocusKey(null);
     setExtras([]);
+    setCheckoutPhase("bag");
+    setReceipt(null);
     clearPickupBag();
+  }
+
+  /** After a successful charge, focus next unpaid line — or auto hand-over when bag is clear. */
+  function advanceAfterCharge(paidKey?: string | null) {
+    refreshAll();
+    const remaining = selectedItems.filter((i) => i.unpaid && i.key !== paidKey);
+    if (remaining.length) {
+      setFocusKey(remaining[0].key);
+      setCheckoutPhase("collect");
+      setChargeArmed(null);
+      toast.message(`Next due · ${remaining[0].id}`, {
+        description: money(remaining[0].outstanding || remaining[0].total),
+      });
+      return;
+    }
+    setCheckoutPhase("release");
+    setChargeArmed(null);
+    const who =
+      collector.trim() ||
+      selectedItems.find((i) => i.key === paidKey)?.customerName ||
+      selectedItems[0]?.customerName ||
+      "Customer";
+    if (!collector.trim()) setCollector(who);
+    setConfirmWho(true);
+    // Counter pickup: paid + leaving store → auto mark Picked Up / collected (tickets + SIs).
+    if (canHandOver) {
+      toast.success("Paid — handing over · marking collected…");
+      window.setTimeout(() => {
+        release.mutate({ collectorName: who, auto: true });
+      }, 280);
+    } else {
+      toast.success("Bag paid");
+    }
   }
 
   const methodLabel = (m?: string | null) => {
@@ -624,49 +930,123 @@ export default function PickupCounter() {
   };
 
   const release = useMutation({
-    mutationFn: async () => {
-      if (!bagTickets.length) throw new Error("No Ready tickets selected to release");
-      if (!confirmWho) throw new Error("Confirm who’s collecting");
+    mutationFn: async (opts?: { collectorName?: string; auto?: boolean }) => {
+      if (!canHandOver) throw new Error("Nothing in bag to hand over");
+      const who =
+        (opts?.collectorName || collector).trim() ||
+        selectedItems[0]?.customerName ||
+        "Customer";
+      if (!opts?.auto && !confirmWho) throw new Error("Confirm who’s collecting");
       const errors: string[] = [];
-      let ok = 0;
+      let ticketsOk = 0;
+      let invoicesOk = 0;
       let sms = 0;
+
+      // 1) Alteration tickets → Picked Up (restamps linked SI lights)
       for (const item of bagTickets) {
         try {
           const data = await api.patch<{ unpaid_release_sms?: { sent?: boolean } }>(
             `/api/intake-alterations/tickets/${encodeURIComponent(item.id)}/status`,
-            { status: "Picked Up", collected_by: collector.trim() || undefined },
+            { status: "Picked Up", collected_by: who },
           );
-          ok += 1;
+          ticketsOk += 1;
           if (data?.unpaid_release_sms?.sent) sms += 1;
         } catch (e: any) {
           errors.push(`${item.id}: ${e?.message || "failed"}`);
         }
       }
-      return { ok, sms, errors, invoiceLeft: bagInvoices.length };
+
+      // 2) Sales invoices in bag → SI fulfillment Picked Up (custom/MTM with no ticket,
+      //    and any SI still in bag so Desk lights match counter hand-over).
+      const ticketIds = new Set(bagTickets.map((t) => t.id));
+      for (const inv of bagInvoiceLines) {
+        // If we already released a linked Ready ticket, restamp covered the SI —
+        // still stamp collector detail when standalone or ticket release failed.
+        const linkedReady = inv.ticketRef && ticketIds.has(inv.ticketRef);
+        if (linkedReady && ticketsOk > 0 && !errors.some((e) => e.startsWith(inv.ticketRef!))) {
+          // Ticket path succeeded — optional double-stamp of collector name
+        }
+        try {
+          await api.post(`/api/invoices/${encodeURIComponent(inv.id)}/mark-collected`, {
+            collected_by: who,
+            fulfillment: "Picked Up",
+          });
+          invoicesOk += 1;
+        } catch (e: any) {
+          // Don't fail whole bag if ticket already closed the SI; note only when standalone
+          if (!linkedReady) {
+            errors.push(`${inv.id}: ${e?.message || "mark collected failed"}`);
+          }
+        }
+      }
+
+      if (!ticketsOk && !invoicesOk && errors.length) {
+        throw new Error(errors[0] || "Hand-over failed");
+      }
+
+      return {
+        ticketsOk,
+        invoicesOk,
+        sms,
+        errors,
+        auto: !!opts?.auto,
+        who,
+        remainingUnpaid: bagUnpaid.length,
+      };
     },
     onSuccess: (data) => {
-      if (data.ok) toast.success(`Released ${data.ok} ticket${data.ok === 1 ? "" : "s"}`);
-      if (data.sms) toast.success(`Unpaid balance SMS ×${data.sms}`);
-      if (data.invoiceLeft) {
-        toast.message(
-          `${data.invoiceLeft} invoice${data.invoiceLeft === 1 ? "" : "s"} still in bag — charge or open to clear`,
+      const parts: string[] = [];
+      if (data.ticketsOk) {
+        parts.push(
+          `${data.ticketsOk} ticket${data.ticketsOk === 1 ? "" : "s"} → Picked Up`,
         );
+      }
+      if (data.invoicesOk) {
+        parts.push(
+          `${data.invoicesOk} invoice${data.invoicesOk === 1 ? "" : "s"} · collected`,
+        );
+      }
+      if (parts.length) {
+        toast.success(
+          data.auto ? `Handed over · ${parts.join(" · ")}` : `Released · ${parts.join(" · ")}`,
+          data.auto && data.who ? { description: `Collector · ${data.who}` } : undefined,
+        );
+      }
+      if (data.sms) toast.success(`Unpaid balance SMS ×${data.sms}`);
+      if (data.remainingUnpaid > 0 && data.invoicesOk) {
+        toast.message("Invoices still show open balance until charged", {
+          description: "Fulfillment is Picked Up — A/R stays open",
+        });
       }
       for (const e of data.errors) toast.error(e);
       qc.invalidateQueries({ queryKey: ["pickup-ready"] });
       qc.invalidateQueries({ queryKey: ["pickup-board"] });
       qc.invalidateQueries({ queryKey: ["pickup-open-invoices"] });
-      // Drop released tickets from selection; keep invoices
-      setSelected((prev) => {
-        const next = new Set(prev);
-        for (const t of bagTickets) {
-          if (!data.errors.some((e) => e.startsWith(t.id))) next.delete(t.key);
-        }
-        return next;
-      });
-      if (!data.invoiceLeft && !data.errors.length) {
+      qc.invalidateQueries({ queryKey: ["pickup-ticket"] });
+      // Clear bag on clean hand-over
+      if (!data.errors.length) {
+        setSelected(new Set());
         setCollector("");
         setFocusKey(null);
+        setCheckoutPhase("bag");
+        setReceipt(null);
+        setExtras([]);
+        clearPickupBag();
+      } else {
+        // Drop only successful lines
+        setSelected((prev) => {
+          const next = new Set(prev);
+          for (const t of bagTickets) {
+            if (!data.errors.some((e) => e.startsWith(t.id))) {
+              next.delete(t.key);
+              next.delete(ticketKey(t.id));
+            }
+          }
+          for (const inv of bagInvoiceLines) {
+            if (!data.errors.some((e) => e.startsWith(inv.id))) next.delete(inv.key);
+          }
+          return next;
+        });
       }
     },
     onError: (e: Error) => toast.error(e.message),
@@ -725,23 +1105,25 @@ export default function PickupCounter() {
     qc.invalidateQueries({ queryKey: ["pickup-board"] });
   };
 
+  // When bag gains unpaid lines, jump straight to Collect so pay buttons are on screen
+  useEffect(() => {
+    if (selected.size > 0 && bagOutstanding > 0.005 && !receipt) {
+      setCheckoutPhase("collect");
+    }
+  }, [selected.size, bagOutstanding, receipt]);
+
   // Charge target for focused unpaid row
   const chargeInvoiceId =
     focusItem?.kind === "invoice"
       ? focusItem.id
       : focusItem?.salesInvoice || (t?.sales_invoice ?? undefined);
   const chargeTicketId = focusItem?.kind === "ticket" ? focusItem.id : focusItem?.ticketRef || undefined;
-  const chargeAmount =
-    focusItem?.unpaid
-      ? focusItem.outstanding || focusItem.total
-      : bagUnpaid.length === 1
-        ? bagUnpaid[0].outstanding || bagUnpaid[0].total
-        : 0;
   const chargeTarget = focusItem?.unpaid
     ? focusItem
-    : bagUnpaid.length === 1
-      ? bagUnpaid[0]
-      : null;
+    : bagUnpaid[0] || null;
+  const chargeAmount = chargeTarget
+    ? Math.max(0, Number(chargeTarget.outstanding) || Number(chargeTarget.total) || 0)
+    : 0;
 
   const textReceipt = useMutation({
     mutationFn: (invoiceId: string) =>
@@ -757,6 +1139,9 @@ export default function PickupCounter() {
   if (chargeTarget?.kind === "invoice" && !chargeInvoiceIds.includes(chargeTarget.id)) {
     chargeInvoiceIds.push(chargeTarget.id);
   }
+
+  const showPayPanel = selected.size > 0 && !receipt;
+  const payReady = !!(chargeTarget && chargeAmount > 0.005);
 
   return (
     <div className="alts-root flex flex-col min-h-dvh">
@@ -777,12 +1162,12 @@ export default function PickupCounter() {
         <div>
           <h1 className="display text-2xl leading-none">Pickup</h1>
           <div className="caps mt-0.5">
-            Scan to bag · Ready alts · invoices · multi
+            Scan · search · checkout cart · final bill
           </div>
         </div>
         <div className="flex-1" />
         <form
-          className="flex items-center gap-2 rounded-full border border-brass/40 bg-brass/10 px-3 h-11 min-w-[180px] flex-1 sm:flex-none sm:min-w-[260px]"
+          className="flex items-center gap-2 rounded-full border border-brass/40 bg-brass/10 px-3 h-11 min-w-[180px] flex-1 sm:flex-none sm:min-w-[240px]"
           onSubmit={(e) => {
             e.preventDefault();
             const v = scanBuf.trim();
@@ -797,42 +1182,120 @@ export default function PickupCounter() {
             ref={scanRef}
             value={scanBuf}
             onChange={(e) => setScanBuf(e.target.value)}
-            placeholder={scanBusy ? "Adding…" : "Scan tag / gun / paste ALT…"}
+            placeholder={scanBusy ? "Adding…" : "Scan main ticket QR · hang tag · ALT…"}
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
             disabled={scanBusy}
             className="bg-transparent outline-none text-sm flex-1 text-cream placeholder:text-cream-dim min-w-0"
-            aria-label="Scan to add to pickup bag"
+            aria-label="Scan main ticket QR or hang tag into pickup bag"
           />
         </form>
-        <AltsSearchField
-          value={q}
-          onChange={setQ}
-          scope="this bag"
-          className="hidden md:block w-[220px]"
-        />
+        <Link
+          to="/scanner?mode=pickup"
+          className="flex items-center gap-2 h-11 px-4 rounded-full border border-brass/50 bg-brass/20 text-sm font-semibold text-brass hover:bg-brass/30"
+        >
+          ⌗ Scan QR / multi
+        </Link>
         <Link
           to="/invoices"
           className="hidden sm:inline-flex items-center gap-2 h-11 px-4 rounded-full border border-brass/30 text-sm font-semibold text-brass-light hover:border-brass/50"
         >
           All invoices
         </Link>
-        <Link
-          to="/scanner?mode=pickup"
-          className="flex items-center gap-2 h-11 px-4 rounded-full border border-brass/50 bg-brass/20 text-sm font-semibold text-brass hover:bg-brass/30"
-        >
-          ⌗ Camera
-        </Link>
       </header>
 
-      <div className="flex gap-2 px-5 py-3 border-b border-brass/10 flex-wrap">
+      {/* Add-to-cart search — house-wide tickets / invoices / clients */}
+      <div className="px-5 py-3 border-b border-brass/10 space-y-2">
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+          <AltsSearchField
+            value={addQ}
+            onChange={setAddQ}
+            scope="add to cart"
+            className="flex-1 min-w-0"
+          />
+          <AltsSearchField
+            value={q}
+            onChange={setQ}
+            scope="filter queue"
+            className="sm:w-[220px] shrink-0"
+          />
+        </div>
+        {debouncedAddQ.trim().length >= 2 && (
+          <div className="rounded-2xl border border-brass/25 bg-black/30 overflow-hidden">
+            <div className="caps px-3 py-2 border-b border-brass/15 flex justify-between gap-2">
+              <span>Add to checkout cart</span>
+              <span className="normal-case tracking-normal text-cream-dim font-medium">
+                {houseSearch.isFetching ? "Searching…" : `${addHits.length} hit${addHits.length === 1 ? "" : "s"}`}
+              </span>
+            </div>
+            <ul className="max-h-52 overflow-y-auto divide-y divide-brass/10">
+              {addHits.map((hit) => {
+                const inBag =
+                  (hit.type === "alteration" && selected.has(ticketKey(hit.id))) ||
+                  (hit.type === "invoice" && selected.has(invoiceKey(hit.id)));
+                const kindLab =
+                  hit.type === "alteration"
+                    ? "Ticket"
+                    : hit.type === "invoice"
+                      ? "Invoice"
+                      : "Client";
+                return (
+                  <li key={`${hit.type}:${hit.id}`} className="flex items-center gap-2 px-3 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap gap-1.5 items-center">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-brass-light">
+                          {kindLab}
+                        </span>
+                        <span className="font-mono text-xs text-cream truncate">{hit.id}</span>
+                      </div>
+                      <div className="text-sm font-semibold truncate">
+                        {hit.type === "customer" ? hit.title : hit.subtitle || hit.title}
+                      </div>
+                      <div className="text-[11px] text-cream-dim truncate">
+                        {[hit.meta, hit.outstanding != null ? `${money(Number(hit.outstanding))} due` : hit.amount != null ? money(Number(hit.amount)) : ""]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={addBusy || (inBag && hit.type !== "customer")}
+                      onClick={() => void addHitToBag(hit)}
+                      className={cn(
+                        "shrink-0 h-11 px-3 rounded-xl text-xs font-bold uppercase tracking-wide border min-w-[5.5rem]",
+                        inBag && hit.type !== "customer"
+                          ? "border-signal-emerald/40 text-signal-emerald"
+                          : "border-brass/50 bg-brass/20 text-brass hover:bg-brass/30",
+                      )}
+                    >
+                      {hit.type === "customer"
+                        ? "Add open"
+                        : inBag
+                          ? "In bag"
+                          : "Add"}
+                    </button>
+                  </li>
+                );
+              })}
+              {!houseSearch.isFetching && addHits.length === 0 && (
+                <li className="px-3 py-4 text-sm text-cream-dim italic">
+                  No tickets, invoices, or clients match — try ALT-… or a last name
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-2 px-5 py-3 border-b border-brass/10 flex-wrap items-center">
         {(
           [
             ["all", `All · ${queue.length}`],
             ["tickets", `Ready alts · ${ticketCount}`],
             ["invoices", `Open invoices · ${invoiceCount}`],
             ["unpaid", `Unpaid · ${unpaidCount}`],
+            ["need_release", "Paid · hand over"],
             ["paid", "Paid / N/A"],
           ] as const
         ).map(([k, lab]) => (
@@ -848,6 +1311,26 @@ export default function PickupCounter() {
             {lab}
           </button>
         ))}
+        <div className="flex rounded-full border border-brass/25 overflow-hidden min-h-11">
+          {(
+            [
+              ["by_client", "By client"],
+              ["flat", "Flat"],
+            ] as const
+          ).map(([k, lab]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setQueueView(k)}
+              className={cn(
+                "px-3 text-[11px] font-bold uppercase tracking-wide",
+                queueView === k ? "bg-brass/25 text-cream" : "text-cream-dim",
+              )}
+            >
+              {lab}
+            </button>
+          ))}
+        </div>
         {selected.size > 0 && (
           <button
             type="button"
@@ -872,19 +1355,52 @@ export default function PickupCounter() {
             )}
           </div>
           <p className="text-[11px] text-cream-dim px-2 pb-1 leading-snug">
-            Scan garment/ticket QR into the bag, or tap checkboxes. Same client can hold several.
+            Scan main ticket QR or hang tags · search client / ALT# · Add open for multi-order. Same client → one checkout.
           </p>
-          {list.map((row) => {
+          {(queueView === "flat" ? [{ key: "_", name: "", rows: list }] : listGrouped).map((group) => (
+            <div key={group.key} className="space-y-2">
+              {queueView === "by_client" && group.rows.length > 0 && (
+                <div className="flex items-center gap-2 px-2 pt-2">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-brass-light truncate flex-1">
+                    {group.name}
+                    <span className="text-cream-dim font-medium normal-case tracking-normal ml-1">
+                      · {group.rows.length}
+                    </span>
+                  </div>
+                  {group.rows.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const keys = group.rows.map((r) => r.key);
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          for (const k of keys) next.add(k);
+                          return next;
+                        });
+                        setFocusKey(group.rows[0].key);
+                        setConfirmWho(true);
+                        if (!collector.trim()) setCollector(group.name);
+                        toast.success(`Added ${group.rows.length} for ${group.name}`);
+                      }}
+                      className="shrink-0 h-9 px-2.5 rounded-lg border border-brass/40 text-[10px] font-bold uppercase tracking-wide text-brass"
+                    >
+                      Add all
+                    </button>
+                  )}
+                </div>
+              )}
+              {group.rows.map((row) => {
             const on = selected.has(row.key);
             const focused = focusKey === row.key;
             return (
               <div
                 key={row.key}
                 className={cn(
-                  "w-full text-left card-glass p-3 flex gap-2 items-start",
-                  on && "border-brass ring-1 ring-brass/40",
+                  "pu-row w-full text-left card-glass p-3 flex gap-2 items-start",
+                  on && "is-on border-brass ring-1 ring-brass/40",
                   focused && on && "bg-brass/10",
                   row.unpaid && "border-l-2 border-l-signal-amber",
+                  !row.unpaid && row.kind === "ticket" && "border-l-2 border-l-signal-emerald/60",
                 )}
               >
                 <button
@@ -932,7 +1448,7 @@ export default function PickupCounter() {
                   <div className="font-semibold mt-0.5 truncate">{row.customerName}</div>
                   <div className="flex justify-between text-xs mt-1 gap-2">
                     <span className={cn(row.unpaid ? "text-signal-amber" : "text-signal-emerald")}>
-                      {row.paymentLabel}
+                      {row.unpaid ? row.paymentLabel : row.kind === "ticket" ? "Paid · hand over" : row.paymentLabel}
                     </span>
                     <span className="text-brass-light shrink-0">
                       {row.unpaid && row.outstanding !== row.total
@@ -943,7 +1459,9 @@ export default function PickupCounter() {
                 </button>
               </div>
             );
-          })}
+              })}
+            </div>
+          ))}
           {!list.length && !ready.isLoading && !openInvoices.isLoading && !loadError && (
             <p className="text-cream-dim text-sm p-4 italic">Nothing in this filter</p>
           )}
@@ -954,10 +1472,11 @@ export default function PickupCounter() {
           {!selected.size && (
             <div className="h-full grid place-items-center text-cream-dim min-h-[40vh]">
               <div className="text-center max-w-md px-4">
-                <div className="display text-3xl mb-2">Scan or select</div>
+                <div className="display text-3xl mb-2">Build the cart</div>
                 <p className="text-sm">
-                  Point the gun at a hang tag / thermal ticket, use Camera, or multi-select from the
-                  queue. Bag holds Ready alts + open invoices together.
+                  Scan hang tags / tickets (gun or Camera multi), search a client or ALT # and tap{" "}
+                  <strong className="text-cream">Add</strong>, or multi-select from the Ready queue.
+                  Then collect the final bill and release.
                 </p>
               </div>
             </div>
@@ -970,7 +1489,7 @@ export default function PickupCounter() {
                 <div className="card-glass p-4 space-y-3">
                   <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div>
-                      <div className="caps">Pickup bag · {selected.size}</div>
+                      <div className="caps">Checkout cart · {selected.size}</div>
                       <div className="display text-2xl mt-1">
                         {selectedItems[0]?.customerName}
                         {new Set(selectedItems.map((i) => customerMatchKey(i)).filter(Boolean)).size > 1
@@ -1188,25 +1707,298 @@ export default function PickupCounter() {
 
               <aside className="card-glass p-5 h-fit sticky top-4 space-y-4">
                 <div>
-                  <div className="caps">Bag total</div>
+                  <div className="caps">Checkout cart</div>
                   <div className="display text-4xl text-brass-light my-2">{money(bagTotal)}</div>
-                  {bagOutstanding > 0 && Math.abs(bagTotal - bagOutstanding) > 0.005 ? (
-                    <div className="text-sm text-cream-dim mb-1">
-                      {money(bagPaid)} paid ·{" "}
-                      <span className="text-signal-amber font-semibold">Collect {money(bagOutstanding)}</span>
+                  {bagOutstanding > 0.005 ? (
+                    <div className="rounded-xl border border-signal-amber/40 bg-signal-amber/15 px-3 py-2 mb-2">
+                      <div className="caps text-signal-amber">To collect now</div>
+                      <div className="display text-3xl text-signal-amber tabular-nums">
+                        {money(bagOutstanding)}
+                      </div>
+                      {Math.abs(bagTotal - bagOutstanding) > 0.005 && (
+                        <div className="text-xs text-cream-dim mt-0.5">
+                          {money(bagPaid)} already on file
+                        </div>
+                      )}
                     </div>
-                  ) : bagOutstanding > 0 ? (
-                    <div className="text-sm text-signal-amber font-semibold mb-1">
-                      Collect {money(bagOutstanding)}
+                  ) : selected.size > 0 ? (
+                    <div className="text-sm text-signal-emerald font-semibold mb-1">
+                      ERP balance · $0 due on bag
                     </div>
                   ) : (
-                    <div className="text-xs text-signal-emerald mb-1">Nothing due on selection</div>
+                    <div className="text-xs text-cream-dim mb-1">Add tickets or invoices to checkout</div>
                   )}
-                  <p className="text-[12px] text-cream-dim">
-                    Charge focuses the highlighted unpaid row
-                    {chargeTarget ? ` · ${chargeTarget.id}` : ""}.
-                  </p>
+                  <div className="flex gap-1.5 mt-2 flex-wrap">
+                    {(
+                      [
+                        ["bag", "1 · Cart"],
+                        ["collect", bagOutstanding > 0.005 ? "2 · Pay" : "2 · Pay"],
+                        ["release", "3 · Hand over"],
+                      ] as const
+                    ).map(([k, lab]) => (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => setCheckoutPhase(k)}
+                        className={cn(
+                          "px-2.5 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border",
+                          checkoutPhase === k
+                            ? "bg-brass/25 border-brass text-cream"
+                            : k === "collect" && bagOutstanding > 0.005
+                              ? "border-signal-amber/50 text-signal-amber"
+                              : "border-brass/20 text-cream-dim",
+                        )}
+                      >
+                        {lab}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+
+                {/* ── PAYMENT (always on screen when bag has lines) ── */}
+                {showPayPanel && (
+                  <div
+                    id="pickup-pay"
+                    className={cn(
+                      "rounded-2xl border p-4 space-y-3",
+                      payReady
+                        ? "border-signal-amber/45 bg-signal-amber/10"
+                        : "border-brass/25 bg-black/20",
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="caps text-signal-amber">Payment · checkout</div>
+                      <button
+                        type="button"
+                        onClick={() => refreshAll()}
+                        className="text-[10px] font-bold uppercase tracking-widest text-cream-dim hover:text-cream"
+                      >
+                        Refresh $
+                      </button>
+                    </div>
+
+                    {payReady ? (
+                      <>
+                        <div>
+                          <div className="text-xs text-cream-dim">Charging</div>
+                          <div className="font-mono text-sm text-cream truncate">{chargeTarget!.id}</div>
+                          <div className="display text-3xl text-signal-amber tabular-nums mt-1">
+                            {money(chargeAmount)}
+                          </div>
+                          {bagUnpaid.length > 1 && (
+                            <div className="text-[11px] text-cream-dim mt-1">
+                              Line {bagUnpaid.findIndex((u) => u.key === chargeTarget!.key) + 1} of{" "}
+                              {bagUnpaid.length} unpaid — tap a due row to switch
+                            </div>
+                          )}
+                        </div>
+
+                        {bagUnpaid.length > 0 && (
+                          <div className="space-y-1 max-h-36 overflow-y-auto">
+                            {bagUnpaid.map((u) => (
+                              <button
+                                key={u.key}
+                                type="button"
+                                onClick={() => {
+                                  setFocusKey(u.key);
+                                  setCheckoutPhase("collect");
+                                  setChargeArmed(null);
+                                  setReceipt(null);
+                                }}
+                                className={cn(
+                                  "w-full flex justify-between gap-2 text-left text-sm rounded-lg px-2.5 py-2 border",
+                                  focusKey === u.key || chargeTarget?.key === u.key
+                                    ? "bg-brass/20 border-brass/40 text-cream"
+                                    : "border-transparent text-cream-dim hover:bg-black/25",
+                                )}
+                              >
+                                <span className="font-mono text-xs truncate">{u.id}</span>
+                                <span className="tabular-nums text-signal-amber shrink-0 font-semibold">
+                                  {money(u.outstanding || u.total)}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {!chargeArmed && (
+                          <>
+                            <OutsideTenderButtons
+                              fullWidth
+                              ticketId={
+                                chargeTarget!.kind === "ticket"
+                                  ? chargeTarget!.id
+                                  : chargeTicketId || undefined
+                              }
+                              invoiceId={
+                                chargeTarget!.kind === "invoice"
+                                  ? chargeTarget!.id
+                                  : chargeInvoiceId || undefined
+                              }
+                              amountDollars={chargeAmount}
+                              amountDisplay={money(chargeAmount)}
+                              onSuccess={(info) => {
+                                if (info.status === "voided") {
+                                  toast.success("Payment voided — refreshing…");
+                                  refreshAll();
+                                  return;
+                                }
+                                const methodLabel =
+                                  info.method === "check"
+                                    ? "Check"
+                                    : info.method === "square_handheld"
+                                      ? "Square handheld"
+                                      : info.method === "cash"
+                                        ? "Cash"
+                                        : "Outside payment";
+                                setReceipt({
+                                  client: chargeTarget!.customerName,
+                                  invoices: bagInvoices
+                                    .map((i) => i.id)
+                                    .concat(
+                                      chargeTarget!.kind === "invoice"
+                                        ? [chargeTarget!.id]
+                                        : chargeInvoiceId
+                                          ? [chargeInvoiceId]
+                                          : [],
+                                    )
+                                    .filter((v, i, a) => a.indexOf(v) === i),
+                                  amount: chargeAmount,
+                                  method: methodLabel,
+                                });
+                                advanceAfterCharge(chargeTarget!.key);
+                              }}
+                              onError={(msg) => toast.error(msg)}
+                            />
+                            <div className="h-px bg-brass/15" />
+                            <button
+                              type="button"
+                              onClick={() => setChargeIntent("card")}
+                              className="btn-brass w-full h-12 text-[12px]"
+                            >
+                              Charge card on file · {money(chargeAmount)}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setChargeIntent("terminal")}
+                              className="w-full h-12 rounded-xl border border-brass/40 text-[12px] font-bold uppercase tracking-widest"
+                            >
+                              Charge terminal · {money(chargeAmount)}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setChargeIntent("link")}
+                              className="btn-ghost w-full h-12 text-[12px]"
+                            >
+                              Create pay link
+                            </button>
+                          </>
+                        )}
+                        {chargeArmed === "card" && (
+                          <ChargeCardOnFileButton
+                            fullWidth
+                            autoStart
+                            ticketId={
+                              chargeTarget!.kind === "ticket"
+                                ? chargeTarget!.id
+                                : chargeTicketId || undefined
+                            }
+                            invoiceId={
+                              chargeTarget!.kind === "invoice"
+                                ? chargeTarget!.id
+                                : chargeInvoiceId || undefined
+                            }
+                            amountDollars={chargeAmount}
+                            amountDisplay={money(chargeAmount)}
+                            customerLabel={chargeTarget!.customerName}
+                            onSuccess={() => {
+                              setReceipt({
+                                client: chargeTarget!.customerName,
+                                invoices: bagInvoices
+                                  .map((i) => i.id)
+                                  .concat(
+                                    chargeTarget!.kind === "invoice" ? [chargeTarget!.id] : [],
+                                  )
+                                  .filter((v, i, a) => a.indexOf(v) === i),
+                                amount: chargeAmount,
+                                method: "Card on file",
+                              });
+                              setChargeArmed(null);
+                              advanceAfterCharge(chargeTarget!.key);
+                            }}
+                            onRefresh={refreshAll}
+                            onError={(msg) => toast.error(msg)}
+                          />
+                        )}
+                        {chargeArmed === "terminal" && (
+                          <ChargeTerminalButton
+                            autoStart
+                            invoiceId={
+                              chargeTarget!.kind === "invoice"
+                                ? chargeTarget!.id
+                                : chargeInvoiceId || chargeTarget!.id
+                            }
+                            ticketId={
+                              chargeTarget!.kind === "ticket" ? chargeTarget!.id : undefined
+                            }
+                            amountCents={Math.round(chargeAmount * 100)}
+                            amountDisplay={money(chargeAmount)}
+                            onSuccess={() => {
+                              setReceipt({
+                                client: chargeTarget!.customerName,
+                                invoices: bagInvoices.map((i) => i.id),
+                                amount: chargeAmount,
+                                method: "Terminal",
+                              });
+                              setChargeArmed(null);
+                              advanceAfterCharge(chargeTarget!.key);
+                            }}
+                            onError={(msg) => toast.error(msg)}
+                          />
+                        )}
+                        {chargeArmed && (
+                          <button
+                            type="button"
+                            onClick={() => setChargeArmed(null)}
+                            className="btn-ghost w-full h-10 text-[11px]"
+                          >
+                            ← Back to pay methods
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-sm text-cream leading-snug">
+                          <strong className="text-signal-emerald">Nothing to charge</strong> — ERP
+                          shows $0 outstanding on everything in this bag.
+                        </p>
+                        <p className="text-[12px] text-cream-dim leading-snug">
+                          Payment buttons (Cash / Check / Handheld / Card / Terminal) appear here
+                          only when a line still has a balance. To take money:
+                        </p>
+                        <ol className="text-[12px] text-cream-dim list-decimal pl-4 space-y-1 leading-snug">
+                          <li>Filter queue <strong className="text-cream">Unpaid</strong> or search the client</li>
+                          <li>
+                            <strong className="text-cream">Add open</strong> so unpaid invoices land in the cart
+                          </li>
+                          <li>This panel switches to Cash · Check · Handheld · Card · Terminal</li>
+                        </ol>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFilter("unpaid");
+                            setCheckoutPhase("bag");
+                            refreshAll();
+                            toast.message("Showing unpaid queue — tap a row or Add open");
+                          }}
+                          className="btn-brass w-full h-12 text-[12px]"
+                        >
+                          Find unpaid · add to cart
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {receipt && (
                   <div className="rounded-2xl border border-signal-emerald/40 bg-signal-emerald/10 p-4 space-y-3">
@@ -1227,156 +2019,42 @@ export default function PickupCounter() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setReceipt(null)}
+                      onClick={() => {
+                        setReceipt(null);
+                        if (bagOutstanding > 0.005) setCheckoutPhase("collect");
+                        else setCheckoutPhase("release");
+                      }}
                       className="btn-ghost w-full h-11 text-[12px]"
                     >
-                      New charge
+                      {bagOutstanding > 0.005 ? "Next due on cart" : "Continue to hand over"}
                     </button>
                   </div>
                 )}
 
-                {chargeTarget && chargeAmount > 0 && !receipt && (
-                  <div className="space-y-2">
-                    <div className="caps text-signal-amber">
-                      Charge · {chargeTarget.id}
+                {!payReady && bagOutstanding <= 0 && selected.size > 0 && !receipt && (
+                  <div className="rounded-xl border border-signal-emerald/30 bg-signal-emerald/10 px-3 py-3 space-y-2">
+                    <div className="text-sm text-signal-emerald font-semibold">
+                      Ready to hand over
                     </div>
-                    {!chargeArmed && (
-                      <>
-                        <OutsideTenderButtons
-                          fullWidth
-                          ticketId={
-                            chargeTarget.kind === "ticket"
-                              ? chargeTarget.id
-                              : chargeTicketId || undefined
-                          }
-                          invoiceId={
-                            chargeTarget.kind === "invoice"
-                              ? chargeTarget.id
-                              : chargeInvoiceId || undefined
-                          }
-                          amountDollars={chargeAmount}
-                          amountDisplay={money(chargeAmount)}
-                          onSuccess={(info) => {
-                            if (info.status === "voided") {
-                              toast.success("Payment voided — refreshing…");
-                              refreshAll();
-                              return;
-                            }
-                            const methodLabel =
-                              info.method === "check"
-                                ? "Check"
-                                : info.method === "square_handheld"
-                                  ? "Square handheld"
-                                  : info.method === "cash"
-                                    ? "Cash"
-                                    : "Outside payment";
-                            setReceipt({
-                              client: chargeTarget.customerName,
-                              invoices: bagInvoices
-                                .map((i) => i.id)
-                                .concat(
-                                  chargeTarget.kind === "invoice"
-                                    ? [chargeTarget.id]
-                                    : chargeInvoiceId
-                                      ? [chargeInvoiceId]
-                                      : [],
-                                )
-                                .filter((v, i, a) => a.indexOf(v) === i),
-                              amount: chargeAmount,
-                              method: methodLabel,
-                            });
-                            refreshAll();
-                          }}
-                          onError={(msg) => toast.error(msg)}
-                        />
-                        <div className="h-px bg-brass/15 my-1" />
-                        <button
-                          type="button"
-                          onClick={() => setChargeIntent("card")}
-                          className="btn-brass w-full h-12 text-[12px]"
-                        >
-                          Charge card on file · {money(chargeAmount)}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setChargeIntent("terminal")}
-                          className="w-full h-12 rounded-xl border border-brass/40 text-[12px] font-bold uppercase tracking-widest"
-                        >
-                          Charge terminal · {money(chargeAmount)}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setChargeIntent("link")}
-                          className="btn-ghost w-full h-12 text-[12px]"
-                        >
-                          Create pay link
-                        </button>
-                      </>
-                    )}
-                    {chargeArmed === "card" && (
-                    <ChargeCardOnFileButton
-                      fullWidth
-                      autoStart
-                      ticketId={
-                        chargeTarget.kind === "ticket"
-                          ? chargeTarget.id
-                          : chargeTicketId || undefined
-                      }
-                      invoiceId={
-                        chargeTarget.kind === "invoice"
-                          ? chargeTarget.id
-                          : chargeInvoiceId || undefined
-                      }
-                      amountDollars={chargeAmount}
-                      amountDisplay={money(chargeAmount)}
-                      customerLabel={chargeTarget.customerName}
-                      onSuccess={() => {
-                        setReceipt({
-                          client: chargeTarget.customerName,
-                          invoices: bagInvoices.map((i) => i.id).concat(
-                            chargeTarget.kind === "invoice" ? [chargeTarget.id] : [],
-                          ).filter((v, i, a) => a.indexOf(v) === i),
-                          amount: chargeAmount,
-                          method: "Card on file",
-                        });
-                        setChargeArmed(null);
-                        refreshAll();
-                      }}
-                      onRefresh={refreshAll}
-                      onError={(msg) => toast.error(msg)}
-                    />
-                    )}
-                    {chargeArmed === "terminal" && (
-                    <ChargeTerminalButton
-                      autoStart
-                      invoiceId={
-                        chargeTarget.kind === "invoice"
-                          ? chargeTarget.id
-                          : chargeInvoiceId || chargeTarget.id
-                      }
-                      ticketId={
-                        chargeTarget.kind === "ticket" ? chargeTarget.id : undefined
-                      }
-                      amountCents={Math.round(chargeAmount * 100)}
-                      amountDisplay={money(chargeAmount)}
-                      onSuccess={() => {
-                        setReceipt({
-                          client: chargeTarget.customerName,
-                          invoices: bagInvoices.map((i) => i.id),
-                          amount: chargeAmount,
-                          method: "Terminal",
-                        });
-                        setChargeArmed(null);
-                        refreshAll();
-                      }}
-                      onError={(msg) => toast.error(msg)}
-                    />
-                    )}
-                    {bagUnpaid.length > 1 && (
-                      <p className="text-[11px] text-cream-dim leading-snug">
-                        {bagUnpaid.length} unpaid in bag — charge one at a time (tap row to focus),
-                        then release tickets.
-                      </p>
+                    <p className="text-[12px] text-cream-dim leading-snug">
+                      Confirm collector, then mark collected. Custom/MTM invoices stamp SI{" "}
+                      <strong className="text-cream">Picked Up</strong>.
+                    </p>
+                    {canHandOver && (
+                      <button
+                        type="button"
+                        disabled={release.isPending || !confirmWho}
+                        onClick={() => release.mutate({ auto: false })}
+                        className="btn-brass w-full h-12 text-[12px]"
+                      >
+                        {release.isPending
+                          ? "…"
+                          : bagTickets.length && bagInvoiceLines.length
+                            ? `Hand over now · ${bagTickets.length} ticket${bagTickets.length === 1 ? "" : "s"} + ${bagInvoiceLines.length} inv`
+                            : bagTickets.length
+                              ? `Hand over now · ${bagTickets.length} → Picked Up`
+                              : `Hand over now · ${bagInvoiceLines.length} invoice${bagInvoiceLines.length === 1 ? "" : "s"} · collected`}
+                      </button>
                     )}
                   </div>
                 )}
@@ -1431,24 +2109,33 @@ export default function PickupCounter() {
                   disabled={
                     release.isPending ||
                     !confirmWho ||
-                    !bagTickets.length ||
+                    !canHandOver ||
+                    // Block counter release only when a non-pickup delivery is actively leaving shop
                     (bagTickets.length === 1 &&
                       focusItem?.kind === "ticket" &&
                       focusItem.id === bagTickets[0].id &&
-                      !!boardRow)
+                      !!boardRow &&
+                      t?.delivery_method !== "Pickup" &&
+                      !["Cancelled", "Delivered", "Failed", "cancelled", "delivered"].includes(
+                        String(boardRow.status || ""),
+                      ))
                   }
                   onClick={() => {
                     if (bagOutstanding > 0) {
+                      const n =
+                        bagTickets.length +
+                        bagInvoiceLines.filter((i) => !i.ticketRef || !bagTickets.some((t) => t.id === i.ticketRef))
+                          .length;
                       const ok = window.confirm(
-                        `Release ${bagTickets.length} ticket${bagTickets.length === 1 ? "" : "s"}` +
+                        `Hand over ${n || bagTickets.length || bagInvoiceLines.length} item(s)` +
                           (bagOutstanding > 0
                             ? ` with ${money(bagOutstanding)} still due on the bag?`
                             : "?") +
-                          "\n\nUnpaid SMS may send per ticket. Invoices stay open until paid.",
+                          "\n\nUnpaid SMS may send per ticket. Invoice money stays open until charged — this only marks collected / Picked Up.",
                       );
                       if (!ok) return;
                     }
-                    release.mutate();
+                    release.mutate({});
                   }}
                   className={cn(
                     "w-full h-14 rounded-2xl font-bold tracking-widest uppercase text-sm",
@@ -1460,23 +2147,45 @@ export default function PickupCounter() {
                 >
                   {release.isPending
                     ? "…"
-                    : !bagTickets.length
-                      ? bagInvoices.length
-                        ? "Charge invoices · no ticket release"
-                        : "Nothing to release"
+                    : !canHandOver
+                      ? "Nothing to release"
                       : bagOutstanding > 0
-                        ? `Release ${bagTickets.length} unpaid · counter`
-                        : `Release ${bagTickets.length} · counter pickup`}
+                        ? bagTickets.length
+                          ? `Release ${bagTickets.length} unpaid · counter`
+                          : `Mark collected · ${bagInvoiceLines.length} unpaid inv`
+                        : bagTickets.length && bagInvoiceLines.length
+                          ? `Hand over · ${bagTickets.length} + ${bagInvoiceLines.length} inv`
+                          : bagTickets.length
+                            ? `Hand over ${bagTickets.length} · Picked Up`
+                            : `Hand over · mark collected (${bagInvoiceLines.length})`}
                 </button>
                 <p className="text-[12px] text-cream-dim text-center leading-snug">
-                  Release marks Ready <strong className="text-cream font-semibold">tickets</strong>{" "}
-                  Picked Up. Open invoices are charged here or on the invoice page — not auto-closed.
+                  After full payment we{" "}
+                  <strong className="text-cream font-semibold">auto mark collected</strong>.
+                  Manual hand-over works for already-paid bags — tickets → Picked Up, custom
+                  invoices → SI light Picked Up. Money stays open until charged.
                 </p>
               </aside>
             </div>
           )}
         </main>
       </div>
+
+      {/* Mobile sticky checkout CTA when money is due */}
+      {selected.size > 0 && bagOutstanding > 0.005 && !receipt && (
+        <div className="fixed bottom-0 inset-x-0 z-40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-forest-deep via-forest-deep/95 to-transparent pointer-events-none lg:hidden">
+          <button
+            type="button"
+            onClick={() => {
+              setCheckoutPhase("collect");
+              document.getElementById("pickup-pay")?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }}
+            className="pointer-events-auto w-full h-14 rounded-2xl bg-signal-amber text-forest-deep font-bold tracking-widest uppercase text-sm shadow-lg"
+          >
+            Checkout · collect {money(bagOutstanding)}
+          </button>
+        </div>
+      )}
 
       <ConfirmDialog
         open={!!pendingAdd}

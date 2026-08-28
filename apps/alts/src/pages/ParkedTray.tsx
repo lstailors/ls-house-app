@@ -91,7 +91,7 @@ export default function ParkedTray() {
             const when = c.updated_at || c.modified || c.creation;
 
             return (
-              <div key={id} className="card-glass p-5 flex flex-col">
+              <div key={id} className="park-card card-glass p-5 flex flex-col">
                 <div className="flex items-start gap-2">
                   <div className="min-w-0">
                     <div className="font-semibold text-lg leading-snug">{label}</div>

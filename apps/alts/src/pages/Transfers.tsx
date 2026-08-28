@@ -260,7 +260,7 @@ export default function Transfers() {
       {tab === "send" && (
         <div className="flex-1 grid lg:grid-cols-[1fr_360px] min-h-0 phone-stack">
           <div className="overflow-y-auto p-4 space-y-3">
-            <div className="card-glass p-3">
+            <div className="xfer-panel card-glass p-3">
               <div className="caps mb-2">Scan garment tags</div>
               <form
                 onSubmit={(e) => {
@@ -289,7 +289,7 @@ export default function Transfers() {
             </div>
 
             {manifest.length > 0 && (
-              <div className="card-glass p-3 space-y-2">
+              <div className="xfer-panel card-glass p-3 space-y-2">
                 <div className="caps">Going out · {manifest.length}</div>
                 {manifest.map((m) => (
                   <div
@@ -438,7 +438,7 @@ export default function Transfers() {
                 setSelected(t.name);
                 setTab("send");
               }}
-              className="w-full text-left text-sm card-glass px-3 py-3 min-h-11"
+              className="xfer-row w-full text-left text-sm card-glass px-3 py-3 min-h-11"
             >
               <span className="font-mono text-[12px] text-brass-light">{t.name}</span>
               <div className="font-semibold">{t.customer_name}</div>

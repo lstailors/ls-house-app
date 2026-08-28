@@ -340,11 +340,38 @@ export default function TicketKind() {
       </header>
 
       <div className="flex-1 grid lg:grid-cols-[360px_1fr] min-h-0 phone-stack">
-        <aside className="border-r border-brass/15 p-5 flex flex-col overflow-y-auto">
-          <h2 className="display text-[27px] leading-tight">What kind of ticket?</h2>
-          <p className="text-[12px] text-[var(--cd)] mt-2 mb-5 leading-relaxed">
+        <aside className="border-r border-brass/15 p-5 flex flex-col min-h-0 overflow-y-auto overscroll-contain">
+          <h2 className="display text-[27px] leading-tight shrink-0">What kind of ticket?</h2>
+          <p className="text-[12px] text-[var(--cd)] mt-2 mb-3 leading-relaxed shrink-0">
             This decides whether anyone gets charged. Pick before you touch a garment.
           </p>
+
+          {/* Always-visible retrieve entry — full card further down; this never clips under the fold */}
+          <button
+            type="button"
+            onClick={() => {
+              setKind("parked");
+              setSelectedSos([]);
+              setCartPieces([]);
+              setLoadError(null);
+            }}
+            className={cn(
+              "w-full shrink-0 text-left rounded-2xl px-4 py-3 mb-4 border transition-all",
+              "border-brass/40 bg-brass/15 hover:bg-brass/25 active:scale-[0.99]",
+              kind === "parked" && "ring-1 ring-brass/40 border-brass/60",
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-brass-light text-lg">⌁</span>
+              <span className="display text-[18px] flex-1 text-cream">Parked tickets</span>
+              <span className="text-[11px] font-bold tracking-widest uppercase text-brass-light">
+                Retrieve →
+              </span>
+            </div>
+            <p className="text-[11px] text-cream-dim mt-1 pl-8">
+              Pull a held cart back · no ticket # burned
+            </p>
+          </button>
 
           <button
             type="button"
@@ -355,7 +382,7 @@ export default function TicketKind() {
               continueWalkIn();
             }}
             className={cn(
-              "w-full text-left rounded-[18px] p-[18px] mb-3 border transition-all",
+              "tk-kind-card w-full text-left rounded-[18px] p-[18px] mb-3 border transition-all shrink-0",
               "border-brass/25 bg-black/20 hover:border-brass hover:bg-gradient-to-br hover:from-brass/20 hover:to-brass/5 active:scale-[0.99]",
             )}
           >
@@ -378,7 +405,7 @@ export default function TicketKind() {
             type="button"
             onClick={() => setKind("on_order")}
             className={cn(
-              "w-full text-left rounded-[18px] p-[18px] mb-3 border transition-all",
+              "tk-kind-card w-full text-left rounded-[18px] p-[18px] mb-3 border transition-all",
               kind === "on_order"
                 ? "border-[rgba(155,139,196,0.55)] bg-gradient-to-br from-[rgba(155,139,196,0.2)] to-[rgba(155,139,196,0.04)]"
                 : "border-brass/25 bg-black/20 hover:border-[rgba(155,139,196,0.45)]",
@@ -423,7 +450,7 @@ export default function TicketKind() {
               continueRedo();
             }}
             className={cn(
-              "w-full text-left rounded-[18px] p-[18px] mb-3 border transition-all",
+              "tk-kind-card w-full text-left rounded-[18px] p-[18px] mb-3 border transition-all",
               "border-brass/25 bg-black/20 hover:border-signal-emerald/50 hover:bg-gradient-to-br hover:from-signal-emerald/15 hover:to-transparent active:scale-[0.99]",
             )}
           >
@@ -443,6 +470,7 @@ export default function TicketKind() {
             </div>
           </button>
 
+          {/* Full parked card kept for parity; primary entry is the compact strip above Walk-in */}
           <button
             type="button"
             onClick={() => {
@@ -452,7 +480,7 @@ export default function TicketKind() {
               setLoadError(null);
             }}
             className={cn(
-              "w-full text-left rounded-[18px] p-[18px] mb-3 border transition-all",
+              "tk-kind-card w-full shrink-0 text-left rounded-[18px] p-[18px] mb-3 border transition-all",
               kind === "parked"
                 ? "border-brass/55 bg-gradient-to-br from-brass/20 to-brass/5 ring-1 ring-brass/25"
                 : "border-brass/25 bg-black/20 hover:border-brass/50 hover:bg-gradient-to-br hover:from-brass/12 hover:to-transparent active:scale-[0.99]",
@@ -474,7 +502,8 @@ export default function TicketKind() {
             </div>
           </button>
 
-          <div className="mt-auto pt-4">
+          {/* No mt-auto — that pinned the footer and clipped Parked on short/iPad viewports */}
+          <div className="pt-2 pb-6 shrink-0">
             <div className="rounded-xl border border-brass/20 bg-brass/10 px-4 py-3 text-[12px] leading-relaxed text-cream-muted">
               <div className="caps text-brass-light mb-1">Why this is step one</div>
               Billing intent is the one thing that cannot be fixed cleanly afterwards. Choosing up

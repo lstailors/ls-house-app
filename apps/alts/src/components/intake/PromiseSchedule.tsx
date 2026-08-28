@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo } from "react";
 import { cn } from "@ls/design/utils";
 
 export type DayLoad = {
@@ -21,7 +21,7 @@ export type DayLoad = {
 };
 
 export type PromiseScheduleProps = {
-  origin: "NYC";
+  origin: "NYC" | "PB";
   days: DayLoad[];
   loading?: boolean;
   selectedDate: string | null;
@@ -34,21 +34,22 @@ export type PromiseScheduleProps = {
   onBack: () => void;
   onConfirm: () => void;
   confirming?: boolean;
-  /** Delivery method + address sit in the same scroll as the date wheel. */
-  lead?: ReactNode;
 };
 
-/** FOH promise slots — 4 PM is used when staff skip the time picker. */
-export const DEFAULT_PROMISE_TIME = "16:00";
-
+/** FOH promise slots — house lock: 10 AM or 4 PM only (4 PM default). */
 export const PROMISE_SLOTS = [
   { value: "10:00", label: "10 AM" },
-  { value: "16:00", label: "4 PM" },
+  { value: "16:00", label: "4 PM · default" },
 ] as const;
 
-export function snapPromiseTime(value?: string | null): string {
-  const raw = String(value || "").trim().slice(0, 5);
-  return raw === "10:00" ? "10:00" : DEFAULT_PROMISE_TIME;
+/** Default promise clock when staff picks a day. */
+export const PROMISE_TIME_DEFAULT = "16:00";
+
+export function normalizePromiseTime(t?: string | null): string {
+  const raw = String(t || "").slice(0, 5);
+  if (raw === "10:00" || raw === "16:00") return raw;
+  // Legacy hourly slots / EOD → 4 PM house default
+  return PROMISE_TIME_DEFAULT;
 }
 
 function loadLevel(count: number): "open" | "busy" | "full" {
@@ -97,58 +98,46 @@ export default function PromiseSchedule({
   onBack,
   onConfirm,
   confirming,
-  lead,
 }: PromiseScheduleProps) {
   const selected = useMemo(
     () => days.find((d) => d.date === selectedDate) || null,
     [days, selectedDate],
   );
 
-  useEffect(() => {
-    const snapped = snapPromiseTime(selectedTime);
-    if (snapped !== (selectedTime || "")) {
-      onSelectTime(snapped);
-    }
-  }, [selectedTime, onSelectTime]);
-
-  const [shown, setShown] = useState(14);
-  const visibleDays = days.slice(0, shown);
-  const hasMore = days.length > shown;
   const canConfirm = !!selectedDate && !!selectedTime;
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 w-full relative">
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-28 px-1">
+    <div className="flex flex-col flex-1 min-h-0 max-w-6xl mx-auto w-full relative">
+      {/* Scrollable body — never clip the finish CTA */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-28">
         <div className="shrink-0 mb-4">
           <button
             type="button"
             onClick={onBack}
-            className="text-[12px] font-bold tracking-widest uppercase text-brass-light mb-2 min-h-[44px]"
+            className="text-[11px] font-bold tracking-widest uppercase text-brass-light mb-2"
           >
             ← Back to review
           </button>
-        </div>
-        {lead ? <div className="mb-4">{lead}</div> : null}
-        <div className="shrink-0 mb-4">
-          <h2 className="display text-[36px] md:text-[44px] leading-none italic">
+          <h2 className="display text-[28px] sm:text-[34px] md:text-[40px] leading-[1.05] italic break-words">
             When is it promised?
           </h2>
-          <p className="text-[15px] text-cream-dim mt-2 leading-relaxed max-w-2xl">
+          <p className="text-[12.5px] text-cream-dim mt-2 leading-relaxed max-w-3xl">
             Last step before the ticket. Pick due date and time
             {clientLabel ? ` for ${clientLabel.split(" ")[0]}` : ""}. Bars show how full{" "}
-            {origin} already is that day.
+            {origin} already is that day — like a flight load chart.
           </p>
         </div>
 
-        <div className="mb-5">
-          <div className="text-[11px] font-bold tracking-[0.16em] uppercase text-brass-light mb-3">
-            Shop days · {origin}
+        {/* Airline-style day strip */}
+        <div className="mb-4">
+          <div className="text-[9px] font-bold tracking-[0.16em] uppercase text-brass-light mb-2">
+            Next 3 weeks · shop days · {origin}
           </div>
           {loading ? (
-            <div className="h-40 rounded-2xl border border-brass/20 bg-black/25 animate-pulse" />
+            <div className="h-28 rounded-2xl border border-brass/20 bg-black/25 animate-pulse" />
           ) : (
-            <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
-              {visibleDays.map((d) => {
+            <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 snap-x">
+              {days.map((d) => {
                 const level = loadLevel(d.count);
                 const lab = fmtDayLabel(d.date);
                 const sel = selectedDate === d.date;
@@ -158,24 +147,25 @@ export default function PromiseSchedule({
                     type="button"
                     onClick={() => onSelectDate(d.date)}
                     className={cn(
-                      "rounded-2xl border px-1.5 pt-2 pb-2 transition-all",
-                      "flex flex-col items-center min-h-[108px] w-full",
+                      "snap-start flex-none w-[72px] rounded-2xl border px-1.5 pt-2 pb-2 transition-all",
+                      "flex flex-col items-center min-h-[112px]",
                       sel
                         ? "border-brass bg-brass/18 shadow-[0_0_0_1px_rgba(176,141,87,0.35)]"
                         : "border-brass/20 bg-black/25 hover:border-brass/45",
                     )}
                   >
-                    <span className="text-[10px] font-bold tracking-wider uppercase text-cream-dim">
+                    <span className="text-[9px] font-bold tracking-wider uppercase text-cream-dim">
                       {lab.weekday}
                     </span>
-                    <span className="display text-[26px] leading-none mt-0.5">{lab.day}</span>
-                    <span className="text-[10px] text-cream-dim">{lab.month}</span>
+                    <span className="display text-[22px] leading-none mt-0.5">{lab.day}</span>
+                    <span className="text-[9px] text-cream-dim">{lab.month}</span>
+                    {/* redesign v2 — 6-cap load segments */}
                     <div className="flex gap-[2.5px] justify-center mt-2 mb-1 px-1 w-full">
                       {Array.from({ length: 6 }).map((_, i) => (
                         <span
                           key={i}
                           className={cn(
-                            "h-[6px] flex-1 max-w-[8px] rounded-full",
+                            "h-[5px] flex-1 max-w-[8px] rounded-full",
                             i < Math.min(d.count, 6)
                               ? level === "open"
                                 ? "bg-[var(--em,#4FBF8E)]"
@@ -189,63 +179,36 @@ export default function PromiseSchedule({
                     </div>
                     <span
                       className={cn(
-                        "text-[11px] font-bold tabular-nums",
+                        "text-[10px] font-bold tabular-nums",
                         level === "open" && "text-[var(--em,#4FBF8E)]",
                         level === "busy" && "text-[var(--am,#E8A85C)]",
                         level === "full" && "text-[var(--ro,#D97B6C)]",
                       )}
                     >
-                      {d.count}
-                      {d.rush ? `★` : ""}
+                      {d.count} due
+                      {d.rush ? ` · ${d.rush}★` : ""}
                     </span>
                   </button>
                 );
               })}
             </div>
           )}
-          <div className="flex flex-wrap items-center gap-2 mt-3">
-            {hasMore ? (
-              <button
-                type="button"
-                onClick={() => setShown((n) => n + 14)}
-                className="rounded-xl border border-brass/40 bg-brass/10 px-3.5 py-2 text-[12px] font-bold tracking-wider uppercase text-brass-light min-h-[44px]"
-              >
-                More dates →
-              </button>
-            ) : null}
-            <label className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-black/25 px-3 py-2 min-h-[44px]">
-              <span className="text-[11px] font-bold tracking-wider uppercase text-cream-dim">
-                Later
-              </span>
-              <input
-                type="date"
-                min={days[0]?.date || new Date().toISOString().slice(0, 10)}
-                className="bg-transparent text-sm text-cream outline-none"
-                value={selectedDate || ""}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (!v) return;
-                  setShown((n) => Math.max(n, days.length));
-                  onSelectDate(v);
-                }}
-              />
-            </label>
-          </div>
-          <div className="flex gap-4 mt-2 text-[12px] text-cream-dim">
+          <div className="flex gap-3 mt-1 text-[10px] text-cream-dim">
             <span className="inline-flex items-center gap-1">
-              <i className="w-2.5 h-2.5 rounded-sm bg-[var(--em,#4FBF8E)]" /> Open
+              <i className="w-2.5 h-2.5 rounded-sm bg-[var(--em,#4FBF8E)]" /> Open (0–2)
             </span>
             <span className="inline-flex items-center gap-1">
-              <i className="w-2.5 h-2.5 rounded-sm bg-[var(--am,#E8A85C)]" /> Busy
+              <i className="w-2.5 h-2.5 rounded-sm bg-[var(--am,#E8A85C)]" /> Busy (3–5)
             </span>
             <span className="inline-flex items-center gap-1">
-              <i className="w-2.5 h-2.5 rounded-sm bg-[var(--ro,#D97B6C)]" /> Heavy
+              <i className="w-2.5 h-2.5 rounded-sm bg-[var(--ro,#D97B6C)]" /> Heavy (6+)
             </span>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pb-2 min-h-[280px]">
-          <div className="rounded-2xl border border-brass/20 bg-black/25 flex flex-col min-h-[260px] overflow-hidden">
+        {/* Day detail + time — wider two-up on desktop */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-3 pb-2 min-w-0">
+          <div className="rounded-2xl border border-brass/20 bg-black/25 flex flex-col max-h-[320px] lg:max-h-none lg:min-h-[300px] overflow-hidden min-w-0">
             <div className="px-3.5 py-2.5 border-b border-brass/15 shrink-0">
               <div className="text-[9px] font-bold tracking-[0.14em] uppercase text-brass-light">
                 Already on this day
@@ -314,7 +277,7 @@ export default function PromiseSchedule({
               </div>
             </div>
             <div className="p-3">
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {PROMISE_SLOTS.map((s) => {
                   const sel = selectedTime === s.value;
                   return (
@@ -324,7 +287,7 @@ export default function PromiseSchedule({
                       disabled={!selectedDate}
                       onClick={() => onSelectTime(s.value)}
                       className={cn(
-                        "h-12 rounded-xl border text-[12px] font-bold tracking-wide",
+                        "h-14 rounded-xl border text-[13px] font-bold tracking-wide",
                         sel
                           ? "border-brass bg-brass text-forest-deep"
                           : "border-brass/25 bg-black/30 text-cream hover:border-brass/50",
@@ -336,6 +299,10 @@ export default function PromiseSchedule({
                   );
                 })}
               </div>
+              <p className="text-[11px] text-cream-dim mt-2.5 leading-snug">
+                Pickup windows only — <b className="text-cream">10 AM</b> or{" "}
+                <b className="text-cream">4 PM</b> (default).
+              </p>
 
               <label className="mt-4 flex items-center gap-3 min-h-12 px-1 cursor-pointer">
                 <input

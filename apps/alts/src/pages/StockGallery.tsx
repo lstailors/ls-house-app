@@ -72,7 +72,7 @@ function LargeCard({ item }: { item: StockItem }) {
   return (
     <Link
       to={`/stock/${encodeURIComponent(item.id)}`}
-      className="block overflow-hidden rounded-2xl border border-[#c4a574]/35 bg-[#14261c] shadow-glass"
+      className="stock-card block overflow-hidden rounded-2xl border border-[#c4a574]/35 bg-[#14261c] shadow-glass"
     >
       <div className="relative w-full min-h-[min(78vh,920px)] bg-black">
         {showPhoto ? (

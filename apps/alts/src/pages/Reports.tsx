@@ -130,7 +130,7 @@ function SnapshotBody({
           { label: "Open HD", v: data?.snapshot.openHd ?? "—" },
           { label: "Deliveries", v: data?.snapshot.deliveriesQueued ?? "—" },
         ].map((c) => (
-          <div key={c.label} className="glass-panel rounded-xl p-4 border border-brass/15">
+          <div key={c.label} className="rpt-kpi glass-panel rounded-xl p-4 border border-brass/15">
             <div className="ui-label mb-1">{c.label}</div>
             <div className="kpi-number text-2xl text-cream">{isLoading ? "…" : c.v}</div>
           </div>
@@ -140,7 +140,7 @@ function SnapshotBody({
       <TailorTallyStrip />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="glass-panel rounded-2xl p-5 border border-brass/15">
+        <div className="rpt-panel glass-panel rounded-2xl p-5 border border-brass/15">
           <div className="ui-label mb-4">Alteration Pipeline</div>
           <div className="space-y-3">
             {(data?.pipeline ?? []).map((p) => {
@@ -169,7 +169,7 @@ function SnapshotBody({
           </div>
         </div>
 
-        <div className="glass-panel rounded-2xl p-5 border border-brass/15">
+        <div className="rpt-panel glass-panel rounded-2xl p-5 border border-brass/15">
           <div className="ui-label mb-4">Open work by tailor</div>
           <div className="space-y-2">
             {(data?.tailorWorkload ?? []).slice(0, 10).map((t) => {
@@ -201,7 +201,7 @@ function SnapshotBody({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="glass-panel rounded-2xl p-5 border border-brass/15">
+        <div className="rpt-panel glass-panel rounded-2xl p-5 border border-brass/15">
           <div className="ui-label mb-4">Ticket Priority</div>
           <div className="space-y-2">
             {(data?.ticketPriority ?? []).map((p) => (
@@ -215,7 +215,7 @@ function SnapshotBody({
           </div>
         </div>
 
-        <div className="glass-panel rounded-2xl p-5 border border-brass/15">
+        <div className="rpt-panel glass-panel rounded-2xl p-5 border border-brass/15">
           <div className="ui-label mb-4">Deliveries</div>
           <div className="grid grid-cols-2 gap-3">
             {[
@@ -234,7 +234,7 @@ function SnapshotBody({
           </div>
         </div>
 
-        <div className="glass-panel rounded-2xl p-5 border border-brass/15 lg:col-span-1">
+        <div className="rpt-panel glass-panel rounded-2xl p-5 border border-brass/15 lg:col-span-1">
           <div className="ui-label mb-4">Recent Activity</div>
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {(data?.recentActivity ?? []).map((a) => (
@@ -411,13 +411,13 @@ export default function Reports() {
               { label: "Rev 7d", v: data ? money(data.snapshot.revenueWeek) : "—" },
               { label: "Deliveries out", v: data?.snapshot.deliveriesQueued ?? "—" },
             ].map((c) => (
-              <div key={c.label} className="glass-panel rounded-xl p-4 border border-brass/15">
+              <div key={c.label} className="rpt-kpi glass-panel rounded-xl p-4 border border-brass/15">
                 <div className="ui-label mb-1">{c.label}</div>
                 <div className="kpi-number text-2xl text-cream">{floor.isLoading ? "…" : c.v}</div>
               </div>
             ))}
           </div>
-          <div className="glass-panel rounded-2xl p-5 border border-brass/15">
+          <div className="rpt-panel glass-panel rounded-2xl p-5 border border-brass/15">
             <div className="ui-label mb-4">Intake by day</div>
             <div className="space-y-3">
               {(data?.throughput ?? []).map((d) => {
@@ -442,7 +442,7 @@ export default function Reports() {
               )}
             </div>
           </div>
-          <div className="glass-panel rounded-2xl p-5 border border-brass/15">
+          <div className="rpt-panel glass-panel rounded-2xl p-5 border border-brass/15">
             <div className="ui-label mb-4">Pipeline</div>
             <div className="flex flex-wrap gap-2">
               {(data?.pipeline ?? []).map((p) => (
@@ -474,7 +474,7 @@ export default function Reports() {
               { label: "This week", v: aging?.dueWeek ?? 0, tone: "shop" as StatusTone },
               { label: "Later", v: aging?.later ?? 0, tone: "neutral" as StatusTone },
             ].map((c) => (
-              <div key={c.label} className="glass-panel rounded-xl p-4 border border-brass/15">
+              <div key={c.label} className="rpt-kpi glass-panel rounded-xl p-4 border border-brass/15">
                 <StatusBadge status={c.label} tone={c.tone} size="sm" />
                 <div className="kpi-number text-3xl mt-2" style={{ color: STATUS_TONES[c.tone].fg }}>
                   {floor.isLoading ? "…" : c.v}
@@ -482,7 +482,7 @@ export default function Reports() {
               </div>
             ))}
           </div>
-          <div className="glass-panel rounded-2xl p-5 border border-brass/15">
+          <div className="rpt-panel glass-panel rounded-2xl p-5 border border-brass/15">
             <div className="ui-label mb-4">Overdue tickets</div>
             <div className="space-y-2">
               {(data?.overdueTickets ?? []).map((t) => (
@@ -531,13 +531,13 @@ export default function Reports() {
                   { label: "Passed", v: passN, tone: "pickup" as StatusTone },
                   { label: "Failed", v: failN, tone: "tasks" as StatusTone },
                 ].map((c) => (
-                  <div key={c.label} className="glass-panel rounded-xl p-4 border border-brass/15">
+                  <div key={c.label} className="rpt-kpi glass-panel rounded-xl p-4 border border-brass/15">
                     <StatusBadge status={c.label} tone={c.tone} size="sm" />
                     <div className="kpi-number text-3xl mt-2">{c.v}</div>
                   </div>
                 ))}
               </div>
-              <div className="glass-panel rounded-2xl p-5 border border-brass/15">
+              <div className="rpt-panel glass-panel rounded-2xl p-5 border border-brass/15">
                 <div className="ui-label mb-2">Pass rate</div>
                 <div className="kpi-number text-5xl" style={{ color: STATUS_TONES.pickup.fg }}>
                   {decided ? `${passRate}%` : "—"}
@@ -566,7 +566,7 @@ export default function Reports() {
                   ["By source (store vs make)", qcRates.data?.bySource ?? []],
                 ] as const
               ).map(([title, rows]) => (
-                <div key={title} className="glass-panel rounded-2xl p-5 border border-brass/15">
+                <div key={title} className="rpt-panel glass-panel rounded-2xl p-5 border border-brass/15">
                   <div className="ui-label mb-3">{title}</div>
                   <div className="space-y-2">
                     {rows.map((r) => (

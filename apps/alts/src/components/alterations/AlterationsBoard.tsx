@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { computeFulfillment } from "@alts/lib/fulfillment";
 
 export interface AlterationRow {
   name: string; customerName: string; location: string; garmentCount: number; garmentSummary: string;
@@ -65,7 +66,7 @@ export function AlterationsBoard({ rows }: { rows: AlterationRow[] }) {
   );
 
   return (
-    <div style={{ color: CREAM }}>
+    <div style={{ color: CREAM }} className="alts-admin-board">
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <Metric label="Pickup blocked" value={stats.blocked} tone={stats.blocked ? "red" : "dim"} />
         <Metric label="Overdue" value={stats.overdue} tone={stats.overdue ? "red" : "dim"} />
@@ -75,7 +76,7 @@ export function AlterationsBoard({ rows }: { rows: AlterationRow[] }) {
       </div>
 
       {/* Desktop / tablet table */}
-      <div className="alts-board-desk">
+      <div className="alts-board-desk admin-desk-shell">
       <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 10, padding: "0 4px 12px", borderBottom: "0.5px solid rgba(241,233,214,0.12)" }}>
         <Th k="customerName" label="Customer" />
         <span style={hLabel}>Garments</span>
@@ -112,7 +113,22 @@ export function AlterationsBoard({ rows }: { rows: AlterationRow[] }) {
               </div>
               <div style={{ fontSize: 11, color: dueColor(r.dueDate) }}>{relDue(r.dueDate)}</div>
             </div>
-            <div><span style={statusPill(r.status)}>{r.status}</span></div>
+            <div>
+              {(() => {
+                const f = computeFulfillment({
+                  workflow_state: r.status,
+                  assigned_tailor_name: r.tailor,
+                  delivery_method: r.deliveryMethod,
+                  origin_location: r.location,
+                });
+                return (
+                  <>
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>{f.label}</div>
+                    <div style={{ fontSize: 10, color: CREAM_DIM }}>{r.status}{f.detail ? ` · ${f.detail}` : ""}</div>
+                  </>
+                );
+              })()}
+            </div>
             <div><span style={r.paymentStatus === "Paid" ? pill("rgba(93,202,165,0.14)", GREEN) : pill("rgba(226,75,74,0.14)", RED)}>{r.paymentStatus}</span></div>
             <div style={{ fontSize: 14, textAlign: "right" }}>${r.price.toFixed(0)}</div>
           </div>
@@ -128,6 +144,7 @@ export function AlterationsBoard({ rows }: { rows: AlterationRow[] }) {
             <button
               key={`m-${r.name}`}
               type="button"
+              className="admin-phone-card"
               onClick={() => navigate(`/orders/alterations/${r.name}`)}
               style={{
                 textAlign: "left",
@@ -148,6 +165,15 @@ export function AlterationsBoard({ rows }: { rows: AlterationRow[] }) {
               <div style={{ fontSize: 12, color: CREAM_DIM, marginBottom: 8 }}>{r.name} · {r.location}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
                 <span style={statusPill(r.status)}>{r.status}</span>
+                {(() => {
+                  const f = computeFulfillment({
+                    workflow_state: r.status,
+                    assigned_tailor_name: r.tailor,
+                    delivery_method: r.deliveryMethod,
+                    origin_location: r.location,
+                  });
+                  return <span style={pill("rgba(176,141,87,0.16)", BRASS)}>{f.shop} · {f.label}</span>;
+                })()}
                 <span style={r.paymentStatus === "Paid" ? pill("rgba(93,202,165,0.14)", GREEN) : pill("rgba(226,75,74,0.14)", RED)}>{r.paymentStatus}</span>
                 {r.isRush && <span style={pill("rgba(239,159,39,0.18)", "#EFB45C")}>RUSH</span>}
                 <span style={{ fontSize: 12, color: dueColor(r.dueDate) }}>{fmtDate(r.dueDate)} · {relDue(r.dueDate)}</span>
@@ -167,7 +193,7 @@ export function AlterationsBoard({ rows }: { rows: AlterationRow[] }) {
 function Metric({ label, value, tone }: { label: string; value: number | string; tone: "red" | "amber" | "green" | "brass" | "dim" }) {
   const color = { red: RED, amber: "#EFB45C", green: GREEN, brass: BRASS, dim: CREAM_DIM }[tone];
   return (
-    <div style={{ background: "rgba(241,233,214,0.04)", border: "0.5px solid rgba(241,233,214,0.1)", borderRadius: 10, padding: "8px 14px", minWidth: 96 }}>
+    <div className="admin-metric" style={{ background: "rgba(241,233,214,0.04)", border: "0.5px solid rgba(241,233,214,0.1)", borderRadius: 10, padding: "8px 14px", minWidth: 96 }}>
       <div style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: CREAM_DIM }}>{label}</div>
       <div style={{ fontSize: 20, color }}>{value}</div>
     </div>

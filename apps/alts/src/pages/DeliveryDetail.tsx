@@ -23,7 +23,7 @@ import { GenerateMessageDialog } from "@alts/components/deliveries/GenerateMessa
 import type { Delivery } from "@ls/types";
 
 // Delivery extended with fields added to serializeDelivery
-interface DeliveryDetail extends Delivery {
+type DeliveryDetailData = Delivery & {
   podMethod?: string | null;
   receivedBy?: string | null;
   signatureName?: string | null;
@@ -33,6 +33,26 @@ interface DeliveryDetail extends Delivery {
   gpsAccuracy?: number | null;
   garmentSummary?: string | null;
   garmentCount?: number | null;
+  method?: string | null;
+  courierName?: string | null;
+  carrier?: string | null;
+  trackingNumber?: string | null;
+  trackingUrl?: string | null;
+  alterationTicket?: string | null;
+  notes?: string | null;
+  addressLine?: string | null;
+  driver?: { name?: string | null; phone?: string | null } | null;
+};
+
+const METHOD_OPTIONS = [
+  { value: "Hand Delivery", label: "Hand delivery", hint: "Driver / messenger to door" },
+  { value: "Ship Direct", label: "Ship · FedEx / carrier", hint: "Tracking number required" },
+  { value: "Pickup", label: "Pickup at shop", hint: "Client collects in store" },
+] as const;
+
+function errMsg(e: unknown, fallback: string) {
+  const m = (e as any)?.message || (e as any)?.error?.message;
+  return typeof m === "string" && m.trim() ? m : fallback;
 }
 
 export default function DeliveryDetail() {
@@ -46,10 +66,20 @@ export default function DeliveryDetail() {
   const [editingContact, setEditingContact] = useState(false);
   const [contactSearch, setContactSearch] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
+  const [editingShip, setEditingShip] = useState(false);
+  const [shipForm, setShipForm] = useState({
+    method: "Hand Delivery",
+    courierName: "",
+    carrier: "FedEx",
+    trackingNumber: "",
+    trackingUrl: "",
+    addressLine: "",
+    notes: "",
+  });
 
   const { data: delivery, isLoading } = useQuery({
     queryKey: ["delivery", id],
-    queryFn: () => api.get<DeliveryDetail>(`/api/deliveries/${id}`),
+    queryFn: () => api.get<DeliveryDetailData>(`/api/deliveries/${id}`),
     enabled: !!id,
   });
 
@@ -80,6 +110,21 @@ export default function DeliveryDetail() {
     ).then(setQrDataUrl).catch(() => {});
   }, [delivery?.qrToken]);
 
+  // Hydrate ship form when delivery loads / refresh
+  useEffect(() => {
+    if (!delivery || editingShip) return;
+    const m = String(delivery.method || "Hand Delivery");
+    setShipForm({
+      method: m === "Ship (FedEx)" ? "Ship Direct" : m,
+      courierName: delivery.courierName || delivery.driver?.name || "",
+      carrier: (delivery as any).carrier || "FedEx",
+      trackingNumber: (delivery as any).trackingNumber || "",
+      trackingUrl: (delivery as any).trackingUrl || "",
+      addressLine: delivery.addressLine || "",
+      notes: delivery.notes || "",
+    });
+  }, [delivery, editingShip]);
+
   const swapContact = useMutation({
     mutationFn: (customerId: string) =>
       api.patch<Delivery>(`/api/deliveries/${id}`, { customerId }),
@@ -90,23 +135,72 @@ export default function DeliveryDetail() {
       setContactSearch("");
       toast.success("Contact updated");
     },
-    onError: () => toast.error("Could not update contact"),
+    onError: (e) => toast.error(errMsg(e, "Could not update contact")),
+  });
+
+  const saveShip = useMutation({
+    mutationFn: async () => {
+      const isShip = shipForm.method === "Ship Direct";
+      if (isShip && !shipForm.trackingNumber.trim()) {
+        throw new Error("Tracking number required for shipping");
+      }
+      return update.mutateAsync({
+        id: id!,
+        method: shipForm.method,
+        courierName: shipForm.courierName.trim() || undefined,
+        carrier: isShip ? shipForm.carrier.trim() || "FedEx" : undefined,
+        trackingNumber: isShip ? shipForm.trackingNumber.trim() : shipForm.trackingNumber.trim() || "",
+        trackingUrl: isShip ? shipForm.trackingUrl.trim() || undefined : undefined,
+        addressLine: shipForm.addressLine.trim() || undefined,
+        notes: shipForm.notes.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      setEditingShip(false);
+      toast.success("Delivery method / shipping saved");
+      qc.invalidateQueries({ queryKey: ["delivery", id] });
+    },
+    onError: (e) => toast.error(errMsg(e, "Could not save shipping")),
   });
 
   const handleStart = async () => {
     try {
-      await update.mutateAsync({ id: id!, status: "out_for_delivery" });
+      const isShip =
+        shipForm.method === "Ship Direct" ||
+        String(delivery?.method || "").includes("Ship");
+      if (isShip && !(shipForm.trackingNumber || (delivery as any)?.trackingNumber)) {
+        setEditingShip(true);
+        toast.error("Add tracking number before starting a ship job");
+        return;
+      }
+      await update.mutateAsync({
+        id: id!,
+        status: "out_for_delivery",
+        courierName:
+          shipForm.courierName.trim() ||
+          delivery?.courierName ||
+          delivery?.driver?.name ||
+          undefined,
+        carrier: isShip ? shipForm.carrier || (delivery as any)?.carrier : undefined,
+        trackingNumber: isShip
+          ? shipForm.trackingNumber || (delivery as any)?.trackingNumber
+          : undefined,
+      });
       qc.invalidateQueries({ queryKey: ["delivery", id] });
-      toast.success("Marked out for delivery");
-    } catch { toast.error("Could not update"); }
+      toast.success(isShip ? "Marked out · shipped" : "Marked out for delivery");
+    } catch (e) {
+      toast.error(errMsg(e, "Could not update"));
+    }
   };
 
   const handleReadyForPickup = async () => {
     try {
-      await update.mutateAsync({ id: id!, status: "ready_for_pickup" });
+      await update.mutateAsync({ id: id!, status: "ready_for_pickup", method: "Pickup" });
       qc.invalidateQueries({ queryKey: ["delivery", id] });
       toast.success("Marked ready for pickup");
-    } catch { toast.error("Could not update"); }
+    } catch (e) {
+      toast.error(errMsg(e, "Could not update"));
+    }
   };
 
   const handleCancel = async () => {
@@ -116,7 +210,7 @@ export default function DeliveryDetail() {
       qc.invalidateQueries({ queryKey: ["deliveries"] });
       toast.success("Delivery cancelled");
     } catch (e) {
-      toast.error((e as Error)?.message || "Could not cancel delivery");
+      toast.error(errMsg(e, "Could not cancel delivery"));
     }
   };
 
@@ -137,13 +231,23 @@ export default function DeliveryDetail() {
   const isDelivered = delivery.status === "delivered";
   const isCancelled = delivery.status === "cancelled";
   const isScheduled = delivery.status === "scheduled";
-  const isPickup = (delivery as any).method === "Pickup";
+  const methodNow = String(delivery.method || shipForm.method || "Hand Delivery");
+  const isShip = methodNow === "Ship Direct" || methodNow.includes("Ship");
+  const isPickup = methodNow === "Pickup";
   const canMarkReadyForPickup = isPickup && isScheduled;
   const canCancel = !isDelivered && !isCancelled;
   const photos = [proof?.photo1, proof?.photo2, proof?.photo3].filter(Boolean) as string[];
   const mapsUrl = delivery.gpsLatitude && delivery.gpsLongitude
     ? `https://maps.google.com/?q=${delivery.gpsLatitude},${delivery.gpsLongitude}`
     : null;
+  const trackingNo = delivery.trackingNumber || shipForm.trackingNumber;
+  const trackingLink =
+    delivery.trackingUrl ||
+    (trackingNo && /fedex/i.test(String(delivery.carrier || shipForm.carrier || "FedEx"))
+      ? `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(trackingNo)}`
+      : trackingNo
+        ? `https://www.google.com/search?q=${encodeURIComponent(trackingNo + " tracking")}`
+        : null);
 
   return (
     <div className="space-y-5 animate-fade-up max-w-2xl mx-auto pb-10">
@@ -197,9 +301,10 @@ export default function DeliveryDetail() {
 
       {/* Actions */}
       <div className="flex gap-2 flex-wrap">
-        {isScheduled ? (
+        {isScheduled && !isPickup ? (
           <Button onClick={handleStart} disabled={update.isPending} className="btn-brass flex-1">
-            <Truck className="h-4 w-4 mr-1.5" /> Start delivery
+            <Truck className="h-4 w-4 mr-1.5" />
+            {isShip ? "Mark shipped · out" : "Start delivery"}
           </Button>
         ) : null}
         {canMarkReadyForPickup ? (
@@ -318,6 +423,198 @@ export default function DeliveryDetail() {
             ) : null}
             {delivery.customer?.email ? (
               <div className="text-xs text-cream-dim">{delivery.customer.email}</div>
+            ) : null}
+          </div>
+        )}
+      </GlassCard>
+
+      {/* Method · Hand / Ship / Pickup */}
+      <GlassCard className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-[11px] uppercase tracking-widest text-cream-dim flex items-center gap-1.5">
+            <Truck className="h-3 w-3" /> Method · hand &amp; shipping
+          </div>
+          {!isDelivered && !isCancelled ? (
+            <button
+              type="button"
+              onClick={() => setEditingShip((v) => !v)}
+              className="flex items-center gap-1 text-[10px] text-brass-light/60 hover:text-brass-light transition-colors"
+            >
+              <Pencil className="h-3 w-3" /> {editingShip ? "Cancel" : "Edit"}
+            </button>
+          ) : null}
+        </div>
+
+        {editingShip ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-2">
+              {METHOD_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setShipForm((f) => ({ ...f, method: opt.value }))}
+                  className={
+                    shipForm.method === opt.value
+                      ? "rounded-xl border border-brass/50 bg-brass/15 px-3 py-2.5 text-left"
+                      : "rounded-xl border border-brass/15 bg-forest-raised/30 px-3 py-2.5 text-left hover:border-brass/30"
+                  }
+                >
+                  <div className="text-sm text-cream font-medium">{opt.label}</div>
+                  <div className="text-[10px] text-cream-dim mt-0.5">{opt.hint}</div>
+                </button>
+              ))}
+            </div>
+
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-cream-dim mb-1">Address</div>
+              <Input
+                value={shipForm.addressLine}
+                onChange={(e) => setShipForm((f) => ({ ...f, addressLine: e.target.value }))}
+                placeholder="Full street, city, state, ZIP"
+                className="bg-forest-raised/40 border-brass/20 text-cream placeholder:text-cream-dim text-sm h-10"
+              />
+            </div>
+
+            {shipForm.method === "Hand Delivery" || shipForm.method === "Courier" ? (
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-cream-dim mb-1">Driver / courier</div>
+                <Input
+                  value={shipForm.courierName}
+                  onChange={(e) => setShipForm((f) => ({ ...f, courierName: e.target.value }))}
+                  placeholder="Who is running this?"
+                  className="bg-forest-raised/40 border-brass/20 text-cream placeholder:text-cream-dim text-sm h-10"
+                />
+              </div>
+            ) : null}
+
+            {shipForm.method === "Ship Direct" ? (
+              <div className="space-y-2 rounded-xl border border-brass/20 bg-black/20 p-3">
+                <div className="text-[10px] uppercase tracking-widest text-brass-light">Shipping · tracking</div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-cream-dim mb-1">Carrier</div>
+                  <Input
+                    value={shipForm.carrier}
+                    onChange={(e) => setShipForm((f) => ({ ...f, carrier: e.target.value }))}
+                    placeholder="FedEx · UPS · USPS"
+                    className="bg-forest-raised/40 border-brass/20 text-cream placeholder:text-cream-dim text-sm h-10"
+                  />
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-cream-dim mb-1">Tracking number</div>
+                  <Input
+                    value={shipForm.trackingNumber}
+                    onChange={(e) => setShipForm((f) => ({ ...f, trackingNumber: e.target.value }))}
+                    placeholder="Paste tracking #"
+                    className="bg-forest-raised/40 border-brass/20 text-cream placeholder:text-cream-dim text-sm h-10 font-mono"
+                  />
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-cream-dim mb-1">Tracking URL (optional)</div>
+                  <Input
+                    value={shipForm.trackingUrl}
+                    onChange={(e) => setShipForm((f) => ({ ...f, trackingUrl: e.target.value }))}
+                    placeholder="https://…"
+                    className="bg-forest-raised/40 border-brass/20 text-cream placeholder:text-cream-dim text-sm h-10"
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-cream-dim mb-1">Notes</div>
+              <Input
+                value={shipForm.notes}
+                onChange={(e) => setShipForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="Client instructions, gate code…"
+                className="bg-forest-raised/40 border-brass/20 text-cream placeholder:text-cream-dim text-sm h-10"
+              />
+            </div>
+
+            <Button
+              type="button"
+              disabled={saveShip.isPending}
+              onClick={() => saveShip.mutate()}
+              className="btn-brass w-full h-11"
+            >
+              {saveShip.isPending ? "Saving…" : "Save method & shipping"}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-cream-dim">Method</div>
+                <div className="text-cream font-medium">
+                  {isShip
+                    ? "Ship · FedEx / carrier"
+                    : isPickup
+                      ? "Pickup at shop"
+                      : methodNow || "Hand delivery"}
+                </div>
+              </div>
+              {!isDelivered && !isCancelled ? (
+                <button
+                  type="button"
+                  onClick={() => setEditingShip(true)}
+                  className="text-[11px] font-bold uppercase tracking-widest text-brass-light"
+                >
+                  {isShip && !trackingNo ? "Add tracking →" : "Change →"}
+                </button>
+              ) : null}
+            </div>
+            {delivery.addressLine ? (
+              <div className="text-cream-muted text-xs flex items-start gap-1.5">
+                <MapPin className="h-3.5 w-3.5 text-brass-light/60 mt-0.5 shrink-0" />
+                <span>{delivery.addressLine}</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditingShip(true)}
+                className="text-xs text-signal-amber"
+              >
+                No address on file — add one
+              </button>
+            )}
+            {(delivery.courierName || delivery.driver?.name) && !isShip ? (
+              <div className="text-xs text-cream-dim">
+                Driver · {delivery.courierName || delivery.driver?.name}
+              </div>
+            ) : null}
+            {isShip ? (
+              <div className="rounded-lg border border-brass/20 bg-black/15 px-3 py-2 space-y-1">
+                <div className="text-[10px] uppercase tracking-widest text-cream-dim">
+                  {delivery.carrier || "Carrier"} tracking
+                </div>
+                {trackingNo ? (
+                  <>
+                    <div className="font-mono text-cream text-sm break-all">{trackingNo}</div>
+                    {trackingLink ? (
+                      <a
+                        href={trackingLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-brass-light hover:underline inline-flex items-center gap-1"
+                      >
+                        Track package <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : null}
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setEditingShip(true)}
+                    className="text-sm text-signal-amber font-medium"
+                  >
+                    No tracking yet — tap to add
+                  </button>
+                )}
+              </div>
+            ) : null}
+            {delivery.notes ? (
+              <div className="text-xs text-cream-dim leading-snug border-t border-brass/10 pt-2">
+                {delivery.notes}
+              </div>
             ) : null}
           </div>
         )}
@@ -533,6 +830,7 @@ export default function DeliveryDetail() {
       <GenerateMessageDialog
         deliveryId={messageDialogOpen ? (id ?? null) : null}
         customerName={delivery.customer?.name}
+        phoneHint={(delivery.customer as { phone?: string | null } | undefined)?.phone ?? null}
         onClose={() => setMessageDialogOpen(false)}
       />
 

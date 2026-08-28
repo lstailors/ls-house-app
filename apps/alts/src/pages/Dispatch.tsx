@@ -350,8 +350,8 @@ export default function Dispatch() {
                     type="button"
                     onClick={() => setSelected(row.name)}
                     className={cn(
-                      "text-left card-glass p-3.5",
-                      selected === row.name && "border-brass ring-1 ring-brass/40",
+                      "disp-row text-left card-glass p-3.5",
+                      selected === row.name && "is-on border-brass ring-1 ring-brass/40",
                       u && "border-l-2 border-l-signal-amber",
                     )}
                   >
@@ -460,7 +460,7 @@ export default function Dispatch() {
               {boardDoc ? (
                 <BoardStatusCard board={boardDoc} />
               ) : method === "Pickup" && storedMethod === "Pickup" ? (
-                <div className="card-glass px-[18px] py-[22px] text-center">
+                <div className="disp-panel card-glass px-[18px] py-[22px] text-center">
                   <BrandSeal to={null} className="mx-auto mb-3 opacity-80" />
                   <span className="pill pill-muted">At counter</span>
                   <p className="text-[12px] text-[var(--cd)] leading-relaxed mt-3 max-w-md mx-auto">
@@ -468,7 +468,7 @@ export default function Dispatch() {
                   </p>
                 </div>
               ) : (
-                <div className="card-glass px-[18px] py-[22px] text-center">
+                <div className="disp-panel card-glass px-[18px] py-[22px] text-center">
                   <BrandSeal to={null} className="mx-auto mb-3 opacity-80" />
                   <span className="pill pill-muted">No dispatch</span>
                   <p className="text-[12px] text-[var(--cd)] leading-relaxed mt-3 max-w-md mx-auto">
@@ -479,7 +479,7 @@ export default function Dispatch() {
               )}
 
               {method !== "Pickup" && (
-                <div className="card-glass overflow-hidden">
+                <div className="disp-panel card-glass overflow-hidden">
                   <div className="px-4 py-3 border-b border-brass/15 bg-black/20 flex items-center">
                     <h3 className="display text-lg flex-1">Delivery address</h3>
                   </div>
@@ -541,7 +541,7 @@ export default function Dispatch() {
                 <div className="caps mb-2">Garments · {t.garments?.length ?? 0}</div>
                 <div className="flex flex-wrap gap-2">
                   {(t.garments ?? []).map((g, i) => (
-                    <div key={i} className="card-glass px-3 py-2 text-sm flex items-center gap-2">
+                    <div key={i} className="disp-chip card-glass px-3 py-2 text-sm flex items-center gap-2">
                       <span className="w-4 h-4 rounded bg-signal-emerald/90 text-forest-deep text-[12px] grid place-items-center">
                         ✓
                       </span>

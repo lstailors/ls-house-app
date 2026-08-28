@@ -154,10 +154,27 @@ export default function TaskSubitemPicker({
   const dragId = useRef<string | null>(null);
   const didDrag = useRef(false);
 
-  const forGarment = useMemo(
-    () => presets.filter((p) => garmentMatchesPreset(p, garmentType)),
-    [presets, garmentType],
-  );
+  const forGarment = useMemo(() => {
+    // Coerce offline/raw rows (name + default_price) into picker shape so
+    // zone lists and prices never collapse when cache lags the /presets API.
+    const coerced = presets.map((p) => {
+      const id = String(p.id || p.name || p.preset_name || "").trim();
+      const price =
+        Number((p as { price?: number }).price) ||
+        Number((p as { default_price?: number; display_price?: number }).default_price) ||
+        Number((p as { display_price?: number }).display_price) ||
+        0;
+      return {
+        ...p,
+        id: id || p.id,
+        name: p.name || id,
+        preset_name: p.preset_name || id,
+        display_name: p.display_name || p.preset_name || id,
+        price,
+      } as HierarchyPreset;
+    });
+    return coerced.filter((p) => garmentMatchesPreset(p, garmentType));
+  }, [presets, garmentType]);
 
   const seedIds = useMemo(() => {
     return forGarment

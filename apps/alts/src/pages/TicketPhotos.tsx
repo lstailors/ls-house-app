@@ -128,7 +128,7 @@ export default function TicketPhotos() {
             type="button"
             disabled={upload.isPending}
             onClick={() => libraryRef.current?.click()}
-            className="h-16 rounded-2xl border border-brass/35 bg-black/25 text-[12px] font-bold tracking-widest uppercase text-cream-muted disabled:opacity-50"
+            className="photo-upload h-16 rounded-2xl border border-brass/35 bg-black/25 text-[12px] font-bold tracking-widest uppercase text-cream-muted disabled:opacity-50"
           >
             Choose from library
           </button>
@@ -166,7 +166,7 @@ export default function TicketPhotos() {
               href={p.url}
               target="_blank"
               rel="noreferrer"
-              className="card-glass overflow-hidden block"
+              className="photo-tile card-glass overflow-hidden block"
             >
               <img src={p.url} alt={p.name} className="w-full aspect-square object-cover bg-black/40" />
               <div className="px-2 py-1.5 text-[12px] text-cream-dim truncate">

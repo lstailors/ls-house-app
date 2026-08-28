@@ -13,6 +13,13 @@ export function formatMoney(n: number | string | null | undefined): string {
   }).format(v);
 }
 
+/** Line/price cell: $0 custom = open amount (TBD). */
+export function formatLineMoney(n: number | string | null | undefined): string {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v === 0) return "TBD";
+  return formatMoney(v);
+}
+
 /** Compact strip label (`$5.7k`) — not for receipts. */
 export function formatCompactMoney(n: number | string | null | undefined): string {
   const v = Number(n);

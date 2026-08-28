@@ -3,8 +3,12 @@
   "installCommand": "cd ../.. && bun install",
   "buildCommand": "bun run build",
   "outputDirectory": "dist",
+  "ignoreCommand": "cd ../.. && git diff --quiet HEAD^ HEAD -- apps/alts",
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://app.lstailors.com/api/:path*" },
+    {
+      "source": "/api/:path*",
+      "destination": "https://app.lstailors.com/api/:path*"
+    },
     {
       "source": "/((?!assets/|sw\\.js$|workbox-[^/]+\\.js$|registerSW\\.js$|manifest\\.webmanifest$|manifest-alts\\.json$).*)",
       "destination": "/index.html"
@@ -14,14 +18,23 @@
     {
       "source": "/sw.js",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
-        { "key": "Service-Worker-Allowed", "value": "/" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        },
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
+        }
       ]
     },
     {
       "source": "/workbox-(.*).js",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
       ]
     }
   ]

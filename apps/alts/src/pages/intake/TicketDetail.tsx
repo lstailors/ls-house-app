@@ -34,6 +34,7 @@ import { ChargeTerminalButton } from '@alts/components/payments/ChargeTerminalBu
 import { OutsideTenderButtons } from '@alts/components/payments/OutsideTenderButtons'
 import { ChargeCardOnFileButton } from '@alts/components/payments/ChargeCardOnFileButton'
 import { EditTicketDrawer } from '@alts/components/alterations/EditTicketDrawer'
+import { FulfillmentChip } from '@alts/components/FulfillmentChip'
 import { payUrl } from '@alts/lib/printUrls'
 import TicketDeliverySection from '@alts/components/intake/TicketDeliverySection'
 import {
@@ -63,6 +64,12 @@ interface AlterationTicketDoc {
   /** SI grand total when sell items push bill above ticket_total */
   display_total?: number
   invoice_grand_total?: number | null
+  /** SI outstanding — the only amount Square/PE may charge */
+  invoice_outstanding?: number | null
+  invoice_status?: string | null
+  charge_total?: number | null
+  bill_mismatch?: boolean
+  bill_short?: number
   payment_status: string
   sales_invoice?: string | null
   assigned_tailor?: string
@@ -159,13 +166,38 @@ function formatCurrency(amount: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
 }
 
-/** Prefer SI grand total when Walk-in sell lines inflated the bill past alts-only ticket_total */
-function ticketBillTotal(ticket: Pick<AlterationTicketDoc, 'ticket_total' | 'display_total' | 'invoice_grand_total'>) {
+/**
+ * Display total (work + sell): prefer SI when sell lines inflate past alts-only ticket_total.
+ * Never hide a higher ticket_total behind a short SI — show the work total.
+ */
+function ticketBillTotal(
+  ticket: Pick<
+    AlterationTicketDoc,
+    'ticket_total' | 'display_total' | 'invoice_grand_total' | 'charge_total' | 'invoice_outstanding'
+  >,
+) {
   const base = Number(ticket.ticket_total) || 0
-  const inv = Number(ticket.invoice_grand_total ?? ticket.display_total) || 0
+  const inv = Number(ticket.invoice_grand_total ?? 0) || 0
   if (inv > base) return inv
-  if (ticket.display_total != null && Number(ticket.display_total) > 0) return Number(ticket.display_total)
+  if (ticket.display_total != null && Number(ticket.display_total) > 0) {
+    // display_total from API is max(SI, ticket) for sell inflate, else ticket
+    return Number(ticket.display_total)
+  }
   return base
+}
+
+/** Amount to send to Square / PE — SI outstanding only. Never ticket_total when SI is short. */
+function ticketChargeAmount(
+  ticket: Pick<
+    AlterationTicketDoc,
+    'ticket_total' | 'charge_total' | 'invoice_outstanding' | 'invoice_grand_total' | 'display_total'
+  >,
+) {
+  const outstanding = Number(ticket.invoice_outstanding ?? ticket.charge_total)
+  if (Number.isFinite(outstanding) && outstanding > 0.005) return outstanding
+  const inv = Number(ticket.invoice_grand_total)
+  if (Number.isFinite(inv) && inv > 0.005) return inv
+  return ticketBillTotal(ticket)
 }
 
 function stepIndex(state: string) {
@@ -1383,7 +1415,7 @@ export default function TicketDetail() {
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
 
         {/* ── Header ── */}
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="td-hero card-glass p-4 sm:p-5 flex items-start justify-between gap-4 flex-wrap">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <h1 className="text-brass-shimmer italic text-2xl font-bold tracking-wide">
@@ -1397,15 +1429,21 @@ export default function TicketDetail() {
             </div>
             <p className="text-cream-muted text-lg">{ticket.customer_name}</p>
             <div className="flex items-center gap-3 mt-2 flex-wrap">
-              <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-zinc-800/60 text-zinc-300 border-zinc-500/30">
-                {ticket.workflow_state}
-              </span>
-              <span className="text-cream-dim text-sm">{ticket.origin_location}</span>
+              <span className="td-status chip">{ticket.workflow_state}</span>
+              <FulfillmentChip
+                ticket={{
+                  workflow_state: ticket.workflow_state,
+                  assigned_tailor: ticket.assigned_tailor,
+                  assigned_tailor_name: ticket.assigned_tailor_name,
+                  delivery_method: ticket.delivery_method,
+                  origin_location: ticket.origin_location,
+                }}
+              />
             </div>
           </div>
 
           <div className="flex flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto">
-            <div className="flex items-center gap-2 ticket-detail-actions flex-wrap justify-end">
+            <div className="flex items-center gap-2 ticket-detail-actions td-actions flex-wrap justify-end">
               {ticket.workflow_state !== 'Cancelled' && ticket.workflow_state !== 'Picked Up' && (
                 <>
                   <button
@@ -1634,23 +1672,56 @@ export default function TicketDetail() {
 
           {/* Ticket total — prefer SI grand when sell items present */}
           <div className="mt-4 flex justify-end">
-            <div className="glass-panel rounded-lg px-5 py-3 flex items-center gap-4">
-              <span className="text-cream-dim text-sm ui-label">Ticket Total</span>
-              <span className="text-brass-shimmer text-xl font-bold">
-                {formatCurrency(ticketBillTotal(ticket))}
-              </span>
-              <span
-                className={cn(
-                  'text-xs px-2 py-0.5 rounded-full',
-                  ticket.payment_status === 'Paid'
-                    ? 'bg-emerald-900/40 text-emerald-300'
-                    : 'bg-amber-900/40 text-amber-300'
-                )}
-              >
-                {ticket.payment_status}
-              </span>
+            <div className="glass-panel rounded-lg px-5 py-3 flex flex-col items-end gap-1">
+              <div className="flex items-center gap-4">
+                <span className="text-cream-dim text-sm ui-label">Work total</span>
+                <span className="text-brass-shimmer text-xl font-bold">
+                  {formatCurrency(ticketBillTotal(ticket))}
+                </span>
+                <span
+                  className={cn(
+                    'text-xs px-2 py-0.5 rounded-full',
+                    ticket.payment_status === 'Paid'
+                      ? 'bg-emerald-900/40 text-emerald-300'
+                      : 'bg-amber-900/40 text-amber-300'
+                  )}
+                >
+                  {ticket.payment_status}
+                </span>
+              </div>
+              {ticket.sales_invoice && (
+                <div className="text-[11px] text-cream-dim">
+                  Invoice {ticket.sales_invoice}
+                  {ticket.invoice_grand_total != null
+                    ? ` · ${formatCurrency(Number(ticket.invoice_grand_total))}`
+                    : ''}
+                  {ticket.invoice_outstanding != null && Number(ticket.invoice_outstanding) > 0.005
+                    ? ` · ${formatCurrency(Number(ticket.invoice_outstanding))} due`
+                    : ticket.invoice_status
+                      ? ` · ${ticket.invoice_status}`
+                      : ''}
+                </div>
+              )}
             </div>
           </div>
+
+          {(ticket.bill_mismatch ||
+            (Number(ticket.invoice_grand_total) > 0 &&
+              Math.abs(ticketBillTotal(ticket) - Number(ticket.invoice_grand_total)) > 0.5)) && (
+            <div className="mt-3 rounded-xl border border-signal-amber/50 bg-signal-amber/10 px-4 py-3 text-sm text-signal-amber">
+              <strong className="font-semibold">Bill mismatch</strong>
+              {' — '}
+              ticket work {formatCurrency(ticketBillTotal(ticket))}
+              {' · '}
+              invoice {formatCurrency(Number(ticket.invoice_grand_total) || 0)}
+              {Number(ticket.bill_short) > 0
+                ? ` · short ${formatCurrency(Number(ticket.bill_short))}`
+                : ''}
+              . Card/Terminal charges the <strong>invoice due only</strong> (
+              {formatCurrency(ticketChargeAmount(ticket))}), not the work total. Fix SI before
+              collecting if the client owes the full ticket.
+            </div>
+          )}
 
           {ticket.payment_status === 'Paid' ? (
             <div className="mt-3 flex flex-col items-end gap-2">
@@ -1672,8 +1743,8 @@ export default function TicketDetail() {
               <OutsideTenderButtons
                 ticketId={ticket.name}
                 invoiceId={ticket.sales_invoice || undefined}
-                amountDollars={ticketBillTotal(ticket)}
-                amountDisplay={formatCurrency(ticketBillTotal(ticket))}
+                amountDollars={ticketChargeAmount(ticket)}
+                amountDisplay={formatCurrency(ticketChargeAmount(ticket))}
                 showVoid
                 onSuccess={(info) => {
                   toast.success(info.status === 'voided' ? 'Payment voided — refreshing…' : 'Updated — refreshing…')
@@ -1682,17 +1753,21 @@ export default function TicketDetail() {
                 onError={(msg: string) => toast.error(msg)}
               />
             </div>
-          ) : ticket.payment_status !== 'Paid' && ticketBillTotal(ticket) > 0 ? (
+          ) : ticket.payment_status !== 'Paid' && ticketChargeAmount(ticket) > 0 ? (
             <div className="mt-3 flex flex-col items-stretch gap-2">
               <p className="text-xs text-cream-dim text-right">
-                Pickup allowed unpaid — client gets balance SMS on release.
+                Charge due {formatCurrency(ticketChargeAmount(ticket))}
+                {Math.abs(ticketChargeAmount(ticket) - ticketBillTotal(ticket)) > 0.5
+                  ? ` (work total ${formatCurrency(ticketBillTotal(ticket))})`
+                  : ''}
+                . Pickup allowed unpaid — client gets balance SMS on release.
               </p>
               <div className="flex flex-col items-end gap-2 w-full">
               <OutsideTenderButtons
                 ticketId={ticket.name}
                 invoiceId={ticket.sales_invoice || undefined}
-                amountDollars={ticketBillTotal(ticket)}
-                amountDisplay={formatCurrency(ticketBillTotal(ticket))}
+                amountDollars={ticketChargeAmount(ticket)}
+                amountDisplay={formatCurrency(ticketChargeAmount(ticket))}
                 onSuccess={(info) => {
                   toast.success(
                     info.status === 'voided'
@@ -1706,8 +1781,8 @@ export default function TicketDetail() {
               <div className="flex flex-wrap items-center gap-3 justify-end">
               <ChargeTerminalButton
                 invoiceId={ticket.sales_invoice || ticket.name}
-                amountCents={Math.round(ticketBillTotal(ticket) * 100)}
-                amountDisplay={formatCurrency(ticketBillTotal(ticket))}
+                amountCents={Math.round(ticketChargeAmount(ticket) * 100)}
+                amountDisplay={formatCurrency(ticketChargeAmount(ticket))}
                 ticketId={ticket.name}
                 onSuccess={() => {
                   toast.success('Payment captured — refreshing…')
@@ -1717,7 +1792,9 @@ export default function TicketDetail() {
               />
               <ChargeCardOnFileButton
                 ticketId={ticket.name}
-                amountDisplay={formatCurrency(ticketBillTotal(ticket))}
+                invoiceId={ticket.sales_invoice || undefined}
+                amountDollars={ticketChargeAmount(ticket)}
+                amountDisplay={formatCurrency(ticketChargeAmount(ticket))}
                 customerLabel={ticket.customer_name}
                 onSuccess={() => {
                   toast.success('Card on file charged — refreshing…')

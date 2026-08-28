@@ -282,7 +282,7 @@ export default function TasksGlass() {
                   <button
                     type="button"
                     onClick={() => setPicked(t)}
-                    className="og-row sf-card w-full text-left card-glass px-4 py-3.5 flex items-start gap-3"
+                    className="og-row sf-card task-row w-full text-left card-glass px-4 py-3.5 flex items-start gap-3"
                   >
                     <span
                       className={cn(

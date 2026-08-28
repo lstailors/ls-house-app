@@ -147,8 +147,8 @@ export default function QuoteComposer() {
                 type="button"
                 onClick={() => setTicketId(row.name)}
                 className={cn(
-                  "text-left card-glass p-3",
-                  ticketId === row.name && "border-brass ring-1 ring-brass/40",
+                  "quote-pick text-left card-glass p-3",
+                  ticketId === row.name && "is-on border-brass ring-1 ring-brass/40",
                 )}
               >
                 <div className="font-mono text-[12px] text-brass-light">{row.name}</div>
@@ -159,7 +159,7 @@ export default function QuoteComposer() {
           </div>
 
           {t && (
-            <div className="card-glass overflow-hidden">
+            <div className="quote-panel card-glass overflow-hidden">
               <div className="px-4 py-3 border-b border-brass/15 bg-black/20">
                 <h3 className="display text-lg">Email preview</h3>
               </div>
@@ -214,7 +214,7 @@ export default function QuoteComposer() {
 
         <aside className="border-l border-brass/15 bg-black/25 p-5 overflow-y-auto space-y-4">
           <div className="caps">SMS preview</div>
-          <div className="card-glass p-4">
+          <div className="quote-sms card-glass p-4">
             <div className="flex items-center gap-2 mb-3">
               <span className="w-8 h-8 rounded-full border border-brass/40 grid place-items-center display text-brass-light">
                 S

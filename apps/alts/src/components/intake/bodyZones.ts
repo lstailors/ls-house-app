@@ -5,7 +5,7 @@
 import type { BodyZoneId } from "@alts/components/intake/GarmentZoneIcon";
 
 export type PresetLike = {
-  id: string;
+  id?: string;
   name?: string;
   display_name?: string;
   preset_name?: string;
@@ -115,7 +115,12 @@ export function zonesForGarment(garmentType: string): BodyZoneDef[] {
 }
 
 export function labelOfPreset(p: PresetLike) {
-  return (p.display_name || p.preset_name || p.id || "").trim();
+  return (p.display_name || p.preset_name || p.name || p.id || "").trim();
+}
+
+/** Stable key for dedupe — never rely on bare `id` (raw ERP cache rows omit it). */
+export function presetKey(p: PresetLike): string {
+  return String(p.id || p.name || p.preset_name || p.display_name || "").trim();
 }
 
 export function matchZone(p: PresetLike, zones: BodyZoneDef[]): BodyZoneId | null {
@@ -131,7 +136,7 @@ export function isGroup(p: PresetLike) {
 }
 
 function groupKeys(p: PresetLike): string[] {
-  return [p.id, p.name, p.preset_name].filter(Boolean) as string[];
+  return [p.id, p.name, p.preset_name].filter(Boolean).map(String);
 }
 
 /** Every quote line in a zone — leaf label or parent folder, not just starred Quick actions. */
@@ -145,12 +150,13 @@ export function leavesForZone<T extends PresetLike>(presets: T[], zone: BodyZone
   const seen = new Set<string>();
   const out: T[] = [];
   for (const p of presets) {
-    if (isGroup(p) || seen.has(p.id)) continue;
+    const key = presetKey(p);
+    if (isGroup(p) || !key || seen.has(key)) continue;
     const inZone =
       zone.match(labelOfPreset(p).toLowerCase()) ||
       (!!p.parent_preset && parentKeys.has(p.parent_preset));
     if (!inZone) continue;
-    seen.add(p.id);
+    seen.add(key);
     out.push(p);
   }
   return out;
