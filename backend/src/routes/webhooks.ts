@@ -131,29 +131,66 @@ webhooksRouter.post("/unifi", async (c) => {
   }
 
   // ── SMS handling ──────────────────────────────────────────────────────────
-  // UniFi Talk number is separate from Sofia's Twilio number.
-  // Store in sms_messages table with source="unifi" so it shows in comms dashboard.
+  // Shop Talk DID (212-752-1638) can RECEIVE SMS but cannot SEND (A2P brand
+  // failed). Bridge inbound shop texts to Sofia SMS relay; replies leave from
+  // Twilio 212-308-4431 via lsh_house.sms.send_customer_sms.
   if (type === "sms") {
     const fromPhone = callerPhone ?? body.from ?? body.sender ?? null;
     const messageBody = body.message ?? body.body ?? body.text ?? transcript ?? rawText ?? null;
 
     if (fromPhone && messageBody) {
-      await insertSmsMessage({
-        client_phone: fromPhone,
-        direction: "inbound",
-        body: messageBody,
-        content: messageBody,
-        timestamp: occurred,
-        status: "received",
-        context_tag: "unifi",
-      }).catch((e) => console.warn("[unifi.webhook] sms", e?.message));
+      const sofiaUrl = (process.env.SOFIA_SMS_UNIFI_FORWARD_URL ?? "").trim();
+      const sofiaToken = (process.env.SOFIA_SMS_UNIFI_FORWARD_SECRET ?? "").trim();
+      let forwarded = false;
+      if (sofiaUrl && sofiaToken) {
+        try {
+          const ac = new AbortController();
+          const timer = setTimeout(() => ac.abort(), 2500);
+          const res = await fetch(sofiaUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Webhook-Token": sofiaToken,
+            },
+            body: JSON.stringify({
+              from: fromPhone,
+              body: messageBody,
+              call_id: callId,
+              caller_name: callerName,
+              source: "unifi_talk",
+            }),
+            signal: ac.signal,
+          });
+          clearTimeout(timer);
+          forwarded = res.ok;
+          if (!res.ok) {
+            console.warn("[unifi→sofia]", res.status, await res.text().catch(() => ""));
+          }
+        } catch (e: any) {
+          console.warn("[unifi→sofia]", e?.message);
+        }
+      }
 
-      // Log to ERPNext customer timeline
+      // Fallback store if Sofia bridge is unset or down — still keep the text.
+      if (!forwarded) {
+        await insertSmsMessage({
+          client_phone: fromPhone,
+          direction: "inbound",
+          body: messageBody,
+          content: messageBody,
+          timestamp: occurred,
+          status: "received",
+          context_tag: "unifi",
+        }).catch((e) => console.warn("[unifi.webhook] sms", e?.message));
+      }
+
       if (matchedCustomerId) {
         await logErpCommunication({
           customerId: matchedCustomerId,
           medium: "SMS",
-          subject: `SMS via UniFi — ${callerName ?? fromPhone}`,
+          subject: forwarded
+            ? `SMS via UniFi → Sofia — ${callerName ?? fromPhone}`
+            : `SMS via UniFi — ${callerName ?? fromPhone}`,
           content: messageBody,
           direction: "Received",
           date: occurred,
