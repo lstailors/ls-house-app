@@ -1,83 +1,115 @@
-import { useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+/**
+ * SPEC 081 — Alts Messages Desk (chat-first floor Comms)
+ * Mocks: ~/ls-design/briefs/mocks/spec-081-alts-messages/
+ */
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@ls/api-client";
 import { useShopLink } from "@alts/offline/status";
 import { NeedsConnection } from "@alts/components/NeedsConnection";
 import { cn } from "@ls/design/utils";
 import { BrandSeal } from "@alts/components/BrandSeal";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
-import LuxuryLayer from "@alts/components/LuxuryLayer";
-import StatusBadge from "@alts/components/StatusBadge";
 import { clientInitials, syncLabel } from "@alts/lib/ticketDisplay";
-import { storeToday } from "@alts/lib/storeDate";
-import { useAltsMetrics } from "@alts/lib/useAltsMetrics";
+import { toast } from "sonner";
 import "@alts/styles/alts-pos.css";
+import "@alts/styles/messages-desk.css";
 
-type Tab = "all" | "sms" | "calls" | "voice" | "fittings" | "other";
+type Filter = "needs_you" | "texts" | "calls" | "today" | "all";
+type Channel = "sms" | "missed" | "vm" | "call" | "voice";
 
-type SmsThread = {
+type Person = {
   phone: string;
-  unread: number;
-  lastMessage?: { content?: string; body?: string; timestamp?: string; direction?: string };
+  phone_key: string;
+  customer_id: string | null;
+  customer_name: string | null;
+  preview: string;
+  last_at: string | null;
+  needs_you: boolean;
+  unread_count: number;
+  channels: Channel[];
+  via_shop_line: boolean;
 };
 
-type CallRow = {
-  name?: string;
-  from?: string;
-  to?: string;
-  from_caller_name?: string;
-  time?: string;
-  status?: string;
+type InboxPayload = {
+  people: Person[];
+  counts: { needs_you: number; texts: number; calls: number; today: number; all: number };
+};
+
+type ThreadEvent = {
+  type: string;
+  at: string;
+  id?: string;
+  call_id?: string;
   direction?: string;
+  body?: string;
+  sent_by?: string | null;
+  via_shop?: boolean;
   duration?: number;
-};
-
-type Recording = {
-  name?: string;
-  title?: string;
-  recorded_at?: string;
-  duration_sec?: number;
-  customer?: string;
   summary?: string;
-};
-
-type Appt = {
-  name: string;
-  scheduledTime: string;
-  customerName: string;
-  appointmentType?: string | null;
+  summary_bullets?: string[];
+  transcript?: string | null;
+  recording_url?: string | null;
+  from?: string;
+  from_caller_name?: string;
   status?: string;
-  agentDisplayName?: string | null;
 };
 
-type CommsFeed = {
-  calls?: CallRow[];
-  smsThreads?: SmsThread[];
-  recordings?: Recording[];
-  counts?: { missedCalls?: number; unreadSms?: number; callsToday?: number; smsThreads?: number; totalRecordings?: number };
+type ThreadPayload = {
+  person: {
+    phone: string;
+    customer_name: string | null;
+    customer_id: string | null;
+    via_shop_line?: boolean;
+  };
+  events: ThreadEvent[];
 };
 
-function timeAgo(iso?: string) {
-  if (!iso) return "";
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) return "";
-  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+const DONE_KEY = "alts.messages.doneKeys";
+
+function loadDone(): string[] {
+  try {
+    const raw = localStorage.getItem(DONE_KEY);
+    const arr = raw ? (JSON.parse(raw) as string[]) : [];
+    return Array.isArray(arr) ? arr.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveDone(keys: string[]) {
+  localStorage.setItem(DONE_KEY, JSON.stringify([...new Set(keys)].slice(-500)));
+}
+
+function phoneKey(phone?: string | null) {
+  const d = String(phone ?? "").replace(/\D/g, "");
+  if (d.length === 11 && d.startsWith("1")) return d.slice(1);
+  return d.length > 10 ? d.slice(-10) : d;
 }
 
 function fmtPhone(phone?: string | null) {
   const d = String(phone ?? "").replace(/\D/g, "");
   if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-  if (d.length === 11 && d.startsWith("1")) return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
+  if (d.length === 11 && d.startsWith("1"))
+    return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
   return phone || "Unknown";
 }
 
 function telHref(phone?: string | null) {
   const digits = String(phone ?? "").replace(/[^\d+]/g, "");
   return digits ? `tel:${digits}` : "";
+}
+
+function timeAgo(iso?: string | null) {
+  if (!iso) return "";
+  const s = String(iso).includes("T") ? String(iso) : String(iso).replace(" ", "T");
+  const ms = Date.parse(s);
+  if (!Number.isFinite(ms)) return "";
+  const sec = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (sec < 60) return "just now";
+  if (sec < 3600) return `${Math.floor(sec / 60)}m`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h`;
+  return new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function fmtDuration(sec?: number) {
@@ -87,9 +119,24 @@ function fmtDuration(sec?: number) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-function fmtClock(raw?: string | null) {
-  if (!raw) return "";
-  const s = String(raw).includes("T") ? String(raw) : String(raw).replace(" ", "T");
+function dayLabel(iso?: string | null) {
+  if (!iso) return "";
+  const s = String(iso).includes("T") ? String(iso) : String(iso).replace(" ", "T");
+  const d = new Date(s);
+  if (!Number.isFinite(d.getTime())) return "";
+  const today = new Date();
+  const yday = new Date();
+  yday.setDate(today.getDate() - 1);
+  const same = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (same(d, today)) return "Today";
+  if (same(d, yday)) return "Yesterday";
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+function clock(iso?: string | null) {
+  if (!iso) return "";
+  const s = String(iso).includes("T") ? String(iso) : String(iso).replace(" ", "T");
   const d = new Date(s);
   if (!Number.isFinite(d.getTime())) return "";
   return d.toLocaleTimeString("en-US", {
@@ -99,372 +146,460 @@ function fmtClock(raw?: string | null) {
   });
 }
 
+const FILTERS: Array<{ k: Filter; lab: string }> = [
+  { k: "needs_you", lab: "Needs you" },
+  { k: "texts", lab: "Texts" },
+  { k: "calls", lab: "Calls" },
+  { k: "today", lab: "Today" },
+  { k: "all", lab: "All" },
+];
+
 export default function MessagesGlass() {
   const shop = useShopLink();
-  const [tab, setTab] = useState<Tab>("all");
-  const [threadPhone, setThreadPhone] = useState<string | null>(null);
-  const [call, setCall] = useState<CallRow | null>(null);
-  const [voice, setVoice] = useState<Recording | null>(null);
-  const today = storeToday();
+  const qc = useQueryClient();
+  const [filter, setFilter] = useState<Filter>("needs_you");
+  const [showNoise, setShowNoise] = useState(false);
+  const [selected, setSelected] = useState<Person | null>(null);
+  const [draft, setDraft] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmedThreads, setConfirmedThreads] = useState<Set<string>>(new Set());
+  const [doneKeys, setDoneKeys] = useState<string[]>(() =>
+    typeof window !== "undefined" ? loadDone() : [],
+  );
+  const [expandedTx, setExpandedTx] = useState<Record<string, boolean>>({});
+  const threadEndRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
-  const feed = useQuery({
-    queryKey: ["alts-comms"],
-    queryFn: () => api.get<CommsFeed>("/api/comms?limit=80"),
-    refetchInterval: 60_000,
-  });
+  const doneParam = doneKeys.join(",");
 
-  const fittings = useQuery({
-    queryKey: ["alts-comms-fittings", today],
+  const inbox = useQuery({
+    queryKey: ["msg-inbox", filter, showNoise, doneParam],
     queryFn: () =>
-      api.get<{ appointments: Appt[] }>(`/api/appointments?date_from=${today}&date_to=${today}`),
-    refetchInterval: 60_000,
+      api.get<InboxPayload>(
+        `/api/comms/inbox?filter=${filter}&noise=${showNoise ? "show" : "hide"}&limit=120&done=${encodeURIComponent(doneParam)}`,
+      ),
+    refetchInterval: 45_000,
   });
 
+  const threadPhone = selected?.phone ?? null;
   const thread = useQuery({
-    queryKey: ["alts-sms-thread", threadPhone],
+    queryKey: ["msg-thread", threadPhone, showNoise],
     enabled: !!threadPhone,
     queryFn: () =>
-      api.get<{
-        messages: Array<{ name: string; content?: string; body?: string; direction?: string; timestamp?: string }>;
-        customer?: { name?: string; id?: string } | null;
-      }>(`/api/comms/thread/${encodeURIComponent(threadPhone!)}`),
+      api.get<ThreadPayload>(
+        `/api/comms/thread/${encodeURIComponent(threadPhone!)}?noise=${showNoise ? "show" : "hide"}`,
+      ),
+    refetchInterval: 30_000,
   });
 
-  const metrics = useAltsMetrics();
-  const calls = feed.data?.calls ?? [];
-  const sms = feed.data?.smsThreads ?? [];
-  const recordings = feed.data?.recordings ?? [];
-  const appts = fittings.data?.appointments ?? [];
-  const live = syncLabel(feed.dataUpdatedAt, feed.isFetching);
+  const live = syncLabel(inbox.dataUpdatedAt, inbox.isFetching);
+  const counts = inbox.data?.counts ?? {
+    needs_you: 0,
+    texts: 0,
+    calls: 0,
+    today: 0,
+    all: 0,
+  };
+  const people = inbox.data?.people ?? [];
 
-  const textsN = metrics.data?.messages.texts ?? sms.length;
-  const callsN = metrics.data?.messages.calls ?? calls.length;
-  const voiceN = metrics.data?.messages.voice ?? recordings.length;
-  const fittingsN = metrics.data?.messages.fittings ?? appts.length;
-  const otherN = metrics.data?.messages.other ?? 0;
-  const allN = metrics.data?.messages.all ?? textsN + callsN + voiceN + fittingsN + otherN;
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [thread.data?.events?.length, threadPhone]);
 
-  const unreadSms = sms.filter((t) => t.unread > 0);
-  const otherSms = sms.filter((t) => t.unread <= 0);
-  const missed = calls.filter((c) => c.status === "missed");
-  const otherCalls = calls.filter((c) => c.status !== "missed");
+  const sendMut = useMutation({
+    mutationFn: async (body: string) => {
+      if (!threadPhone) throw new Error("No thread");
+      return api.post<{ ok: boolean; sid?: string }>("/api/comms/send", {
+        to: threadPhone,
+        body,
+        source: "alts_messages",
+        sent_by: "staff_manual",
+      });
+    },
+    onSuccess: () => {
+      setDraft("");
+      setConfirmOpen(false);
+      if (threadPhone) {
+        setConfirmedThreads((s) => new Set(s).add(phoneKey(threadPhone)));
+        // clear done so new reply state recalculates
+        const k = phoneKey(threadPhone);
+        const next = doneKeys.filter((x) => x !== k);
+        setDoneKeys(next);
+        saveDone(next);
+      }
+      qc.invalidateQueries({ queryKey: ["msg-thread", threadPhone] });
+      qc.invalidateQueries({ queryKey: ["msg-inbox"] });
+      toast.success("Sent as Sofia");
+    },
+    onError: (e: Error) => toast.error(e.message || "Send failed"),
+  });
+
+  function requestSend(e?: FormEvent) {
+    e?.preventDefault();
+    const body = draft.trim();
+    if (!body || !threadPhone || sendMut.isPending) return;
+    const k = phoneKey(threadPhone);
+    if (!confirmedThreads.has(k)) {
+      setConfirmOpen(true);
+      return;
+    }
+    sendMut.mutate(body);
+  }
+
+  function markDone() {
+    if (!selected) return;
+    const k = phoneKey(selected.phone);
+    const next = [...doneKeys, k];
+    setDoneKeys(next);
+    saveDone(next);
+    setSelected(null);
+    qc.invalidateQueries({ queryKey: ["msg-inbox"] });
+    toast.message("Marked done");
+  }
+
+  const events = thread.data?.events ?? [];
+  const person = thread.data?.person;
+  const title =
+    person?.customer_name || selected?.customer_name || (selected ? fmtPhone(selected.phone) : "");
 
   return (
-    <div className="alts-root min-h-dvh flex flex-col overflow-x-hidden">
-      <header className="flex items-center gap-3 px-4 sm:px-5 py-4 border-b border-brass/20 flex-wrap">
+    <div className="alts-root msg-desk min-h-dvh flex flex-col overflow-hidden">
+      <header className="msg-topbar">
         <BrandSeal />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="display text-[32px] leading-none">Messages</div>
-          <div className="caps mt-1">Texts · calls · voice · fittings</div>
+          <div className="caps mt-1 text-cream-dim">Who needs you · texts · calls · UniFi</div>
         </div>
-        <div className="flex-1" />
-        <div className={cn("sf-live", feed.isFetching && "is-sync", feed.isError && "is-down")}>
+        <div className={cn("msg-live", inbox.isFetching && "is-sync", inbox.isError && "is-down")}>
           <span className="dot" />
-          {feed.isError ? "ERPNext down" : live}
+          <span className="msg-live-text">{inbox.isError ? "ERPNext down" : live}</span>
         </div>
       </header>
 
-      <div className="px-4 sm:px-5 pt-3 flex flex-wrap gap-2">
-        {(
-          [
-            ["all", "All", allN],
-            ["sms", "Texts", textsN],
-            ["calls", "Calls", callsN],
-            ["voice", "Voice", voiceN],
-            ["fittings", "Fittings", fittingsN],
-            ["other", "Other", otherN],
-          ] as Array<[Tab, string, number]>
-        )
-          .filter((row) => row[0] !== "other" || otherN > 0)
-          .map(([k, lab, n]) => (
+      <div className="msg-filters">
+        {FILTERS.map(({ k, lab }) => (
           <button
             key={k}
             type="button"
-            onClick={() => setTab(k)}
-            className={cn(
-              "px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide border",
-              tab === k ? "bg-brass/20 border-brass text-cream" : "border-brass/25 text-cream-dim",
-            )}
+            onClick={() => setFilter(k)}
+            className={cn("msg-chip", filter === k && "is-active")}
           >
             {lab}
-            <span className="og-count">{n}</span>
+            <span className="n">{counts[k] ?? 0}</span>
           </button>
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 pb-[max(6rem,calc(env(safe-area-inset-bottom)+5rem))]">
-        {shop === "offline" && (
-          <NeedsConnection
-            title="Messages need a connection"
-            detail="Texts and the inbox will be available when you're back online."
-          />
-        )}
-        {feed.isError && shop !== "offline" && (
-          <QueryErrorPanel
-            title="Could not load messages"
-            message={feed.error instanceof Error ? feed.error.message : "Retry — an empty inbox is not the same as an outage."}
-            onRetry={() => feed.refetch()}
-          />
-        )}
-
-        {(tab === "all" || tab === "sms") && unreadSms.length > 0 && (
-          <Section title="New texts" tone="qc">
-            {unreadSms.map((t) => (
-              <SmsCard key={`u-${t.phone}`} t={t} onOpen={() => setThreadPhone(t.phone)} />
-            ))}
-          </Section>
-        )}
-        {(tab === "all" || tab === "calls") && missed.length > 0 && (
-          <Section title="Missed calls" tone="tasks">
-            {missed.map((c) => (
-              <CallCard key={`m-${c.name || c.time}`} c={c} onOpen={() => setCall(c)} />
-            ))}
-          </Section>
-        )}
-        {(tab === "all" || tab === "voice") && recordings.length > 0 && (
-          <Section title="Voice notes" tone="shop">
-            {recordings.map((r) => (
-              <button
-                key={r.name || r.recorded_at}
-                type="button"
-                onClick={() => setVoice(r)}
-                className="og-row sf-card msg-row w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
-              >
-                <span className="sf-avatar" aria-hidden>
-                  {clientInitials(r.title || r.customer || "Voice")}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <StatusBadge status="Voice" tone="shop" size="sm" />
-                    {fmtDuration(r.duration_sec) && (
-                      <span className="text-[11px] text-cream-dim">{fmtDuration(r.duration_sec)}</span>
-                    )}
-                    <span className="text-[11px] text-cream-dim">{timeAgo(r.recorded_at)}</span>
-                  </div>
-                  <div className="display text-[22px] leading-none mt-1 truncate">{r.title || "Voice note"}</div>
-                  <div className="text-xs text-cream-dim mt-1 truncate">{r.summary || r.customer || "Plaud capture"}</div>
-                </div>
-                <div className="text-cream-dim">→</div>
-              </button>
-            ))}
-          </Section>
-        )}
-        {(tab === "all" || tab === "fittings") && appts.length > 0 && (
-          <Section title="Fittings today" tone="shop">
-            {appts.map((a) => (
-              <div key={a.name} className="og-row sf-card msg-row card-glass px-4 py-3.5 flex items-center gap-3 mb-2">
-                <span className="sf-avatar" aria-hidden>
-                  {clientInitials(a.customerName)}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <StatusBadge status="Fitting" tone="shop" size="sm" />
-                    {a.status && <StatusBadge status={a.status} size="sm" />}
-                    <span className="font-mono text-xs text-brass-light">{fmtClock(a.scheduledTime)}</span>
-                  </div>
-                  <div className="display text-[22px] leading-none mt-1 truncate">{a.customerName || "Client"}</div>
-                  <div className="text-xs text-cream-dim mt-1 truncate">
-                    {[a.appointmentType, a.agentDisplayName].filter(Boolean).join(" · ")}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </Section>
-        )}
-        {(tab === "all" || tab === "sms") && otherSms.length > 0 && (
-          <Section title="Texts" tone="shop">
-            {otherSms.map((t) => (
-              <SmsCard key={`s-${t.phone}`} t={t} onOpen={() => setThreadPhone(t.phone)} />
-            ))}
-          </Section>
-        )}
-        {(tab === "all" || tab === "calls") && otherCalls.length > 0 && (
-          <Section title="Calls" tone="pickup">
-            {otherCalls.map((c) => (
-              <CallCard key={`c-${c.name || c.time}`} c={c} onOpen={() => setCall(c)} />
-            ))}
-          </Section>
-        )}
-
-        {!feed.isLoading &&
-          ((tab === "all" && !sms.length && !calls.length && !recordings.length && !appts.length) ||
-            (tab === "sms" && !sms.length) ||
-            (tab === "calls" && !calls.length) ||
-            (tab === "voice" && !recordings.length) ||
-            (tab === "fittings" && !appts.length)) &&
-          !feed.isError && (
-            <div className="sf-empty">
-              {tab === "voice"
-                ? "Personal voice notes stay private unless tagged to a client or order."
-                : "The line is quiet."}
-            </div>
-          )}
+      <div className="msg-noise-row">
+        <span>Staff noise hidden by default</span>
+        <button
+          type="button"
+          className={cn("msg-noise-btn", showNoise && "on")}
+          onClick={() => setShowNoise((v) => !v)}
+        >
+          {showNoise ? "Showing staff noise" : "Show staff noise"}
+        </button>
       </div>
 
-      <LuxuryLayer open={!!threadPhone} onClose={() => setThreadPhone(null)} variant="sheet" label="Text thread" z={70}>
-        {threadPhone && (
-          <div
-            className="w-full max-w-lg mx-auto rounded-t-[22px] border border-brass/30 border-b-0 px-5 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] max-h-[85dvh] overflow-y-auto"
-            style={{ background: "linear-gradient(180deg,#152A1E,#0D1A10)" }}
-          >
-            <div className="flex justify-center pb-2" aria-hidden>
-              <i className="block w-10 h-1 rounded-full bg-brass/40" />
-            </div>
-            <div className="caps text-brass-light">Text</div>
-            <h2 className="display text-[28px] leading-none mt-1">
-              {thread.data?.customer?.name || fmtPhone(threadPhone)}
-            </h2>
-            <p className="text-sm text-cream-dim mt-1">{fmtPhone(threadPhone)}</p>
-            <div className="mt-4 space-y-2">
-              {(thread.data?.messages ?? []).map((m) => (
-                <div
-                  key={m.name}
-                  className={cn(
-                    "rounded-xl px-3 py-2 text-sm",
-                    m.direction === "inbound" ? "bg-white/8 mr-8" : "bg-brass/15 ml-8",
+      {shop === "offline" && (
+        <div className="px-4 py-3">
+          <NeedsConnection
+            title="Messages need a connection"
+            detail="Inbox and reply will be available when you're back online."
+          />
+        </div>
+      )}
+
+      {inbox.isError && shop !== "offline" && (
+        <div className="px-4 py-3">
+          <QueryErrorPanel
+            title="Could not load messages"
+            message={inbox.error instanceof Error ? inbox.error.message : "Retry — empty is not an outage."}
+            onRetry={() => inbox.refetch()}
+          />
+        </div>
+      )}
+
+      <div className={cn("msg-split flex-1 min-h-0", selected && "has-thread")}>
+        {/* INBOX */}
+        <aside className={cn("msg-inbox", selected && "is-hidden-phone")}>
+          <div className="msg-inbox-scroll">
+            {people.map((p) => {
+              const name = p.customer_name || fmtPhone(p.phone);
+              const active = selected && phoneKey(selected.phone) === p.phone_key;
+              return (
+                <button
+                  key={p.phone_key}
+                  type="button"
+                  onClick={() => {
+                    setSelected(p);
+                    setDraft("");
+                    setConfirmOpen(false);
+                  }}
+                  className={cn("msg-row", p.needs_you && "needs", active && "is-active")}
+                >
+                  <span className="msg-avatar" aria-hidden>
+                    {clientInitials(name)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="msg-row-top">
+                      <span className="msg-name truncate">{name}</span>
+                      <span className="msg-meta">{timeAgo(p.last_at)}</span>
+                    </div>
+                    <div className="msg-preview truncate">{p.preview}</div>
+                    <div className="msg-minis">
+                      {p.channels.map((ch) => (
+                        <span key={ch} className="msg-mini">
+                          {ch === "vm" ? "VM" : ch === "sms" ? "Text" : ch === "missed" ? "Missed" : "Call"}
+                        </span>
+                      ))}
+                      {p.via_shop_line && <span className="msg-mini shop">Shop</span>}
+                    </div>
+                  </div>
+                  {p.needs_you && (
+                    <span className="msg-unread" aria-label={`${p.unread_count} new`}>
+                      {p.unread_count > 9 ? "9+" : p.unread_count}
+                    </span>
                   )}
-                >
-                  <div>{m.content || m.body}</div>
-                  <div className="text-[10px] text-cream-dim mt-1">{timeAgo(m.timestamp)}</div>
+                </button>
+              );
+            })}
+            {!inbox.isLoading && people.length === 0 && !inbox.isError && (
+              <div className="msg-empty">
+                {filter === "needs_you" ? "You’re clear. The line is quiet." : "Nothing in this filter."}
+              </div>
+            )}
+          </div>
+        </aside>
+
+        {/* THREAD */}
+        <section className={cn("msg-thread", !selected && "is-empty-desktop")}>
+          {!selected ? (
+            <div className="msg-thread-placeholder">Select a person to open the thread</div>
+          ) : (
+            <>
+              <div className="msg-thread-head">
+                <button type="button" className="msg-back" onClick={() => setSelected(null)} aria-label="Back">
+                  ←
+                </button>
+                <div className="min-w-0 flex-1">
+                  <div className="msg-thread-title truncate">{title}</div>
+                  <div className="msg-thread-sub">
+                    {telHref(selected.phone) ? (
+                      <a href={telHref(selected.phone)} className="underline-offset-2 hover:underline">
+                        {fmtPhone(selected.phone)}
+                      </a>
+                    ) : (
+                      fmtPhone(selected.phone)
+                    )}
+                    {(person?.via_shop_line || selected.via_shop_line) && (
+                      <span className="msg-pill-shop">Via shop line · reply Sofia</span>
+                    )}
+                  </div>
                 </div>
-              ))}
-              {thread.isError && <p className="text-sm text-[var(--am)]">Could not load the thread.</p>}
-            </div>
-            <div className="flex flex-col gap-2 mt-5">
-              {telHref(threadPhone) && (
-                <a href={telHref(threadPhone)} className="btn-brass h-12 text-xs inline-flex items-center justify-center">
-                  Call {fmtPhone(threadPhone)}
-                </a>
-              )}
-              <button type="button" onClick={() => setThreadPhone(null)} className="btn-ghost h-12 text-xs">
-                Close
-              </button>
-            </div>
-          </div>
-        )}
-      </LuxuryLayer>
+                <div className="msg-thread-actions">
+                  {telHref(selected.phone) && (
+                    <a href={telHref(selected.phone)} className="msg-btn-ghost">
+                      Call
+                    </a>
+                  )}
+                  <button type="button" className="msg-btn-quiet" onClick={markDone}>
+                    Mark done
+                  </button>
+                </div>
+              </div>
 
-      <LuxuryLayer open={!!call} onClose={() => setCall(null)} variant="sheet" label="Call" z={70}>
-        {call && (
-          <div
-            className="w-full max-w-lg mx-auto rounded-t-[22px] border border-brass/30 border-b-0 px-5 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
-            style={{ background: "linear-gradient(180deg,#152A1E,#0D1A10)" }}
-          >
-            <div className="flex justify-center pb-2" aria-hidden>
-              <i className="block w-10 h-1 rounded-full bg-brass/40" />
-            </div>
-            <div className="caps text-brass-light">{call.status === "missed" ? "Missed call" : "Call"}</div>
-            <h2 className="display text-[32px] leading-none mt-1">
-              {call.from_caller_name || fmtPhone(call.from || call.to)}
-            </h2>
-            <p className="text-sm text-cream-dim mt-2">
-              {[fmtPhone(call.from || call.to), fmtDuration(call.duration), timeAgo(call.time)].filter(Boolean).join(" · ")}
-            </p>
-            <div className="flex flex-col gap-2 mt-5">
-              {telHref(call.from || call.to) && (
-                <a
-                  href={telHref(call.from || call.to)}
-                  className="btn-brass h-12 text-xs inline-flex items-center justify-center"
-                >
-                  Call back
-                </a>
-              )}
-              <button type="button" onClick={() => setCall(null)} className="btn-ghost h-12 text-xs">
-                Close
-              </button>
-            </div>
-          </div>
-        )}
-      </LuxuryLayer>
+              <div className="msg-timeline">
+                {thread.isError && (
+                  <p className="text-sm text-[var(--am)] px-2">Could not load the thread.</p>
+                )}
+                {events.map((ev, i) => {
+                  const prev = events[i - 1];
+                  const day = dayLabel(ev.at);
+                  const showDay = day && day !== dayLabel(prev?.at);
+                  return (
+                    <div key={`${ev.type}-${ev.id || ev.call_id || i}-${ev.at}`}>
+                      {showDay && <div className="msg-day">{day}</div>}
+                      <EventRow
+                        ev={ev}
+                        phone={selected.phone}
+                        expanded={!!expandedTx[String(ev.call_id || ev.id || i)]}
+                        onToggleTx={() =>
+                          setExpandedTx((m) => {
+                            const k = String(ev.call_id || ev.id || i);
+                            return { ...m, [k]: !m[k] };
+                          })
+                        }
+                      />
+                    </div>
+                  );
+                })}
+                {!thread.isLoading && events.length === 0 && (
+                  <div className="msg-empty subtle">No messages in this thread yet.</div>
+                )}
+                <div ref={threadEndRef} />
+              </div>
 
-      <LuxuryLayer open={!!voice} onClose={() => setVoice(null)} variant="sheet" label="Voice note" z={70}>
-        {voice && (
-          <div
-            className="w-full max-w-lg mx-auto rounded-t-[22px] border border-brass/30 border-b-0 px-5 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
-            style={{ background: "linear-gradient(180deg,#152A1E,#0D1A10)" }}
-          >
-            <div className="caps text-brass-light">Voice</div>
-            <h2 className="display text-[28px] leading-none mt-1">{voice.title || "Voice note"}</h2>
-            <p className="text-sm text-cream-dim mt-2">
-              {[fmtDuration(voice.duration_sec), timeAgo(voice.recorded_at)].filter(Boolean).join(" · ")}
-            </p>
-            {voice.summary && <p className="text-sm text-cream mt-3">{voice.summary}</p>}
-            <button type="button" onClick={() => setVoice(null)} className="btn-ghost h-12 w-full mt-5 text-xs">
-              Close
-            </button>
-          </div>
-        )}
-      </LuxuryLayer>
+              <form className="msg-composer" onSubmit={requestSend}>
+                <textarea
+                  ref={composerRef}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  placeholder="Reply as Sofia…"
+                  rows={2}
+                  className="msg-composer-input"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      requestSend();
+                    }
+                  }}
+                />
+                <div className="msg-composer-bar">
+                  <span className="msg-composer-help">Sends from (212) 308-4431 · logged to the house</span>
+                  <button
+                    type="submit"
+                    className="msg-btn-send"
+                    disabled={!draft.trim() || sendMut.isPending}
+                  >
+                    {sendMut.isPending ? "Sending…" : "Send"}
+                  </button>
+                </div>
+              </form>
+
+              {confirmOpen && (
+                <div className="msg-confirm-scrim" role="dialog" aria-modal="true">
+                  <div className="msg-confirm-sheet">
+                    <div className="caps text-brass-light">Send as Sofia?</div>
+                    <p className="msg-confirm-body mt-2">{draft}</p>
+                    <p className="text-xs text-cream-dim mt-2">
+                      To {fmtPhone(selected.phone)}
+                      {person?.customer_name ? ` · ${person.customer_name}` : ""} · from (212) 308-4431
+                    </p>
+                    <div className="flex gap-2 mt-4">
+                      <button type="button" className="msg-btn-ghost flex-1" onClick={() => setConfirmOpen(false)}>
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="msg-btn-send flex-1"
+                        disabled={sendMut.isPending}
+                        onClick={() => sendMut.mutate(draft.trim())}
+                      >
+                        Send as Sofia
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
 
-function Section({
-  title,
-  tone,
-  children,
+function EventRow({
+  ev,
+  phone,
+  expanded,
+  onToggleTx,
 }: {
-  title: string;
-  tone: "pickup" | "qc" | "tasks" | "shop";
-  children: ReactNode;
+  ev: ThreadEvent;
+  phone: string;
+  expanded: boolean;
+  onToggleTx: () => void;
 }) {
-  return (
-    <section className="mb-5">
-      <div className="flex items-center gap-2 mb-2">
-        <StatusBadge status={title} tone={tone} size="sm" />
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function SmsCard({ t, onOpen }: { t: SmsThread; onOpen: () => void }) {
-  const preview = t.lastMessage?.content || t.lastMessage?.body || "No messages";
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="og-row sf-card msg-row w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
-    >
-      <span className="sf-avatar" aria-hidden>
-        {clientInitials(fmtPhone(t.phone))}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <StatusBadge status="Text" tone="shop" size="sm" />
-          {t.unread > 0 && <StatusBadge status={`${t.unread} new`} tone="qc" size="sm" />}
-          <span className="text-[11px] text-cream-dim">{timeAgo(t.lastMessage?.timestamp)}</span>
+  if (ev.type === "sms") {
+    const inbound = ev.direction === "inbound";
+    return (
+      <div className={cn("msg-bubble-row", inbound ? "in" : "out")}>
+        <div className={cn("msg-bubble", inbound ? "in" : "out")}>
+          <div className="msg-bubble-text">{ev.body}</div>
+          <div className="msg-bubble-meta">
+            {!inbound && <span>{ev.sent_by === "staff_manual" ? "Staff" : "Sofia"} · </span>}
+            {clock(ev.at)}
+          </div>
         </div>
-        <div className="display text-[22px] leading-none mt-1 truncate">{fmtPhone(t.phone)}</div>
-        <div className="text-xs text-cream-dim mt-1 truncate">{preview}</div>
       </div>
-      <div className="text-cream-dim">→</div>
-    </button>
-  );
-}
+    );
+  }
 
-function CallCard({ c, onOpen }: { c: CallRow; onOpen: () => void }) {
-  const missed = c.status === "missed";
-  const name = c.from_caller_name || fmtPhone(c.from || c.to);
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="og-row sf-card msg-row w-full text-left card-glass px-4 py-3.5 flex items-center gap-3 mb-2"
-    >
-      <span className="sf-avatar" aria-hidden>
-        {clientInitials(name)}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <StatusBadge status={missed ? "Missed call" : "Call"} tone={missed ? "tasks" : "pickup"} size="sm" />
-          {fmtDuration(c.duration) && <span className="text-[11px] text-cream-dim">{fmtDuration(c.duration)}</span>}
-          <span className="text-[11px] text-cream-dim">{timeAgo(c.time)}</span>
+  if (ev.type === "missed_call") {
+    return (
+      <div className="msg-sys-pill">
+        <div>
+          <strong>Missed call</strong>
+          {ev.duration ? ` · ${fmtDuration(ev.duration)}` : ""} · {clock(ev.at)}
         </div>
-        <div className="display text-[22px] leading-none mt-1 truncate">{name}</div>
-        <div className="text-xs text-cream-dim mt-1 truncate">{fmtPhone(c.from || c.to)}</div>
+        {telHref(phone) && (
+          <a href={telHref(phone)} className="msg-btn-ghost sm">
+            Call back
+          </a>
+        )}
       </div>
-      <div className="text-cream-dim">→</div>
-    </button>
-  );
+    );
+  }
+
+  if (ev.type === "voicemail") {
+    return (
+      <div className="msg-card">
+        <div className="msg-card-head">
+          <span className="msg-card-label">Voicemail</span>
+          <span className="msg-meta">
+            {fmtDuration(ev.duration)} · {clock(ev.at)}
+          </span>
+          {ev.recording_url && (
+            <a href={ev.recording_url} target="_blank" rel="noreferrer" className="msg-play" title="Play">
+              ▶
+            </a>
+          )}
+        </div>
+        <p className="msg-card-body">{ev.summary}</p>
+      </div>
+    );
+  }
+
+  if (ev.type === "call_transcript") {
+    const bullets = ev.summary_bullets?.length ? ev.summary_bullets : [];
+    return (
+      <div className="msg-card">
+        <div className="msg-card-head">
+          <span className="msg-card-label">
+            Call · {ev.direction === "outbound" ? "Outbound" : "Inbound"}
+            {ev.duration ? ` · ${fmtDuration(ev.duration)}` : ""}
+          </span>
+          <span className="msg-meta">{clock(ev.at)}</span>
+          {ev.recording_url && (
+            <a href={ev.recording_url} target="_blank" rel="noreferrer" className="msg-play" title="Play">
+              ▶
+            </a>
+          )}
+        </div>
+        {bullets.length > 0 ? (
+          <>
+            <div className="msg-card-label subtle mt-2">AI summary</div>
+            <ul className="msg-bullets">
+              {bullets.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p className="msg-card-body muted">No transcript yet</p>
+        )}
+        {ev.transcript && (
+          <>
+            <button type="button" className="msg-tx-toggle" onClick={onToggleTx}>
+              {expanded ? "▾ Full transcript" : "▸ Full transcript"}
+            </button>
+            {expanded && <pre className="msg-transcript">{ev.transcript}</pre>}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return null;
 }

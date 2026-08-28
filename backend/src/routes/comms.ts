@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
-import { canShowTestData, isTestSmsBody } from "../lib/ops-mode";
+import { canShowTestData, isTestSmsBody, phoneKey } from "../lib/ops-mode";
 import { canReadVoiceNote, isHouseVisibleVoice } from "../lib/voice-privacy";
-import { erpList, erpCreate } from "../lib/erp";
+import { erpList, erpCreate, erpRunMethod } from "../lib/erp";
 import {
   listCallLogs,
   getCallLog,
@@ -10,10 +10,23 @@ import {
   getPlaudCapture,
   listSmsMessagesFiltered,
   insertAgentBrief,
+  insertSmsMessage,
 } from "../lib/erpnext/agents";
 import { requireCronOrSession } from "../lib/require-secret";
 import { resolveCustomerByPhone } from "../lib/identity-resolve";
 import { getCommsEvents } from "../lib/comms-events";
+import {
+  DeskChannel,
+  DeskPerson,
+  fmtE164ish,
+  isNoiseCall,
+  isNoiseSms,
+  isOwnerPhone,
+  previewClean,
+  recordingPlayUrl,
+  summaryBullets,
+  tsMs,
+} from "../lib/messages-desk";
 
 // ── Log communication to ERPNext Customer timeline ────────────────────────
 export async function logErpCommunication(opts: {
@@ -200,14 +213,420 @@ commsRouter.get("/", async (c) => {
   });
 });
 
-// ── GET /api/comms/thread/:phone — SMS thread ──────────────────────────────
+// ── SPEC 081: GET /api/comms/inbox — people-ranked floor desk ─────────────
+commsRouter.get("/inbox", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  const filter = (c.req.query("filter") || "needs_you").toLowerCase();
+  const noise = (c.req.query("noise") || "hide").toLowerCase();
+  const showNoise = noise === "show";
+  const limit = Math.min(Number(c.req.query("limit") ?? "120") || 120, 250);
+  const doneKeys = new Set(
+    String(c.req.query("done") || "")
+      .split(",")
+      .map((s) => phoneKey(s))
+      .filter((k) => k.length >= 10),
+  );
+
+  const [smsRaw, callsRaw] = await Promise.all([
+    listSmsMessagesFiltered({ limit: Math.min(limit * 3, 400) }),
+    listCallLogs({ limit: Math.min(limit * 2, 250) }),
+  ]);
+
+  const sms = showNoise
+    ? smsRaw
+    : smsRaw.filter((m) => !isNoiseSms(m) && !isTestSmsBody(m.content || m.body));
+  const calls = showNoise ? callsRaw : callsRaw.filter((call) => !isNoiseCall(call));
+
+  type Agg = {
+    phone: string;
+    phone_key: string;
+    customer_id: string | null;
+    customer_name: string | null;
+    last_at_ms: number;
+    last_at: string | null;
+    preview: string;
+    channels: Set<DeskChannel>;
+    via_shop_line: boolean;
+    last_client_ms: number;
+    last_house_ms: number;
+    inbound_since_house: number;
+    last_direction: string | null;
+  };
+
+  const map = new Map<string, Agg>();
+
+  const touch = (phoneRaw: string | null | undefined): Agg | null => {
+    const key = phoneKey(phoneRaw);
+    if (key.length < 10) return null;
+    const phone = fmtE164ish(phoneRaw || key);
+    let a = map.get(key);
+    if (!a) {
+      a = {
+        phone,
+        phone_key: key,
+        customer_id: null,
+        customer_name: null,
+        last_at_ms: 0,
+        last_at: null,
+        preview: "",
+        channels: new Set(),
+        via_shop_line: false,
+        last_client_ms: 0,
+        last_house_ms: 0,
+        inbound_since_house: 0,
+        last_direction: null,
+      };
+      map.set(key, a);
+    }
+    return a;
+  };
+
+  for (const m of sms) {
+    const a = touch(m.client_phone);
+    if (!a) continue;
+    const at = tsMs(m.timestamp || m.creation);
+    const body = previewClean(m.content || m.body, 110);
+    const inbound = String(m.direction || "").toLowerCase() === "inbound";
+    if (inbound) {
+      a.last_client_ms = Math.max(a.last_client_ms, at);
+      if (at >= a.last_house_ms) a.inbound_since_house += 1;
+    } else {
+      a.last_house_ms = Math.max(a.last_house_ms, at);
+    }
+    if (String(m.context_tag || "").includes("unifi")) a.via_shop_line = true;
+    if (m.customer && !a.customer_id) a.customer_id = String(m.customer);
+    if (m.client_name && !a.customer_name) a.customer_name = String(m.client_name);
+    a.channels.add("sms");
+    if (at >= a.last_at_ms) {
+      a.last_at_ms = at;
+      a.last_at = m.timestamp || m.creation || null;
+      a.preview = inbound ? body : body ? `Sofia: ${body}` : a.preview;
+      a.last_direction = inbound ? "inbound" : "outbound";
+    }
+  }
+
+  for (const call of calls) {
+    const a = touch(call.from || call.to);
+    if (!a) continue;
+    const at = tsMs(call.time || call.creation);
+    const st = String(call.status || "").toLowerCase();
+    if (st === "missed") a.channels.add("missed");
+    else if (st === "voicemail") a.channels.add("vm");
+    else a.channels.add("call");
+    // treat missed/vm/failed as client activity needing follow-up
+    if (st === "missed" || st === "voicemail" || st === "emergency" || st === "failed") {
+      a.last_client_ms = Math.max(a.last_client_ms, at);
+    }
+    if (call.customer && !a.customer_id) a.customer_id = String(call.customer);
+    if (call.from_caller_name && !a.customer_name) a.customer_name = String(call.from_caller_name);
+    if (at >= a.last_at_ms) {
+      a.last_at_ms = at;
+      a.last_at = call.time || call.creation || null;
+      if (st === "missed") a.preview = "Missed call";
+      else if (st === "voicemail") a.preview = previewClean(call.transcript_whisper || "Voicemail", 110);
+      else a.preview = previewClean(call.transcript_whisper || call.transcript_raw || "Call", 110);
+      a.last_direction = "call";
+    }
+  }
+
+  // Enrich missing names (bounded)
+  const needName = [...map.values()].filter((a) => !a.customer_name).slice(0, 40);
+  await Promise.all(
+    needName.map(async (a) => {
+      const hit = await matchCustomerByPhone(a.phone).catch(() => null);
+      if (hit) {
+        a.customer_id = hit.id;
+        a.customer_name = hit.name;
+      }
+    }),
+  );
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayMs = todayStart.getTime();
+
+  let people: DeskPerson[] = [...map.values()].map((a) => {
+    const done = doneKeys.has(a.phone_key);
+    const needs =
+      !done &&
+      a.last_client_ms > 0 &&
+      a.last_client_ms > a.last_house_ms;
+    const channels = [...a.channels].slice(0, 3) as DeskChannel[];
+    return {
+      phone: a.phone,
+      phone_key: a.phone_key,
+      customer_id: a.customer_id,
+      customer_name: a.customer_name,
+      preview: a.preview || "No messages",
+      last_at: a.last_at,
+      needs_you: needs,
+      unread_count: needs ? Math.max(1, a.inbound_since_house || 1) : 0,
+      channels,
+      via_shop_line: a.via_shop_line,
+      last_direction: a.last_direction,
+    };
+  });
+
+  const counts = {
+    needs_you: people.filter((p) => p.needs_you).length,
+    texts: people.filter((p) => p.channels.includes("sms")).length,
+    calls: people.filter((p) => p.channels.some((c) => c === "call" || c === "missed" || c === "vm")).length,
+    today: people.filter((p) => tsMs(p.last_at) >= todayMs).length,
+    all: people.length,
+  };
+
+  if (filter === "needs_you") people = people.filter((p) => p.needs_you);
+  else if (filter === "texts") people = people.filter((p) => p.channels.includes("sms"));
+  else if (filter === "calls")
+    people = people.filter((p) => p.channels.some((c) => c === "call" || c === "missed" || c === "vm"));
+  else if (filter === "today") people = people.filter((p) => tsMs(p.last_at) >= todayMs);
+
+  people.sort((a, b) => {
+    if (a.needs_you !== b.needs_you) return a.needs_you ? -1 : 1;
+    return tsMs(b.last_at) - tsMs(a.last_at);
+  });
+
+  people = people.slice(0, limit);
+
+  return c.json({
+    data: {
+      people,
+      counts,
+      filter,
+      noise: showNoise ? "show" : "hide",
+      generatedAt: new Date().toISOString(),
+    },
+  });
+});
+
+// ── SPEC 081: GET /api/comms/thread/:phone — unified timeline ─────────────
 commsRouter.get("/thread/:phone", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  const phoneParam = decodeURIComponent(c.req.param("phone"));
+  const key = phoneKey(phoneParam);
+  const variants = new Set<string>([
+    phoneParam,
+    fmtE164ish(phoneParam),
+    key.length === 10 ? `+1${key}` : "",
+    key.length === 10 ? key : "",
+  ].filter(Boolean));
+
+  // Fetch SMS by primary formats; merge
+  const smsLists = await Promise.all(
+    [...variants].slice(0, 3).map((p) => listSmsMessagesFiltered({ phone: p, limit: 200, ascending: true })),
+  );
+  const smsMap = new Map<string, any>();
+  for (const list of smsLists) {
+    for (const m of list) {
+      if (m?.name) smsMap.set(m.name, m);
+    }
+  }
+  let sms = [...smsMap.values()].sort((a, b) => tsMs(a.timestamp) - tsMs(b.timestamp));
+
+  // Calls: filter from bulk by phone key (ERP from= exact match is flaky)
+  const callsBulk = await listCallLogs({ limit: 200 });
+  const calls = callsBulk.filter((call) => {
+    const k = phoneKey(call.from || call.to);
+    return k && k === key;
+  });
+
+  const showNoise = c.req.query("noise") === "show";
+  if (!showNoise) {
+    sms = sms.filter((m) => !isNoiseSms(m) && !isTestSmsBody(m.content || m.body));
+  }
+  const callsVis = showNoise ? calls : calls.filter((call) => !isNoiseCall(call));
+
+  const customer = await matchCustomerByPhone(fmtE164ish(phoneParam) || phoneParam);
+
+  type Ev = { type: string; at: string; sort: number; [k: string]: unknown };
+  const events: Ev[] = [];
+
+  for (const m of sms) {
+    const inbound = String(m.direction || "").toLowerCase() === "inbound";
+    const tag = String(m.context_tag || "");
+    events.push({
+      type: "sms",
+      at: m.timestamp || m.creation,
+      sort: tsMs(m.timestamp || m.creation),
+      id: m.name,
+      direction: inbound ? "inbound" : "outbound",
+      body: m.content || m.body || "",
+      sent_by: inbound
+        ? null
+        : tag.includes("staff") || tag.includes("alts_messages")
+          ? "staff_manual"
+          : tag.includes("sofia") || !tag
+            ? "sofia_ai"
+            : "staff_manual",
+      context_tag: tag || null,
+      via_shop: tag.includes("unifi"),
+    });
+  }
+
+  for (const call of callsVis) {
+    const st = String(call.status || "").toLowerCase();
+    const at = call.time || call.creation;
+    const sort = tsMs(at);
+    const play = recordingPlayUrl(call);
+    const whisper = call.transcript_whisper || null;
+    const raw = call.transcript_raw || null;
+    if (st === "missed") {
+      events.push({
+        type: "missed_call",
+        at,
+        sort,
+        call_id: call.name,
+        duration: call.duration || 0,
+        from: call.from,
+        from_caller_name: call.from_caller_name,
+      });
+    } else if (st === "voicemail") {
+      events.push({
+        type: "voicemail",
+        at,
+        sort,
+        call_id: call.name,
+        duration: call.duration || 0,
+        summary: whisper || previewClean(raw, 200) || "Voicemail",
+        recording_url: play,
+      });
+    } else {
+      events.push({
+        type: "call_transcript",
+        at,
+        sort,
+        call_id: call.name,
+        direction: call.direction || "inbound",
+        duration: call.duration || 0,
+        status: call.status,
+        summary_bullets: summaryBullets(whisper || raw, 3),
+        transcript: raw || whisper || null,
+        recording_url: play,
+        from_caller_name: call.from_caller_name,
+      });
+    }
+  }
+
+  events.sort((a, b) => a.sort - b.sort);
+
+  const viaShop = events.some((e) => e.type === "sms" && e.via_shop);
+
+  // Legacy messages array for any old clients
+  const messages = sms.map((m) => ({
+    name: m.name,
+    content: m.content || m.body,
+    body: m.body || m.content,
+    direction: m.direction,
+    timestamp: m.timestamp,
+  }));
+
+  return c.json({
+    data: {
+      person: {
+        phone: fmtE164ish(phoneParam) || phoneParam,
+        customer_name: customer?.name ?? null,
+        customer_id: customer?.id ?? null,
+        via_shop_line: viaShop,
+      },
+      customer,
+      events,
+      messages,
+    },
+  });
+});
+
+// ── SPEC 081: POST /api/comms/send — Reply as Sofia (308) ─────────────────
+commsRouter.post("/send", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: { message: "invalid_json" } }, 400);
+  }
+  const to = String(body.to || body.phone || "").trim();
+  const text = String(body.body || body.message || "").trim();
+  const source = String(body.source || "alts_messages");
+  if (!to || !text) return c.json({ error: { message: "to and body required" } }, 400);
+  if (isOwnerPhone(to) && source === "alts_messages") {
+    // still allow; floor may need it
+  }
+
+  const customer = await matchCustomerByPhone(to);
+  let sid: string | null = null;
+  let messageName: string | null = null;
+  let err: string | null = null;
+
+  try {
+    const result: any = await erpRunMethod("lsh_house.sms.send_customer_sms", {
+      phone: to,
+      message: text,
+      customer: customer?.id ?? null,
+      client_name: customer?.name ?? null,
+      context_tag: "alts_messages:staff_manual",
+    });
+    if (result && typeof result === "object") {
+      sid = result.twilio_sid ?? result.sid ?? null;
+      messageName = result.name ?? null;
+      if (result.ok === false) err = result.error_message || result.error || "send_failed";
+    }
+  } catch (e: any) {
+    err = e?.message || "erp_send_failed";
+  }
+
+  // Fallback log if ERP method didn't write
+  if (!messageName && !err) {
+    try {
+      const row = await insertSmsMessage({
+        client_phone: to,
+        client_name: customer?.name ?? null,
+        customer: customer?.id ?? null,
+        direction: "outbound",
+        content: text,
+        body: text,
+        timestamp: new Date().toISOString().replace("T", " ").slice(0, 19),
+        twilio_sid: sid,
+        status: sid ? "sent" : "failed",
+        context_tag: "alts_messages:staff_manual",
+      });
+      messageName = (row as any)?.name ?? null;
+    } catch {
+      /* non-fatal */
+    }
+  }
+
+  if (err) return c.json({ error: { message: err }, data: { ok: false } }, 502);
+
+  return c.json({
+    data: {
+      ok: true,
+      sid,
+      message_name: messageName,
+      to,
+      sent_by: "staff_manual",
+      from: "+12123084431",
+    },
+  });
+});
+
+// Mark done is client-local primarily; endpoint exists for future ERP write
+commsRouter.post("/thread/:phone/done", async (c) => {
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   const phone = decodeURIComponent(c.req.param("phone"));
-  const data = await listSmsMessagesFiltered({ phone, limit: 200, ascending: true });
-  const customer = await matchCustomerByPhone(phone);
-  return c.json({ data: { messages: data ?? [], customer } });
+  return c.json({
+    data: {
+      ok: true,
+      phone,
+      phone_key: phoneKey(phone),
+      done_at: new Date().toISOString(),
+    },
+  });
 });
 
 commsRouter.get("/calls/:id", async (c) => {
@@ -215,7 +634,11 @@ commsRouter.get("/calls/:id", async (c) => {
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   const data = await getCallLog(c.req.param("id"));
   const customer = data ? await matchCustomerByPhone(data.from) : null;
-  return c.json({ data: data ? { ...data, id: data.name, customer } : null });
+  return c.json({
+    data: data
+      ? { ...data, id: data.name, customer, recording_url: recordingPlayUrl(data) }
+      : null,
+  });
 });
 
 commsRouter.get("/recordings/:id", async (c) => {
