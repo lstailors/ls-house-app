@@ -77,9 +77,58 @@ export function tsMs(raw: string | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** ERP sometimes stores flags ("whisper") instead of real text — never show those. */
+const TX_MARKERS = new Set([
+  "",
+  "whisper",
+  "1",
+  "0",
+  "true",
+  "false",
+  "null",
+  "none",
+  "pending",
+  "processing",
+]);
+
+export function isRealTranscript(val: string | null | undefined): boolean {
+  const t = String(val ?? "").trim();
+  if (!t) return false;
+  if (TX_MARKERS.has(t.toLowerCase())) return false;
+  return t.length >= 12;
+}
+
+export function realText(val: string | null | undefined): string | null {
+  const t = String(val ?? "").trim();
+  return isRealTranscript(t) ? t : null;
+}
+
+/**
+ * ERP SoT:
+ *  - transcript_raw     = full transcript
+ *  - transcript_whisper = UniFi / AI summary (label is "Transcript Summary")
+ */
+export function resolveCallTranscript(call: {
+  transcript_raw?: string | null;
+  transcript_whisper?: string | null;
+}): {
+  full: string | null;
+  summary: string | null;
+  summary_bullets: string[];
+  pending: boolean;
+} {
+  const raw = String(call.transcript_raw ?? "").trim();
+  const pending = raw.toLowerCase() === "whisper" || raw.toLowerCase() === "pending";
+  const full = realText(call.transcript_raw);
+  const summary = realText(call.transcript_whisper);
+  // Prefer AI summary for bullets; else derive from full transcript
+  const bullets = summaryBullets(summary || full, 3);
+  return { full, summary, summary_bullets: bullets, pending: pending && !full };
+}
+
 export function summaryBullets(text: string | null | undefined, max = 3): string[] {
   const t = String(text ?? "").replace(/\s+/g, " ").trim();
-  if (!t) return [];
+  if (!isRealTranscript(t)) return [];
   // Prefer sentence splits; fall back to single clip
   const parts = t
     .split(/(?<=[.!?])\s+/)
