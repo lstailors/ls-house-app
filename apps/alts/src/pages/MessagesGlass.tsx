@@ -46,9 +46,10 @@ type ThreadEvent = {
   sent_by?: string | null;
   via_shop?: boolean;
   duration?: number;
-  summary?: string;
+  summary?: string | null;
   summary_bullets?: string[];
   transcript?: string | null;
+  transcript_pending?: boolean;
   recording_url?: string | null;
   from?: string;
   from_caller_name?: string;
@@ -563,11 +564,13 @@ function EventRow({
 
   if (ev.type === "call_transcript") {
     const bullets = ev.summary_bullets?.length ? ev.summary_bullets : [];
+    const full = (ev.transcript || "").trim();
+    const showFull = full && full.toLowerCase() !== "whisper";
     return (
       <div className="msg-card">
         <div className="msg-card-head">
           <span className="msg-card-label">
-            Call · {ev.direction === "outbound" ? "Outbound" : "Inbound"}
+            Call · {ev.direction === "outbound" || ev.direction === "out" ? "Outbound" : "Inbound"}
             {ev.duration ? ` · ${fmtDuration(ev.duration)}` : ""}
           </span>
           <span className="msg-meta">{clock(ev.at)}</span>
@@ -579,22 +582,26 @@ function EventRow({
         </div>
         {bullets.length > 0 ? (
           <>
-            <div className="msg-card-label subtle mt-2">AI summary</div>
+            <div className="msg-card-label subtle mt-2">
+              {ev.summary ? "AI summary" : "Summary"}
+            </div>
             <ul className="msg-bullets">
               {bullets.map((b) => (
                 <li key={b}>{b}</li>
               ))}
             </ul>
           </>
+        ) : ev.transcript_pending ? (
+          <p className="msg-card-body muted">Transcript still processing…</p>
         ) : (
           <p className="msg-card-body muted">No transcript yet</p>
         )}
-        {ev.transcript && (
+        {showFull && (
           <>
             <button type="button" className="msg-tx-toggle" onClick={onToggleTx}>
               {expanded ? "▾ Full transcript" : "▸ Full transcript"}
             </button>
-            {expanded && <pre className="msg-transcript">{ev.transcript}</pre>}
+            {expanded && <pre className="msg-transcript">{full}</pre>}
           </>
         )}
       </div>

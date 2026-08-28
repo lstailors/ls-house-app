@@ -24,7 +24,7 @@ import {
   isOwnerPhone,
   previewClean,
   recordingPlayUrl,
-  summaryBullets,
+  resolveCallTranscript,
   tsMs,
 } from "../lib/messages-desk";
 
@@ -324,9 +324,15 @@ commsRouter.get("/inbox", async (c) => {
     if (at >= a.last_at_ms) {
       a.last_at_ms = at;
       a.last_at = call.time || call.creation || null;
+      const tx = resolveCallTranscript(call);
       if (st === "missed") a.preview = "Missed call";
-      else if (st === "voicemail") a.preview = previewClean(call.transcript_whisper || "Voicemail", 110);
-      else a.preview = previewClean(call.transcript_whisper || call.transcript_raw || "Call", 110);
+      else if (st === "voicemail")
+        a.preview = previewClean(tx.summary || tx.full || "Voicemail", 110);
+      else
+        a.preview = previewClean(
+          tx.summary || tx.summary_bullets[0] || tx.full || (tx.pending ? "Call · transcript pending" : "Call"),
+          110,
+        );
       a.last_direction = "call";
     }
   }
@@ -471,8 +477,20 @@ commsRouter.get("/thread/:phone", async (c) => {
     const at = call.time || call.creation;
     const sort = tsMs(at);
     const play = recordingPlayUrl(call);
-    const whisper = call.transcript_whisper || null;
-    const raw = call.transcript_raw || null;
+    // Prefer full ERP doc when list row still has marker (Long Text sometimes thin on list)
+    let doc = call;
+    let tx = resolveCallTranscript(call);
+    if ((tx.pending || !tx.full) && call.name) {
+      try {
+        const fullDoc = await getCallLog(String(call.name));
+        if (fullDoc) {
+          doc = fullDoc;
+          tx = resolveCallTranscript(fullDoc);
+        }
+      } catch {
+        /* keep list row */
+      }
+    }
     if (st === "missed") {
       events.push({
         type: "missed_call",
@@ -490,7 +508,7 @@ commsRouter.get("/thread/:phone", async (c) => {
         sort,
         call_id: call.name,
         duration: call.duration || 0,
-        summary: whisper || previewClean(raw, 200) || "Voicemail",
+        summary: tx.summary || previewClean(tx.full, 200) || "Voicemail",
         recording_url: play,
       });
     } else {
@@ -499,11 +517,15 @@ commsRouter.get("/thread/:phone", async (c) => {
         at,
         sort,
         call_id: call.name,
-        direction: call.direction || "inbound",
+        direction: doc.direction || call.direction || "inbound",
         duration: call.duration || 0,
         status: call.status,
-        summary_bullets: summaryBullets(whisper || raw, 3),
-        transcript: raw || whisper || null,
+        // AI / UniFi summary when present on ERP transcript_whisper
+        summary: tx.summary,
+        summary_bullets: tx.summary_bullets,
+        // Full transcript from ERP transcript_raw (never "whisper" marker)
+        transcript: tx.full,
+        transcript_pending: tx.pending,
         recording_url: play,
         from_caller_name: call.from_caller_name,
       });
