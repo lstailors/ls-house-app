@@ -3,6 +3,7 @@ import { logErpCommunication, matchCustomerByPhone } from "./comms";
 import { insertCallLog, insertSmsMessage, upsertCallLog } from "../lib/erpnext/agents";
 import { parseDocusealWebhook } from "../lib/docuseal";
 import { attachDocusealResultFiles, markQcSignedBySubmission } from "./qc";
+import { erpDatetime } from "../lib/delivery";
 
 export const webhooksRouter = new Hono();
 
@@ -68,11 +69,12 @@ webhooksRouter.post("/unifi", async (c) => {
 
   // ── Save/update call log (upsert by external_id when UniFi sends call_id) ─
   const callStatus = type === "transcript" ? "accepted" : status;
+  const occurred = erpDatetime();
   try {
     if (callId) {
       await upsertCallLog({
         external_id: callId,
-        time: new Date().toISOString(),
+        time: occurred,
         from: callerPhone ?? "unknown",
         from_caller_name: callerName ?? null,
         to: "unknown",
@@ -86,7 +88,7 @@ webhooksRouter.post("/unifi", async (c) => {
       });
     } else {
       await insertCallLog({
-        time: new Date().toISOString(),
+        time: occurred,
         from: callerPhone ?? "unknown",
         from_caller_name: callerName ?? null,
         to: "unknown",
@@ -123,7 +125,7 @@ webhooksRouter.post("/unifi", async (c) => {
       subject: erpSubject,
       content: erpContent,
       direction: "Received",
-      date: new Date().toISOString(),
+      date: occurred,
       phoneNo: callerPhone,
     });
   }
@@ -141,9 +143,10 @@ webhooksRouter.post("/unifi", async (c) => {
         direction: "inbound",
         body: messageBody,
         content: messageBody,
-        timestamp: new Date().toISOString(),
-        metadata: JSON.stringify({ source: "unifi", raw: body }),
-      }).catch(() => {});
+        timestamp: occurred,
+        status: "received",
+        context_tag: "unifi",
+      }).catch((e) => console.warn("[unifi.webhook] sms", e?.message));
 
       // Log to ERPNext customer timeline
       if (matchedCustomerId) {
@@ -153,7 +156,7 @@ webhooksRouter.post("/unifi", async (c) => {
           subject: `SMS via UniFi — ${callerName ?? fromPhone}`,
           content: messageBody,
           direction: "Received",
-          date: new Date().toISOString(),
+          date: occurred,
           phoneNo: fromPhone,
         });
       }
