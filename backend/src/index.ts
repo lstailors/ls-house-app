@@ -62,8 +62,9 @@ import { healthRouter } from "./routes/health";
 import { qcRouter } from "./routes/qc";
 import { metricsRouter } from "./routes/metrics";
 import { offlineRouter } from "./routes/offline";
-import { chatRouter } from "./routes/chat"
+import { chatRouter } from "./routes/chat";
 import { checkoutRouter } from "./routes/checkout";
+import { floorRouter } from "./routes/floor";
 
 const app = new Hono();
 
@@ -157,6 +158,8 @@ app.route("/api/qc", qcRouter);
 app.route("/api/metrics", metricsRouter);
 app.route("/api/offline", offlineRouter);
 app.route("/api/chat", chatRouter);
+// Deliberately public: locked shop-floor PWA has no login/PIN.
+app.route("/api/floor", floorRouter);
 
 const port = Number(process.env.PORT) || 3000;
 
