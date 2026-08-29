@@ -286,6 +286,313 @@ function looksLikeInvoice(id: string) {
 function looksLikeTicket(id: string) {
   return /^ALT-/i.test(id) || /TICKET/i.test(id);
 }
+function looksLikeSalesOrder(id: string) {
+  return /(?:^|-)SO-|\bSO-/i.test(id) || /^LSTNY-SO/i.test(id);
+}
+/** Exact full docname (not a partial/fuzzy token). */
+function looksExactDocName(id: string) {
+  return /^(ALT-|LSTNY-SINV-|LSTNY-SO-|SINV-)/i.test(id) && !/\s/.test(id) && id.length >= 12;
+}
+function digitsOnly(s: string) {
+  return s.replace(/\D/g, "");
+}
+function ticketOutstanding(t: { payment_status?: string; ticket_total?: number }) {
+  const pay = String(t.payment_status || "");
+  if (pay === "Paid" || pay === "N/A") return 0;
+  return Number(t.ticket_total) || 0;
+}
+
+type ResolveHit = {
+  kind: "ticket" | "invoice" | "sales_order" | "custom_order" | "customer";
+  id: string;
+  customer?: string;
+  customerId?: string;
+  status?: string;
+  outstanding?: number;
+  total?: number;
+  invoiceId?: string | null;
+  phone?: string | null;
+  label?: string;
+  subtitle?: string;
+};
+
+function pushHit(hits: ResolveHit[], seen: Set<string>, hit: ResolveHit) {
+  const key = `${hit.kind}:${hit.id}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  hits.push(hit);
+}
+
+async function fuzzyCheckoutResolve(code: string): Promise<ResolveHit[]> {
+  const like = `%${code}%`;
+  const digits = digitsOnly(code);
+  const phoneTail = digits.length >= 7 ? digits.slice(-10) : digits.length >= 4 ? digits : "";
+  const hits: ResolveHit[] = [];
+  const seen = new Set<string>();
+  const customerIds = new Set<string>();
+
+  const ticketFields = [
+    "name",
+    "customer",
+    "customer_name",
+    "workflow_state",
+    "payment_status",
+    "ticket_total",
+    "sales_invoice",
+    "modified",
+  ] as const;
+
+  const mapTicket = (t: any) => {
+    pushHit(hits, seen, {
+      kind: "ticket",
+      id: t.name,
+      customer: t.customer_name || t.customer,
+      customerId: t.customer,
+      status: t.workflow_state,
+      outstanding: ticketOutstanding(t),
+      total: Number(t.ticket_total) || 0,
+      invoiceId: t.sales_invoice || null,
+      label: "Ticket",
+      subtitle: [t.workflow_state, t.payment_status].filter(Boolean).join(" · "),
+    });
+    if (t.customer) customerIds.add(String(t.customer));
+  };
+
+  const mapInvoice = (inv: any) => {
+    pushHit(hits, seen, {
+      kind: "invoice",
+      id: inv.name,
+      customer: inv.customer_name || inv.customer,
+      customerId: inv.customer,
+      status: inv.status,
+      outstanding: Number(inv.outstanding_amount) || 0,
+      total: Number(inv.grand_total) || 0,
+      invoiceId: inv.name,
+      label: "Invoice",
+      subtitle: inv.status || undefined,
+    });
+    if (inv.customer) customerIds.add(String(inv.customer));
+  };
+
+  const mapSo = (so: any) => {
+    pushHit(hits, seen, {
+      kind: "sales_order",
+      id: so.name,
+      customer: so.customer_name || so.customer,
+      customerId: so.customer,
+      status: so.status,
+      total: Number(so.grand_total) || 0,
+      outstanding: Math.max(0, (Number(so.grand_total) || 0) - (Number(so.advance_paid) || 0)),
+      label: "Order",
+      subtitle: so.status || undefined,
+    });
+    if (so.customer) customerIds.add(String(so.customer));
+  };
+
+  // Parallel primary searches
+  const [byTicketName, byTicketCustomer, byInvName, byInvCustomer, bySoName, bySoCustomer, byCustName, byCustPhone] =
+    await Promise.all([
+      erpList("Alteration Ticket", {
+        fields: [...ticketFields],
+        filters: [
+          ["name", "like", like],
+          ["workflow_state", "!=", "Cancelled"],
+        ],
+        limit: 20,
+        order_by: "modified desc",
+      }).catch(() => []),
+      erpList("Alteration Ticket", {
+        fields: [...ticketFields],
+        filters: [
+          ["customer_name", "like", like],
+          ["workflow_state", "!=", "Cancelled"],
+        ],
+        limit: 40,
+        order_by: "modified desc",
+      }).catch(() => []),
+      erpList("Sales Invoice", {
+        fields: ["name", "customer", "customer_name", "outstanding_amount", "grand_total", "status", "docstatus"],
+        filters: [
+          ["name", "like", like],
+          ["docstatus", "=", 1],
+        ],
+        limit: 15,
+        order_by: "modified desc",
+      }).catch(() => []),
+      erpList("Sales Invoice", {
+        fields: ["name", "customer", "customer_name", "outstanding_amount", "grand_total", "status", "docstatus"],
+        filters: [
+          ["customer_name", "like", like],
+          ["docstatus", "=", 1],
+          ["outstanding_amount", ">", 0],
+        ],
+        limit: 25,
+        order_by: "modified desc",
+      }).catch(() => []),
+      erpList("Sales Order", {
+        fields: ["name", "customer", "customer_name", "status", "grand_total", "advance_paid", "docstatus"],
+        filters: [
+          ["name", "like", like],
+          ["docstatus", "=", 1],
+        ],
+        limit: 15,
+        order_by: "modified desc",
+      }).catch(() => []),
+      erpList("Sales Order", {
+        fields: ["name", "customer", "customer_name", "status", "grand_total", "advance_paid", "docstatus"],
+        filters: [
+          ["customer_name", "like", like],
+          ["docstatus", "=", 1],
+          ["status", "not in", ["Completed", "Closed", "Cancelled"]],
+        ],
+        limit: 20,
+        order_by: "modified desc",
+      }).catch(() => []),
+      erpList("Customer", {
+        fields: ["name", "customer_name", "mobile_no"],
+        filters: [["customer_name", "like", like]],
+        limit: 25,
+        order_by: "modified desc",
+      }).catch(() => []),
+      phoneTail
+        ? erpList("Customer", {
+            fields: ["name", "customer_name", "mobile_no"],
+            filters: [["mobile_no", "like", `%${phoneTail}%`]],
+            limit: 15,
+            order_by: "modified desc",
+          }).catch(() => [])
+        : Promise.resolve([]),
+    ]);
+
+  for (const t of byTicketName as any[]) mapTicket(t);
+  for (const t of byTicketCustomer as any[]) mapTicket(t);
+  for (const inv of byInvName as any[]) mapInvoice(inv);
+  for (const inv of byInvCustomer as any[]) mapInvoice(inv);
+  for (const so of bySoName as any[]) mapSo(so);
+  for (const so of bySoCustomer as any[]) mapSo(so);
+
+  const customers = [...(byCustName as any[]), ...(byCustPhone as any[])];
+  const custSeen = new Set<string>();
+  for (const cu of customers) {
+    if (!cu?.name || custSeen.has(cu.name)) continue;
+    custSeen.add(cu.name);
+    customerIds.add(String(cu.name));
+    // Surface customer row only when we have no docs yet for them (filled after expansion)
+    pushHit(hits, seen, {
+      kind: "customer",
+      id: cu.name,
+      customer: cu.customer_name || cu.name,
+      customerId: cu.name,
+      phone: cu.mobile_no || null,
+      label: "Customer",
+      subtitle: cu.mobile_no || undefined,
+    });
+  }
+
+  // Expand matched customers → their non-cancelled tickets + unpaid SI + open SO
+  const custList = [...customerIds].slice(0, 20);
+  if (custList.length) {
+    const [moreTickets, moreInv, moreSo] = await Promise.all([
+      Promise.all(
+        custList.slice(0, 12).map((cid) =>
+          erpList("Alteration Ticket", {
+            fields: [...ticketFields],
+            filters: [
+              ["customer", "=", cid],
+              ["workflow_state", "!=", "Cancelled"],
+            ],
+            limit: 12,
+            order_by: "modified desc",
+          }).catch(() => []),
+        ),
+      ),
+      Promise.all(
+        custList.slice(0, 12).map((cid) =>
+          erpList("Sales Invoice", {
+            fields: ["name", "customer", "customer_name", "outstanding_amount", "grand_total", "status", "docstatus"],
+            filters: [
+              ["customer", "=", cid],
+              ["docstatus", "=", 1],
+              ["outstanding_amount", ">", 0],
+            ],
+            limit: 8,
+            order_by: "modified desc",
+          }).catch(() => []),
+        ),
+      ),
+      Promise.all(
+        custList.slice(0, 12).map((cid) =>
+          erpList("Sales Order", {
+            fields: ["name", "customer", "customer_name", "status", "grand_total", "advance_paid", "docstatus"],
+            filters: [
+              ["customer", "=", cid],
+              ["docstatus", "=", 1],
+              ["status", "not in", ["Completed", "Closed", "Cancelled"]],
+            ],
+            limit: 6,
+            order_by: "modified desc",
+          }).catch(() => []),
+        ),
+      ),
+    ]);
+    for (const batch of moreTickets) for (const t of batch as any[]) mapTicket(t);
+    for (const batch of moreInv) for (const inv of batch as any[]) mapInvoice(inv);
+    for (const batch of moreSo) for (const so of batch as any[]) mapSo(so);
+  }
+
+  // LSH Custom Order — optional; DocPerm / empty book should not break resolve
+  try {
+    const cos = (await erpList("LSH Custom Order", {
+      fields: ["name", "customer", "customer_name", "erp_sales_order", "status"],
+      filters: [["customer_name", "like", like]],
+      limit: 10,
+      order_by: "modified desc",
+      throwOnError: true,
+    })) as any[];
+    for (const co of cos) {
+      pushHit(hits, seen, {
+        kind: "custom_order",
+        id: co.name,
+        customer: co.customer_name || co.customer,
+        customerId: co.customer,
+        status: co.status,
+        label: "Custom order",
+        subtitle: co.erp_sales_order || co.status || undefined,
+        invoiceId: co.erp_sales_order || null,
+      });
+    }
+  } catch (e) {
+    // Permission or missing doctype — skip silently; note only if zero other hits
+    if (hits.length === 0) {
+      /* leave empty; UI shows no hits */
+    }
+  }
+
+  // Drop bare customer rows when they already have tickets/invoices/orders in the list
+  const customersWithDocs = new Set(
+    hits.filter((h) => h.kind !== "customer" && h.customerId).map((h) => String(h.customerId)),
+  );
+  const pruned = hits.filter((h) => h.kind !== "customer" || !customersWithDocs.has(String(h.customerId || h.id)));
+
+  // Prefer actionable docs: tickets (Ready/In Progress/unpaid first), then invoices, SO, custom, customers
+  const rank = (h: ResolveHit) => {
+    if (h.kind === "ticket") {
+      const st = String(h.status || "");
+      let r = 100;
+      if (st === "Ready") r = 10;
+      else if (st === "In Progress") r = 20;
+      else if (st === "Picked Up") r = 40;
+      if ((h.outstanding || 0) > 0.005) r -= 5;
+      return r;
+    }
+    if (h.kind === "invoice") return 50 + ((h.outstanding || 0) > 0 ? 0 : 10);
+    if (h.kind === "sales_order") return 70;
+    if (h.kind === "custom_order") return 80;
+    return 90;
+  };
+  pruned.sort((a, b) => rank(a) - rank(b) || String(a.customer || "").localeCompare(String(b.customer || "")));
+  return pruned.slice(0, 40);
+}
 
 async function loadTicketCard(name: string) {
   const t = (await erpGet("Alteration Ticket", name)) as any;
@@ -410,60 +717,43 @@ checkoutRouter.get("/resolve", async (c) => {
   code = code.replace(/^#/, "").trim();
 
   try {
-    if (looksLikeTicket(code)) {
-      const card = await loadTicketCard(code);
-      if (!card) return c.json({ error: { message: `Ticket ${code} not found` } }, 404);
-      return c.json({ data: card });
+    // Exact card only for full docnames (scan / paste full ALT-… / SINV-…)
+    if (looksExactDocName(code) || (looksLikeTicket(code) && code.length >= 16) || (looksLikeInvoice(code) && code.length >= 14)) {
+      if (looksLikeTicket(code) || /^ALT-/i.test(code)) {
+        try {
+          const card = await loadTicketCard(code);
+          if (card) return c.json({ data: card });
+        } catch {
+          /* fall through to fuzzy */
+        }
+      }
+      if (looksLikeInvoice(code)) {
+        try {
+          const card = await loadInvoiceCard(code);
+          if (card) return c.json({ data: card });
+        } catch {
+          /* fall through */
+        }
+      }
+      if (looksLikeSalesOrder(code)) {
+        // No SO card page — fuzzy will list the order hit
+      }
     }
-    if (looksLikeInvoice(code)) {
-      const card = await loadInvoiceCard(code);
-      if (!card) return c.json({ error: { message: `Invoice ${code} not found` } }, 404);
-      return c.json({ data: card });
+
+    // Fuzzy: always a hit list for q length >= 2 (never 404 a known last name)
+    if (code.length < 2) {
+      return c.json({ error: { message: "Type at least 2 characters" } }, 400);
     }
-    // Try ticket then invoice
-    try {
-      const card = await loadTicketCard(code);
-      if (card) return c.json({ data: card });
-    } catch {
-      /* */
-    }
-    try {
-      const card = await loadInvoiceCard(code);
-      if (card) return c.json({ data: card });
-    } catch {
-      /* */
-    }
-    // Customer name search → open tickets/invoices
-    const tickets = (await erpList("Alteration Ticket", {
-      fields: ["name", "customer_name", "workflow_state", "payment_status", "ticket_total", "sales_invoice"],
-      filters: [
-        ["customer_name", "like", `%${code}%`],
-        ["workflow_state", "!=", "Cancelled"],
-      ],
-      limit: 10,
-      order_by: "modified desc",
-    }).catch(() => [])) as any[];
-    if (tickets.length === 1) {
-      const card = await loadTicketCard(tickets[0].name);
-      return c.json({ data: card });
-    }
-    if (tickets.length > 1) {
-      return c.json({
-        data: {
-          kind: "search",
-          query: code,
-          hits: tickets.map((t) => ({
-            kind: "ticket",
-            id: t.name,
-            customer: t.customer_name,
-            status: t.workflow_state,
-            outstanding: t.payment_status === "Paid" ? 0 : Number(t.ticket_total) || 0,
-            invoiceId: t.sales_invoice,
-          })),
-        },
-      });
-    }
-    return c.json({ error: { message: `Nothing found for ${code}` } }, 404);
+
+    const hits = await fuzzyCheckoutResolve(code);
+    return c.json({
+      data: {
+        kind: "search",
+        query: code,
+        hits,
+        count: hits.length,
+      },
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Resolve failed";
     return c.json({ error: { message } }, 502);

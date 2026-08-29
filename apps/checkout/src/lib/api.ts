@@ -1,5 +1,19 @@
 const BASE = (import.meta.env.VITE_BACKEND_URL as string | undefined) || "";
 
+export type CheckoutHit = {
+  kind: "ticket" | "invoice" | "sales_order" | "custom_order" | "customer" | string;
+  id: string;
+  customer?: string;
+  customerId?: string;
+  status?: string;
+  outstanding?: number;
+  total?: number;
+  invoiceId?: string | null;
+  phone?: string | null;
+  label?: string;
+  subtitle?: string;
+};
+
 export type CheckoutCard = {
   kind: "ticket" | "invoice" | "search";
   id?: string;
@@ -20,14 +34,8 @@ export type CheckoutCard = {
   lines?: Array<{ description?: string; price?: number; qty?: number; amount?: number }>;
   deliveryMethod?: string | null;
   query?: string;
-  hits?: Array<{
-    kind: string;
-    id: string;
-    customer?: string;
-    status?: string;
-    outstanding?: number;
-    invoiceId?: string | null;
-  }>;
+  count?: number;
+  hits?: CheckoutHit[];
 };
 
 async function req<T>(
