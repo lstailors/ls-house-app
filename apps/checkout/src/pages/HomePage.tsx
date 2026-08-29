@@ -4,32 +4,16 @@ import { api } from "@checkout/lib/api";
 import { useSession } from "@checkout/lib/session";
 import { bagList, bagTotalDue } from "@checkout/lib/bag";
 import { usd } from "@checkout/lib/money";
-import { Chrome, PrimaryButton, SectionLabel } from "@checkout/components/Chrome";
-import { useMemo, useState } from "react";
+import { Chrome, SectionLabel } from "@checkout/components/Chrome";
+import { LookupBox } from "@checkout/components/LookupBox";
+import { useMemo } from "react";
 
 export default function HomePage() {
   const { staff, logout } = useSession();
   const nav = useNavigate();
-  const [q, setQ] = useState("");
   const dash = useQuery({ queryKey: ["checkout-dash"], queryFn: () => api.dashboard(), refetchInterval: 30_000 });
   const bag = useMemo(() => bagList(), [dash.dataUpdatedAt]);
   const bagDue = bagTotalDue();
-
-  async function lookup() {
-    const code = q.trim();
-    if (!code) return;
-    try {
-      const card = await api.resolve(code);
-      if (card.kind === "search" && card.hits?.length) {
-        nav(`/search?q=${encodeURIComponent(code)}`);
-        return;
-      }
-      if (card.kind === "ticket") nav(`/t/${encodeURIComponent(card.id!)}`);
-      else if (card.kind === "invoice") nav(`/i/${encodeURIComponent(card.id!)}`);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Not found");
-    }
-  }
 
   return (
     <div className="checkout-shell">
@@ -64,17 +48,9 @@ export default function HomePage() {
         </Link>
       </div>
 
-      <div className="mt-3 flex gap-2 px-4">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && void lookup()}
-          placeholder="ALT-… or SI or name"
-          className="glass min-h-[48px] flex-1 px-3 text-sm text-[var(--cr)] outline-none placeholder:text-[var(--cd)]"
-        />
-        <button type="button" className="btn-ghost min-h-[48px] px-4 text-xs font-bold uppercase tracking-wider" onClick={() => void lookup()}>
-          Go
-        </button>
+      <div className="mt-3 px-4">
+        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--cd)]">Look up</div>
+        <LookupBox />
       </div>
 
       {bag.length > 0 ? (
@@ -82,7 +58,9 @@ export default function HomePage() {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--cd)]">Bag</div>
-              <div className="mt-1 text-sm font-semibold">{bag.length} ticket{bag.length === 1 ? "" : "s"}</div>
+              <div className="mt-1 text-sm font-semibold">
+                {bag.length} ticket{bag.length === 1 ? "" : "s"}
+              </div>
             </div>
             <div className="display text-xl text-[var(--bl)]">{usd(bagDue)}</div>
           </div>

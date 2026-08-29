@@ -2,17 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Html5Qrcode } from "html5-qrcode";
 import { api } from "@checkout/lib/api";
-import { Chrome, PrimaryButton } from "@checkout/components/Chrome";
+import { Chrome } from "@checkout/components/Chrome";
+import { LookupBox } from "@checkout/components/LookupBox";
 
 export default function ScanPage() {
   const nav = useNavigate();
-  const [manual, setManual] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const locked = useRef(false);
 
-  async function resolveCode(raw: string) {
+  async function resolveScan(raw: string) {
     if (locked.current || busy) return;
     locked.current = true;
     setBusy(true);
@@ -20,7 +20,17 @@ export default function ScanPage() {
     try {
       const card = await api.resolve(raw);
       if (card.kind === "search") {
-        nav(`/search?q=${encodeURIComponent(raw)}`);
+        // Camera rarely returns names — if multi-hit, stay and show message
+        if (card.hits?.length === 1 && card.hits[0]?.kind === "ticket") {
+          nav(`/t/${encodeURIComponent(card.hits[0].id)}`, { replace: true });
+          return;
+        }
+        if (card.hits?.length === 1 && card.hits[0]?.kind === "invoice") {
+          nav(`/i/${encodeURIComponent(card.hits[0].id)}`, { replace: true });
+          return;
+        }
+        setErr(card.hits?.length ? `Multiple matches — type below` : `Nothing for scan`);
+        locked.current = false;
         return;
       }
       if (card.kind === "ticket") nav(`/t/${encodeURIComponent(card.id!)}`, { replace: true });
@@ -46,12 +56,12 @@ export default function ScanPage() {
         { fps: 8, qrbox: { width: 240, height: 240 } },
         (decoded) => {
           if (stopped) return;
-          void resolveCode(decoded);
+          void resolveScan(decoded);
         },
         () => {},
       )
       .catch(() => {
-        setErr("Camera unavailable — type the ticket below");
+        setErr("Camera unavailable — type below");
       });
 
     return () => {
@@ -73,21 +83,10 @@ export default function ScanPage() {
         </div>
       </div>
       {err ? <p className="px-4 pt-3 text-center text-sm text-red-300">{err}</p> : null}
-      <div className="mt-4 flex gap-2 px-4">
-        <input
-          value={manual}
-          onChange={(e) => setManual(e.target.value)}
-          placeholder="ALT-NYC-… or LSTNY-SINV-…"
-          className="glass min-h-[48px] flex-1 px-3 text-sm outline-none placeholder:text-[var(--cd)]"
-          onKeyDown={(e) => e.key === "Enter" && void resolveCode(manual.trim())}
-        />
-      </div>
-      <div className="mt-3 px-4 pb-8">
-        <PrimaryButton
-          disabled={!manual.trim() || busy}
-          onClick={() => void resolveCode(manual.trim())}
-          label={busy ? "Looking up…" : "Look up"}
-        />
+      {busy ? <p className="px-4 pt-2 text-center text-xs text-[var(--cd)]">Looking up…</p> : null}
+      <div className="mt-4 px-4 pb-8">
+        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--cd)]">Look up</div>
+        <LookupBox />
       </div>
     </div>
   );
