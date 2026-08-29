@@ -67,6 +67,7 @@ import { metricsRouter } from "./routes/metrics";
 import { offlineRouter } from "./routes/offline";
 import { chatRouter } from "./routes/chat";
 import { checkoutRouter } from "./routes/checkout";
+import { floorRouter } from "./routes/floor";
 
 const app = new Hono();
 
@@ -183,5 +184,7 @@ app.route("/api/metrics", metricsRouter);
 app.route("/api/offline", offlineRouter);
 app.route("/api/chat", chatRouter);
 app.route("/api/checkout", checkoutRouter);
+// Deliberately public: locked shop-floor PWA has no login/PIN.
+app.route("/api/floor", floorRouter);
 
 export default app;
