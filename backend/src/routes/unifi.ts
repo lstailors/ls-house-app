@@ -78,9 +78,10 @@ unifiRouter.get("/events", async (c) => {
   return c.json({ data: events });
 });
 
-// ── POST /api/unifi/sync — pull latest calls into Supabase ───────────────
-// Called by Vercel cron (daily) OR Mac Studio crontab (every 1 min).
+// ── POST /api/unifi/sync — optional cloud Talk pull into ERP Call Log ────
+// Prefer maestro/unifi-runtime ERP mirror (SoT). This path is best-effort.
 // Accepts either a user session OR X-Sync-Secret header.
+// Never 5xx on upstream Talk outage — that was spamming Vercel anomaly alerts.
 unifiRouter.post("/sync", async (c) => {
   const syncSecret = process.env.UNIFI_SYNC_SECRET;
   const providedSecret = c.req.header("X-Sync-Secret");
@@ -99,7 +100,9 @@ unifiRouter.post("/sync", async (c) => {
       : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
     const calls = await getTalkCallLogs({ limit: 200, start: since });
-    if (!calls.length) return c.json({ data: { synced: 0 } });
+    if (!calls.length) {
+      return c.json({ data: { synced: 0, degraded: false, source: "unifi-cloud" } });
+    }
 
     let synced = 0;
     let matched = 0;
@@ -138,9 +141,17 @@ unifiRouter.post("/sync", async (c) => {
       } catch { /* skip duplicate */ }
     }
 
-    return c.json({ data: { synced, matched, total: calls.length } });
+    return c.json({ data: { synced, matched, total: calls.length, source: "unifi-cloud" } });
   } catch (e: any) {
-    console.error("[unifi/sync]", e.message);
-    return c.json({ error: { message: e.message } }, 502);
+    // Soft-fail: background poller must not trip 5xx anomaly alerts.
+    console.warn("[unifi/sync] degraded:", e?.message ?? e);
+    return c.json({
+      data: {
+        synced: 0,
+        degraded: true,
+        reason: e?.message ?? "unifi sync failed",
+        source: "unifi-cloud",
+      },
+    });
   }
 });
