@@ -68,6 +68,7 @@ import { offlineRouter } from "./routes/offline";
 import { chatRouter } from "./routes/chat";
 import { checkoutRouter } from "./routes/checkout";
 import { floorRouter } from "./routes/floor";
+import { adminAnalyticsRouter } from "./routes/admin-analytics";
 
 const app = new Hono();
 
@@ -90,6 +91,7 @@ const BASE_ALLOWED = [
   /^https:\/\/book\.lstailors\.com$/,
   /^https:\/\/alts\.lstailors\.com$/,
   /^https:\/\/checkout\.lstailors\.com$/,
+  /^https:\/\/admin\.lstailors\.com$/,
 ];
 
 const extraOrigins: RegExp[] = (process.env.ALLOWED_ORIGINS ?? "")
@@ -135,6 +137,7 @@ app.route("/api/scan", trackingRouter);
 app.route("/api/communications", communicationsRouter);
 app.route("/api/reference", referenceRouter);
 app.route("/api/lookbook-prices", lookbookPricesRouter);
+app.route("/api/admin", adminAnalyticsRouter);
 app.route("/api/admin", adminRouter);
 app.route("/api/dashboard", dashboardRouter);
 app.route("/api/dashboard", ownerDashboardRouter);

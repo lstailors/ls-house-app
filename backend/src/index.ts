@@ -80,6 +80,8 @@ const allowed = [
   /^https:\/\/app\.lstailors\.com$/,
   /^https:\/\/book\.lstailors\.com$/,
   /^https:\/\/alts\.lstailors\.com$/,
+  /^https:\/\/checkout\.lstailors\.com$/,
+  /^https:\/\/admin\.lstailors\.com$/,
 ];
 
 app.use(
@@ -111,8 +113,8 @@ app.route("/api/places", placesRouter);
 app.route("/api/scan", trackingRouter);
 app.route("/api/communications", communicationsRouter);
 app.route("/api/reference", referenceRouter);
-app.route("/api/admin", adminRouter);
 app.route("/api/admin", adminAnalyticsRouter);
+app.route("/api/admin", adminRouter);
 app.route("/api/dashboard", dashboardRouter);
 app.route("/api/dashboard", ownerDashboardRouter);
 app.route("/api/maestro", maestroRouter);
