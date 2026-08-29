@@ -34,7 +34,8 @@ unifiRouter.get("/calls", async (c) => {
     const calls = await getTalkCallLogs({ limit, start });
     return c.json({ data: calls });
   } catch (e: any) {
-    return c.json({ error: { message: e.message } }, 502);
+    console.warn("[unifi/calls]", e?.message ?? e);
+    return c.json({ data: [], degraded: true, reason: e?.message ?? "unifi calls failed" });
   }
 });
 
