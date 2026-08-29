@@ -102,7 +102,28 @@ export const api = {
     reference?: string;
   }) => req("/api/checkout/pay/outside", { method: "POST", json: body }),
   payLink: (body: { invoice?: string; ticket?: string }) =>
-    req("/api/checkout/pay/link", { method: "POST", json: body }),
+    req<{
+      url?: string | null;
+      payment_link?: string | null;
+      link?: string | null;
+      [k: string]: unknown;
+    }>("/api/checkout/pay/link", { method: "POST", json: body }),
+  /** ERP outstanding / paid poll for Pay-link QR loop (WF-10 truth). */
+  payStatus: (opts: { ticket?: string; invoice?: string }) => {
+    const p = new URLSearchParams();
+    if (opts.ticket) p.set("ticket", opts.ticket);
+    if (opts.invoice) p.set("invoice", opts.invoice);
+    return req<{
+      paid: boolean;
+      outstanding: number;
+      paymentStatus?: string | null;
+      invoiceStatus?: string | null;
+      ticketId?: string | null;
+      invoiceId?: string | null;
+      customer?: string | null;
+      payLink?: string | null;
+    }>(`/api/checkout/pay/status?${p}`);
+  },
   proof: async (file: File, meta: { ticket?: string; invoice?: string }) => {
     const fd = new FormData();
     fd.append("file", file);

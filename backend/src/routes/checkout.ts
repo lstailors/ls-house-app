@@ -689,6 +689,7 @@ async function loadInvoiceCard(name: string) {
     invoiceId: inv.name,
     invoiceStatus: inv.status,
     ticketId,
+    payLink: inv.lsh_square_payment_link || inv.lsh_invoice_web_url || null,
     garments: [],
     lines: items,
     deliveryMethod: null,
@@ -925,6 +926,32 @@ checkoutRouter.get("/pay/outside", async (c) => {
   }
 });
 
+function extractPayLinkUrl(result: unknown): string | null {
+  if (!result) return null;
+  if (typeof result === "string" && /^https?:\/\//i.test(result)) return result.trim();
+  if (typeof result !== "object") return null;
+  const r = result as Record<string, unknown>;
+  const nested =
+    r.payment_link && typeof r.payment_link === "object"
+      ? (r.payment_link as Record<string, unknown>)
+      : null;
+  const candidates = [
+    r.url,
+    r.payment_link_url,
+    r.payment_url,
+    r.long_url,
+    r.link,
+    r.checkout_url,
+    nested?.url,
+    nested?.long_url,
+    typeof r.payment_link === "string" ? r.payment_link : null,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && /^https?:\/\//i.test(c.trim())) return c.trim();
+  }
+  return null;
+}
+
 checkoutRouter.post("/pay/link", async (c) => {
   const gate = await requireCheckout(c);
   if ("error" in gate) return gate.error;
@@ -943,9 +970,87 @@ checkoutRouter.post("/pay/link", async (c) => {
         ...(body.ticket ? { ticket: body.ticket } : { invoice: body.invoice }),
       });
     }
-    return c.json({ data: result });
+    let url = extractPayLinkUrl(result);
+    // Prefer already-stamped SI link when mint returns opaque payload
+    if (!url) {
+      try {
+        let invName = body.invoice || undefined;
+        if (!invName && body.ticket) {
+          const t = (await erpGet("Alteration Ticket", body.ticket)) as any;
+          invName = t?.sales_invoice || undefined;
+        }
+        if (invName) {
+          const inv = (await erpGet("Sales Invoice", invName)) as any;
+          url =
+            String(inv?.lsh_square_payment_link || inv?.lsh_invoice_web_url || "").trim() || null;
+          if (url && !/^https?:\/\//i.test(url)) url = null;
+        }
+      } catch {
+        /* keep */
+      }
+    }
+    const payload =
+      result && typeof result === "object" ? { ...(result as object), url } : { result, url };
+    return c.json({ data: payload });
   } catch (e) {
     return c.json({ error: { message: e instanceof Error ? e.message : "Pay link failed" } }, 502);
+  }
+});
+
+/**
+ * Thin paid-loop poll for Pay-link QR (and Open). ERP outstanding is truth —
+ * Hosted Square → n8n WF-10 → Payment Entry. Never invent a second Square merchant.
+ */
+checkoutRouter.get("/pay/status", async (c) => {
+  const gate = await requireCheckout(c);
+  if ("error" in gate) return gate.error;
+  const ticket = String(c.req.query("ticket") || "").trim() || undefined;
+  const invoice = String(c.req.query("invoice") || "").trim() || undefined;
+  if (!ticket && !invoice) {
+    return c.json({ error: { message: "ticket or invoice required" } }, 400);
+  }
+  try {
+    if (ticket) {
+      const card = await loadTicketCard(ticket);
+      if (!card) return c.json({ error: { message: "Ticket not found" } }, 404);
+      const outstanding = Number(card.outstanding) || 0;
+      const paymentStatus = String(card.paymentStatus || card.invoiceStatus || "");
+      const paid =
+        outstanding <= 0.005 ||
+        /^paid$/i.test(paymentStatus) ||
+        paymentStatus === "N/A";
+      return c.json({
+        data: {
+          paid,
+          outstanding,
+          paymentStatus: card.paymentStatus ?? null,
+          invoiceStatus: card.invoiceStatus ?? null,
+          ticketId: card.id,
+          invoiceId: card.invoiceId ?? null,
+          customer: card.customer ?? null,
+          payLink: card.payLink ?? null,
+        },
+      });
+    }
+    const card = await loadInvoiceCard(invoice!);
+    if (!card) return c.json({ error: { message: "Invoice not found" } }, 404);
+    const outstanding = Number(card.outstanding) || 0;
+    const paymentStatus = String(card.paymentStatus || card.invoiceStatus || "");
+    const paid = outstanding <= 0.005 || /^paid$/i.test(paymentStatus);
+    return c.json({
+      data: {
+        paid,
+        outstanding,
+        paymentStatus: card.paymentStatus ?? null,
+        invoiceStatus: card.invoiceStatus ?? null,
+        ticketId: card.ticketId ?? null,
+        invoiceId: card.id,
+        customer: card.customer ?? null,
+        payLink: (card as any).payLink ?? null,
+      },
+    });
+  } catch (e) {
+    return c.json({ error: { message: e instanceof Error ? e.message : "status failed" } }, 502);
   }
 });
 
