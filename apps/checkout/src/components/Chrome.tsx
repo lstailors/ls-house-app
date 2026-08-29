@@ -4,23 +4,27 @@ export function Chrome({
   title,
   sub,
   backTo,
+  onBack,
   right,
 }: {
   title: string;
   sub?: string;
   backTo?: string;
+  onBack?: () => void;
   right?: React.ReactNode;
 }) {
+  const backBtnClass =
+    "grid h-10 w-10 flex-none place-items-center rounded-full border border-[var(--line)] bg-[rgba(15,34,24,0.7)] text-lg text-[var(--cr)]";
   return (
     <header className="flex items-center gap-3 px-4 pt-3 pb-2">
       {backTo ? (
-        <Link
-          to={backTo}
-          className="grid h-10 w-10 flex-none place-items-center rounded-full border border-[var(--line)] bg-[rgba(15,34,24,0.7)] text-lg text-[var(--cr)]"
-          aria-label="Back"
-        >
+        <Link to={backTo} className={backBtnClass} aria-label="Back">
           ‹
         </Link>
+      ) : onBack ? (
+        <button type="button" onClick={onBack} className={backBtnClass} aria-label="Back">
+          ‹
+        </button>
       ) : (
         <div className="h-10 w-10 flex-none" />
       )}
