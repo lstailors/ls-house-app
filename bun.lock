@@ -78,6 +78,34 @@
         "vite-plugin-pwa": "^0.21.1",
       },
     },
+    "apps/checkout": {
+      "name": "@ls/checkout",
+      "version": "0.1.0",
+      "dependencies": {
+        "@ls/api-client": "workspace:*",
+        "@ls/design": "workspace:*",
+        "@tanstack/react-query": "^5.90.10",
+        "clsx": "^2.1.1",
+        "html5-qrcode": "^2.3.8",
+        "lucide-react": "^0.462.0",
+        "react": "^18.3.1",
+        "react-dom": "^18.3.1",
+        "react-router-dom": "^6.30.2",
+        "sonner": "^1.7.4",
+        "tailwind-merge": "^2.6.0",
+      },
+      "devDependencies": {
+        "@types/react": "^18.3.12",
+        "@types/react-dom": "^18.3.1",
+        "@vitejs/plugin-react-swc": "^3.7.1",
+        "autoprefixer": "^10.4.20",
+        "postcss": "^8.4.49",
+        "tailwindcss": "^3.4.17",
+        "typescript": "^5.6.3",
+        "vite": "^5.4.11",
+        "vite-plugin-pwa": "^0.21.1",
+      },
+    },
     "backend": {
       "name": "backend",
       "dependencies": {
@@ -595,6 +623,8 @@
     "@ls/api-client": ["@ls/api-client@workspace:packages/api-client"],
 
     "@ls/auth": ["@ls/auth@workspace:packages/auth"],
+
+    "@ls/checkout": ["@ls/checkout@workspace:apps/checkout"],
 
     "@ls/design": ["@ls/design@workspace:packages/design"],
 
@@ -1811,6 +1841,8 @@
     "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
 
     "@eslint/eslintrc/globals": ["globals@14.0.0", "", {}, "sha512-oahGvuMGQlPw/ivIYBjVSrWAfWLBeku5tpPE2fOPLi+WHffIWbuh2tCjhyQhTBPMf5E9jDEH4FOmTYgYwbKwtQ=="],
+
+    "@ls/checkout/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "@react-leaflet/core/react": ["react@19.2.6", "", {}, "sha512-sfWGGfavi0xr8Pg0sVsyHMAOziVYKgPLNrS7ig+ivMNb3wbCBw3KxtflsGBAwD3gYQlE/AEZsTLgToRrSCjb0Q=="],
 

@@ -62,7 +62,8 @@ import { healthRouter } from "./routes/health";
 import { qcRouter } from "./routes/qc";
 import { metricsRouter } from "./routes/metrics";
 import { offlineRouter } from "./routes/offline";
-import { chatRouter } from "./routes/chat";
+import { chatRouter } from "./routes/chat"
+import { checkoutRouter } from "./routes/checkout";
 
 const app = new Hono();
 
@@ -134,6 +135,7 @@ app.route("/api/files", filesRouter);
 app.route("/api/fabric-stock", fabricStockRouter);
 app.route("/api/square", squareRouter);
 app.route("/api/payments", paymentsRouter);
+app.route("/api/checkout", checkoutRouter);
 app.route("/api/print", printRouter);
 app.route("/api/outreach", outreachRouter);
 app.route("/api/search", searchRouter);

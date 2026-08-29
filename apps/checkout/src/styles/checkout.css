@@ -1,0 +1,104 @@
+:root {
+  --fd: #0d1a10;
+  --fb: #0f2218;
+  --fr: #1f3a2e;
+  --fh: #2a4d3d;
+  --cr: #f1e9d6;
+  --cm: #c9c0ab;
+  --cd: #8a8474;
+  --br: #b08d57;
+  --bl: #d4b27a;
+  --bd: #8c6f42;
+  --line: rgba(176, 141, 87, 0.22);
+  --glass: linear-gradient(145deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015));
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: Montserrat, system-ui, sans-serif;
+  color: var(--cr);
+  background: radial-gradient(ellipse at 50% -8%, #1a3a28 0%, var(--fd) 52%), var(--fd);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+.display {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+}
+
+.checkout-shell {
+  min-height: 100%;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  max-width: 430px;
+  margin: 0 auto;
+  padding-top: var(--safe-t);
+  padding-bottom: var(--safe-b);
+}
+
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.btn-brass {
+  background: linear-gradient(180deg, #c9a56a, var(--br) 40%, var(--bd));
+  color: var(--fd);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: 0;
+  border-radius: 16px;
+  box-shadow: 0 12px 28px rgba(176, 141, 87, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--cr);
+  border-radius: 16px;
+}
+
+.keypad-key {
+  min-height: 68px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--glass);
+  color: var(--cr);
+  font-size: 26px;
+  font-weight: 600;
+  font-family: inherit;
+}
+
+.scanner-frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: #000;
+  aspect-ratio: 3 / 4;
+}
+
+.scanner-frame video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
