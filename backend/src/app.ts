@@ -66,6 +66,7 @@ import { qcRouter } from "./routes/qc";
 import { metricsRouter } from "./routes/metrics";
 import { offlineRouter } from "./routes/offline";
 import { chatRouter } from "./routes/chat";
+import { checkoutRouter } from "./routes/checkout";
 
 const app = new Hono();
 
@@ -87,6 +88,7 @@ const BASE_ALLOWED = [
   /^https:\/\/app\.lstailors\.com$/,
   /^https:\/\/book\.lstailors\.com$/,
   /^https:\/\/alts\.lstailors\.com$/,
+  /^https:\/\/checkout\.lstailors\.com$/,
 ];
 
 const extraOrigins: RegExp[] = (process.env.ALLOWED_ORIGINS ?? "")
@@ -180,5 +182,6 @@ app.route("/api/qc", qcRouter);
 app.route("/api/metrics", metricsRouter);
 app.route("/api/offline", offlineRouter);
 app.route("/api/chat", chatRouter);
+app.route("/api/checkout", checkoutRouter);
 
 export default app;

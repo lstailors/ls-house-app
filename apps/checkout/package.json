@@ -1,0 +1,37 @@
+{
+  "name": "@ls/checkout",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "checkout.lstailors.com — counter iPhone PWA: pay + mark out",
+  "scripts": {
+    "dev": "vite --port 8020",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json"
+  },
+  "dependencies": {
+    "@ls/api-client": "workspace:*",
+    "@ls/design": "workspace:*",
+    "@tanstack/react-query": "^5.90.10",
+    "clsx": "^2.1.1",
+    "html5-qrcode": "^2.3.8",
+    "lucide-react": "^0.462.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.2",
+    "sonner": "^1.7.4",
+    "tailwind-merge": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react-swc": "^3.7.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vite-plugin-pwa": "^0.21.1"
+  }
+}
