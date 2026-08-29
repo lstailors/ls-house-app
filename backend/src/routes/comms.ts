@@ -16,8 +16,6 @@ import { requireCronOrSession } from "../lib/require-secret";
 import { resolveCustomerByPhone } from "../lib/identity-resolve";
 import { getCommsEvents } from "../lib/comms-events";
 import {
-  DeskChannel,
-  DeskPerson,
   fmtE164ish,
   isNoiseCall,
   isNoiseSms,
@@ -27,6 +25,7 @@ import {
   resolveCallTranscript,
   tsMs,
 } from "../lib/messages-desk";
+import type { DeskChannel, DeskPerson } from "../lib/messages-desk";
 
 // ── Log communication to ERPNext Customer timeline ────────────────────────
 export async function logErpCommunication(opts: {

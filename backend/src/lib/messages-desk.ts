@@ -155,12 +155,12 @@ export type DeskPerson = {
 };
 
 export function recordingPlayUrl(call: {
-  recording?: string | null;
+  recording?: string | null | boolean | number;
   external_id?: string | null;
   name?: string | null;
 }): string | null {
-  const r = call.recording;
-  if (r && /^https?:\/\//i.test(String(r))) return String(r);
+  const r = call.recording as string | null | boolean | number | undefined;
+  if (r && typeof r === "string" && /^https?:\/\//i.test(r)) return r;
   const base = (process.env.RECORDING_PROXY_URL || "https://maestro.lstailors.com/unifi-audio").replace(/\/$/, "");
   const token = process.env.RECORDING_PROXY_TOKEN || "";
   const id = call.external_id || call.name;
@@ -170,7 +170,7 @@ export function recordingPlayUrl(call: {
     } else if (!r) return null;
   }
   if (!id) return null;
-  if (String(r) === "1" || r === true || r === "true" || (r && !/^https?:/i.test(String(r)))) {
+  if (String(r) === "1" || r === true || r === "true" || (r && !(typeof r === "string" && /^https?:/i.test(r)))) {
     const q = token ? `?token=${encodeURIComponent(token)}` : "";
     return `${base}/recording/${encodeURIComponent(String(id))}${q}`;
   }

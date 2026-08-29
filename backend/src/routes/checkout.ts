@@ -68,9 +68,10 @@ function staffPins(): Array<{ pin: string; name: string }> {
     }
   }
   return raw.split(",").map((part) => {
-    const [pin, name] = part.split(":").map((s) => s.trim());
-    return { pin: pin.replace(/\D/g, "").slice(0, 4), name: name || "Staff" };
-  });
+    const [pinRaw, name] = part.split(":").map((s) => s.trim());
+    const pin = (pinRaw || "").replace(/\D/g, "").slice(0, 4);
+    return { pin, name: name || "Staff" };
+  }).filter((x) => x.pin.length > 0);
 }
 
 async function hmacSign(data: string): Promise<string> {
@@ -561,7 +562,7 @@ checkoutRouter.post("/pay/terminal", async (c) => {
   if (!body?.invoice && !body?.ticket) {
     return c.json({ error: { message: "invoice or ticket required" } }, 400);
   }
-  if (!body.allowCharge && process.env.CHECKOUT_ALLOW_TERMINAL !== "1") {
+  if (!body.allowCharge && process.env.CHECKOUT_ALLOW_TERMINAL?.trim() !== "1") {
     return c.json(
       {
         error: {
