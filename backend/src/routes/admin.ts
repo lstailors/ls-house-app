@@ -24,6 +24,10 @@ function serializeLocation(row: any) {
 // ─── Auth guard middleware ────────────────────────────────────────────────────
 
 adminRouter.use("*", async (c, next) => {
+  // PIN PWA + analytics live on adminAnalyticsRouter — do not 401 them here.
+  if (/\/(auth|money|work|clients|house|mix|buying|sales|costs|locations)(\/|$)/.test(c.req.path)) {
+    return next();
+  }
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
   if (!canAccessSuperAdminPortal(user.role)) {
