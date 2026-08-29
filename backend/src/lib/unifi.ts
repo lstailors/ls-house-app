@@ -44,7 +44,13 @@ export async function getTalkCallLogs(opts: {
     `${UNIFI_HOST}/v1/sites/${UNIFI_SITE_ID}/talk/calls?${params}`,
     { headers: headers() }
   );
-  if (!res.ok) throw new Error(`UniFi Talk calls ${res.status}: ${await res.text()}`);
+  // Talk cloud route is flaky/404 on some sites — never throw for list reads.
+  // Call log SoT is ERP (maestro/unifi-runtime mirror), not this cloud pull.
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    console.warn(`[unifi] Talk calls ${res.status}: ${body.slice(0, 120)}`);
+    return [];
+  }
   const data = await res.json() as any;
   return data.data ?? data.calls ?? data ?? [];
 }
