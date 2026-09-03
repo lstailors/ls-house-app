@@ -205,6 +205,13 @@ describe("iPhone scale contract", () => {
     expect(app).toContain("TimedSpinner");
   });
 
+  test("desktop header puts Checkout between New and Pickup", () => {
+    const home = readFileSync(new URL("../pages/HomeTiles.tsx", import.meta.url), "utf8");
+    expect(home).toMatch(
+      /title="New ticket"[\s\S]*href="https:\/\/checkout\.lstailors\.com\/"[\s\S]*>\s*Checkout\s*<[\s\S]*title="Pickup counter"/,
+    );
+  });
+
   test("home never locks to one viewport — iPhone landscape must scroll", () => {
     expect(css).toContain("height: auto !important");
     expect(css).toContain("overflow-y: visible !important");

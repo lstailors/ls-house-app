@@ -19,6 +19,7 @@ import {
 } from "@ls/design/ui/alert-dialog";
 import { cn } from "@ls/design/utils";
 import { api } from "@ls/api-client";
+import { preferredTenderAmount } from "@alts/lib/intakePayment";
 
 export type OutsideMethod = "cash" | "check" | "square_handheld";
 
@@ -99,12 +100,13 @@ export function OutsideTenderButtons({
         );
       }
       setSnap(data);
-      const out =
+      const outstanding =
         typeof data.outstanding === "number" && data.outstanding > 0
           ? data.outstanding
           : amountDollars;
-      // Always prefer SI outstanding over bag total — PE rejects overpay.
-      setAmount(String(out));
+      // Keep a deliberate partial request, while clamping stale bag totals to
+      // the live SI balance so Payment Entry never overpays.
+      setAmount(String(preferredTenderAmount(amountDollars, outstanding)));
     } catch (e) {
       // Non-fatal — still allow record with local amount
       setSnap({
@@ -121,10 +123,10 @@ export function OutsideTenderButtons({
     void load();
   }, [load]);
 
-  // Only seed from parent amount when we don't yet have an invoice outstanding.
+  // Seed from the parent intent without ever crossing the live outstanding.
   useEffect(() => {
     if (typeof snap?.outstanding === "number" && snap.outstanding > 0) {
-      setAmount(String(snap.outstanding));
+      setAmount(String(preferredTenderAmount(amountDollars, snap.outstanding)));
       return;
     }
     if (amountDollars > 0) setAmount(String(amountDollars));

@@ -37,6 +37,12 @@ import DeliveryBlock, {
 import IntakeConfirm, {
   type IntakeConfirmResult,
 } from "@alts/components/intake/IntakeConfirm";
+import IntakePaymentPlan from "@alts/components/intake/IntakePaymentPlan";
+import {
+  resolveIntakePaymentAmount,
+  type IntakePaymentMethod,
+  type IntakePaymentTiming,
+} from "@alts/lib/intakePayment";
 import { enqueueIntakeTicket } from "@alts/lib/offlineQueue";
 
 const GARMENT_TYPES = [
@@ -315,6 +321,9 @@ export default function IntakeStepped() {
   const [isRush, setIsRush] = useState(false);
   const [delivery, setDelivery] = useState<DeliverySelection>(() => emptyDelivery());
   const [billing, setBilling] = useState<"billable" | "on_order" | "redo">(initialBilling);
+  const [paymentTiming, setPaymentTiming] = useState<IntakePaymentTiming>("later");
+  const [paymentMethod, setPaymentMethod] = useState<IntakePaymentMethod>("counter_terminal");
+  const [partialPaymentAmount, setPartialPaymentAmount] = useState("");
   const [linkedSo, setLinkedSo] = useState<string | null>(soParam);
   const [linkedSoLabel, setLinkedSoLabel] = useState<string | null>(null);
 
@@ -450,6 +459,25 @@ export default function IntakeStepped() {
         if (typeof intake.ticketNote === "string" && intake.ticketNote) setTicketNote(intake.ticketNote);
         if (intake.ticketNoteKind === "customer" || intake.ticketNoteKind === "internal") {
           setTicketNoteKind(intake.ticketNoteKind);
+        }
+        if (["later", "full", "partial"].includes(intake.paymentTiming)) {
+          setPaymentTiming(intake.paymentTiming as IntakePaymentTiming);
+        }
+        if (
+          [
+            "counter_terminal",
+            "mobile_terminal",
+            "card_on_file",
+            "cash",
+            "check",
+            "square_handheld",
+            "pay_link",
+          ].includes(intake.paymentMethod)
+        ) {
+          setPaymentMethod(intake.paymentMethod as IntakePaymentMethod);
+        }
+        if (typeof intake.partialPaymentAmount === "string") {
+          setPartialPaymentAmount(intake.partialPaymentAmount);
         }
         if (cart.label) setParkLabel(cart.label);
         setStep(1);
@@ -587,6 +615,11 @@ export default function IntakeStepped() {
           if (typeof draft!.notifyReady === "boolean") setNotifyReady(draft!.notifyReady);
           if (draft!.ticketNote) setTicketNote(draft!.ticketNote);
           if (draft!.ticketNoteKind) setTicketNoteKind(draft!.ticketNoteKind);
+          if (draft!.paymentTiming) setPaymentTiming(draft!.paymentTiming);
+          if (draft!.paymentMethod) setPaymentMethod(draft!.paymentMethod);
+          if (typeof draft!.partialPaymentAmount === "string") {
+            setPartialPaymentAmount(draft!.partialPaymentAmount);
+          }
           if (draft!.expectedGarments) setExpectedGarments(draft!.expectedGarments);
           if (draft!.parkLabel) setParkLabel(draft!.parkLabel);
           if (draft!.parkNote) setParkNote(draft!.parkNote);
@@ -659,6 +692,9 @@ export default function IntakeStepped() {
         notifyReady,
         ticketNote,
         ticketNoteKind,
+        paymentTiming,
+        paymentMethod,
+        partialPaymentAmount,
         expectedGarments,
         parkLabel,
         parkNote,
@@ -698,6 +734,9 @@ export default function IntakeStepped() {
     notifyReady,
     ticketNote,
     ticketNoteKind,
+    paymentTiming,
+    paymentMethod,
+    partialPaymentAmount,
     expectedGarments,
     parkLabel,
     parkNote,
@@ -717,6 +756,11 @@ export default function IntakeStepped() {
     [sellItems],
   );
   const total = workTotal + itemsTotal;
+  const paymentSelection = resolveIntakePaymentAmount(
+    billing === "billable" ? paymentTiming : "later",
+    partialPaymentAmount,
+    total,
+  );
   const lineCount = garments.reduce((s, g) => s + g.lines.length, 0) + sellItems.length;
   const active = garments.find((g) => g.ref === activeRef) ?? null;
   const activeSell = sellItems.find((s) => s.ref === activeSellRef) ?? null;
@@ -1452,6 +1496,9 @@ export default function IntakeStepped() {
           isRush,
           ticketNote: ticketNote.trim(),
           ticketNoteKind,
+          paymentTiming,
+          paymentMethod,
+          partialPaymentAmount,
         },
       };
 
@@ -2225,6 +2272,17 @@ export default function IntakeStepped() {
                 </div>
               )}
             </div>
+            {billing === "billable" && (
+              <IntakePaymentPlan
+                total={total}
+                timing={paymentTiming}
+                partialAmount={partialPaymentAmount}
+                method={paymentMethod}
+                onTimingChange={setPaymentTiming}
+                onPartialAmountChange={setPartialPaymentAmount}
+                onMethodChange={setPaymentMethod}
+              />
+            )}
             <div className="mt-5 rounded-[17px] border border-brass/25 bg-black/25 p-4">
               <div className="flex items-center gap-3 mb-3 flex-wrap">
                 <span className="display text-[19px] italic flex-1">Ticket note</span>
@@ -2386,6 +2444,15 @@ export default function IntakeStepped() {
               totalLabel={money(total)}
               billing={billing}
               promiseLabel={promiseLabel}
+              paymentIntent={
+                billing === "billable" && paymentTiming !== "later" && !paymentSelection.error
+                  ? {
+                      timing: paymentTiming,
+                      method: paymentMethod,
+                      amount: paymentSelection.amount,
+                    }
+                  : null
+              }
             />
           </div>
         )}
@@ -2427,6 +2494,10 @@ export default function IntakeStepped() {
               }
               if (!customer && !newName.trim()) {
                 toast.error("Pick or create a customer");
+                return;
+              }
+              if (billing === "billable" && paymentSelection.error) {
+                toast.error(paymentSelection.error);
                 return;
               }
               setStep(3);
