@@ -3,11 +3,11 @@
   "installCommand": "cd ../.. && bun install",
   "buildCommand": "bun run build",
   "outputDirectory": "dist",
-  "ignoreCommand": "cd ../.. && git diff --quiet HEAD^ HEAD -- apps/checkout backend/src/routes/checkout.ts",
+  "ignoreCommand": "cd ../.. && git diff --quiet HEAD^ HEAD -- apps/checkout backend/src/routes/checkout.ts backend/src/lib/erp.ts backend/src/lib/scope.ts backend/src/lib/erpnext",
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://app.lstailors.com/api/:path*"
+      "destination": "/api/[...path]"
     },
     {
       "source": "/((?!assets/|sw\\.js$|workbox-[^/]+\\.js$|registerSW\\.js$|manifest\\.webmanifest$).*)",
