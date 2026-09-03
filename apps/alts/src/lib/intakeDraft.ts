@@ -12,6 +12,8 @@
  *  persist photos — re-attach photos after a recovered draft instead.
  */
 
+import type { IntakePaymentMethod, IntakePaymentTiming } from "./intakePayment";
+
 export const ALTS_INTAKE_DRAFT_KEY = "alts.intakeDraft.v1";
 export const ALTS_INTAKE_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -91,6 +93,9 @@ export type IntakeDraftPayload = {
   notifyReady: boolean;
   ticketNote: string;
   ticketNoteKind: "internal" | "customer";
+  paymentTiming?: IntakePaymentTiming;
+  paymentMethod?: IntakePaymentMethod;
+  partialPaymentAmount?: string;
   expectedGarments: number;
   parkLabel: string;
   parkNote: string;

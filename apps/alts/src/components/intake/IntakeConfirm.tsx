@@ -2,6 +2,7 @@
  * Post-submit confirmation — SMS e-ticket, concierge email, selective print, view/edit, checkout.
  */
 import { useMemo, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import {
@@ -20,6 +21,10 @@ import { toast } from "sonner";
 import { api } from "@ls/api-client";
 import { cn } from "@ls/design/utils";
 import { formatMoney } from "@alts/lib/money";
+import { ChargeTerminalButton } from "@alts/components/payments/ChargeTerminalButton";
+import { ChargeCardOnFileButton } from "@alts/components/payments/ChargeCardOnFileButton";
+import { OutsideTenderButtons } from "@alts/components/payments/OutsideTenderButtons";
+import type { IntakePaymentIntent, IntakePaymentMethod } from "@alts/lib/intakePayment";
 
 export type IntakeConfirmResult = {
   ticketName: string;
@@ -42,6 +47,7 @@ type Props = {
   totalLabel: string;
   billing: "billable" | "on_order" | "redo";
   promiseLabel?: string | null;
+  paymentIntent?: IntakePaymentIntent | null;
   onDoneHome?: () => void;
 };
 
@@ -51,6 +57,21 @@ function money(n?: number | string | null) {
 
 function firstName(full: string) {
   return (full || "there").trim().split(/\s+/)[0] || "there";
+}
+
+const PAYMENT_METHOD_LABEL: Record<IntakePaymentMethod, string> = {
+  counter_terminal: "Counter Terminal",
+  mobile_terminal: "Mobile Terminal",
+  card_on_file: "Card on file",
+  cash: "Cash",
+  check: "Check",
+  square_handheld: "Square handheld",
+  pay_link: "Pay link / QR",
+};
+
+function numberFromMoneyLabel(label: string): number {
+  const parsed = Number(String(label || "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function reprintFlag(ticketName: string) {
@@ -92,6 +113,7 @@ export default function IntakeConfirm({
   totalLabel,
   billing,
   promiseLabel,
+  paymentIntent,
   onDoneHome,
 }: Props) {
   const nav = useNavigate();
@@ -104,6 +126,26 @@ export default function IntakeConfirm({
     typeof window !== "undefined"
       ? `${window.location.origin}/e-ticket/${encodeURIComponent(ticket)}`
       : `https://alts.lstailors.com/e-ticket/${encodeURIComponent(ticket)}`;
+  const invoiceTotal = Math.max(
+    0,
+    Number(result.invoiceTotal ?? numberFromMoneyLabel(totalLabel)) || 0,
+  );
+  const initialPaymentAmount =
+    paymentIntent?.amount && paymentIntent.amount > 0
+      ? Math.min(paymentIntent.amount, invoiceTotal || paymentIntent.amount)
+      : invoiceTotal;
+  const [paymentAmountInput, setPaymentAmountInput] = useState(
+    initialPaymentAmount > 0 ? initialPaymentAmount.toFixed(2) : "",
+  );
+  const [paymentLinkUrl, setPaymentLinkUrl] = useState<string | null>(null);
+  const paymentAmount = Number(paymentAmountInput);
+  const paymentError =
+    !Number.isFinite(paymentAmount) || paymentAmount <= 0
+      ? "Enter an amount above $0.00"
+      : invoiceTotal > 0 && paymentAmount - invoiceTotal > 0.005
+        ? `Amount cannot exceed ${money(invoiceTotal)}`
+        : null;
+  const paymentAmountDisplay = paymentError ? "—" : money(paymentAmount);
 
   const [printSel, setPrintSel] = useState({
     tags: true,
@@ -230,9 +272,16 @@ export default function IntakeConfirm({
   });
 
   const checkout = useMutation({
-    mutationFn: async () => {
-      // Prefer links already returned at create
-      if (result.squarePaymentLink?.startsWith("http")) {
+    mutationFn: async (amount?: number) => {
+      const explicitAmount =
+        amount != null && Number.isFinite(amount) && amount > 0 ? amount : undefined;
+      const isFullBalance =
+        explicitAmount == null ||
+        invoiceTotal <= 0 ||
+        Math.abs(explicitAmount - invoiceTotal) <= 0.005;
+      // Reuse the invoice's canonical link only for the full balance. Partial
+      // payments need an amount-specific link and must not overwrite it.
+      if (isFullBalance && result.squarePaymentLink?.startsWith("http")) {
         return { url: result.squarePaymentLink };
       }
       const inv = result.salesInvoice;
@@ -240,7 +289,10 @@ export default function IntakeConfirm({
       const res = await api.raw("/api/payments/link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invoice: inv }),
+        body: JSON.stringify({
+          invoice: inv,
+          ...(explicitAmount != null ? { amount: explicitAmount } : {}),
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         url?: string;
@@ -248,15 +300,18 @@ export default function IntakeConfirm({
         error?: { message?: string };
       };
       if (res.ok && data.url) return data;
-      // last resort: house pay page
-      if (result.appPayUrl?.startsWith("http")) return { url: result.appPayUrl };
+      // The house pay page represents the full balance, so it is not a safe
+      // fallback for a failed partial-link request.
+      if (isFullBalance && result.appPayUrl?.startsWith("http")) {
+        return { url: result.appPayUrl };
+      }
       throw new Error(data.error?.message || "Could not open checkout");
     },
     onSuccess: (data) => {
       if (data.url) {
         navigator.clipboard?.writeText(data.url).catch(() => undefined);
-        window.open(data.url, "_blank", "noopener,noreferrer");
-        toast.success("Square checkout opened");
+        setPaymentLinkUrl(data.url);
+        toast.success("Pay link and QR ready");
       }
     },
     onError: (e: Error) => toast.error(e.message),
@@ -315,6 +370,122 @@ export default function IntakeConfirm({
           <p className="text-[11px] text-signal-amber mt-2">{result.sellWarnings.join(" · ")}</p>
         )}
       </div>
+
+      {/* Payment */}
+      {billing === "billable" && result.salesInvoice && (
+        <section className="mb-4 rounded-2xl border border-brass/35 bg-black/30 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-[9px] font-bold tracking-[0.16em] uppercase text-brass-light">
+                Collect payment
+              </div>
+              <div className="mt-1 text-[12px] text-cream-dim">
+                {paymentIntent
+                  ? `Review choice · ${PAYMENT_METHOD_LABEL[paymentIntent.method]}`
+                  : "No payment selected at Review · collect now or leave the balance open"}
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <div className="text-[9px] font-bold uppercase tracking-widest text-cream-dim">Amount</div>
+              <div className="display text-[23px] leading-tight text-brass-light">
+                {paymentAmountDisplay}
+              </div>
+            </div>
+          </div>
+
+          <label className="mt-3 block text-[10px] font-bold uppercase tracking-[0.14em] text-cream-dim">
+            Full or partial amount
+            <div className="relative mt-1.5">
+              <span className="absolute inset-y-0 left-4 flex items-center text-brass-light">$</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={paymentAmountInput}
+                onChange={(event) => {
+                  setPaymentAmountInput(event.target.value);
+                  setPaymentLinkUrl(null);
+                }}
+                aria-invalid={Boolean(paymentError)}
+                className={cn(
+                  "h-12 w-full rounded-xl border bg-forest-deep pl-8 pr-3 text-[17px] tabular-nums text-cream outline-none",
+                  paymentError ? "border-signal-amber" : "border-brass/30 focus:border-brass",
+                )}
+              />
+            </div>
+            {paymentError && (
+              <span className="mt-1 block normal-case tracking-normal text-[11px] text-signal-amber">
+                {paymentError}
+              </span>
+            )}
+          </label>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <ChargeTerminalButton
+              invoiceId={result.salesInvoice}
+              ticketId={ticket}
+              amountCents={paymentError ? 0 : Math.round(paymentAmount * 100)}
+              amountDisplay={paymentAmountDisplay}
+              onSuccess={() => toast.success("Terminal payment completed")}
+              onError={(message) => toast.error(message)}
+            />
+            <ChargeCardOnFileButton
+              invoiceId={result.salesInvoice}
+              ticketId={ticket}
+              amountDollars={paymentError ? undefined : paymentAmount}
+              amountDisplay={paymentAmountDisplay}
+              customerLabel={clientName}
+              onSuccess={() => toast.success("Card on file charged")}
+              onError={(message) => toast.error(message)}
+            />
+          </div>
+
+          <div className="mt-2">
+            <OutsideTenderButtons
+              ticketId={ticket}
+              invoiceId={result.salesInvoice}
+              amountDollars={paymentError ? 0 : paymentAmount}
+              amountDisplay={paymentAmountDisplay}
+              showVoid={false}
+              onSuccess={({ method }) => toast.success(`${method || "Payment"} recorded`)}
+              onError={(message) => toast.error(message)}
+            />
+          </div>
+
+          <button
+            type="button"
+            disabled={Boolean(paymentError) || checkout.isPending}
+            onClick={() => checkout.mutate(paymentAmount)}
+            className="mt-2 min-h-[48px] w-full rounded-xl border border-brass/40 bg-brass/12 text-[12px] font-bold uppercase tracking-widest text-brass-light disabled:opacity-40 inline-flex items-center justify-center gap-2"
+          >
+            {checkout.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+            Pay link / QR
+          </button>
+
+          {paymentLinkUrl && (
+            <div className="mt-3 rounded-2xl border border-brass/25 bg-cream p-4 text-center">
+              <QRCodeSVG
+                value={paymentLinkUrl}
+                size={180}
+                level="M"
+                bgColor="#F1E9D6"
+                fgColor="#0D1A10"
+                className="mx-auto"
+              />
+              <div className="mt-3 text-[12px] font-semibold text-forest-deep">
+                Customer scans to pay {paymentAmountDisplay}
+              </div>
+              <a
+                href={paymentLinkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-flex min-h-[44px] items-center justify-center rounded-xl bg-forest-deep px-5 text-[11px] font-bold uppercase tracking-widest text-cream"
+              >
+                Open Square
+              </a>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Comms */}
       <div className="mb-3">
@@ -429,18 +600,6 @@ export default function IntakeConfirm({
 
       {/* Actions */}
       <div className="grid gap-2 mb-4">
-        {billing === "billable" && (
-          <button
-            type="button"
-            disabled={checkout.isPending || !result.salesInvoice}
-            onClick={() => checkout.mutate()}
-            className="min-h-[52px] rounded-2xl border border-brass bg-gradient-to-b from-[#D3AE72] to-[#B08D57] text-[#0C1810] font-bold text-[13px] tracking-wide uppercase inline-flex items-center justify-center gap-2 disabled:opacity-40"
-          >
-            {checkout.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
-            Checkout · Square
-          </button>
-        )}
-
         <button
           type="button"
           onClick={() => nav(`/orders/alterations/${encodeURIComponent(ticket)}`)}

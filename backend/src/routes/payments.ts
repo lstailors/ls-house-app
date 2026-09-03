@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { getAuthedUser } from "../lib/scope";
 import { erpGet, erpUpdate, erpRunMethod, erpSubmit, erpCreate, erpList } from "../lib/erp";
 import { recordCardOnFileProvenance } from "../lib/paymentProvenance";
+import { selectPaymentAmount } from "../lib/payment-amount";
 import {
   humanizeSquareTerminalError,
   isMissingLsSquareModule,
@@ -114,26 +115,35 @@ paymentsRouter.post("/link", async (c) => {
 
   const rawId = body.invoice.trim();
 
-  // 1) Try ERP wrappers (api.*) then nested ls_square.pos
+  // An explicit amount is a full/partial staff request. Resolve it against the
+  // live SI in our direct path; legacy ERP wrappers silently ignore or reject
+  // partial amounts.
+  if (body.amount != null) {
+    try {
+      const link = await mintPaymentLinkDirect(rawId, body.amount);
+      return c.json(link);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Could not create payment link";
+      const status = /amount|outstanding|nothing outstanding/i.test(message) ? 400 : 502;
+      return c.json({ error: { message } }, status);
+    }
+  }
+
+  // Full balance: prefer ERP wrappers, then direct Square.
   try {
     const result = await callErpMethodFirst(
       squareErpMethods("create_payment_link"),
-      {
-        ...refFor(rawId),
-        ...(body.amount ? { amount: body.amount } : {}),
-      },
+      refFor(rawId),
     );
     return c.json(normalizePaymentLink(result));
   } catch (erpErr) {
     const erpMsg = erpErr instanceof Error ? erpErr.message : String(erpErr);
-    // Only fall through for missing-module / method; other ERP errors may be real
     if (!isMissingLsSquareModule(erpErr)) {
       return c.json({ error: { message: erpMsg || "Could not create payment link" } }, 502);
     }
 
-    // 2) Hub-side Square mint
     try {
-      const link = await mintPaymentLinkDirect(rawId, body.amount);
+      const link = await mintPaymentLinkDirect(rawId);
       return c.json(link);
     } catch (e) {
       const message = e instanceof Error ? e.message : "Could not create payment link";
@@ -172,18 +182,9 @@ async function mintPaymentLinkDirect(
   let inv = await erpGet<Record<string, unknown>>("Sales Invoice", invoiceName);
   if (!inv) throw new Error(`Sales Invoice ${invoiceName} not found`);
 
-  // Reuse existing Square link on SI
-  const prior = String(inv.lsh_square_payment_link ?? "").trim();
-  if (prior.startsWith("http")) {
-    return { ok: true, url: prior, payment_link_id: "" };
-  }
-
   let docstatus = Number(inv.docstatus ?? 0);
   customerName = customerName || String(inv.customer_name ?? inv.customer ?? "");
-  outstanding =
-    amountOverride && amountOverride > 0
-      ? amountOverride
-      : Number(inv.outstanding_amount ?? inv.grand_total ?? outstanding) || 0;
+  outstanding = Number(inv.outstanding_amount ?? inv.grand_total ?? outstanding) || 0;
 
   if (docstatus === 2) throw new Error(`Invoice ${invoiceName} is cancelled`);
   if (docstatus === 0) {
@@ -211,15 +212,17 @@ async function mintPaymentLinkDirect(
       }
     }
     inv = (await erpGet<Record<string, unknown>>("Sales Invoice", invoiceName)) || inv;
-    outstanding =
-      amountOverride && amountOverride > 0
-        ? amountOverride
-        : Number(inv.outstanding_amount ?? inv.grand_total ?? outstanding) || 0;
+    outstanding = Number(inv.outstanding_amount ?? inv.grand_total ?? outstanding) || 0;
   }
 
-  if (outstanding <= 0) throw new Error(`Invoice ${invoiceName} has nothing outstanding`);
+  const amount = selectPaymentAmount(amountOverride, outstanding);
+  const isPartial = amount < outstanding - 0.005;
+  const prior = String(inv.lsh_square_payment_link ?? "").trim();
+  if (!isPartial && prior.startsWith("http")) {
+    return { ok: true, url: prior, payment_link_id: "" };
+  }
 
-  const amountCents = Math.round(outstanding * 100);
+  const amountCents = Math.round(amount * 100);
   const idempotencyKey = `lsh-hub-${invoiceName}-${amountCents}`.slice(0, 45);
 
   const sqRes = await fetch(`${SQUARE_API}/v2/online-checkout/payment-links`, {
@@ -247,15 +250,18 @@ async function mintPaymentLinkDirect(
   const url = String(pl.url || pl.long_url || "").trim();
   if (!url) throw new Error("Square did not return a payment URL");
 
-  // Stamp SI for pay page + email
-  const appPay = `https://app.lstailors.com/pay/${encodeURIComponent(invoiceName)}`;
-  try {
-    await erpUpdate("Sales Invoice", invoiceName, {
-      lsh_square_payment_link: url,
-      lsh_invoice_web_url: appPay,
-    });
-  } catch {
-    /* field stamp best-effort */
+  // Keep the canonical invoice link full-balance only. A partial link is
+  // intentionally ephemeral so future reminders still offer the live balance.
+  if (!isPartial) {
+    const appPay = `https://app.lstailors.com/pay/${encodeURIComponent(invoiceName)}`;
+    try {
+      await erpUpdate("Sales Invoice", invoiceName, {
+        lsh_square_payment_link: url,
+        lsh_invoice_web_url: appPay,
+      });
+    } catch {
+      /* field stamp best-effort */
+    }
   }
 
   return {
@@ -268,8 +274,8 @@ async function mintPaymentLinkDirect(
 // POST /api/payments/terminal-checkout
 // Prefer ERP ls_square when deployed; fall back to direct Square Terminal API
 // so FOH checkout works even when the bench module is missing.
-// Never forward client `amount` to ERP — live create_checkout() does not
-// accept it (TypeError), and HER-63 says outstanding comes from the SI.
+// Full-balance requests may use ERP wrappers. Explicit full/partial amounts use
+// the direct Square path, which validates against the live SI outstanding.
 paymentsRouter.post("/terminal-checkout", async (c) => {
   const user = await getAuthedUser(c);
   if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
@@ -288,6 +294,21 @@ paymentsRouter.post("/terminal-checkout", async (c) => {
   const rawId = (body.ticket || body.invoice || "").trim();
   const device = body.device || undefined;
   const deviceId = (body.device_id || "").trim() || undefined;
+
+  if (body.amount != null) {
+    try {
+      const checkout = await mintTerminalCheckoutDirect(rawId, {
+        device,
+        deviceId,
+        amount: body.amount,
+      });
+      return c.json(checkout);
+    } catch (e) {
+      const message = humanizeSquareTerminalError(e);
+      const status = /amount|outstanding|nothing outstanding/i.test(message) ? 400 : 502;
+      return c.json({ error: { message } }, status);
+    }
+  }
 
   try {
     const result = await callErpMethodFirst(
@@ -704,11 +725,11 @@ type SquareTerminalCheckout = {
 
 /**
  * Push a Terminal Checkout via Square when ERP ls_square is not on the bench.
- * Amount is always the SI outstanding (ignore any client-sent figure).
+ * The requested amount is accepted only after checking live SI outstanding.
  */
 async function mintTerminalCheckoutDirect(
   rawId: string,
-  opts: { device?: string; deviceId?: string } = {},
+  opts: { device?: string; deviceId?: string; amount?: number } = {},
 ): Promise<{ ok: true; checkout_id: string }> {
   const token = process.env.SQUARE_ACCESS_TOKEN ?? "";
   if (!token) throw new Error("Square not configured (SQUARE_ACCESS_TOKEN)");
@@ -748,7 +769,7 @@ async function mintTerminalCheckoutDirect(
 
   customerName = customerName || String(inv.customer_name ?? inv.customer ?? "");
   const outstanding = Number(inv.outstanding_amount ?? inv.grand_total ?? 0) || 0;
-  if (outstanding <= 0) throw new Error(`Invoice ${invoiceName} has nothing outstanding`);
+  const amount = selectPaymentAmount(opts.amount, outstanding);
 
   const wantsSpecific =
     Boolean(opts.deviceId) ||
@@ -766,7 +787,11 @@ async function mintTerminalCheckoutDirect(
         order_by: "creation desc",
         limit: 10,
       });
-      const reused = open.find((r) => String(r.checkout_id ?? "").trim());
+      const reused = open.find(
+        (r) =>
+          String(r.checkout_id ?? "").trim() &&
+          Math.abs(Number(r.amount ?? 0) - amount) <= 0.005,
+      );
       if (reused?.checkout_id) {
         return { ok: true, checkout_id: String(reused.checkout_id) };
       }
@@ -794,7 +819,7 @@ async function mintTerminalCheckoutDirect(
     );
   }
 
-  const amountCents = Math.round(outstanding * 100);
+  const amountCents = Math.round(amount * 100);
   const sqRes = await fetch(`${SQUARE_API}/v2/terminals/checkouts`, {
     method: "POST",
     headers: squareHeaders(token),
@@ -825,7 +850,7 @@ async function mintTerminalCheckoutDirect(
       invoice: invoiceName,
       ticket: ticketName || undefined,
       kind: "Terminal",
-      amount: outstanding,
+      amount: amount,
       status: "Created",
       checkout_id: checkoutId,
     });
@@ -870,10 +895,7 @@ async function recordCashDirect(
   if (outstanding <= 0) {
     return { ok: true, status: "already_paid", method: "cash", invoice: invoiceName, amount: 0 };
   }
-  const amount =
-    amountOverride && amountOverride > 0 && amountOverride <= outstanding + 0.02
-      ? amountOverride
-      : outstanding;
+  const amount = selectPaymentAmount(amountOverride, outstanding);
 
   const pe = await erpCreate<Record<string, unknown>>("Payment Entry", {
     payment_type: "Receive",
@@ -970,7 +992,7 @@ async function applySquarePaymentToInvoice(opts: {
     return { ok: true, status: "already_paid" };
   }
 
-  const amount = opts.amount > 0 && opts.amount <= outstanding + 0.02 ? opts.amount : outstanding;
+  const amount = selectPaymentAmount(opts.amount, outstanding);
 
   const pe = await erpCreate<Record<string, unknown>>("Payment Entry", {
     payment_type: "Receive",
@@ -1434,17 +1456,7 @@ paymentsRouter.post("/card-on-file", async (c) => {
       return c.json({ error: { message: "Invoice has no customer" } }, 400);
     }
 
-    const chargeAmt =
-      body.amount != null && Number.isFinite(body.amount) ? Number(body.amount) : ctx.outstanding;
-    if (chargeAmt <= 0) {
-      return c.json({ error: { message: "amount must be positive" } }, 400);
-    }
-    if (chargeAmt - ctx.outstanding > 0.02) {
-      return c.json(
-        { error: { message: `amount ${chargeAmt} exceeds outstanding ${ctx.outstanding}` } },
-        400,
-      );
-    }
+    const chargeAmt = selectPaymentAmount(body.amount, ctx.outstanding);
 
     const sqId = await resolveSquareCustomerId(ctx.customer, ctx.mobile);
     if (!sqId) {

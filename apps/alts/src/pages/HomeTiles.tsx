@@ -1495,6 +1495,13 @@ export default function HomeTiles() {
             <Link to="/intake/kind" className="home-hd-act is-primary" title="New ticket">
               + New
             </Link>
+            <a
+              href="https://checkout.lstailors.com/"
+              className="home-hd-act is-primary"
+              title="Open payment checkout"
+            >
+              Checkout
+            </a>
             <Link to="/pickup" className="home-hd-act" title="Pickup counter">
               Pickup
             </Link>
