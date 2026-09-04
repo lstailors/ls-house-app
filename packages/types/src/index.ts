@@ -429,6 +429,7 @@ export const DashboardKpis = z.object({
   altByStatus: z.object({ received: z.number(), inProgress: z.number(), ready: z.number() }).optional(),
   altRevenueMTD: z.number().optional(),
   revenueMTD: z.number().optional(),
+  revenueChange: z.number().optional(),
   garmentsByStage: z.record(z.string(), z.number()).optional(),
   garmentsProd: z.number().optional(),
   unansweredSms: z.number().optional(),
