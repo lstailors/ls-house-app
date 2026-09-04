@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatLookbookUSD, lookbookDownloadHref, deskSwatchUrl } from "./lookbook-shared";
+import { formatLookbookUSD, lookbookDownloadHref, deskSwatchUrl, swatchDetailPath, swatchListPath } from "./lookbook-shared";
 
 describe("formatLookbookUSD", () => {
   test("keeps cents that house formatUSD would round away", () => {
@@ -22,5 +22,13 @@ describe("lookbook links", () => {
   });
   test("encodes Marzoni slashes in the query", () => {
     expect(lookbookDownloadHref("120-721/700")).toContain("120-721%2F700");
+  });
+  test("detail path can carry the gallery filters back", () => {
+    expect(swatchDetailPath("ARTEXTILE-109301", "mill=Artextile&photo=1")).toBe(
+      "/admin/reference/lookbook-prices/swatch?id=ARTEXTILE-109301&back=mill%3DArtextile%26photo%3D1",
+    );
+    expect(swatchListPath("mill=Artextile&photo=1")).toBe(
+      "/admin/reference/lookbook-prices/all?mill=Artextile&photo=1",
+    );
   });
 });
