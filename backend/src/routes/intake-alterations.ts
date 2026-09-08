@@ -10,6 +10,7 @@ import { eTicketKey, eTicketKeyValid, eTicketPublicUrl } from '../lib/eticket-to
 import { planDeliveryFee } from './delivery-zones';
 import { erpDatetime, timelineEventType } from '../lib/delivery';
 import { UpdateTicketDeliveryRequest } from '../types';
+import { buildTicketLines } from '../lib/intake-ticket-lines';
 import {
   canCancelQueuedDelivery,
   canMutateQueuedDelivery,
@@ -757,7 +758,7 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
     return c.json({ error: 'customer or newCustomer.name is required' }, 400);
   }
   // Every alter garment needs at least one work line (billable and non-billable).
-  // Sell-only tickets use the synthetic "Retail / stock sale" shell with empty lines.
+  // Sell-only tickets use the synthetic "Retail / stock sale" shell with a required $0 line.
   const isSellOnlyShell =
     garmentsIn.length === 1 &&
     sellItemsIn.length > 0 &&
@@ -823,18 +824,9 @@ intakeAlterationsRouter.post('/tickets', async (c) => {
       fit_area: Array.isArray(g.fitAreas) ? g.fitAreas.join(', ') : (g.fitAreas || ''),
       complexity: g.complexity || '',
     })),
-    lines: garments.flatMap((g: any) =>
-    (g.lines ?? []).map((l: any) => ({
-      garment_ref: g.ref,          // e.g. "G1", "G2"
-      preset: l.preset || null,    // optional — null = custom line (Lucia 030)
-      description: l.description,
-      price: l.price,              // always full shop price (internal value even if non-billable)
-      // Capacity / job card minutes; custom lines default 15 if client omits
-      estimated_minutes: Number(l.estMinutes ?? l.est_minutes ?? l.estimated_minutes) || 15,
-      line_notes: l.notes || l.line_notes || null,
-      // Intake cart line id — photo upload matches this (P2-7)
-      client_line_key: l.id || l.client_line_key || l.clientKey || null,
-    }))
+    lines: buildTicketLines(
+      garments,
+      sellItemsIn.map((item) => sellLineDescription(item)).join('; '),
     ),
     };
     if (linkedSo) payload.linked_sales_order = linkedSo;
