@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { erpList, extractFieldNotPermitted, isAltsOrigin, resetDroppedFields } from "./erp";
+import { cachedErpPing, erpList, erpPing, extractFieldNotPermitted, isAltsOrigin, resetDroppedFields, resetErpPingCache } from "./erp";
 
 describe("extractFieldNotPermitted", () => {
   test("parses Frappe 417 field-not-permitted message", () => {
@@ -145,5 +145,56 @@ describe("erpList field retry", () => {
     await expect(
       erpList("Alteration Ticket", { fields: ["name"], throwOnError: true }),
     ).rejects.toThrow("ERPNext credentials missing");
+  });
+});
+
+describe("erpPing", () => {
+  const prev = {
+    base: process.env.ERPNEXT_BASE_URL,
+    key: process.env.ERPNEXT_API_KEY,
+    secret: process.env.ERPNEXT_API_SECRET,
+    fetch: globalThis.fetch,
+  };
+
+  afterEach(() => {
+    process.env.ERPNEXT_BASE_URL = prev.base;
+    process.env.ERPNEXT_API_KEY = prev.key;
+    process.env.ERPNEXT_API_SECRET = prev.secret;
+    globalThis.fetch = prev.fetch;
+    resetErpPingCache();
+  });
+
+  test("shallow ping does not list alteration tickets", async () => {
+    process.env.ERPNEXT_BASE_URL = "https://erp.example.test";
+    process.env.ERPNEXT_API_KEY = "k";
+    process.env.ERPNEXT_API_SECRET = "s";
+    const calls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ message: "mcp@lstailors.com" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const ping = await erpPing({ deep: false });
+    expect(ping.reachable).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("frappe.auth.get_logged_user");
+  });
+
+  test("cached ping reuses the first result", async () => {
+    process.env.ERPNEXT_BASE_URL = "https://erp.example.test";
+    process.env.ERPNEXT_API_KEY = "k";
+    process.env.ERPNEXT_API_SECRET = "s";
+    let n = 0;
+    globalThis.fetch = (async () => {
+      n += 1;
+      return new Response(JSON.stringify({ message: "ok" }), { status: 200 });
+    }) as typeof fetch;
+
+    await cachedErpPing({ deep: false });
+    await cachedErpPing({ deep: false });
+    expect(n).toBe(1);
   });
 });
