@@ -3,14 +3,14 @@
   "installCommand": "cd ../.. && bun install",
   "buildCommand": "bun run build",
   "outputDirectory": "dist",
-  "ignoreCommand": "cd ../.. && git diff --quiet HEAD^ HEAD -- apps/alts",
+  "ignoreCommand": "cd ../.. && git diff --quiet HEAD^ HEAD -- apps/alts packages webapp/src/admin webapp/src/components/shell webapp/src/pages",
   "rewrites": [
     {
       "source": "/api/:path*",
       "destination": "https://app.lstailors.com/api/:path*"
     },
     {
-      "source": "/((?!assets/|sw\\.js$|workbox-[^/]+\\.js$|registerSW\\.js$|manifest\\.webmanifest$|manifest-alts\\.json$).*)",
+      "source": "/((?!assets/|sw\\.js$|workbox-[^/]+\\.js$|registerSW\\.js$|manifest.webmanifest$|manifest-alts\\.json$).*)",
       "destination": "/index.html"
     }
   ],

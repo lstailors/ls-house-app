@@ -5,6 +5,21 @@ import path from "path";
 
 const pkgs = path.resolve(__dirname, "../../packages");
 
+/** Put only those packages in a shared chunk — never their deps (clsx, prop-types, …).
+ *  Do not isolate recharts here: Rollup would hoist shared helpers into that file
+ *  and login would still download 400KB of charts. Lazy dashboard routes own recharts. */
+function vendorChunk(id: string): string | undefined {
+  const fromNm = id.split("node_modules").pop();
+  if (!fromNm || fromNm === id) return;
+  const p = fromNm.replace(/\\/g, "/");
+  if (p.includes("/leaflet/") || p.includes("/react-leaflet/")) return "vendor-maps";
+  if (p.includes("/jsqr/") || p.includes("/html5-qrcode/") || p.includes("/@zxing/")) {
+    return "vendor-scan";
+  }
+  if (p.includes("/@tanstack/react-query")) return "vendor-query";
+  if (p.includes("/react-router")) return "vendor-router";
+}
+
 export default defineConfig({
   define: {
     "import.meta.env.VITE_COMMIT": JSON.stringify(
@@ -31,7 +46,8 @@ export default defineConfig({
         "icon-512.png",
         "ls-icon.svg",
         "ls-logo-seal.png",
-        "ls-logo-crest.png",
+        "ls-logo-mark.png",
+        "ls-logo-mark-256.png",
       ],
       manifest: {
         name: "L&S Alterations",
@@ -55,8 +71,17 @@ export default defineConfig({
         navigateFallbackAllowlist: [/^\/(?!api\/).*/],
         // Shell + hashed assets always; POS navigations via navigateFallback
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,webp}"],
-        // Main bundle can exceed default 2 MiB — still precache for floor offline shell
-        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        // Charts / maps / QR stay on-demand — do not fill tablet caches on first open.
+        globIgnores: [
+          "**/vendor-charts*.js",
+          "**/vendor-scan*.js",
+          "**/vendor-maps*.js",
+          "**/leaflet*",
+          "**/generateCategoricalChart*",
+          "**/PieChart*",
+        ],
+        // Floor shell is split now; skip any remaining oversized chunks.
+        maximumFileSizeToCacheInBytes: 2 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -105,13 +130,19 @@ export default defineConfig({
   ],
   build: {
     outDir: "dist",
+    modulePreload: {
+      resolveDependencies: (_filename, deps) =>
+        deps.filter(
+          (d) =>
+            !d.includes("vendor-charts") &&
+            !d.includes("vendor-scan") &&
+            !d.includes("vendor-maps") &&
+            !d.includes("leaflet"),
+        ),
+    },
     rollupOptions: {
       output: {
-        manualChunks: {
-          "vendor-react": ["react", "react-dom"],
-          "vendor-router": ["react-router-dom"],
-          "vendor-query": ["@tanstack/react-query"],
-        },
+        manualChunks: vendorChunk,
       },
     },
   },

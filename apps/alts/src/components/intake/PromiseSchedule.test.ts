@@ -6,7 +6,7 @@ describe("PromiseSchedule slots", () => {
     const src = readFileSync(new URL("./PromiseSchedule.tsx", import.meta.url), "utf8");
     expect(src).toContain('value: "10:00"');
     expect(src).toContain('value: "16:00"');
-    expect(src).toContain('DEFAULT_PROMISE_TIME = "16:00"');
+    expect(src).toContain('PROMISE_TIME_DEFAULT = "16:00"');
     expect(src).not.toContain('value: "11:00"');
     expect(src).not.toContain('value: "18:00"');
   });

@@ -95,7 +95,8 @@ describe("iPhone scale contract", () => {
     expect(existsSync(new URL("apple-touch-icon.png", pub))).toBe(true);
     expect(existsSync(new URL("favicon.ico", pub))).toBe(true);
     expect(existsSync(new URL("icon-512.png", pub))).toBe(true);
-    expect(existsSync(new URL("ls-logo-crest.png", pub))).toBe(true);
+    expect(existsSync(new URL("ls-logo-seal.png", pub))).toBe(true);
+    expect(existsSync(new URL("ls-logo-mark.png", pub))).toBe(true);
   });
 
   test("the page does not leak sideways or inflate text", () => {
@@ -183,8 +184,8 @@ describe("iPhone scale contract", () => {
     expect(app).not.toContain('Navigate to="/"');
     expect(home).toContain("HouseAdminLink");
     expect(home).toContain("canSeeHouseAdmin");
-    expect(home).toContain('title: "Admin"');
-    expect(home).toContain('key: "admin-desk"');
+    expect(home).toContain('key: "admin"');
+    expect(home).toContain('label: "Admin"');
     expect(home).not.toContain("app.lstailors.com/owner");
     expect(home).not.toContain("Store QC · makes only");
     const reports = readFileSync(new URL("../pages/Reports.tsx", import.meta.url), "utf8");
@@ -194,8 +195,7 @@ describe("iPhone scale contract", () => {
     const search = readFileSync(new URL("../components/UniversalSearch.tsx", import.meta.url), "utf8");
     expect(search).toContain('!pathname.startsWith("/reports")');
     const kind = readFileSync(new URL("../pages/TicketKind.tsx", import.meta.url), "utf8");
-    expect(kind).toContain("useState<Kind | null>(null)");
-    expect(kind).not.toContain("Opening client & cart");
+    expect(kind).toContain('useState<Kind>("walk_in")');
     const customers = readFileSync(new URL("../pages/Customers.tsx", import.meta.url), "utf8");
     expect(customers).not.toContain("VIP (page)");
     expect(customers).not.toContain("Casa (page)");
@@ -203,6 +203,23 @@ describe("iPhone scale contract", () => {
     expect(chips).toContain("flex-wrap");
     expect(chips).toContain("shrink-0");
     expect(app).toContain("TimedSpinner");
+  });
+
+  test("floor pages are code-split so login does not download intake and maps", () => {
+    expect(routes).toContain('lazy(() => import("@alts/pages/IntakeStepped"))');
+    expect(routes).toContain('lazy(() => import("@alts/pages/HomeTiles"))');
+    expect(routes).toContain('lazy(() => import("@alts/pages/Dispatch"))');
+    expect(routes).not.toMatch(/^import IntakeStepped from /m);
+    expect(routes).not.toMatch(/^import HomeTiles from /m);
+  });
+
+  test("recharts is chunked by package path so login does not import charts", () => {
+    const vite = readFileSync(new URL("../../vite.config.ts", import.meta.url), "utf8");
+    expect(vite).toContain("manualChunks: vendorChunk");
+    expect(vite).toContain("vendor-charts*.js");
+    expect(vite).not.toContain('p.includes("/recharts/")');
+    expect(vite).toContain("vendor-scan*.js");
+    expect(vite).toContain("vendor-maps*.js");
   });
 
   test("desktop header puts Checkout between New and Pickup", () => {
@@ -230,7 +247,7 @@ describe("iPhone scale contract", () => {
       "utf8",
     );
     expect(catalog).toContain('{ id: "mtm", label: "MTM" }');
-    expect(catalog).toContain("Stock, MTM, and special-order");
+    expect(catalog).toContain("Stock, MTM, wholesale, and custom charges");
     expect(catalog).toContain("MTM-SUIT");
   });
 });

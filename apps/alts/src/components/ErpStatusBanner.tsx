@@ -1,18 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { ApiError, api } from "@ls/api-client";
+import { api } from "@ls/api-client";
 import QueryErrorPanel from "@alts/components/QueryErrorPanel";
-import { isShopApiReachable } from "@alts/offline/probe";
+import {
+  isLegacyApiMissingHealth,
+  isShopApiReachable,
+  normalizeApiHealth,
+  type NormalizedErpHealth,
+} from "@alts/offline/probe";
 
-export type ErpHealth = {
-  ok: boolean;
-  status: "ok" | "degraded";
-  erp: {
-    configured: boolean;
-    reachable: boolean;
-    latencyMs: number | null;
-    error: string | null;
-  };
-};
+export type ErpHealth = NormalizedErpHealth;
 
 const LEGACY_OK: ErpHealth = {
   ok: true,
@@ -24,16 +20,19 @@ export function useErpHealth() {
   return useQuery({
     queryKey: ["api-health"],
     queryFn: async (): Promise<ErpHealth> => {
-      try {
-        return await api.get<ErpHealth>("/api/health");
-      } catch (err) {
-        // Frozen production API has no /api/health. /api/me still answers.
-        if (err instanceof ApiError && err.status === 404) {
-          const me = await api.raw("/api/me");
-          if (isShopApiReachable(me.status)) return LEGACY_OK;
-        }
-        throw err;
+      const res = await api.raw("/api/health");
+      if (res.ok) {
+        const json = await res.json().catch(() => null);
+        const parsed = normalizeApiHealth(json);
+        if (parsed) return parsed;
+        return LEGACY_OK;
       }
+      // Frozen production API has no /api/health. /api/me still answers.
+      if (isLegacyApiMissingHealth(res.status)) {
+        const me = await api.raw("/api/me");
+        if (isShopApiReachable(me.status)) return LEGACY_OK;
+      }
+      throw new Error(`Health check failed (${res.status})`);
     },
     staleTime: 30_000,
     refetchInterval: 60_000,

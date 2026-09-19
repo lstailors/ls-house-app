@@ -1,12 +1,15 @@
 import { Route, Navigate, useParams, useLocation } from "react-router-dom";
 import { lazy } from "react";
-import { AppShell } from "@/components/shell/AppShell";
 import { RoleGuard } from "@/components/shell/RoleGuard";
 import type { UserRole } from "@ls/types";
-import Dashboard from "@/pages/Dashboard";
-import IntakeCustom from "@/pages/intake/IntakeCustom";
-import OrdersCustom from "@/pages/orders/OrdersCustom";
-import CustomOrderDetail from "@/pages/orders/CustomOrderDetail";
+
+const AppShell = lazy(() =>
+  import("@/components/shell/AppShell").then((m) => ({ default: m.AppShell })),
+);
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const IntakeCustom = lazy(() => import("@/pages/intake/IntakeCustom"));
+const OrdersCustom = lazy(() => import("@/pages/orders/OrdersCustom"));
+const CustomOrderDetail = lazy(() => import("@/pages/orders/CustomOrderDetail"));
 
 const SalesOrders = lazy(() => import("@/pages/orders/SalesOrders"));
 const SalesOrderDetail = lazy(() => import("@/pages/orders/SalesOrderDetail"));

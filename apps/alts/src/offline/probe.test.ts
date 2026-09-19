@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { isLegacyApiMissingHealth, isShopApiReachable, probeShopApi } from "./probe";
+import {
+  isLegacyApiMissingHealth,
+  isShopApiReachable,
+  normalizeApiHealth,
+  probeShopApi,
+} from "./probe";
 
 describe("shop API probe", () => {
   test("legacy /api/health 404 plus /api/me 401 is online", async () => {
@@ -21,5 +26,28 @@ describe("shop API probe", () => {
   test("health 500 is offline", async () => {
     const raw = async () => new Response("nope", { status: 500 });
     expect(await probeShopApi(raw)).toBe(false);
+  });
+});
+
+describe("normalizeApiHealth", () => {
+  test("accepts frozen production {status:ok}", () => {
+    const h = normalizeApiHealth({ status: "ok" });
+    expect(h?.ok).toBe(true);
+    expect(h?.erp.reachable).toBe(true);
+  });
+
+  test("unwraps {data} envelope with erp", () => {
+    const h = normalizeApiHealth({
+      ok: false,
+      status: "degraded",
+      data: {
+        ok: false,
+        status: "degraded",
+        erp: { configured: true, reachable: false, latencyMs: 12, error: "timeout" },
+      },
+    });
+    expect(h?.status).toBe("degraded");
+    expect(h?.erp.reachable).toBe(false);
+    expect(h?.erp.error).toBe("timeout");
   });
 });
