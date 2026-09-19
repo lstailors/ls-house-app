@@ -181,8 +181,15 @@ export type ErpPing = {
   error: string | null
 }
 
+const ERP_PING_TTL_MS = 30_000
+let pingCache: { at: number; deep: boolean; value: ErpPing } | null = null
+
+export function resetErpPingCache() {
+  pingCache = null
+}
+
 /** Lightweight ERPNext credential + reachability check. Does not leak secrets. */
-export async function erpPing(): Promise<ErpPing> {
+export async function erpPing(opts?: { deep?: boolean }): Promise<ErpPing> {
   const { base, key, secret } = creds()
   if (!base || !key || !secret) {
     return { configured: false, reachable: false, latencyMs: null, error: 'ERPNext credentials missing' }
@@ -190,7 +197,10 @@ export async function erpPing(): Promise<ErpPing> {
   const started = Date.now()
   try {
     const url = new URL(`${base}/api/method/frappe.auth.get_logged_user`)
-    const res = await fetch(url.toString(), { headers: authHeaders(key, secret) })
+    const res = await fetch(url.toString(), {
+      headers: authHeaders(key, secret),
+      signal: AbortSignal.timeout(2_000),
+    })
     const latencyMs = Date.now() - started
     if (!res.ok) {
       const body = await res.text().catch(() => '')
@@ -201,7 +211,10 @@ export async function erpPing(): Promise<ErpPing> {
         error: `ERPNext ping failed: ${res.status}${body ? ` ${body.slice(0, 120)}` : ''}`,
       }
     }
-    // Auth can succeed while ticket lists still 417 — prove the shop data path.
+    // Public /api/health stays snappy. Deep check still proves the ticket list path.
+    if (opts?.deep === false) {
+      return { configured: true, reachable: true, latencyMs, error: null }
+    }
     try {
       await erpList('Alteration Ticket', { fields: ['name'], limit: 1, throwOnError: true })
     } catch (e: any) {
@@ -221,6 +234,21 @@ export async function erpPing(): Promise<ErpPing> {
       error: e?.message || 'ERPNext unreachable',
     }
   }
+}
+
+/** Reuse a ping across floor tablets so /api/health is not an ERP round-trip every 60s. */
+export async function cachedErpPing(opts?: { deep?: boolean }): Promise<ErpPing> {
+  const wantDeep = opts?.deep !== false
+  if (
+    pingCache &&
+    Date.now() - pingCache.at < ERP_PING_TTL_MS &&
+    (!wantDeep || pingCache.deep)
+  ) {
+    return pingCache.value
+  }
+  const value = await erpPing(opts)
+  pingCache = { at: Date.now(), deep: wantDeep, value }
+  return value
 }
 
 /** Total row count for a doctype under the given `filters` (AND) — used for pagination. */
