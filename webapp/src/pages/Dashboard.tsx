@@ -255,9 +255,9 @@ export default function Dashboard() {
         />
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <KpiCard label="Today's Intake" value={isLoading ? "—" : (kpis?.todayIntakeCount ?? 0)} icon={<ShoppingBag className="h-4 w-4" />} />
-          <KpiCard label="Deposits Pending" value={isLoading ? "—" : formatUSD(kpis?.depositsPending ?? 0, { compact: true })} icon={<Wallet className="h-4 w-4" />} accent="amber" />
+          <KpiCard label="Deposits Pending" value={isLoading ? "—" : formatUSD(kpis?.depositsPendingAmount ?? kpis?.depositsPending ?? 0, { compact: true })} icon={<Wallet className="h-4 w-4" />} accent="amber" />
           <KpiCard label="Alterations Open" value={isLoading ? "—" : (kpis?.openAlterations ?? 0)} icon={<Scissors className="h-4 w-4" />} />
-          <KpiCard label="In Production" value={isLoading ? "—" : (kpis?.customInProduction ?? 0)} icon={<Hammer className="h-4 w-4" />} accent="amber" />
+          <KpiCard label="In Production" value={isLoading ? "—" : (kpis?.garmentsProd || kpis?.customInProduction || 0)} icon={<Hammer className="h-4 w-4" />} accent="amber" />
         </div>
         <GlassCard variant="strong" className="p-6">
           <div className="ui-label mb-4">My pipeline by stage</div>
@@ -287,11 +287,18 @@ export default function Dashboard() {
   const altOverdue = kpis?.altOverdue ?? 0;
   const altRush = kpis?.altRush ?? 0;
   const altReady = kpis?.altReady ?? 0;
-  const garmentsProd = kpis?.garmentsProd ?? 0;
+  const garmentsProd = kpis?.garmentsProd || kpis?.customInProduction || 0;
   const unansweredSms = kpis?.unansweredSms ?? 0;
+  const revenueMTD = fin?.revenueMTD || kpis?.revenueMTD || 0;
+  const revenueChange = fin?.revenueChange ?? kpis?.revenueChange;
+  const depositsPending = kpis?.depositsPendingAmount || (fin as any)?.depositsPendingTotal || 0;
+  const arOutstanding = (fin as any)?.arOutstanding ?? 0;
 
   const prodStages = ["Ordered", "Pattern Draft", "Cutting", "Sewing", "Basting", "First Fitting", "Alterations", "Second Fitting", "Final QC"];
-  const garmentData = prodStages.map(s => ({ stage: s.replace(" ", "\n"), count: kpis?.garmentsByStage?.[s] ?? 0 }));
+  const liveStages = Object.entries(kpis?.garmentsByStage ?? {}).filter(([, count]) => count > 0);
+  const garmentData = liveStages.length
+    ? liveStages.map(([stage, count]) => ({ stage: stage.replace(" ", "\n"), count }))
+    : prodStages.map((s) => ({ stage: s.replace(" ", "\n"), count: kpis?.garmentsByStage?.[s] ?? 0 }));
 
   return (
     <div className="space-y-8 animate-fade-up">
@@ -356,29 +363,33 @@ export default function Dashboard() {
       {/* 2. KPI strip */}
       <div className="grid grid-cols-3 lg:grid-cols-7 gap-3">
         <div className="lg:col-span-1">
-          <GlassCard className="p-4 h-full flex flex-col justify-between">
+          <GlassCard
+            hover
+            className="p-4 h-full flex flex-col justify-between cursor-pointer"
+            onClick={() => navigate("/admin/financials")}
+          >
             <div className="flex items-center justify-between mb-1">
               <span className="ui-label text-[9px]">Revenue MTD</span>
               <Wallet className="h-3.5 w-3.5 text-signal-emerald opacity-70" />
             </div>
             <div className="font-display italic text-2xl text-signal-emerald leading-none">
-              {isLoading ? "—" : formatUSD(fin?.revenueMTD ?? kpis?.revenueMTD ?? 0, { compact: true })}
+              {isLoading ? "—" : formatUSD(revenueMTD, { compact: true })}
             </div>
-            {fin?.revenueChange !== undefined && (
+            {revenueChange !== undefined && (
               <div className={cn("flex items-center gap-1 text-[10px] mt-1.5 font-medium",
-                fin.revenueChange >= 0 ? "text-signal-emerald" : "text-signal-rose")}>
-                {fin.revenueChange >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                {fin.revenueChange >= 0 ? "+" : ""}{fin?.revenueChange ?? 0}% vs last mo
+                revenueChange >= 0 ? "text-signal-emerald" : "text-signal-rose")}>
+                {revenueChange >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                {revenueChange >= 0 ? "+" : ""}{revenueChange}% vs last mo
               </div>
             )}
           </GlassCard>
         </div>
-        <KpiCard label="Deposits Pending" value={isLoading ? "—" : formatUSD(kpis?.depositsPendingAmount ?? 0, { compact: true })} icon={<Sparkles className="h-4 w-4" />} accent="amber" />
-        <KpiCard label="AR Outstanding" value={isLoading ? "—" : formatUSD((fin as any)?.arOutstanding ?? 0, { compact: true })} icon={<Receipt className="h-4 w-4" />} accent={(fin as any)?.arOutstanding > 0 ? "rose" : undefined} />
-        <KpiCard label="Alterations Open" value={isLoading ? "—" : (kpis?.openAlterations ?? 0)} icon={<Scissors className="h-4 w-4" />} />
-        <KpiCard label="Ready for Pickup" value={isLoading ? "—" : altReady} icon={<CheckCircle2 className="h-4 w-4" />} accent="emerald" />
-        <KpiCard label="In Production" value={isLoading ? "—" : garmentsProd} icon={<Hammer className="h-4 w-4" />} accent="amber" />
-        <KpiCard label="Deliveries Due" value={isLoading ? "—" : (kpis?.deliveriesDue ?? 0)} icon={<Truck className="h-4 w-4" />} />
+        <KpiCard label="Deposits Pending" value={isLoading ? "—" : formatUSD(depositsPending, { compact: true })} icon={<Sparkles className="h-4 w-4" />} accent="amber" onClick={() => navigate("/admin/financials")} />
+        <KpiCard label="AR Outstanding" value={isLoading ? "—" : formatUSD(arOutstanding, { compact: true })} icon={<Receipt className="h-4 w-4" />} accent={arOutstanding > 0 ? "rose" : undefined} onClick={() => navigate("/admin/invoices")} />
+        <KpiCard label="Alterations Open" value={isLoading ? "—" : (kpis?.openAlterations ?? 0)} icon={<Scissors className="h-4 w-4" />} onClick={() => navigate("/admin/orders/alterations")} />
+        <KpiCard label="Ready for Pickup" value={isLoading ? "—" : altReady} icon={<CheckCircle2 className="h-4 w-4" />} accent="emerald" onClick={() => navigate("/admin/orders/alterations")} />
+        <KpiCard label="In Production" value={isLoading ? "—" : garmentsProd} icon={<Hammer className="h-4 w-4" />} accent="amber" onClick={() => navigate("/shop-floor")} />
+        <KpiCard label="Deliveries Due" value={isLoading ? "—" : (kpis?.deliveriesDue ?? 0)} icon={<Truck className="h-4 w-4" />} onClick={() => navigate("/deliveries")} />
       </div>
 
       {/* 3. Revenue analytics row */}
