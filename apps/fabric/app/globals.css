@@ -1,0 +1,66 @@
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=Montserrat:wght@400;500;600;700&display=swap");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { color-scheme: dark; -webkit-tap-highlight-color: transparent; }
+  body {
+    @apply min-h-dvh bg-forest-deep font-sans text-cream antialiased;
+    background-image:
+      radial-gradient(ellipse 1200px 600px at 50% -10%, rgba(176, 141, 87, 0.12) 0%, transparent 60%),
+      radial-gradient(ellipse 900px 700px at 100% 100%, rgba(58, 101, 80, 0.55) 0%, transparent 55%),
+      linear-gradient(180deg, #1c3d2c 0%, #122a1c 100%);
+    background-attachment: fixed;
+  }
+  ::selection { background: rgba(176, 141, 87, 0.35); }
+  input, select, textarea, button { font: inherit; }
+}
+
+@layer components {
+  .glass {
+    @apply relative rounded-2xl border border-brass/15 bg-forest-base/55 shadow-glass backdrop-blur-xl;
+  }
+  .glass-strong {
+    @apply relative rounded-2xl border border-brass/25 bg-forest-raised/70 shadow-glass-lg backdrop-blur-xl;
+  }
+  .label {
+    @apply text-[10px] font-semibold uppercase tracking-[0.18em] text-cream-dim;
+  }
+  .field {
+    @apply w-full rounded-xl border border-brass/20 bg-forest-deep/60 px-4 py-3 text-base text-cream
+      placeholder:text-cream-dim/60 outline-none transition focus:border-brass/60 focus:ring-2 focus:ring-brass/25;
+  }
+  .btn {
+    @apply inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold
+      tracking-wide transition active:scale-[0.98] disabled:opacity-50;
+  }
+  .btn-brass { @apply btn bg-brass text-forest-deep hover:bg-brass-light; }
+  .btn-ghost { @apply btn border border-brass/25 text-cream hover:border-brass/50 hover:bg-forest-raised/40; }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full border border-signal-amber/40 bg-signal-amber/10 px-2.5 py-1
+      text-[11px] font-medium text-signal-amber;
+  }
+  .seg {
+    @apply rounded-xl border border-brass/15 bg-forest-deep/50 px-3 py-2.5 text-sm text-cream-muted transition;
+  }
+  .seg[data-on="true"] { @apply border-brass/70 bg-brass/15 text-cream; }
+  .money { font-variant-numeric: tabular-nums; }
+}
+
+input[type="range"].slider {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 36px; background: transparent;
+}
+input[type="range"].slider::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 999px;
+  background: linear-gradient(90deg, #b08d57 var(--pct, 0%), rgba(241, 233, 214, 0.12) var(--pct, 0%));
+}
+input[type="range"].slider::-moz-range-track { height: 6px; border-radius: 999px; background: rgba(241, 233, 214, 0.12); }
+input[type="range"].slider::-moz-range-progress { height: 6px; border-radius: 999px; background: #b08d57; }
+input[type="range"].slider::-webkit-slider-thumb {
+  -webkit-appearance: none; margin-top: -11px; width: 28px; height: 28px; border-radius: 999px;
+  background: #f1e9d6; border: 3px solid #b08d57; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+input[type="range"].slider::-moz-range-thumb {
+  width: 24px; height: 24px; border-radius: 999px; background: #f1e9d6; border: 3px solid #b08d57;
+}
