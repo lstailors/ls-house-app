@@ -13,7 +13,7 @@ monorepo install). Env vars — see `.env.example`:
 | Var | Purpose |
 |---|---|
 | `ERP_BASE_URL` | `https://erp.lstailors.com` |
-| `ERP_API_KEY` / `ERP_API_SECRET` | Dedicated service user: read Item, Item Price, Fabric Vendor Map, Customer, Currency Exchange, Portal User, Contact, User |
+| `ERP_API_KEY` / `ERP_API_SECRET` | Dedicated service user: read Item, Item Price, Fabric Vendor Map, Customer, Currency Exchange, Portal User, Contact |
 | `HKD_USD_RATE` | Fallback when no `Currency Exchange` HKD→USD row exists (default 0.128; sets `fx_fallback`) |
 | `INTERNAL_CUSTOMER` | Optional: Customer used for System Manager logins that have no portal mapping |
 

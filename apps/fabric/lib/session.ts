@@ -2,7 +2,7 @@
 // customer is always re-derived from the ERPNext session, never from the client.
 import "server-only";
 import { cookies } from "next/headers";
-import { erpWhoAmI, serviceGet, serviceList } from "./erp";
+import { erpGet, erpWhoAmI, serviceGet, serviceList } from "./erp";
 import type { AccountTerms, MakeLevel } from "./pricing";
 import { MAKE_LEVELS } from "./pricing";
 
@@ -78,9 +78,11 @@ async function customerForUser(email: string): Promise<string | null> {
   return null;
 }
 
-async function isInternalUser(email: string): Promise<boolean> {
+async function isInternalUser(email: string, sid: string): Promise<boolean> {
   if (email === "Administrator") return true;
-  const user = await serviceGet<{ roles?: { role: string }[]; user_type?: string }>("User", email);
+  // Read with the user's own session: ERPNext always lets a user read their own
+  // User record, so the service user needs no access to the User doctype.
+  const user = await erpGet<{ roles?: { role: string }[]; user_type?: string }>("User", email, { kind: "session", sid });
   if (!user || user.user_type === "Website User") return false;
   return !!user.roles?.some((r) => INTERNAL_ROLES.includes(r.role));
 }
@@ -121,7 +123,7 @@ export async function resolveAccount(sid: string): Promise<Account | null> {
     cache.delete(sid);
     return null;
   }
-  const isInternal = await isInternalUser(user);
+  const isInternal = await isInternalUser(user, sid);
   const customer = (await customerForUser(user)) ?? (isInternal ? process.env.INTERNAL_CUSTOMER || null : null);
   if (!customer && !isInternal) throw new AuthError("This login is not linked to a trade account. Contact L&S.", 403);
 
