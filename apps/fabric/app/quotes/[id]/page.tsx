@@ -94,23 +94,23 @@ export default function QuotePage({ params }: { params: { id: string } }) {
           </section>
           {q.retail_price != null && (
             <section className="glass p-5">
-              <div className="label mb-2">Retail (as quoted)</div>
+              <div className="label mb-2">Suggested retail (as quoted)</div>
               {line("List price", usd(q.list_price))}
               {line("Discount", `${q.discount_pct ?? 0}%`)}
               {line("Alterations fee", usd(q.alterations_fee))}
               <div className="mt-2 flex justify-between border-t border-brass/20 pt-3">
-                <span className="font-semibold">Client price</span>
+                <span className="font-semibold">Suggested retail</span>
                 <span className="money font-display text-2xl">{usd(q.retail_price)}</span>
               </div>
             </section>
           )}
           <section className="glass p-5">
-            <div className="label mb-2">Cost from L&amp;S (as quoted)</div>
+            <div className="label mb-2">{me?.is_internal ? "L&S charge" : "Your price"} (as quoted)</div>
             {line("Make (CMT)", usd(q.cmt_cost))}
             {line(`Fabric${q.yardage ? ` · ${yd(q.yardage)}` : ""}`, usd(q.fabric_cost))}
             {line("Shipping & duties", usd(q.shipping_cost))}
             <div className="mt-2 flex justify-between border-t border-brass/20 pt-3">
-              <span className="font-semibold">Unit cost</span>
+              <span className="font-semibold">{me?.is_internal ? "L&S charge" : "Your price"}</span>
               <span className="money font-display text-2xl">{usd(q.total_cost)}</span>
             </div>
           </section>

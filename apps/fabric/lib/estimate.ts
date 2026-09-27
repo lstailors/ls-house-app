@@ -1,6 +1,7 @@
 // Orchestrates §4 against live ERPNext data and shapes the browser response.
 // The response never contains fabric_raw, fabric/shipping multipliers or the
-// buying currency rate. Margin is included only for internal sessions.
+// buying currency rate. `margin` (house cost vs what L&S charges vs profit)
+// is included only for internal sessions — trade portal users never receive it.
 import "server-only";
 import {
   activeVendors,
