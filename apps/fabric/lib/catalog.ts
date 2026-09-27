@@ -5,6 +5,9 @@ import { serviceGet, serviceList } from "./erp";
 import { GARMENT_CODE, MAKE_LEVELS, type MakeLevel, cmtItemCode } from "./pricing";
 import type { SingleGarment } from "./yardage";
 
+export { perYard } from "./fx-rate";
+export { vendorForItem } from "./vendor-match";
+
 export interface Vendor {
   vendor_code: string;
   vendor_name: string;
@@ -58,15 +61,6 @@ export async function activeVendors(): Promise<Vendor[]> {
       provisional: /provisional/i.test(r.notes ?? ""),
     }));
   });
-}
-
-/** Vendor is identified by item_code prefix, never the brand field. Longest prefix wins. */
-export function vendorForItem(itemCode: string, vendors: Vendor[]): Vendor | null {
-  return (
-    [...vendors]
-      .sort((a, b) => b.vendor_code.length - a.vendor_code.length)
-      .find((v) => itemCode.startsWith(v.vendor_code + "-")) ?? null
-  );
 }
 
 interface ItemRow {
@@ -172,11 +166,6 @@ export async function fabricBuyingPrice(itemCode: string, vendor: Vendor, today:
     rows.map((r) => ({ ...r, currency: r.currency || vendor.currency })),
     today,
   );
-}
-
-/** Metres → yards: a price per metre × 0.9144 = price per yard. */
-export function perYard(rate: number, uom: string | null): number {
-  return uom && /^(m|meter|metre)s?$/i.test(uom.trim()) ? rate * 0.9144 : rate;
 }
 
 export async function cmtPrices(priceList: string, make: MakeLevel): Promise<Record<SingleGarment, number | undefined>> {

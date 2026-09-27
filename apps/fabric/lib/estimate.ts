@@ -8,11 +8,11 @@ import {
   cmtPrices,
   fabricBuyingPrice,
   getFabric,
-  perYard,
   todayISO,
   vendorForItem,
 } from "./catalog";
 import { toUsdRate } from "./fx";
+import { usdPerYard } from "./fx-rate";
 import { UserError } from "./http";
 import { MAKE_LEVELS, type MakeLevel, MissingCmtError, type PricingResult, price } from "./pricing";
 import { type Account, loadCustomer, termsFromCustomer } from "./session";
@@ -123,7 +123,7 @@ export async function runEstimate(account: Account, input: EstimateInput): Promi
         stripeOrPlaid: input.options.stripe_plaid,
         tall: input.options.tall,
       },
-      fabricRawUsdPerYard: perYard(buying.rate, buying.uom) * fx.rate,
+      fabricRawUsdPerYard: usdPerYard(buying.rate, buying.uom, fx.rate),
       cmt,
       alterationsFee: alts,
       terms: acct.terms,
