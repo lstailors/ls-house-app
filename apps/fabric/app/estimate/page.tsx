@@ -87,7 +87,7 @@ function Estimator() {
   const [options, setOptions] = useState<Options>(NO_OPTIONS);
   const [discount, setDiscount] = useState<number | null>(null);
   const [asCustomer, setAsCustomer] = useState("");
-  const [tab, setTab] = useState<"retail" | "cost" | "margin">("retail");
+  const [tab, setTab] = useState<"retail" | "charge" | "house">("retail");
   const [est, setEst] = useState<Estimate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -172,11 +172,19 @@ function Estimator() {
   const disc = discount ?? est?.retail?.discount_pct ?? 0;
   const retailPrice = est?.retail ? est.retail.list_price * (1 - disc / 100) + est.totals.alterations_fee : null;
   const toggle = (k: keyof Options) => setOptions((o) => ({ ...o, [k]: !o[k] }));
+  const internal = !!me?.is_internal;
+  // Trade accounts see what L&S bills them as "Your price". Internal staff see "L&S charge".
+  const chargeName = internal ? "L&S charge" : "Your price";
+  const trueCost = internal && !asCustomer;
+
+  useEffect(() => {
+    if (tab === "house" && est && !est.margin) setTab("retail");
+  }, [tab, est]);
 
   return (
     <Shell account={est?.account.name ?? me?.account}>
       <div className="space-y-4">
-        <section className="glass space-y-4 p-4">
+        <section className="glass z-30 space-y-4 p-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
             <label className="block space-y-1.5">
               <span className="label">Mill</span>
@@ -256,16 +264,35 @@ function Estimator() {
         ) : est ? (
           <section className={`glass-strong p-4 transition ${loading ? "opacity-60" : ""}`}>
             <Flags est={est} />
-            <div className="mb-4 grid grid-flow-col gap-1 rounded-xl bg-forest-deep/60 p-1">
-              <TabBtn on={tab === "retail"} onClick={() => setTab("retail")}>Retail</TabBtn>
-              <TabBtn on={tab === "cost"} onClick={() => setTab("cost")}>Cost</TabBtn>
-              {est.margin && <TabBtn on={tab === "margin"} onClick={() => setTab("margin")}>Margin</TabBtn>}
+            {trueCost && (
+              <p className="mb-3 rounded-xl border border-brass/20 bg-forest-deep/50 px-3 py-2 text-xs leading-relaxed text-cream-muted">
+                True-cost pricing: no fabric markup and no shipping, so L&S charge equals house cost. Suggested retail is 1× that charge, then the client discount, with alterations added after. Pick a trade account to separate the three.
+              </p>
+            )}
+            <div className={`mb-4 grid gap-1 rounded-xl bg-forest-deep/60 p-1 ${est.margin ? "grid-cols-3" : "grid-cols-2"}`}>
+              <TabBtn on={tab === "retail"} onClick={() => setTab("retail")}>
+                Suggested retail
+              </TabBtn>
+              <TabBtn on={tab === "charge"} onClick={() => setTab("charge")}>
+                {chargeName}
+              </TabBtn>
+              {est.margin && (
+                <TabBtn on={tab === "house"} onClick={() => setTab("house")}>
+                  House cost
+                </TabBtn>
+              )}
             </div>
             {tab === "retail" && (
-              <RetailTab est={est} discount={disc} retailPrice={retailPrice} onDiscount={setDiscount} />
+              <RetailTab
+                est={est}
+                discount={disc}
+                retailPrice={retailPrice}
+                onDiscount={setDiscount}
+                chargeName={chargeName}
+              />
             )}
-            {tab === "cost" && <CostTab est={est} />}
-            {tab === "margin" && est.margin && <MarginTab est={est} />}
+            {tab === "charge" && <ChargeTab est={est} chargeName={chargeName} internal={internal} />}
+            {tab === "house" && est.margin && <HouseCostTab est={est} chargeName={chargeName} />}
             <button
               className="btn-brass mt-5 w-full"
               disabled={loading || (!me?.can_save && !asCustomer)}
@@ -311,7 +338,9 @@ function TabBtn({ on, onClick, children }: { on: boolean; onClick: () => void; c
   return (
     <button
       onClick={onClick}
-      className={`rounded-lg py-2.5 text-sm font-semibold transition ${on ? "bg-brass text-forest-deep" : "text-cream-dim"}`}
+      type="button"
+      aria-pressed={on}
+      className={`rounded-lg px-1 py-2.5 text-xs font-semibold leading-tight transition sm:text-sm ${on ? "bg-brass text-forest-deep" : "text-cream-dim"}`}
     >
       {children}
     </button>
@@ -457,20 +486,28 @@ function RetailTab({
   discount,
   retailPrice,
   onDiscount,
+  chargeName,
 }: {
   est: Estimate;
   discount: number;
   retailPrice: number | null;
   onDiscount: (n: number) => void;
+  chargeName: string;
 }) {
   if (!est.retail)
-    return <p className="py-6 text-center text-sm text-cream-dim">Retail pricing isn&apos;t set up for this account — see the Cost tab.</p>;
+    return (
+      <p className="py-6 text-center text-sm text-cream-dim">
+        Suggested retail isn&apos;t set up for this account — see {chargeName}.
+      </p>
+    );
   return (
     <div>
       <div className="pb-4 text-center">
-        <div className="label">Client price</div>
+        <div className="label">Suggested retail</div>
         <div className="money font-display text-5xl">{usd(retailPrice)}</div>
-        <div className="mt-1 text-xs text-cream-dim">incl. {usd(est.totals.alterations_fee)} fitting &amp; alterations</div>
+        <div className="mt-1 text-xs text-cream-dim">
+          For the end client · incl. {usd(est.totals.alterations_fee)} fitting &amp; alterations
+        </div>
       </div>
       <Row label="List price" value={usd(est.retail.list_price)} />
       <div className="py-3">
@@ -491,21 +528,21 @@ function RetailTab({
         />
       </div>
       <Row label="After discount" value={usd(est.retail.list_price * (1 - discount / 100))} />
-      <Row label="Alterations fee" sub="L&S, billed separately" value={usd(est.totals.alterations_fee)} />
-      <Row label="Client price" value={usd(retailPrice)} strong />
+      <Row label="Alterations fee" sub="added after discount" value={usd(est.totals.alterations_fee)} />
+      <Row label="Suggested retail" value={usd(retailPrice)} strong />
     </div>
   );
 }
 
-function CostTab({ est }: { est: Estimate }) {
+function ChargeTab({ est, chargeName, internal }: { est: Estimate; chargeName: string; internal: boolean }) {
   const multi = est.garments.length > 1;
   return (
     <div>
       <div className="pb-4 text-center">
-        <div className="label">Unit cost from L&amp;S</div>
+        <div className="label">{chargeName}</div>
         <div className="money font-display text-5xl">{usd(est.totals.unit_cost)}</div>
         <div className="mt-1 text-xs text-cream-dim">
-          {est.make_level} · {yd(est.totals.yardage)}
+          {internal ? `Billed to ${est.account.name}` : "What L&S bills you"} · {est.make_level} · {yd(est.totals.yardage)}
         </div>
       </div>
       {multi &&
@@ -517,7 +554,7 @@ function CostTab({ est }: { est: Estimate }) {
       <Row label="Make (CMT)" value={usd(est.totals.cmt)} />
       <Row label="Fabric" sub={yd(est.totals.yardage)} value={usd(est.totals.fabric)} />
       <Row label="Shipping & duties" value={usd(est.totals.shipping)} />
-      <Row label="Unit cost" value={usd(est.totals.unit_cost)} strong />
+      <Row label={chargeName} value={usd(est.totals.unit_cost)} strong />
       <div className="mt-3 rounded-xl border border-brass/15 px-3 py-1">
         <Row label="Alterations fee" sub="separate L&S invoice" value={usd(est.totals.alterations_fee)} />
       </div>
@@ -525,21 +562,20 @@ function CostTab({ est }: { est: Estimate }) {
   );
 }
 
-function MarginTab({ est }: { est: Estimate }) {
+function HouseCostTab({ est, chargeName }: { est: Estimate; chargeName: string }) {
   const m = est.margin!;
+  const same = Math.abs(m.totals.billed - m.totals.real_cost) < 0.005;
   return (
     <div>
       <div className="pb-4 text-center">
-        <div className="label">L&amp;S profit · {est.account.name}</div>
-        <div className="money font-display text-5xl">{usd(m.totals.profit)}</div>
-        <div className="mt-1 text-xs text-cream-dim">
-          billed {usd(m.totals.billed)} vs. cost {usd(m.totals.real_cost)}
-        </div>
+        <div className="label">House cost</div>
+        <div className="money font-display text-5xl">{usd(m.totals.real_cost)}</div>
+        <div className="mt-1 text-xs text-cream-dim">Estimated cost to L&amp;S · CMT + fabric at buying price</div>
       </div>
       <div className="grid grid-cols-4 gap-2 border-b border-brass/20 pb-2 text-[11px] uppercase tracking-wider text-cream-dim">
         <span>Garment</span>
-        <span className="text-right">Cost</span>
-        <span className="text-right">Billed</span>
+        <span className="text-right">House</span>
+        <span className="text-right">Charge</span>
         <span className="text-right">Profit</span>
       </div>
       {m.garments.map((g) => (
@@ -550,7 +586,12 @@ function MarginTab({ est }: { est: Estimate }) {
           <span className="text-right font-semibold">{usd(g.profit)}</span>
         </div>
       ))}
-      <p className="mt-3 text-xs text-cream-dim">Cost = CMT + fabric at buying price. Profit = fabric markup + shipping charged.</p>
+      <Row label="House cost" value={usd(m.totals.real_cost)} />
+      <Row label={chargeName} sub={same ? "matches house cost" : est.account.name} value={usd(m.totals.billed)} />
+      <Row label="L&S profit" value={usd(m.totals.profit)} strong />
+      <p className="mt-3 text-xs leading-relaxed text-cream-dim">
+        Internal only — trade accounts never see this. Profit is fabric markup plus the shipping charged on the L&amp;S invoice.
+      </p>
     </div>
   );
 }
@@ -563,16 +604,23 @@ function AccountPicker({ value, onChange }: { value: string; onChange: (v: strin
   }, [load]);
   const opts = useMemo(() => accounts, [accounts]);
   return (
-    <label className="block space-y-1.5 border-t border-brass/10 pt-3">
-      <span className="label">Internal · price as account</span>
-      <select className="field appearance-none" value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">My account (true cost)</option>
-        {opts.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.name}
-          </option>
-        ))}
-      </select>
-    </label>
+    <div className="space-y-1.5 border-t border-brass/10 pt-3">
+      <label className="block space-y-1.5">
+        <span className="label">Price as</span>
+        <select className="field appearance-none" value={value} onChange={(e) => onChange(e.target.value)}>
+          <option value="">My account (true cost)</option>
+          {opts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="text-xs leading-relaxed text-cream-dim">
+        {value
+          ? "L&S charge and suggested retail follow this account. House cost stays what the garment costs L&S."
+          : "True cost has no fabric markup and no shipping, so L&S charge equals house cost. Suggested retail is 1× that charge before discount and alterations, which is why it looks the same. Pick a trade account (for example de Corato Atelier) to separate wholesale and client retail."}
+      </p>
+    </div>
   );
 }

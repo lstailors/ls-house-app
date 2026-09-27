@@ -1,7 +1,8 @@
 # L&S Fabric + CMT Estimator (`apps/fabric`)
 
 Next.js (App Router) app for wholesale trade accounts: pick mill → fabric → garment → make,
-get a per-unit estimate, the account's own retail price, and save quotes to ERPNext.
+see what L&S charges and a suggested retail for the end client, and save quotes to ERPNext.
+Internal users also see house cost (CMT + fabric at buying).
 
 **ERPNext is the only backend.** No database. All markup math runs in server routes
 (`lib/estimate.ts` → `lib/pricing.ts`); raw buying cost and multipliers never reach the browser.
@@ -21,8 +22,9 @@ monorepo install). Env vars — see `.env.example`:
 ## Auth
 Login = ERPNext credentials via `/api/method/login`. The `sid` is kept in an httpOnly cookie
 (`lsfe_sid`). Each request re-resolves user → Customer (Portal User, then Contact link) with the
-service key. `System Manager` = internal: unlocks the Margin tab and "price as account"
-(enforced in `lib/estimate.ts` and `/api/accounts`, not the UI).
+service key. `System Manager` = internal: unlocks the House cost view and "price as account"
+(enforced in `lib/estimate.ts` and `/api/accounts`, not the UI). Trade logins receive
+L&S charge and suggested retail only.
 
 Fabric Quote create/read uses the **user's own session**, so ERPNext's "own only" permission applies.
 
@@ -33,7 +35,7 @@ Fabric Quote create/read uses the **user's own session**, so ERPNext's "own only
 | `GET /api/me` | account defaults |
 | `GET /api/vendors` | active Fabric Vendor Map rows |
 | `GET /api/fabrics/search?vendor=FAB-HS&q=1121` | descriptive only, no price |
-| `POST /api/estimate` | §4 response shape (+ `margin` for internal) |
+| `POST /api/estimate` | §4 response shape (+ `margin` / house cost for internal) |
 | `GET/POST /api/quotes`, `GET /api/quotes/[id]`, `GET /api/quotes/[id]/photo` | |
 
 ## Tests

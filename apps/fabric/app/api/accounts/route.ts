@@ -1,4 +1,4 @@
-// Internal only: trade accounts an internal user may price as (Margin view).
+// Internal only: trade accounts an internal user may price as.
 import { serviceList } from "@/lib/erp";
 import { UserError, fail, ok } from "@/lib/http";
 import { requireAccount } from "@/lib/session";
