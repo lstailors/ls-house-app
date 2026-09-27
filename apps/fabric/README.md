@@ -15,6 +15,7 @@ monorepo install). Env vars — see `.env.example`:
 | `ERP_BASE_URL` | `https://erp.lstailors.com` |
 | `ERP_API_KEY` / `ERP_API_SECRET` | Dedicated service user: read Item, Item Price, Fabric Vendor Map, Customer, Currency Exchange, Portal User, Contact |
 | `HKD_USD_RATE` | Fallback when no `Currency Exchange` HKD→USD row exists (default 0.128; sets `fx_fallback`) |
+| `EUR_USD_RATE` | Fallback when no `Currency Exchange` EUR→USD row exists (default 1.1403, the ECB reference on 2026-09-25 — a static snapshot, not a live feed; sets `fx_fallback`) |
 | `INTERNAL_CUSTOMER` | Optional: Customer used for System Manager logins that have no portal mapping |
 
 ## Auth
@@ -36,8 +37,9 @@ Fabric Quote create/read uses the **user's own session**, so ERPNext's "own only
 | `GET/POST /api/quotes`, `GET /api/quotes/[id]`, `GET /api/quotes/[id]/photo` | |
 
 ## Tests
-`bun test lib` — `yardage.test.ts` (every surcharge combination × every garment) and
-`pricing.test.ts` (worked example + §4 rules).
+`bun test lib` — `yardage.test.ts` (every surcharge combination × every garment),
+`pricing.test.ts` (worked example + §4 rules), `fx-rate.test.ts` (HKD / EUR / USD
+buying conversion), and `vendor-match.test.ts` (item prefix → mill, including Loro Piana `FAB-FW26`).
 
 ## Known gaps (as of build)
 - **Brief's worked example vs. §3 table:** a Two Piece is 2.25 + 2.00 = **4.25 yd** by the table;

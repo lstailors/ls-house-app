@@ -1,20 +1,15 @@
-// HKD → USD conversion. ERPNext Currency Exchange first, env fallback second.
+// Buying currency → USD. ERPNext Currency Exchange first, then `{CCY}_USD_RATE`,
+// then a documented static default (HKD, EUR). Defaults set fx_fallback — they
+// are not a live spot.
 import "server-only";
 import { serviceList } from "./erp";
+import { resolveUsdRate, type FxRate } from "./fx-rate";
 
-export interface FxRate {
-  rate: number;
-  fallback: boolean;
-}
-
-export function envRate(from: string): number | null {
-  const v = Number(process.env[`${from.toUpperCase()}_USD_RATE`]);
-  if (Number.isFinite(v) && v > 0) return v;
-  return from.toUpperCase() === "HKD" ? 0.128 : null;
-}
+export type { FxRate } from "./fx-rate";
+export { envRate } from "./fx-rate";
 
 export async function toUsdRate(from: string, today: string): Promise<FxRate | null> {
-  if (from.toUpperCase() === "USD") return { rate: 1, fallback: false };
+  if (from.toUpperCase() === "USD") return resolveUsdRate(from, null);
   const rows = await serviceList<{ exchange_rate: number }>("Currency Exchange", {
     filters: [
       ["from_currency", "=", from],
@@ -25,8 +20,5 @@ export async function toUsdRate(from: string, today: string): Promise<FxRate | n
     order_by: "date desc",
     limit: 1,
   }).catch(() => []);
-  const rate = rows[0]?.exchange_rate;
-  if (rate && rate > 0) return { rate, fallback: false };
-  const fb = envRate(from);
-  return fb ? { rate: fb, fallback: true } : null;
+  return resolveUsdRate(from, rows[0]?.exchange_rate);
 }
