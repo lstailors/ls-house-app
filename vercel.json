@@ -19,11 +19,6 @@
       "source": "/account/:path*",
       "destination": "/login?portal=customer",
       "permanent": false
-    },
-    {
-      "source": "/logistics",
-      "destination": "/logistics/",
-      "permanent": false
     }
   ],
   "headers": [
@@ -50,6 +45,10 @@
     {
       "source": "/api/:path*",
       "destination": "/api/[...path]"
+    },
+    {
+      "source": "/logistics",
+      "destination": "/logistics/index.html"
     },
     {
       "source": "/logistics/",

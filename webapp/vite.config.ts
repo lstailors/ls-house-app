@@ -1,30 +1,35 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Connect, type ViteDevServer, type PreviewServer } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import { vibecodePlugin } from "@vibecodeapp/webapp/plugin";
+import fs from "fs";
 import path from "path";
 
-/** Dev/preview parity with vercel.json: /logistics → /logistics/ so relative data.json resolves. */
-function logisticsHeatMapSlashRedirect() {
-  const redirect = (req: { url?: string }, res: { statusCode: number; setHeader: (k: string, v: string) => void; end: () => void }, next: () => void) => {
-    const raw = req.url || "";
-    const pathOnly = raw.split("?")[0];
-    if (pathOnly === "/logistics") {
-      const q = raw.includes("?") ? raw.slice(raw.indexOf("?")) : "";
-      res.statusCode = 302;
-      res.setHeader("Location", `/logistics/${q}`);
-      res.end();
+/**
+ * Dev/preview parity with vercel.json rewrites.
+ * Vite's SPA fallback would otherwise serve the house shell for /logistics.
+ * <base href="/logistics/"> in the page makes fetch("data.json") hit /logistics/data.json
+ * whether the browser URL has a trailing slash or not.
+ */
+function logisticsHeatMapStatic() {
+  const file = path.resolve(__dirname, "public/logistics/index.html");
+  const serve: Connect.NextHandleFunction = (req, res, next) => {
+    const pathOnly = (req.url || "").split("?")[0];
+    if (pathOnly !== "/logistics" && pathOnly !== "/logistics/") {
+      next();
       return;
     }
-    next();
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache");
+    fs.createReadStream(file).pipe(res);
+  };
+  const attach = (server: ViteDevServer | PreviewServer) => {
+    server.middlewares.use(serve);
   };
   return {
-    name: "logistics-heatmap-slash-redirect",
-    configureServer(server: { middlewares: { use: (fn: typeof redirect) => void } }) {
-      server.middlewares.use(redirect);
-    },
-    configurePreviewServer(server: { middlewares: { use: (fn: typeof redirect) => void } }) {
-      server.middlewares.use(redirect);
-    },
+    name: "logistics-heatmap-static",
+    configureServer: attach,
+    configurePreviewServer: attach,
   };
 }
 
@@ -45,7 +50,7 @@ export default defineConfig(({ mode }) => ({
     },
   },
   plugins: [
-    logisticsHeatMapSlashRedirect(),
+    logisticsHeatMapStatic(),
     react(),
     mode === "development" && vibecodePlugin(),
   ].filter(Boolean),
