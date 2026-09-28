@@ -21,6 +21,22 @@
       "permanent": false
     }
   ],
+  "headers": [
+    {
+      "source": "/logistics",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/logistics/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/.well-known/apple-developer-merchantid-domain-association",
@@ -29,6 +45,14 @@
     {
       "source": "/api/:path*",
       "destination": "/api/[...path]"
+    },
+    {
+      "source": "/logistics",
+      "destination": "/logistics/index.html"
+    },
+    {
+      "source": "/logistics/",
+      "destination": "/logistics/index.html"
     },
     {
       "source": "/(.*)",

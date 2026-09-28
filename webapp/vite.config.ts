@@ -1,7 +1,37 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Connect, type ViteDevServer, type PreviewServer } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import { vibecodePlugin } from "@vibecodeapp/webapp/plugin";
+import fs from "fs";
 import path from "path";
+
+/**
+ * Dev/preview parity with vercel.json rewrites.
+ * Vite's SPA fallback would otherwise serve the house shell for /logistics.
+ * <base href="/logistics/"> in the page makes fetch("data.json") hit /logistics/data.json
+ * whether the browser URL has a trailing slash or not.
+ */
+function logisticsHeatMapStatic() {
+  const file = path.resolve(__dirname, "public/logistics/index.html");
+  const serve: Connect.NextHandleFunction = (req, res, next) => {
+    const pathOnly = (req.url || "").split("?")[0];
+    if (pathOnly !== "/logistics" && pathOnly !== "/logistics/") {
+      next();
+      return;
+    }
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache");
+    fs.createReadStream(file).pipe(res);
+  };
+  const attach = (server: ViteDevServer | PreviewServer) => {
+    server.middlewares.use(serve);
+  };
+  return {
+    name: "logistics-heatmap-static",
+    configureServer: attach,
+    configurePreviewServer: attach,
+  };
+}
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -20,6 +50,7 @@ export default defineConfig(({ mode }) => ({
     },
   },
   plugins: [
+    logisticsHeatMapStatic(),
     react(),
     mode === "development" && vibecodePlugin(),
   ].filter(Boolean),
