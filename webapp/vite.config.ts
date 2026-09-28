@@ -3,6 +3,31 @@ import react from "@vitejs/plugin-react-swc";
 import { vibecodePlugin } from "@vibecodeapp/webapp/plugin";
 import path from "path";
 
+/** Dev/preview parity with vercel.json: /logistics → /logistics/ so relative data.json resolves. */
+function logisticsHeatMapSlashRedirect() {
+  const redirect = (req: { url?: string }, res: { statusCode: number; setHeader: (k: string, v: string) => void; end: () => void }, next: () => void) => {
+    const raw = req.url || "";
+    const pathOnly = raw.split("?")[0];
+    if (pathOnly === "/logistics") {
+      const q = raw.includes("?") ? raw.slice(raw.indexOf("?")) : "";
+      res.statusCode = 302;
+      res.setHeader("Location", `/logistics/${q}`);
+      res.end();
+      return;
+    }
+    next();
+  };
+  return {
+    name: "logistics-heatmap-slash-redirect",
+    configureServer(server: { middlewares: { use: (fn: typeof redirect) => void } }) {
+      server.middlewares.use(redirect);
+    },
+    configurePreviewServer(server: { middlewares: { use: (fn: typeof redirect) => void } }) {
+      server.middlewares.use(redirect);
+    },
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
@@ -20,6 +45,7 @@ export default defineConfig(({ mode }) => ({
     },
   },
   plugins: [
+    logisticsHeatMapSlashRedirect(),
     react(),
     mode === "development" && vibecodePlugin(),
   ].filter(Boolean),

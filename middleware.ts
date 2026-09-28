@@ -5,6 +5,9 @@
  * - /admin* on delivered.lstailors.com redirects to app.lstailors.com/deliveries
  *   (Supabase delivery-app admin retired; ERP LSH Delivery lives in house).
  * Humans on other paths continue to the SPA via the default rewrite.
+ * /logistics on pay.* or delivered.lstailors.com redirects to
+ * https://app.lstailors.com/logistics (same project; canonical host only).
+ * Preview hosts (*.vercel.app) are left alone so the preview URL can be reviewed.
  */
 export const config = {
   matcher: [
@@ -12,6 +15,8 @@ export const config = {
     "/pay/:path*",
     "/admin",
     "/admin/:path*",
+    "/logistics",
+    "/logistics/:path*",
     // bare invoice ids on pay host: /LSTNY-SINV-… or /ACC-SINV-…
     "/:invoiceId",
   ],
@@ -27,6 +32,19 @@ export default async function middleware(request: Request) {
   const url = new URL(request.url);
   const host = url.hostname;
   const path = url.pathname;
+
+  // Heat map lives on this project at /logistics. Canonical host is app.
+  // Must run before the pay-host catch-all, which sends unknown pay paths home.
+  if (path === "/logistics" || path.startsWith("/logistics/")) {
+    const onSiblingProdHost =
+      host === "pay.lstailors.com" ||
+      host.startsWith("pay.") ||
+      host === "delivered.lstailors.com";
+    if (onSiblingProdHost) {
+      const dest = new URL(path + url.search, "https://app.lstailors.com");
+      return Response.redirect(dest.toString(), 302);
+    }
+  }
 
   // ── pay.lstailors.com short links ──────────────────────────────────────────
   // https://pay.lstailors.com/LSTNY-SINV-2026-01415 → /pay/LSTNY-SINV-2026-01415

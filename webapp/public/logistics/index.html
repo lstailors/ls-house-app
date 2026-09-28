@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>L&amp;S Logistics Heat Map — Ship Signals #8</title>
+<base href="/logistics/"/>
+<meta name="robots" content="noindex, nofollow"/>
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #1a2332;
+    --panel2: #243044;
+    --border: #2d3a4f;
+    --text: #e7ecf3;
+    --muted: #8b9bb4;
+    --accent: #5b9fd4;
+    --mill: #c9a227;
+    --factory: #4caf8e;
+    --showroom: #6b8afd;
+    --customer: #d4789c;
+    --other: #9aa3b2;
+    --on-time: #3d9a6a;
+    --watch: #c9a227;
+    --alert: #d4783c;
+    --critical: #c44c4c;
+    --chip: #2a3548;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.45;
+  }
+  header {
+    padding: 18px 24px 12px; border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #152030, var(--bg));
+  }
+  header h1 { margin: 0 0 4px; font-size: 1.35rem; font-weight: 650; letter-spacing: -0.02em; }
+  header .sub { color: var(--muted); font-size: 0.85rem; }
+  .wrap { padding: 16px 24px 40px; max-width: 1400px; margin: 0 auto; }
+  .stats {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px; margin-bottom: 16px;
+  }
+  .stat {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .stat .n { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .l { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; align-items: center; }
+  .filters label { font-size: 0.75rem; color: var(--muted); margin-right: 2px; }
+  .fchip {
+    border: 1px solid var(--border); background: var(--chip); color: var(--text);
+    border-radius: 999px; padding: 5px 12px; font-size: 0.78rem; cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .fchip:hover { border-color: var(--accent); }
+  .fchip.active { background: #2a4a6e; border-color: var(--accent); color: #fff; }
+  .fchip .c { opacity: 0.7; margin-left: 4px; font-variant-numeric: tabular-nums; }
+  .grid-main {
+    display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px;
+  }
+  @media (max-width: 980px) { .grid-main { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; min-height: 100px;
+  }
+  .panel h2 {
+    margin: 0 0 12px; font-size: 0.95rem; font-weight: 600;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  }
+  .panel h2 span { color: var(--muted); font-weight: 400; font-size: 0.75rem; }
+  /* Schematic SVG */
+  #schematic { width: 100%; height: auto; display: block; background: #121a26; border-radius: 8px; }
+  .node-label { fill: var(--text); font-size: 13px; font-weight: 600; font-family: inherit; }
+  .node-sub { fill: var(--muted); font-size: 10px; font-family: inherit; }
+  .lane-arc { fill: none; stroke-width: 2.5; opacity: 0.55; }
+  .ship-chip {
+    cursor: pointer; stroke: #0f1419; stroke-width: 1.5;
+  }
+  .ship-chip:hover { stroke: #fff; stroke-width: 2; }
+  .legend-row { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 10px; font-size: 0.75rem; color: var(--muted); }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+  /* Matrix */
+  table.matrix { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  table.matrix th, table.matrix td {
+    border: 1px solid var(--border); padding: 8px 10px; text-align: center;
+  }
+  table.matrix th { background: var(--panel2); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); }
+  table.matrix td.lane { text-align: left; font-weight: 500; white-space: nowrap; }
+  table.matrix td.cell { font-variant-numeric: tabular-nums; font-weight: 650; cursor: pointer; }
+  table.matrix td.cell:hover { outline: 1px solid #fff; }
+  table.matrix td.cell.zero { color: #3a4558; font-weight: 400; }
+  .band-on-time { background: rgba(61,154,106,.22); color: #7ddeb0; }
+  .band-watch { background: rgba(201,162,39,.22); color: #e8c85a; }
+  .band-alert { background: rgba(212,120,60,.25); color: #f0a66a; }
+  .band-critical { background: rgba(196,76,76,.28); color: #f09090; }
+  /* List */
+  .ship-list { max-height: 420px; overflow: auto; margin-top: 12px; }
+  .ship-row {
+    display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: start;
+    padding: 10px 10px; border-bottom: 1px solid var(--border); cursor: pointer;
+  }
+  .ship-row:hover, .ship-row.selected { background: var(--panel2); }
+  .ship-row .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; }
+  .ship-row .title { font-size: 0.85rem; font-weight: 560; }
+  .ship-row .meta { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+  .ship-row .badge {
+    font-size: 0.68rem; padding: 2px 8px; border-radius: 999px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap;
+  }
+  /* Detail drawer */
+  #detail {
+    margin-top: 16px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px; display: none;
+  }
+  #detail.open { display: block; }
+  #detail h3 { margin: 0 0 10px; font-size: 1rem; }
+  .kv { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; font-size: 0.85rem; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; word-break: break-word; }
+  .kv a { color: var(--accent); }
+  .reasons { margin-top: 10px; font-size: 0.78rem; color: var(--muted); }
+  .reasons code { background: var(--chip); padding: 1px 6px; border-radius: 4px; color: #c5d0e0; }
+  footer {
+    margin-top: 20px; padding: 14px 16px; border: 1px dashed var(--border);
+    border-radius: 10px; font-size: 0.75rem; color: var(--muted); background: #121820;
+  }
+  footer strong { color: #b8c4d6; }
+  .lane-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .lpill {
+    font-size: 0.75rem; padding: 4px 10px; border-radius: 6px;
+    background: var(--panel2); border: 1px solid var(--border);
+  }
+  .lpill b { font-variant-numeric: tabular-nums; }
+  .search {
+    background: var(--chip); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 6px 10px; font-size: 0.8rem; min-width: 180px;
+  }
+  .search:focus { outline: 1px solid var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>L&amp;S Logistics Heat Map</h1>
+  <div class="sub">Ship Signals #8 · Open trackers only · Schematic lanes (no invented lat/long) · Data as of <span id="asof"></span></div>
+</header>
+<div class="wrap">
+  <div class="stats" id="stats"></div>
+
+  <div class="filters" id="filters">
+    <label>Lane</label>
+    <button class="fchip active" data-f="lane" data-v="all">All<span class="c" id="c-lane-all"></span></button>
+    <label style="margin-left:8px">Status</label>
+    <button class="fchip active" data-f="status" data-v="all">All</button>
+    <label style="margin-left:8px">Band</label>
+    <button class="fchip active" data-f="band" data-v="all">All</button>
+    <button class="fchip" data-f="band" data-v="on-time">On-time</button>
+    <button class="fchip" data-f="band" data-v="watch">Watch</button>
+    <button class="fchip" data-f="band" data-v="alert">Alert</button>
+    <button class="fchip" data-f="band" data-v="critical">Critical</button>
+    <label style="margin-left:8px">Flags</label>
+    <button class="fchip" data-f="customs" data-v="1">Customs</button>
+    <button class="fchip" data-f="link" data-v="so">Has SO</button>
+    <button class="fchip" data-f="link" data-v="yz">Has YZ</button>
+    <input class="search" id="q" type="search" placeholder="Search AWB / name / carrier…" />
+  </div>
+
+  <div class="grid-main">
+    <div class="panel">
+      <h2>Schematic lane map <span>chips along Mill → Factory → Showroom → Customer (+ Other). Position = last_scan_location when present, else origin / unknown — no scan.</span></h2>
+      <div class="lane-pills" id="lanePills"></div>
+      <svg id="schematic" viewBox="0 0 760 340" role="img" aria-label="Logistics schematic"></svg>
+      <div class="legend-row">
+        <span><i class="swatch" style="background:var(--on-time)"></i>On-time</span>
+        <span><i class="swatch" style="background:var(--watch)"></i>Watch</span>
+        <span><i class="swatch" style="background:var(--alert)"></i>Alert</span>
+        <span><i class="swatch" style="background:var(--critical)"></i>Critical</span>
+        <span>Progress along arc ≈ status (Label→Transit→OFD)</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Delay-band matrix <span>lane_canonical × band from thresholds-locked (ETA slip + stale N + customs + house avg)</span></h2>
+      <table class="matrix" id="matrix"></table>
+      <div class="ship-list" id="list"></div>
+    </div>
+  </div>
+
+  <div id="detail"></div>
+
+  <footer id="footer"></footer>
+</div>
+
+<script>
+// Refresh: replace data.json next to this file (Ship Signals snapshot). Fetched relatively via <base href="/logistics/">.
+let DATA = null;
+
+const BAND_COLOR = {
+  'on-time': '#3d9a6a',
+  'watch': '#c9a227',
+  'alert': '#d4783c',
+  'critical': '#c44c4c'
+};
+const LANE_STROKE = {
+  'mill→factory': '#c9a227',
+  'factory→showroom': '#4caf8e',
+  'showroom→customer': '#6b8afd',
+  'mill→shop': '#d4a574',
+  'Other/purchase': '#9aa3b2'
+};
+const NODES = [
+  { id: 'Mill', x: 70, y: 160, color: '#c9a227' },
+  { id: 'Factory (YZ)', x: 280, y: 160, color: '#4caf8e' },
+  { id: 'Showroom (NYC)', x: 500, y: 160, color: '#6b8afd' },
+  { id: 'Customer', x: 690, y: 160, color: '#d4789c' },
+  { id: 'Other', x: 380, y: 300, color: '#9aa3b2' }
+];
+const NODE_XY = Object.fromEntries(NODES.map(n => [n.id, n]));
+
+const state = {
+  lane: 'all', status: 'all', band: 'all', customs: null, link: null, q: '', selected: null
+};
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function filtered() {
+  const q = state.q.trim().toLowerCase();
+  return DATA.rows.filter(r => {
+    if (state.lane !== 'all' && r.lane_canonical !== state.lane) return false;
+    if (state.status !== 'all' && r.status !== state.status) return false;
+    if (state.band !== 'all' && r.delay_band !== state.band) return false;
+    if (state.customs === '1' && !r.customs_flag) return false;
+    if (state.link === 'so' && !r.has_so) return false;
+    if (state.link === 'yz' && !r.has_yz) return false;
+    if (q) {
+      const hay = [r.name, r.tracking_number, r.carrier, r.origin, r.destination, r.supplier, r.customer, r.contents_summary]
+        .map(x => (x || '').toLowerCase()).join(' ');
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderStats(rows) {
+  const s = DATA.summary;
+  const el = document.getElementById('stats');
+  const items = [
+    ['Open shown', rows.length],
+    ['Desk live total', DATA.meta.live_desk_total],
+    ['On-time', rows.filter(r => r.delay_band==='on-time').length],
+    ['Watch', rows.filter(r => r.delay_band==='watch').length],
+    ['Alert', rows.filter(r => r.delay_band==='alert').length],
+    ['Critical', rows.filter(r => r.delay_band==='critical').length],
+    ['Customs', rows.filter(r => r.customs_flag).length],
+    ['Scan loc', DATA.summary.with_last_scan_location]
+  ];
+  el.innerHTML = items.map(([l,n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${esc(l)}</div></div>`).join('');
+}
+
+function renderLanePills() {
+  const lanes = DATA.thresholds.lane_canonical_options;
+  const counts = DATA.summary.by_lane_canonical;
+  document.getElementById('lanePills').innerHTML = lanes.map(l =>
+    `<span class="lpill" style="border-color:${LANE_STROKE[l]}">${esc(l)} <b>${counts[l]||0}</b></span>`
+  ).join('');
+}
+
+function pointOnLane(from, to, t, bend) {
+  const a = NODE_XY[from], b = NODE_XY[to];
+  if (!a || !b) return { x: 380, y: 300 };
+  // quadratic bezier via control point
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2 + (bend || -50);
+  const u = 1 - t;
+  return {
+    x: u*u*a.x + 2*u*t*mx + t*t*b.x,
+    y: u*u*a.y + 2*u*t*my + t*t*b.y
+  };
+}
+
+function renderSchematic(rows) {
+  const svg = document.getElementById('schematic');
+  const arcs = [
+    ['mill→factory', 'Mill', 'Factory (YZ)', -70],
+    ['factory→showroom', 'Factory (YZ)', 'Showroom (NYC)', -70],
+    ['showroom→customer', 'Showroom (NYC)', 'Customer', -70],
+    ['mill→shop', 'Mill', 'Showroom (NYC)', -120],
+    ['Other/purchase', 'Other', 'Other', 0]
+  ];
+  let html = '';
+  // arcs
+  arcs.forEach(([lane, from, to, bend]) => {
+    const a = NODE_XY[from], b = NODE_XY[to];
+    if (from === to) {
+      html += `<ellipse cx="${a.x}" cy="${a.y-28}" rx="48" ry="22" fill="none" stroke="${LANE_STROKE[lane]}" stroke-width="2" opacity="0.45" stroke-dasharray="4 3"/>`;
+      return;
+    }
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2 + bend;
+    html += `<path class="lane-arc" d="M ${a.x} ${a.y} Q ${mx} ${my} ${b.x} ${b.y}" stroke="${LANE_STROKE[lane]}"/>`;
+  });
+  // nodes
+  NODES.forEach(n => {
+    html += `<circle cx="${n.x}" cy="${n.y}" r="18" fill="${n.color}" opacity="0.9"/>`;
+    html += `<text class="node-label" x="${n.x}" y="${n.y + 36}" text-anchor="middle">${esc(n.id)}</text>`;
+  });
+  // chips — jitter within lane by index
+  const byLane = {};
+  rows.forEach(r => { (byLane[r.lane_canonical] = byLane[r.lane_canonical] || []).push(r); });
+  Object.entries(byLane).forEach(([lane, list]) => {
+    list.forEach((r, i) => {
+      const from = r.from_node, to = r.to_node;
+      let t = Math.min(0.92, Math.max(0.08, r.progress || 0.5));
+      // slight spread so chips don't fully stack
+      const spread = ((i % 7) - 3) * 0.035;
+      t = Math.min(0.94, Math.max(0.06, t + spread));
+      let bend = -70;
+      if (lane === 'mill→shop') bend = -120;
+      if (lane === 'Other/purchase') {
+        const o = NODE_XY['Other'];
+        const ang = (i / Math.max(list.length, 1)) * Math.PI * 2;
+        const x = o.x + Math.cos(ang) * 42;
+        const y = o.y - 28 + Math.sin(ang) * 16;
+        html += `<circle class="ship-chip" data-name="${esc(r.name)}" cx="${x}" cy="${y}" r="6" fill="${BAND_COLOR[r.delay_band]}"><title>${esc(r.name)} · ${esc(r.status)} · ${esc(r.position_label)}</title></circle>`;
+        return;
+      }
+      const p = pointOnLane(from, to, t, bend);
+      // vertical jitter
+      p.y += ((i % 5) - 2) * 5;
+      html += `<circle class="ship-chip" data-name="${esc(r.name)}" cx="${p.x}" cy="${p.y}" r="6.5" fill="${BAND_COLOR[r.delay_band]}"><title>${esc(r.tracking_number || r.name)} · ${esc(r.status)} · ${esc(r.delay_band)} · pos: ${esc(r.position_label)}</title></circle>`;
+    });
+  });
+  svg.innerHTML = html;
+  svg.querySelectorAll('.ship-chip').forEach(el => {
+    el.addEventListener('click', () => selectShip(el.getAttribute('data-name')));
+  });
+}
+
+function renderMatrix(rows) {
+  const bands = ['on-time','watch','alert','critical'];
+  const lanes = DATA.thresholds.lane_canonical_options;
+  // recompute from filtered
+  const m = {};
+  lanes.forEach(l => { m[l] = { 'on-time':0,'watch':0,'alert':0,'critical':0 }; });
+  rows.forEach(r => { m[r.lane_canonical][r.delay_band]++; });
+
+  let h = '<tr><th>Lane</th>';
+  bands.forEach(b => h += `<th>${b}</th>`);
+  h += '<th>Total</th></tr>';
+  lanes.forEach(l => {
+    const tot = bands.reduce((s,b) => s + m[l][b], 0);
+    h += `<tr><td class="lane">${esc(l)}</td>`;
+    bands.forEach(b => {
+      const n = m[l][b];
+      h += `<td class="cell band-${b}${n===0?' zero':''}" data-lane="${esc(l)}" data-band="${b}">${n}</td>`;
+    });
+    h += `<td><b>${tot}</b></td></tr>`;
+  });
+  // totals
+  h += '<tr><td class="lane"><b>Total</b></td>';
+  bands.forEach(b => {
+    const n = lanes.reduce((s,l) => s + m[l][b], 0);
+    h += `<td class="cell band-${b}"><b>${n}</b></td>`;
+  });
+  h += `<td><b>${rows.length}</b></td></tr>`;
+  const table = document.getElementById('matrix');
+  table.innerHTML = h;
+  table.querySelectorAll('td.cell[data-lane]').forEach(td => {
+    td.addEventListener('click', () => {
+      state.lane = td.getAttribute('data-lane');
+      state.band = td.getAttribute('data-band');
+      syncFilterChips();
+      render();
+    });
+  });
+}
+
+function renderList(rows) {
+  const el = document.getElementById('list');
+  const sorted = [...rows].sort((a,b) => {
+    const o = {critical:0,alert:1,watch:2,'on-time':3};
+    return (o[a.delay_band]-o[b.delay_band]) || a.name.localeCompare(b.name);
+  });
+  el.innerHTML = sorted.slice(0, 80).map(r => `
+    <div class="ship-row${state.selected===r.name?' selected':''}" data-name="${esc(r.name)}">
+      <div class="dot" style="background:${BAND_COLOR[r.delay_band]}"></div>
+      <div>
+        <div class="title">${esc(r.tracking_number || '(no AWB)')} · ${esc(r.carrier || '?')}</div>
+        <div class="meta">${esc(r.lane_canonical)} · ${esc(r.status)} · ${esc(r.origin||'?')} → ${esc(r.destination||'?')} · pos: ${esc(r.position_label)}</div>
+      </div>
+      <span class="badge band-${r.delay_band}">${esc(r.delay_band)}</span>
+    </div>
+  `).join('') + (sorted.length > 80 ? `<div class="meta" style="padding:8px;color:var(--muted)">Showing 80 of ${sorted.length}</div>` : '');
+  el.querySelectorAll('.ship-row').forEach(row => {
+    row.addEventListener('click', () => selectShip(row.getAttribute('data-name')));
+  });
+}
+
+function selectShip(name) {
+  state.selected = name;
+  const r = DATA.rows.find(x => x.name === name);
+  const box = document.getElementById('detail');
+  if (!r) { box.classList.remove('open'); return; }
+  box.classList.add('open');
+  const etaLabel = r.eta_current || r.eta_original || '—';
+  const etaSrc = r.eta_source ? ` (${esc(r.eta_source)})` : ' (eta_source n/a — field not on DocType)';
+  box.innerHTML = `
+    <h3>${esc(r.name)} <span class="badge band-${r.delay_band}">${esc(r.delay_band)}</span></h3>
+    <dl class="kv">
+      <dt>Tracking</dt><dd>${r.tracking_url ? `<a href="${esc(r.tracking_url)}" target="_blank" rel="noopener">${esc(r.tracking_number||'')}</a>` : esc(r.tracking_number||'—')} · ${esc(r.carrier||'—')}</dd>
+      <dt>Status</dt><dd>${esc(r.status)}</dd>
+      <dt>Lane</dt><dd>${esc(r.lane_canonical)} <span style="color:var(--muted)">(raw: ${esc(r.lane_raw||'—')})</span></dd>
+      <dt>Route</dt><dd>${esc(r.origin||'—')} → ${esc(r.destination||'—')}</dd>
+      <dt>Position</dt><dd>${esc(r.position_label)} <span style="color:var(--muted)">[${esc(r.position_source)}]</span></dd>
+      <dt>Last scan</dt><dd>${esc(r.last_scan_date||'—')} · ${esc(r.last_scan_text||'no scan fields on DocType')}</dd>
+      <dt>Ship / ETA</dt><dd>ship ${esc(r.ship_date||'—')} · ETA ${esc(etaLabel)}${etaSrc} · slip ${r.eta_slip_days ?? '—'}</dd>
+      <dt>Customs</dt><dd>${r.customs_flag ? 'flagged' : 'no'} · entry ${esc(r.customs_entry_date||'—')} · cleared ${esc(r.customs_cleared_date||'—')} · dwell ${r.customs_dwell_days ?? '—'}</dd>
+      <dt>Links</dt><dd>SO: ${esc(r.sales_order||'—')} · YZ: ${esc(r.yz_production_tracker||'—')} · PO: ${esc(r.purchase_order||'—')}</dd>
+      <dt>Parties</dt><dd>supplier ${esc(r.supplier||'—')} · mill ${esc(r.fabric_mill||'—')} · customer ${esc(r.customer||'—')}</dd>
+      <dt>Contents</dt><dd>${esc(r.contents_summary||'—')}</dd>
+    </dl>
+    <div class="reasons">Delay reasons: ${(r.delay_reasons||[]).length ? r.delay_reasons.map(x=>`<code>${esc(x)}</code>`).join(' ') : '<em>none</em>'}</div>
+  `;
+  renderList(filtered());
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function renderFooter() {
+  const dq = DATA.meta.dq;
+  document.getElementById('asof').textContent = DATA.meta.as_of_et + ' · generated ' + DATA.meta.generated_et;
+  document.getElementById('footer').innerHTML = `
+    <strong>Data freshness:</strong> live Desk pull ${esc(DATA.meta.as_of_et)} (erp_list, ${DATA.meta.live_desk_total} rows; open included ${DATA.meta.open_included};
+    excluded Delivered ${DATA.meta.excluded.delivered}, Exception orphans ${DATA.meta.excluded.exception_orphan}).
+    Gaps report as of ${esc(dq.gaps_as_of || '—')}:
+    duplicate Desk AWB groups = ${dq.duplicate_desk_awb_groups};
+    delivered w/o delivered_date = ${dq.delivered_without_delivered_date};
+    blank tracking = ${dq.desk_blank_tracking}.
+    <br/><strong>Schema caveats:</strong> missing on DocType — ${esc((dq.schema_missing_fields||[]).join(', '))}.
+    ${(dq.notes||[]).map(esc).join(' · ')}
+    <br/><strong>Thresholds:</strong> as_of ${esc(DATA.meta.thresholds_as_of)} · map type = schematic (never invents lat/long).
+  `;
+}
+
+function buildFilterChips() {
+  const host = document.getElementById('filters');
+  // lane buttons after first All
+  const lanes = DATA.thresholds.lane_canonical_options;
+  const counts = DATA.summary.by_lane_canonical;
+  document.getElementById('c-lane-all').textContent = DATA.meta.open_included;
+  const laneAll = host.querySelector('[data-f="lane"][data-v="all"]');
+  lanes.forEach(l => {
+    const b = document.createElement('button');
+    b.className = 'fchip';
+    b.dataset.f = 'lane';
+    b.dataset.v = l;
+    b.innerHTML = `${esc(l)}<span class="c">${counts[l]||0}</span>`;
+    laneAll.after(b);
+  });
+  // status chips
+  const statuses = Object.keys(DATA.summary.by_status).sort();
+  const statusAll = host.querySelector('[data-f="status"][data-v="all"]');
+  statuses.forEach(s => {
+    const b = document.createElement('button');
+    b.className = 'fchip';
+    b.dataset.f = 'status';
+    b.dataset.v = s;
+    b.innerHTML = `${esc(s)}<span class="c">${DATA.summary.by_status[s]}</span>`;
+    statusAll.after(b);
+  });
+
+  host.querySelectorAll('.fchip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const f = btn.dataset.f, v = btn.dataset.v;
+      if (f === 'customs' || f === 'link') {
+        if (state[f] === v) { state[f] = null; }
+        else { state[f] = v; }
+        // exclusive among link/customs toggles of same group
+        host.querySelectorAll(`.fchip[data-f="${f}"]`).forEach(x => x.classList.toggle('active', state[f] === x.dataset.v));
+      } else {
+        state[f] = v;
+        host.querySelectorAll(`.fchip[data-f="${f}"]`).forEach(x => x.classList.toggle('active', x.dataset.v === v));
+      }
+      render();
+    });
+  });
+  document.getElementById('q').addEventListener('input', e => { state.q = e.target.value; render(); });
+}
+
+function syncFilterChips() {
+  document.querySelectorAll('.fchip').forEach(btn => {
+    const f = btn.dataset.f, v = btn.dataset.v;
+    if (f === 'customs' || f === 'link') btn.classList.toggle('active', state[f] === v);
+    else btn.classList.toggle('active', state[f] === v);
+  });
+}
+
+function render() {
+  const rows = filtered();
+  renderStats(rows);
+  renderSchematic(rows);
+  renderMatrix(rows);
+  renderList(rows);
+}
+
+async function boot() {
+  const asof = document.getElementById('asof');
+  asof.textContent = 'loading…';
+  try {
+    const res = await fetch('data.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error('data.json HTTP ' + res.status);
+    DATA = await res.json();
+  } catch (err) {
+    asof.textContent = 'unavailable';
+    document.getElementById('footer').textContent = 'Could not load data.json (' + (err && err.message ? err.message : err) + ').';
+    return;
+  }
+  asof.textContent = DATA.meta.as_of_et;
+  renderLanePills();
+  buildFilterChips();
+  renderFooter();
+  render();
+}
+boot();
+</script>
+</body>
+</html>

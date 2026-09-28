@@ -19,6 +19,27 @@
       "source": "/account/:path*",
       "destination": "/login?portal=customer",
       "permanent": false
+    },
+    {
+      "source": "/logistics",
+      "destination": "/logistics/",
+      "permanent": false
+    }
+  ],
+  "headers": [
+    {
+      "source": "/logistics",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/logistics/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
     }
   ],
   "rewrites": [
@@ -29,6 +50,10 @@
     {
       "source": "/api/:path*",
       "destination": "/api/[...path]"
+    },
+    {
+      "source": "/logistics/",
+      "destination": "/logistics/index.html"
     },
     {
       "source": "/(.*)",
