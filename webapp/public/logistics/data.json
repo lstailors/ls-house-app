@@ -1,11 +1,11 @@
 {
   "meta": {
-    "title": "L&S Logistics Heat Map — Ship Signals #8",
-    "as_of_et": "2026-09-29 8:32 AM ET",
-    "generated_et": "2026-09-29 8:32 AM ET",
+    "title": "L&S Logistics Heat Map \u2014 Ship Signals #8",
+    "as_of_et": "2026-09-30 8:14 AM ET",
+    "generated_et": "2026-09-30 8:14 AM ET",
     "source": "user-ls-mcp erp_list LSH Logistics Tracker (live)",
-    "live_desk_total": 193,
-    "open_included": 105,
+    "live_desk_total": 195,
+    "open_included": 107,
     "excluded": {
       "delivered": 88,
       "exception_orphan": 0
@@ -16,22 +16,23 @@
       "duplicate_desk_awb_groups": 11,
       "delivered_without_delivered_date": 8,
       "desk_blank_tracking": 1,
-      "desk_row_count_live": 193,
-      "gaps_as_of": "2026-09-29 8:32 AM ET",
+      "desk_row_count_live": 195,
+      "unmapped_lane_n": 0,
+      "gaps_as_of": "2026-09-30 8:14 AM ET",
       "notes": [
         "OPEN scope: Delivered excluded; Exception orphans (Exception + blank AWB + no SO) excluded.",
         "Custom Fields last_scan_*, lane_canonical, eta_source exist on Desk; always name them explicitly in erp_list fields=[...] (erp_doctype_fields omits Custom Fields). Fill sparse until Logistics refresh writes.",
-        "OPEN scope (Carl 2026-09-28): keep ALL open including ancient In Transit — no age-out. Exclude Delivered + Exception orphans only."
+        "OPEN scope (Carl 2026-09-28): keep ALL open including ancient In Transit \u2014 no age-out. Exclude Delivered + Exception orphans only."
       ]
     },
     "heat_map_policy": "all_open_no_age_out"
   },
   "thresholds": {
     "lane_canonical_options": [
-      "mill→factory",
-      "factory→showroom",
-      "showroom→customer",
-      "mill→shop",
+      "mill\u2192factory",
+      "factory\u2192showroom",
+      "showroom\u2192customer",
+      "mill\u2192shop",
       "Other/purchase"
     ],
     "eta_slip": {
@@ -42,48 +43,48 @@
       "prefer_last_scan_date": true,
       "fallback_modified_days": 3,
       "open_days_from_ship_N": {
-        "mill→factory": 7,
-        "factory→showroom": 10,
-        "showroom→customer": 7,
+        "mill\u2192factory": 7,
+        "factory\u2192showroom": 10,
+        "showroom\u2192customer": 7,
         "Other/purchase": 5,
-        "mill→shop": 7
+        "mill\u2192shop": 7
       },
       "customs_flag_escalate_days_earlier": 2
     },
     "house_avg_days": {
-      "mill→factory": {
+      "mill\u2192factory": {
         "p50": 4,
         "p75": 5,
         "p90": 5,
-        "range_label": "4–5 days",
+        "range_label": "4\u20135 days",
         "provisional": false
       },
-      "factory→showroom": {
+      "factory\u2192showroom": {
         "p50": 4,
         "p75": 8,
         "p90": 10,
-        "range_label": "4–8 days",
+        "range_label": "4\u20138 days",
         "provisional": false
       },
-      "showroom→customer": {
+      "showroom\u2192customer": {
         "p50": 5,
         "p75": 6,
         "p90": 8,
-        "range_label": "3–6 days",
+        "range_label": "3\u20136 days",
         "provisional": true
       },
       "Other/purchase": {
         "p50": 1,
         "p75": 2,
         "p90": 2,
-        "range_label": "1–2 days",
+        "range_label": "1\u20132 days",
         "provisional": false
       },
-      "mill→shop": {
+      "mill\u2192shop": {
         "p50": 4,
         "p75": 5,
         "p90": 5,
-        "range_label": "4–5 days",
+        "range_label": "4\u20135 days",
         "provisional": true
       }
     },
@@ -99,58 +100,57 @@
   },
   "summary": {
     "by_lane_canonical": {
-      "mill→factory": 72,
-      "factory→showroom": 8,
-      "showroom→customer": 5,
-      "mill→shop": 4,
+      "mill\u2192factory": 73,
+      "factory\u2192showroom": 9,
+      "showroom\u2192customer": 5,
+      "mill\u2192shop": 4,
       "Other/purchase": 16
     },
     "by_status": {
-      "In Transit": 93,
+      "In Transit": 92,
       "Label Created": 1,
-      "Shipped": 4,
-      "Out for Delivery": 2,
+      "Shipped": 5,
+      "Out for Delivery": 5,
       "Exception": 3,
-      "Dispatched": 1,
-      "Delivery Attempted": 1
+      "Dispatched": 1
     },
     "by_delay_band": {
-      "on-time": 50,
-      "critical": 49,
-      "alert": 6
+      "critical": 55,
+      "on-time": 48,
+      "alert": 4
     },
-    "with_last_scan_location": 1,
-    "with_last_scan_date": 1,
-    "position_from_origin": 64,
+    "with_last_scan_location": 4,
+    "with_last_scan_date": 4,
+    "position_from_origin": 63,
     "position_unknown": 40,
     "customs_flag_open": 3,
     "has_so": 10,
     "has_yz": 4
   },
   "delay_matrix": {
-    "mill→factory": {
-      "on-time": 34,
+    "mill\u2192factory": {
+      "on-time": 32,
       "watch": 0,
-      "alert": 5,
-      "critical": 33
+      "alert": 3,
+      "critical": 38
     },
-    "factory→showroom": {
-      "on-time": 1,
+    "factory\u2192showroom": {
+      "on-time": 2,
       "watch": 0,
       "alert": 0,
       "critical": 7
     },
-    "showroom→customer": {
-      "on-time": 2,
-      "watch": 0,
-      "alert": 0,
-      "critical": 3
-    },
-    "mill→shop": {
-      "on-time": 3,
+    "showroom\u2192customer": {
+      "on-time": 1,
       "watch": 0,
       "alert": 1,
-      "critical": 0
+      "critical": 3
+    },
+    "mill\u2192shop": {
+      "on-time": 3,
+      "watch": 0,
+      "alert": 0,
+      "critical": 1
     },
     "Other/purchase": {
       "on-time": 10,
@@ -166,7 +166,7 @@
       "carrier": "SF Express",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Artextile, Hong Kong",
       "destination": "YZ Tianjin",
       "ship_date": "2026-09-16",
@@ -196,15 +196,15 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Artextile PO #121321 + #121322 → YZ Tianjin. 228237 Charcoal Grey 2y x2 for Alex Heminway LST-122544-1 / -2 (LST-26-373C / 374C, SO 00557 / 00556) · 227702 Light Grey 2y for Christophe Giordano LST-122545-1 (SO 00555) · 227741 Tan/Beige 4y for Peter Schaffer LST-122549-1 (SO 00558, PO #121322 no Desk PO yet). Invoices L0134_L&S-26091182 + 26091493.",
+      "contents_summary": "Artextile PO #121321 + #121322 \u2192 YZ Tianjin. 228237 Charcoal Grey 2y x2 for Alex Heminway LST-122544-1 / -2 (LST-26-373C / 374C, SO 00557 / 00556) \u00b7 227702 Light Grey 2y for Christophe Giordano LST-122545-1 (SO 00555) \u00b7 227741 Tan/Beige 4y for Peter Schaffer LST-122549-1 (SO 00558, PO #121322 no Desk PO yet). Invoices L0134_L&S-26091182 + 26091493.",
       "transit_days": 0,
-      "age_days": 13,
+      "age_days": 14,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00106",
       "modified": "2026-09-16 07:40:04.591649",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=13d ≥ N=7 (lane N=7)"
+        "stale_open=14d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -245,13 +245,13 @@
       "exception_detail": null,
       "contents_summary": "S&S Activewear Order 101203129 PO Momentec Kannapolis (DS). UPS Ground. Carrier email: tracking not available for this method. Filo crojc7qoq9.",
       "transit_days": 0,
-      "age_days": 61,
+      "age_days": 62,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-08-12 13:54:48.250283",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=61d ≥ N=5 (lane N=5)"
+        "stale_open=62d \u2265 N=5 (lane N=5)"
       ]
     },
     {
@@ -260,7 +260,7 @@
       "carrier": "SF Express",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Hong Kong",
       "destination": "YZ Tianjin",
       "ship_date": "2026-09-16",
@@ -292,13 +292,13 @@
       "exception_detail": null,
       "contents_summary": "Artextile PO #121322 INV 26091493 HKD 1170: Peter Schaffer LST-122549-1 art 227741 Tan/Plain 4y. Same SF pack SF1563924413566 as 00106 (combined 121321+121322). Forward AWB to Mandy/Status.",
       "transit_days": 0,
-      "age_days": 13,
+      "age_days": 14,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00107",
       "modified": "2026-09-16 10:08:56.963449",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=13d ≥ N=7 (lane N=7)"
+        "stale_open=14d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -336,10 +336,10 @@
       "fabric_mill": null,
       "customer": null,
       "exception_flag": false,
-      "exception_detail": "[2026-09-28 Logistics] Contents unconfirmed. Timing/weight argue against Norris 6m parcel (Carl 9/22 already-shipped; this label 9/25–26, 2 lb). Est. from house avg FedEx intl express ~3–7d from ship 9/26 → ~Sep 29–Oct 3 (range, not a precise day).",
-      "contents_summary": "L&S NYC → YZ Tianjin, FedEx International Priority, 1 piece 2.00 lb. Label created Fri 9/25 + Sat 9/26 FedEx notices (Gmail 1a0d968b50892783 / 1a0de87fbefc7492). FedEx emails state no contents. NOT confirmed as Norris Lease Club: Carl told Mandy 2026-09-22 Norris LST-26-396/397/398 (6m Lease Club tweed + brown ultra suede) was already on the way for ~9/23–24; Mandy 9/24 already referenced a received box/hangtag. Contents still need Carl.",
+      "exception_detail": "[2026-09-28 Logistics] Contents unconfirmed. Timing/weight argue against Norris 6m parcel (Carl 9/22 already-shipped; this label 9/25\u201326, 2 lb). Est. from house avg FedEx intl express ~3\u20137d from ship 9/26 \u2192 ~Sep 29\u2013Oct 3 (range, not a precise day).",
+      "contents_summary": "L&S NYC \u2192 YZ Tianjin, FedEx International Priority, 1 piece 2.00 lb. Label created Fri 9/25 + Sat 9/26 FedEx notices (Gmail 1a0d968b50892783 / 1a0de87fbefc7492). FedEx emails state no contents. NOT confirmed as Norris Lease Club: Carl told Mandy 2026-09-22 Norris LST-26-396/397/398 (6m Lease Club tweed + brown ultra suede) was already on the way for ~9/23\u201324; Mandy 9/24 already referenced a received box/hangtag. Contents still need Carl.",
       "transit_days": 0,
-      "age_days": 3,
+      "age_days": 4,
       "tracking_url": "https://www.fedex.com/apps/fedextrack?trknbr=877760410606",
       "purchase_order": null,
       "modified": "2026-09-28 14:44:16.707713",
@@ -352,7 +352,7 @@
       "carrier": "SF Express",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Hong Kong",
       "destination": "YZ Tianjin",
       "ship_date": "2026-09-17",
@@ -384,13 +384,13 @@
       "exception_detail": null,
       "contents_summary": "Artextile PO #121324 INV 26091587 HKD 1320.88 COD: Pete Hathaway LST-122552-2 art 228237 Medium Grey 2.25y + LST-122552-5 art 227738 Light Tan 2.25y. AWB SF1574050148658 to YZ Tianjin. Forward AWB to Mandy/Status.",
       "transit_days": 0,
-      "age_days": 12,
+      "age_days": 13,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00110",
       "modified": "2026-09-17 10:06:25.937546",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=12d ≥ N=7 (lane N=7)"
+        "stale_open=13d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -399,7 +399,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Supplier",
       "destination": "YongZheng",
       "ship_date": "2026-07-25",
@@ -429,15 +429,15 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Saviero PO #121284 — LST-122478-2 Jonhnny Livanos fabric 105785 Black 4yd — INV/2026/07/1019 HK$4655.60",
+      "contents_summary": "Saviero PO #121284 \u2014 LST-122478-2 Jonhnny Livanos fabric 105785 Black 4yd \u2014 INV/2026/07/1019 HK$4655.60",
       "transit_days": 0,
-      "age_days": 66,
+      "age_days": 67,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-07-27 07:01:10.467305",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=66d ≥ N=7 (lane N=7)"
+        "stale_open=67d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -446,7 +446,7 @@
       "carrier": "FedEx",
       "status": "Label Created",
       "lane_raw": "Customer Delivery",
-      "lane_canonical": "showroom→customer",
+      "lane_canonical": "showroom\u2192customer",
       "origin": "L&S Tailors, 138 E 61st St Suite 201, New York NY",
       "destination": "855 Trumbull Dr, Fishers Island NY 06390",
       "ship_date": "2026-07-08",
@@ -476,16 +476,61 @@
       "customer": "Patricia Braga",
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Outbound customer delivery to Patricia Braga — FedEx Express Saver, est. delivery Mon July 13. Garment contents TBD (confirm with Carl). Sourced from FedEx label email rvtcr3cqdo.",
+      "contents_summary": "Outbound customer delivery to Patricia Braga \u2014 FedEx Express Saver, est. delivery Mon July 13. Garment contents TBD (confirm with Carl). Sourced from FedEx label email rvtcr3cqdo.",
       "transit_days": 0,
-      "age_days": 83,
+      "age_days": 84,
       "tracking_url": "https://www.fedex.com/fedextrack/?trknbr=874113117998",
       "purchase_order": null,
       "modified": "2026-07-09 07:02:02.310351",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=83d ≥ N=7 (lane N=7)"
+        "stale_open=84d \u2265 N=7 (lane N=7)"
       ]
+    },
+    {
+      "name": "2c689dh391",
+      "tracking_number": "SF1574050137906",
+      "carrier": "SF Express",
+      "status": "Shipped",
+      "lane_raw": "Inbound Fabric",
+      "lane_canonical": "mill\u2192factory",
+      "origin": "Hong Kong",
+      "destination": "YZ Tianjin",
+      "ship_date": "2026-09-30",
+      "eta_original": null,
+      "eta_current": null,
+      "eta_source": null,
+      "eta_slip_days": 0,
+      "delivered_date": null,
+      "last_scan_date": null,
+      "last_scan_text": null,
+      "last_scan_location": null,
+      "position_label": "Hong Kong",
+      "position_source": "origin_fallback",
+      "progress": 0.28,
+      "from_node": "Mill",
+      "to_node": "Factory (YZ)",
+      "customs_flag": false,
+      "customs_entry_date": null,
+      "customs_cleared_date": null,
+      "customs_dwell_days": 0,
+      "sales_order": null,
+      "yz_production_tracker": null,
+      "has_so": false,
+      "has_yz": false,
+      "supplier": "Artextile International",
+      "fabric_mill": "Artextile International",
+      "customer": null,
+      "exception_flag": false,
+      "exception_detail": null,
+      "contents_summary": "Artextile shared SF AWB SF1574050137906 -> YZ Tianjin. PO #121328 (LSTNY-PO-2026-00112): Gene Norden LST-122543-1 art 226012 Black Mesh 2.5y ONLY (Casey Tatham C163-31 line cancelled by Carl 9/29 - not an Artextile cloth; Emily: 'just one fabric for this order'). PO #121348 (no Desk PO yet): Mark Shafir LST-122582-1 / LST-26-443C art 227366 Navy 4y. Invoice PDF L0134_L&S-26091700 attached to both mails (amount not read). Emily Tse 9/29 10:00-10:01 PM ET: 'will send out by SF'. Lands during YZ holiday - customs team back Oct 8.",
+      "transit_days": 0,
+      "age_days": 0,
+      "tracking_url": null,
+      "purchase_order": "LSTNY-PO-2026-00112",
+      "modified": "2026-09-30 07:36:07.048996",
+      "delay_band": "on-time",
+      "delay_reasons": []
     },
     {
       "name": "2dsu8vinbf",
@@ -493,7 +538,7 @@
       "carrier": "SF Express",
       "status": "In Transit",
       "lane_raw": "mill_to_yz",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": "YZ Tianjin (Ashley LST)",
       "ship_date": "2026-09-23",
@@ -505,7 +550,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -523,14 +568,16 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Saviero PO #121334 cut lengths → YZ: Minnaugh LST-122563-1 art 106273 Charcoal 2y; Azrak LST-122566-1 art 105782 Navy 4y; Azrak LST-122566-2 art 105782 Navy 2y. Invoice HK$7,694.10 card-on-file (filename L&S - sales invoice 23-09-2026.pdf). Dispatched ~6:15am ET 2026-09-23 SF Express AWB SF1567092264587.",
+      "contents_summary": "Saviero PO #121334 cut lengths \u2192 YZ: Minnaugh LST-122563-1 art 106273 Charcoal 2y; Azrak LST-122566-1 art 105782 Navy 4y; Azrak LST-122566-2 art 105782 Navy 2y. Invoice HK$7,694.10 card-on-file (filename L&S - sales invoice 23-09-2026.pdf). Dispatched ~6:15am ET 2026-09-23 SF Express AWB SF1567092264587.",
       "transit_days": 0,
-      "age_days": 6,
+      "age_days": 7,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00122",
       "modified": "2026-09-23 10:23:38.710999",
-      "delay_band": "on-time",
-      "delay_reasons": []
+      "delay_band": "alert",
+      "delay_reasons": [
+        "stale_open=7d \u2265 N=7 (lane N=7)"
+      ]
     },
     {
       "name": "2hhvh90cb5",
@@ -538,7 +585,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Factory Inbound",
-      "lane_canonical": "factory→showroom",
+      "lane_canonical": "factory\u2192showroom",
       "origin": "Munro Tailoring, Oldenzaal NL",
       "destination": "L&S NYC 138 E 61st Suite 201",
       "ship_date": "2026-08-14",
@@ -570,13 +617,13 @@
       "exception_detail": null,
       "contents_summary": "Munro Tailoring inbound (ref M.202633.289271). 4.10 LB FedEx IP Express. ETA Mon 2026-08-17 before 10:30 NYC showroom. Source: FedEx delivery-tomorrow email orders@ 2026-08-15.",
       "transit_days": 0,
-      "age_days": 46,
+      "age_days": 47,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-08-16 08:04:59.342646",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=46d ≥ N=10 (lane N=10)"
+        "stale_open=47d \u2265 N=10 (lane N=10)"
       ]
     },
     {
@@ -585,7 +632,7 @@
       "carrier": "DHL",
       "status": "In Transit",
       "lane_raw": "Factory Inbound",
-      "lane_canonical": "factory→showroom",
+      "lane_canonical": "factory\u2192showroom",
       "origin": "Cotonificio Albini S.p.A.",
       "destination": "Trung Tran Chatham NJ",
       "ship_date": "2026-09-02",
@@ -615,15 +662,15 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Albini Fattura A/25360 + Packing List B/27427 / shop bill B/762321 $535.20. Lines: FM33268-001115 Byron Kent 3.60yd Jimenez; FM44128-000001 DOBBY 1.80yd untagged; FM412630-000033 Portland 2.50yd Berk Tux shirt; FM55586-000010 Downing 2.50yd SChector. Ship 2026-09-02 to TRUNG TRAN. Draft PI LSTNY-PINV-2026-00355. LST/SO still unmatched — do not invent.",
+      "contents_summary": "Albini Fattura A/25360 + Packing List B/27427 / shop bill B/762321 $535.20. Lines: FM33268-001115 Byron Kent 3.60yd Jimenez; FM44128-000001 DOBBY 1.80yd untagged; FM412630-000033 Portland 2.50yd Berk Tux shirt; FM55586-000010 Downing 2.50yd SChector. Ship 2026-09-02 to TRUNG TRAN. Draft PI LSTNY-PINV-2026-00355. LST/SO still unmatched \u2014 do not invent.",
       "transit_days": 0,
-      "age_days": 27,
+      "age_days": 28,
       "tracking_url": "https://mydhl.express.dhl/it/en/tracking.html#/results?id=1955767494",
       "purchase_order": "LSTNY-PO-2026-00096",
       "modified": "2026-09-02 14:46:50.246158",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=27d ≥ N=10 (lane N=10)"
+        "stale_open=28d \u2265 N=10 (lane N=10)"
       ]
     },
     {
@@ -632,7 +679,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Saviero, Hong Kong",
       "destination": "L&S showroom, 138 E 61st St Suite 201, NYC",
       "ship_date": "2026-09-19",
@@ -662,15 +709,15 @@
       "customer": "John Tashjian",
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Saviero PO #12491 → NYC showroom: John Tashjian LST-122321-3 art 105774 1yd (pocket piece). Invoice HK$1,689.20. Dispatched 9/19 FedEx Express 877447245334. MTMPro Order already Delivered — fabric restock to store only, no status pullback.",
+      "contents_summary": "Saviero PO #12491 \u2192 NYC showroom: John Tashjian LST-122321-3 art 105774 1yd (pocket piece). Invoice HK$1,689.20. Dispatched 9/19 FedEx Express 877447245334. MTMPro Order already Delivered \u2014 fabric restock to store only, no status pullback.",
       "transit_days": 0,
-      "age_days": 10,
+      "age_days": 11,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00118",
       "modified": "2026-09-21 10:28:26.895483",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=10d ≥ N=7 (lane N=7)"
+        "stale_open=11d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -679,7 +726,7 @@
       "carrier": "SF Express",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Saviero, Hong Kong",
       "destination": "Yongzheng (Tianjin) Garments",
       "ship_date": "2026-09-19",
@@ -709,15 +756,15 @@
       "customer": "Steve Frank",
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Saviero PO #121332 (MTMPro 9/18, ship-to YZ Tianjin): Steve Frank LST-122562-1 art 106457, 4 yd (LST-26-411C, SO LSTNY-SO-2026-00584) — line confirmed from PO HTML 9/20 audit. Invoice HK$2,049.70 charged to card on file. Dispatched 9/19 SF Express SF1567092272748. Forward AWB to Mandy.",
+      "contents_summary": "Saviero PO #121332 (MTMPro 9/18, ship-to YZ Tianjin): Steve Frank LST-122562-1 art 106457, 4 yd (LST-26-411C, SO LSTNY-SO-2026-00584) \u2014 line confirmed from PO HTML 9/20 audit. Invoice HK$2,049.70 charged to card on file. Dispatched 9/19 SF Express SF1567092272748. Forward AWB to Mandy.",
       "transit_days": 0,
-      "age_days": 10,
+      "age_days": 11,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00117",
       "modified": "2026-09-21 10:28:26.750644",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=10d ≥ N=7 (lane N=7)"
+        "stale_open=11d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -726,7 +773,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Artextile HK",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-07-28",
@@ -758,13 +805,13 @@
       "exception_detail": null,
       "contents_summary": "Artextile INV 26071996 / L0134 PO#129-20260727 SF1574050159655: Lonnie Williams 227709 2.5y + Kelvin Mantuano LST-122505-1 229106 5y + SF freight. Total HKD 2409.75 after discount. NOT included: Sumner Hatch 227343 DROPPED.",
       "transit_days": 0,
-      "age_days": 63,
+      "age_days": 64,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-07-29 07:00:33.486807",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=63d ≥ N=7 (lane N=7)"
+        "stale_open=64d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -783,7 +830,7 @@
       "eta_slip_days": 0,
       "delivered_date": null,
       "last_scan_date": "2026-09-28 16:19:00",
-      "last_scan_text": "Drop-Off Package Receipt — accepted at UPS Store",
+      "last_scan_text": "Drop-Off Package Receipt \u2014 accepted at UPS Store",
       "last_scan_location": "The UPS Store #4607, 26 Railroad Ave, Babylon, NY 11702",
       "position_label": "The UPS Store #4607, 26 Railroad Ave, Babylon, NY 11702",
       "position_source": "last_scan_location",
@@ -802,10 +849,10 @@
       "fabric_mill": null,
       "customer": null,
       "exception_flag": false,
-      "exception_detail": "Est. from house avg US Ground / Other-purchase ~1–2d from drop 9/28 → ~Sep 29–30.",
-      "contents_summary": "personal — Dyson return. Dropped UPS Store #4607 Babylon NY 11702 Mon 2026-09-28 4:19pm ET. Receipt 1 of 1. 9.0 lb. Not shop/mill.",
+      "exception_detail": "Est. from house avg US Ground / Other-purchase ~1\u20132d from drop 9/28 \u2192 ~Sep 29\u201330.",
+      "contents_summary": "personal \u2014 Dyson return. Dropped UPS Store #4607 Babylon NY 11702 Mon 2026-09-28 4:19pm ET. Receipt 1 of 1. 9.0 lb. Not shop/mill.",
       "transit_days": 0,
-      "age_days": 1,
+      "age_days": 2,
       "tracking_url": "https://www.ups.com/track?loc=en_US&tracknum=1Z2Y55899092149621&requester=ST/",
       "purchase_order": null,
       "modified": "2026-09-29 07:05:15.794405",
@@ -818,7 +865,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Saviero Hong Kong",
       "destination": "L&S Custom Tailors, 138 E 61st Street, Suite 201, New York, NY 10065",
       "ship_date": "2026-09-22",
@@ -850,13 +897,13 @@
       "exception_detail": null,
       "contents_summary": "Saviero sample piece article 105774 (1/4 to 1/2 yard) for pockets on an already-made garment. Carl request 2026-09-21 referencing old PO #121239 (June; no ERP PO match). Dispatched 2026-09-22 FedEx 877549928704. Invoice quoted HK$870.35, card on file. Showroom, not YZ.",
       "transit_days": 0,
-      "age_days": 7,
+      "age_days": 8,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00120",
       "modified": "2026-09-22 10:26:18.037236",
-      "delay_band": "alert",
+      "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=7d ≥ N=7 (lane N=7)"
+        "stale_open=8d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -894,10 +941,10 @@
       "fabric_mill": null,
       "customer": null,
       "exception_flag": false,
-      "exception_detail": "Est. from house avg US ground/Surepost ~2–5d from ship 9/28 → ~Sep 30–Oct 3 (range).",
-      "contents_summary": "business / shop supply — S&S Activewear Order 103280645. UPS Surepost. Dest Calogero Cristiano 782 Tanglewood Rd West Islip NY 11795. Not factory garment. Gmail 1a0e84db9765d04b 2026-09-28 ~9:56am ET.",
+      "exception_detail": "Est. from house avg US ground/Surepost ~2\u20135d from ship 9/28 \u2192 ~Sep 30\u2013Oct 3 (range).",
+      "contents_summary": "business / shop supply \u2014 S&S Activewear Order 103280645. UPS Surepost. Dest Calogero Cristiano 782 Tanglewood Rd West Islip NY 11795. Not factory garment. Gmail 1a0e84db9765d04b 2026-09-28 ~9:56am ET.",
       "transit_days": 0,
-      "age_days": 1,
+      "age_days": 2,
       "tracking_url": "https://www.ups.com/track?loc=en_US&tracknum=1ZG2B007YW29432621&requester=ST/",
       "purchase_order": null,
       "modified": "2026-09-28 15:04:58.017190",
@@ -910,7 +957,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Artextile HK",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-08-26",
@@ -942,13 +989,13 @@
       "exception_detail": null,
       "contents_summary": "PO #121307 Artex SF Express SF1574050140546 | David Rubinstein LST-122526-1 art 227729 Navy Blue 4y to YZ",
       "transit_days": 0,
-      "age_days": 34,
+      "age_days": 35,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-08-26 09:10:01.034337",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=34d ≥ N=7 (lane N=7)"
+        "stale_open=35d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -957,7 +1004,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Fabric Italiano",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-08-25",
@@ -989,13 +1036,13 @@
       "exception_detail": null,
       "contents_summary": "Fabric Italiano INV 260820 PO #121302 | Rick Press LST-122482-2 art N738055 4y @ $213 = $852 + ship $25 = $877 due CC | N738035 LST-122482-1 still BACKORDER | to YZ",
       "transit_days": 0,
-      "age_days": 35,
+      "age_days": 36,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-08-26 07:35:03.032023",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=35d ≥ N=7 (lane N=7)"
+        "stale_open=36d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -1033,19 +1080,19 @@
       "fabric_mill": null,
       "customer": null,
       "exception_flag": true,
-      "exception_detail": "FedEx import fees prepaid 2026-09-24 ~1:49am ET $18.50 (receipt 98045008). Tracking 876744477945 Ariston bunches. Status still Out for Delivery (stale eta 2026-09-09) — not Delivered. Status hop 2026-09-24 9am.",
+      "exception_detail": "FedEx import fees prepaid 2026-09-24 ~1:49am ET $18.50 (receipt 98045008). Tracking 876744477945 Ariston bunches. Status still Out for Delivery (stale eta 2026-09-09) \u2014 not Delivered. Status hop 2026-09-24 9am.",
       "contents_summary": "Ariston INV 2566/P 2026-09-04 -- NEW COLLECTION bunches (not a client garment PO). FedEx 876744477945. Permanent SS25 bunches reminder: FOUR SEASONS / ZEFIRO / SYMPHONY / THE LUX / SHIRTS RESEARCH. Melana: invoice PDF + card. Customs clearance with forwarder.",
       "transit_days": 0,
-      "age_days": 25,
+      "age_days": 26,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-09-24 09:24:55.202018",
       "delay_band": "critical",
       "delay_reasons": [
         "exception",
-        "past_due=20d vs eta",
-        "past_due≥3d",
-        "stale_open=25d ≥ N=5 (lane N=5)"
+        "past_due=21d vs eta",
+        "past_due\u22653d",
+        "stale_open=26d \u2265 N=5 (lane N=5)"
       ]
     },
     {
@@ -1054,7 +1101,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Saviero HK",
       "destination": "YZ Tianjin",
       "ship_date": "2026-07-31",
@@ -1086,13 +1133,13 @@
       "exception_detail": null,
       "contents_summary": "Saviero PO #121292 fabric 105785 x12y to YZ Tianjin: Andrew Brook LST-122479-1, Lorenzo Brook LST-122512-1, Jack Brook LST-122477-1. INV HK$13832.90 card on file.",
       "transit_days": 0,
-      "age_days": 60,
+      "age_days": 61,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-07-31 16:04:16.502134",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=60d ≥ N=7 (lane N=7)"
+        "stale_open=61d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -1101,7 +1148,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Artextile HK",
       "destination": "YZ Tianjin",
       "ship_date": "2026-07-31",
@@ -1133,13 +1180,13 @@
       "exception_detail": null,
       "contents_summary": "Artextile combined SF: PO #121291 Parlini LST-122509-1 226025 5y + Fribourg LST-122514-2/3 227703 4y; PO #121293 Livanos LST-122476-1 227732 4y. INV 26072231 HK$3963.50.",
       "transit_days": 0,
-      "age_days": 60,
+      "age_days": 61,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-07-31 08:06:05.748371",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=60d ≥ N=7 (lane N=7)"
+        "stale_open=61d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -1148,7 +1195,7 @@
       "carrier": "DHL",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Cotonificio Albini, IT",
       "destination": "Trung Tran, 462 Fairmount Ave, Chatham NJ (shirt maker)",
       "ship_date": "2026-09-24",
@@ -1178,9 +1225,9 @@
       "customer": "Slater Nalen",
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Albini Fattura A/27850 + packing B/30286 (ref. 27850). Slater Nalen LST-122413 shirt cloth to TRUNG TRAN Chatham NJ. Conf B/764335 / PO LSTNY-PO-2026-00128 / PI LSTNY-PINV-2026-00478. DHL AWB 1955791132 — notice 2026-09-24 10:16am ET.",
+      "contents_summary": "Albini Fattura A/27850 + packing B/30286 (ref. 27850). Slater Nalen LST-122413 shirt cloth to TRUNG TRAN Chatham NJ. Conf B/764335 / PO LSTNY-PO-2026-00128 / PI LSTNY-PINV-2026-00478. DHL AWB 1955791132 \u2014 notice 2026-09-24 10:16am ET.",
       "transit_days": 0,
-      "age_days": 5,
+      "age_days": 6,
       "tracking_url": "https://mydhl.express.dhl/it/en/tracking.html#/results?id=1955791132",
       "purchase_order": "LSTNY-PO-2026-00128",
       "modified": "2026-09-24 14:18:05.017336",
@@ -1193,7 +1240,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "mill_to_shop",
-      "lane_canonical": "mill→shop",
+      "lane_canonical": "mill\u2192shop",
       "origin": "FI Fabrics",
       "destination": "L&S NY 138 E 61st Suite 201",
       "ship_date": "2026-09-28",
@@ -1223,9 +1270,9 @@
       "customer": "Sureya Koprulu",
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "FI Inv 260926 2026-09-28 Amount Due $270.00 (CC): Koprulu LST-122576-1 / PO #121340 art N735055 1.5y $270. Ship L&S NY. FedEx 467190272030. Email Michael fabricitaliano@ ~6:03pm ET orders@/carl@. Shared Amex FI FABRICS $3831.25 Sat (with Inv 260927) — not inventing PE.",
+      "contents_summary": "FI Inv 260926 2026-09-28 Amount Due $270.00 (CC): Koprulu LST-122576-1 / PO #121340 art N735055 1.5y $270. Ship L&S NY. FedEx 467190272030. Email Michael fabricitaliano@ ~6:03pm ET orders@/carl@. Shared Amex FI FABRICS $3831.25 Sat (with Inv 260927) \u2014 not inventing PE.",
       "transit_days": 0,
-      "age_days": 1,
+      "age_days": 2,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00134",
       "modified": "2026-09-28 19:20:11.982550",
@@ -1238,7 +1285,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "mill_to_yz",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "FI Fabrics",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-09-28",
@@ -1268,9 +1315,9 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "SHARED FedEx 467190271560 → YZ. Inv 260927 Amount Due $3561.25 (cloth $3510.25 + ship $51): Graham LST-122569-1 N783027 2.25y $537.75; Rubin LST-122573-3/-4/-5/-10/-12; Davis LST-122344-1 N765007 via mill #12117 $580; (N368804/LST-122573-11 NOT on inv — discarded). Inv 260928 Amount Due $322 (cloth $297 + ship $25): Mccallum LST-122577-1 N721004. Shared amounts — not split. POs #121341/#121345. Emails Michael ~6:05–6:07pm ET.",
+      "contents_summary": "SHARED FedEx 467190271560 \u2192 YZ. Inv 260927 Amount Due $3561.25 (cloth $3510.25 + ship $51): Graham LST-122569-1 N783027 2.25y $537.75; Rubin LST-122573-3/-4/-5/-10/-12; Davis LST-122344-1 N765007 via mill #12117 $580; (N368804/LST-122573-11 NOT on inv \u2014 discarded). Inv 260928 Amount Due $322 (cloth $297 + ship $25): Mccallum LST-122577-1 N721004. Shared amounts \u2014 not split. POs #121341/#121345. Emails Michael ~6:05\u20136:07pm ET.",
       "transit_days": 0,
-      "age_days": 1,
+      "age_days": 2,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00135",
       "modified": "2026-09-28 19:20:15.885972",
@@ -1283,7 +1330,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Customer Delivery",
-      "lane_canonical": "showroom→customer",
+      "lane_canonical": "showroom\u2192customer",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -1295,7 +1342,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Showroom (NYC)",
@@ -1313,7 +1360,7 @@
       "customer": "Andrea Walton",
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Garment delivery — FedEx Priority Overnight. Ship date Jul 10, ETA Mon Jul 13. Destination: 3989 Route 343, Amenia NY 12501. Filo brief ielrr830as item 1.",
+      "contents_summary": "Garment delivery \u2014 FedEx Priority Overnight. Ship date Jul 10, ETA Mon Jul 13. Destination: 3989 Route 343, Amenia NY 12501. Filo brief ielrr830as item 1.",
       "transit_days": 0,
       "age_days": 0,
       "tracking_url": "https://www.fedex.com/fedextrack/?trknbr=874235223949",
@@ -1328,7 +1375,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Factory Inbound",
-      "lane_canonical": "factory→showroom",
+      "lane_canonical": "factory\u2192showroom",
       "origin": "FI Fabrics Inc.",
       "destination": "Yong Zheng (YZ factory)",
       "ship_date": null,
@@ -1358,7 +1405,7 @@
       "customer": "Sam Herzig",
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Fabric N735031 (4 yds) for client order LST-122470-1 — Sam Herzig",
+      "contents_summary": "Fabric N735031 (4 yds) for client order LST-122470-1 \u2014 Sam Herzig",
       "transit_days": 0,
       "age_days": 0,
       "tracking_url": "https://www.fedex.com/fedextrack/?trknbr=467190231095",
@@ -1373,7 +1420,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Supplier",
       "destination": "YongZheng",
       "ship_date": "2026-07-07",
@@ -1403,15 +1450,15 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Amalfi Woolen PO 121264 — fabric shipment pkg 1/2 via SF Express",
+      "contents_summary": "Amalfi Woolen PO 121264 \u2014 fabric shipment pkg 1/2 via SF Express",
       "transit_days": 0,
-      "age_days": 84,
+      "age_days": 85,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-07-08 07:02:44.020857",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=84d ≥ N=7 (lane N=7)"
+        "stale_open=85d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -1420,7 +1467,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Supplier",
       "destination": "YongZheng",
       "ship_date": "2026-07-07",
@@ -1450,15 +1497,15 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Amalfi Woolen PO 121264 — fabric shipment pkg 2/2 via SF Express",
+      "contents_summary": "Amalfi Woolen PO 121264 \u2014 fabric shipment pkg 2/2 via SF Express",
       "transit_days": 0,
-      "age_days": 84,
+      "age_days": 85,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-07-08 07:02:44.029510",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=84d ≥ N=7 (lane N=7)"
+        "stale_open=85d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -1467,7 +1514,7 @@
       "carrier": "DHL",
       "status": "In Transit",
       "lane_raw": "mill_to_yz",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": "YZ Tianjin (Ashley LST)",
       "ship_date": "2026-09-22",
@@ -1479,7 +1526,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -1499,13 +1546,13 @@
       "exception_detail": null,
       "contents_summary": "Tallia di Delfino cut length for Miguel Barg LST-122557-2 article 6268M-0003-0009 Green Herringbond 2.25y (mill email PO #121329). Barbara ship notice ~3:06pm ET 2026-09-22 with INV 05934 + packing list. Destination YZ Tianjin.",
       "transit_days": 0,
-      "age_days": 7,
+      "age_days": 8,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-09-22 19:35:48.743407",
-      "delay_band": "alert",
+      "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=7d ≥ N=7 (lane N=7)"
+        "stale_open=8d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -1514,7 +1561,7 @@
       "carrier": "FedEx",
       "status": "Out for Delivery",
       "lane_raw": "Customer Delivery",
-      "lane_canonical": "showroom→customer",
+      "lane_canonical": "showroom\u2192customer",
       "origin": "L&S 138 E 61st St, New York NY",
       "destination": "Lee Denis, 8035 Savoy Club Court, Burr Ridge IL 60527",
       "ship_date": "2026-09-09",
@@ -1543,19 +1590,19 @@
       "fabric_mill": null,
       "customer": "Lee Denis",
       "exception_flag": true,
-      "exception_detail": "PARTIAL delivery mail Fri 2026-09-11 10:22am ET — left at front door 8035 Savoy Club Ct Willowbrook IL. Master FedEx 876963678970. Associated piece 876963678981 still Departed FedEx location Keasbey NJ (not delivered). Do NOT mark full Delivered until all 6 pieces clear. Contents still presumed LST-122449 — confirm before client Delivered.",
-      "contents_summary": "FedEx Ground, 6 pieces / 30 lb, Carl → Lee Denis (Burr Ridge IL). Label created 9/9 (FedEx 'You're getting a shipment'). Presumed Lee Denis LST-122449 garments — confirm contents.",
+      "exception_detail": "PARTIAL delivery mail Fri 2026-09-11 10:22am ET \u2014 left at front door 8035 Savoy Club Ct Willowbrook IL. Master FedEx 876963678970. Associated piece 876963678981 still Departed FedEx location Keasbey NJ (not delivered). Do NOT mark full Delivered until all 6 pieces clear. Contents still presumed LST-122449 \u2014 confirm before client Delivered.",
+      "contents_summary": "FedEx Ground, 6 pieces / 30 lb, Carl \u2192 Lee Denis (Burr Ridge IL). Label created 9/9 (FedEx 'You're getting a shipment'). Presumed Lee Denis LST-122449 garments \u2014 confirm contents.",
       "transit_days": 0,
-      "age_days": 20,
+      "age_days": 21,
       "tracking_url": "https://www.fedex.com/apps/fedextrack?trknbr=876963678970",
       "purchase_order": null,
       "modified": "2026-09-14 07:39:16.319824",
       "delay_band": "critical",
       "delay_reasons": [
         "exception",
-        "past_due=15d vs eta",
-        "past_due≥3d",
-        "stale_open=20d ≥ N=7 (lane N=7)"
+        "past_due=16d vs eta",
+        "past_due\u22653d",
+        "stale_open=21d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -1564,7 +1611,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -1576,7 +1623,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -1621,7 +1668,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Other",
@@ -1666,7 +1713,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Other",
@@ -1711,7 +1758,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Other",
@@ -1744,7 +1791,7 @@
       "carrier": "DHL",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -1756,7 +1803,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -1801,7 +1848,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Other",
@@ -1846,7 +1893,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Other",
@@ -1879,7 +1926,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -1891,7 +1938,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -1924,7 +1971,7 @@
       "carrier": "DHL",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -1936,7 +1983,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -1969,7 +2016,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -1981,7 +2028,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -2026,7 +2073,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Other",
@@ -2071,7 +2118,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.5,
       "from_node": "Other",
@@ -2118,7 +2165,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Other",
@@ -2151,7 +2198,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Supplier",
       "destination": "YongZheng",
       "ship_date": "2026-07-24",
@@ -2181,15 +2228,15 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Ariston INV 3421/EXC — E034-1 3.70ml — LST-122494-1 Mark Bodner — USD 276.22 total",
+      "contents_summary": "Ariston INV 3421/EXC \u2014 E034-1 3.70ml \u2014 LST-122494-1 Mark Bodner \u2014 USD 276.22 total",
       "transit_days": 0,
-      "age_days": 67,
+      "age_days": 68,
       "tracking_url": "https://www.fedex.com/fedextrack/?trknbr=874830024988",
       "purchase_order": null,
       "modified": "2026-07-28 07:00:14.276002",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=67d ≥ N=7 (lane N=7)"
+        "stale_open=68d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -2198,7 +2245,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Hong Kong",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-08-21",
@@ -2230,13 +2277,13 @@
       "exception_detail": null,
       "contents_summary": "Artex PO #121304 INV 26081578 HKD4112 | 227703 Fribourg 122513-1/2 2y+2y; 227559 Khoury 122519-1 4y; 227560 Sanchez 122520-1 4y; 227704 Nalen 122521-2 2y | ship YZ Tianjin",
       "transit_days": 0,
-      "age_days": 39,
+      "age_days": 40,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-08-21 07:35:35.894677",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=39d ≥ N=7 (lane N=7)"
+        "stale_open=40d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -2245,7 +2292,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Fabric Italiano",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-08-31",
@@ -2277,13 +2324,13 @@
       "exception_detail": null,
       "contents_summary": "PO #121310 INV 260828 FI Fabrics: Nottes LST-122530-1 N765006 4y $580; -2 N765035 4y $580; -3 N703041 4y $512; -7 N765036 2y $28 (NO MTMPro 122530-7). Fabric $1700 + ship $32 = $1732 due CC. Ship-to YZ.",
       "transit_days": 0,
-      "age_days": 29,
+      "age_days": 30,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00094",
       "modified": "2026-09-01 08:50:36.805078",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=29d ≥ N=7 (lane N=7)"
+        "stale_open=30d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -2324,13 +2371,13 @@
       "exception_detail": null,
       "contents_summary": "LST-122518-1 Ken Nelson 105782 Navy 4.5 yd",
       "transit_days": 0,
-      "age_days": 41,
+      "age_days": 42,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-08-19 09:11:18.187648",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=41d ≥ N=5 (lane N=5)"
+        "stale_open=42d \u2265 N=5 (lane N=5)"
       ]
     },
     {
@@ -2339,7 +2386,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Hong Kong",
       "destination": "Confirm: invoice prints NYC showroom and China; PO ship-to was YZ Tianjin",
       "ship_date": "2026-09-28",
@@ -2371,7 +2418,7 @@
       "exception_detail": null,
       "contents_summary": "Saviero INV/2026/09/2462 PO 125 / LSTNY-PO-2026-00144. Sumner Hatch LST-122460-1 art 401760 2.25yd. Dispatched 2026-09-28 SF Express. Invoice total HKD 1050.60 (cloth 900 + ship 120 + bank 30.60). Card on file. Invoice ship-to text is NYC showroom plus the word China -- confirm dest before telling Mandy it is at YZ.",
       "transit_days": 0,
-      "age_days": 1,
+      "age_days": 2,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00144",
       "modified": "2026-09-28 08:56:55.393659",
@@ -2384,7 +2431,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Hong Kong",
       "destination": "YongZheng Tianjin (Ashley)",
       "ship_date": "2026-09-28",
@@ -2416,7 +2463,7 @@
       "exception_detail": null,
       "contents_summary": "Artex INV 26092495 combined HKD 6631.25. Lines: Pogson LST-122570-2 226059 2.25y; Rubin LST-122573-1 227526 4y; Rubin LST-122573-2 227708 4y; De Corato LST-122469-2 824550 2.75y; SF freight. POs LSTNY-PO-2026-00132 (121338) and LSTNY-PO-2026-00143 (129-20260926). Ship-to YZ. Will not clear before YZ holiday (customs team back Oct 8 per Mandy 2026-09-28).",
       "transit_days": 0,
-      "age_days": 1,
+      "age_days": 2,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-09-28 07:39:15.495428",
@@ -2429,7 +2476,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Artextile Hong Kong",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-09-09",
@@ -2461,13 +2508,13 @@
       "exception_detail": null,
       "contents_summary": "INV 26090507 combined COD HKD 2400.25 (sub 2797 disc 396.75 freight 152). Desk POs LSTNY-PO-2026-00101 (121316 Chiaramonte LST-122539-1/2) + LSTNY-PO-2026-00103 (121319 Stallings LST-122541-1/2). Lines: 228246 2y+2y DARK BLUE; 226005 1.5y+2y CREAM HOPSACK. Ship-to YZ Ashley. AWB SF1574050148233.",
       "transit_days": 0,
-      "age_days": 20,
+      "age_days": 21,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00101",
       "modified": "2026-09-09 10:18:28.875374",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=20d ≥ N=7 (lane N=7)"
+        "stale_open=21d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -2488,7 +2535,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Other",
@@ -2506,15 +2553,15 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "business/shop supply — S&S Activewear Order 102520330 from Colortone (DS). UPS Ground to West Islip. Real AWB from gmail 1a085d9de88a92c1 (was placeholder SS-ORDER-102520330). Not mill/YZ garment.",
+      "contents_summary": "business/shop supply \u2014 S&S Activewear Order 102520330 from Colortone (DS). UPS Ground to West Islip. Real AWB from gmail 1a085d9de88a92c1 (was placeholder SS-ORDER-102520330). Not mill/YZ garment.",
       "transit_days": 0,
-      "age_days": 20,
+      "age_days": 21,
       "tracking_url": "https://www.ups.com/track?tracknum=1Z345E960360229728",
       "purchase_order": null,
       "modified": "2026-09-28 15:04:24.578865",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=20d ≥ N=5 (lane N=5)"
+        "stale_open=21d \u2265 N=5 (lane N=5)"
       ]
     },
     {
@@ -2523,7 +2570,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Fabric Italiano",
       "destination": "YZ Tianjin",
       "ship_date": "2026-09-10",
@@ -2553,15 +2600,15 @@
       "customer": "Andrew Fechter",
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "PO #121320 FI INV 260909 — Andrew Fechter LST-122542-1 N735032 Black 4y @ $149 = $596 + ship $25 = $621 due CC. Ship-to YZ Tianjin. Draft PI LSTNY-PINV-2026-00409. Gmail thread 1a0888b5cb372917.",
+      "contents_summary": "PO #121320 FI INV 260909 \u2014 Andrew Fechter LST-122542-1 N735032 Black 4y @ $149 = $596 + ship $25 = $621 due CC. Ship-to YZ Tianjin. Draft PI LSTNY-PINV-2026-00409. Gmail thread 1a0888b5cb372917.",
       "transit_days": 0,
-      "age_days": 19,
+      "age_days": 20,
       "tracking_url": "https://www.fedex.com/fedextrack/?trknbr=467190262900",
       "purchase_order": "LSTNY-PO-2026-00105",
       "modified": "2026-09-10 15:10:00.417221",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=19d ≥ N=7 (lane N=7)"
+        "stale_open=20d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -2570,7 +2617,7 @@
       "carrier": "SF Express",
       "status": "Shipped",
       "lane_raw": "mill_to_yz",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Hong Kong",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-09-28",
@@ -2600,9 +2647,9 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Shared 4-pc SF: PO #121338 (Pogson LST-122570-2 226059 2.25y; Rubin LST-122573-1 227526 4y; Rubin LST-122573-2 227708 4y) + PO #129 (De Corato LST-122469-2 824550 Blue 2.75y). Invoice L0134_L&S-26092495 / Ref 26092495. Amex ARTEXTILE HK$6631.25 (card …95013, Sun Sep 27). Emily Tse emails ~11:07pm ET Sep 27.",
+      "contents_summary": "Shared 4-pc SF: PO #121338 (Pogson LST-122570-2 226059 2.25y; Rubin LST-122573-1 227526 4y; Rubin LST-122573-2 227708 4y) + PO #129 (De Corato LST-122469-2 824550 Blue 2.75y). Invoice L0134_L&S-26092495 / Ref 26092495. Amex ARTEXTILE HK$6631.25 (card \u202695013, Sun Sep 27). Emily Tse emails ~11:07pm ET Sep 27.",
       "transit_days": 0,
-      "age_days": 1,
+      "age_days": 2,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00132",
       "modified": "2026-09-28 09:34:12.487606",
@@ -2615,7 +2662,7 @@
       "carrier": "SF Express",
       "status": "Shipped",
       "lane_raw": "mill_to_yz",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Hong Kong",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-09-28",
@@ -2645,9 +2692,9 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "PO #125 Sumner Hatch LST-122460-1 art 401760 2.25y. Invoice attached L&S - sales invoice 28-09-2026.pdf; amount due HK$1050.60 card-on-file. Amex SAVIERO LIMITED HK$1050.60 (card …95013, Sun Sep 27). Ankita dispatched 2026-09-28 ~6:02am ET.",
+      "contents_summary": "PO #125 Sumner Hatch LST-122460-1 art 401760 2.25y. Invoice attached L&S - sales invoice 28-09-2026.pdf; amount due HK$1050.60 card-on-file. Amex SAVIERO LIMITED HK$1050.60 (card \u202695013, Sun Sep 27). Ankita dispatched 2026-09-28 ~6:02am ET.",
       "transit_days": 0,
-      "age_days": 1,
+      "age_days": 2,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00144",
       "modified": "2026-09-28 09:34:15.328984",
@@ -2660,7 +2707,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "mill_to_shop",
-      "lane_canonical": "mill→shop",
+      "lane_canonical": "mill\u2192shop",
       "origin": "Italy",
       "destination": "L&S NY 138 E 61st Suite 201",
       "ship_date": "2026-09-25",
@@ -2690,9 +2737,9 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "CORRECTED afternoon watch: Drago Spa FedEx AWB 877740634890 / AWB PDF = BUNCH B0657 (doc 91538 dated 2026-09-25) ship TO L&S NY shop 138 E 61st. NOT Barg cut-length (that remains DHL 1300615470 INV 05934 Tracker a2flmcm0oq). No LST invented. Source info@dragobiella.it → carl@ + barbara/bryant.",
+      "contents_summary": "CORRECTED afternoon watch: Drago Spa FedEx AWB 877740634890 / AWB PDF = BUNCH B0657 (doc 91538 dated 2026-09-25) ship TO L&S NY shop 138 E 61st. NOT Barg cut-length (that remains DHL 1300615470 INV 05934 Tracker a2flmcm0oq). No LST invented. Source info@dragobiella.it \u2192 carl@ + barbara/bryant.",
       "transit_days": 0,
-      "age_days": 4,
+      "age_days": 5,
       "tracking_url": "https://www.fedex.com/fedextrack/?tracknumbers=877740634890",
       "purchase_order": null,
       "modified": "2026-09-25 14:14:09.603011",
@@ -2705,7 +2752,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "mill_to_shop",
-      "lane_canonical": "mill→shop",
+      "lane_canonical": "mill\u2192shop",
       "origin": "Italy",
       "destination": "L&S Tailors NY 138 E 61st St",
       "ship_date": "2026-09-25",
@@ -2737,7 +2784,7 @@
       "exception_detail": null,
       "contents_summary": "DRAGO Spa BUNCH B0657 to L&S NY shop (not cut-length / no LST). AWB doc 91538 dated 2026-09-25. Email info@dragobiella.it ~12:00pm ET 2026-09-25; cc Lana Royale. PDF AWB_ 87774063489_n 250920.pdf.",
       "transit_days": 0,
-      "age_days": 4,
+      "age_days": 5,
       "tracking_url": "https://www.fedex.com/fedextrack/?tracknumbers=877740634890",
       "purchase_order": null,
       "modified": "2026-09-25 14:15:09.436130",
@@ -2762,7 +2809,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Other",
@@ -2780,17 +2827,17 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "business/shop supply — S&S Activewear Order 102890761. UPS Ground from Reading PA to West Islip. Not mill/YZ garment. Gmail carl thread 1a0aba69e3e9534f 2026-09-16.",
+      "contents_summary": "business/shop supply \u2014 S&S Activewear Order 102890761. UPS Ground from Reading PA to West Islip. Not mill/YZ garment. Gmail carl thread 1a0aba69e3e9534f 2026-09-16.",
       "transit_days": 0,
-      "age_days": 13,
+      "age_days": 14,
       "tracking_url": "https://www.ups.com/track?tracknum=1ZG2B0070328967143",
       "purchase_order": null,
       "modified": "2026-09-28 15:04:23.715319",
       "delay_band": "critical",
       "delay_reasons": [
-        "past_due=10d vs eta",
-        "past_due≥3d",
-        "stale_open=13d ≥ N=5 (lane N=5)"
+        "past_due=11d vs eta",
+        "past_due\u22653d",
+        "stale_open=14d \u2265 N=5 (lane N=5)"
       ]
     },
     {
@@ -2799,7 +2846,7 @@
       "carrier": "FedEx Express",
       "status": "In Transit",
       "lane_raw": "mill_to_shop",
-      "lane_canonical": "mill→shop",
+      "lane_canonical": "mill\u2192shop",
       "origin": "Hong Kong",
       "destination": "L&S NY 138 E 61st Suite 201",
       "ship_date": "2026-09-22",
@@ -2831,13 +2878,13 @@
       "exception_detail": null,
       "contents_summary": "Small piece article 105774 + fabric sample book; pockets for LST-122442-1 James Brooke (orig mill PO #121239). Invoice HK$870.35 card-on-file; Amex charged.",
       "transit_days": 0,
-      "age_days": 7,
+      "age_days": 8,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00120",
       "modified": "2026-09-22 10:22:58.207246",
-      "delay_band": "alert",
+      "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=7d ≥ N=7 (lane N=7)"
+        "stale_open=8d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -2846,7 +2893,7 @@
       "carrier": "SF Express",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Saviero Hong Kong",
       "destination": "YZ Tianjin",
       "ship_date": "2026-09-23",
@@ -2876,36 +2923,38 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Saviero PO #121334 → YZ Tianjin. Proven lines from MTMPro/Saviero quote: Michael Minnaugh LST-122563-1 art 106273 Charcoal 2y; Albert Azrak LST-122566-1 art 105782 Navy 4y; Albert Azrak LST-122566-2 art 105782 Navy 2y. Invoice HK$7,694.10 card on file. SF Express SF1567092264587 dispatched 2026-09-23 (Ankita). Forward AWB to Mandy.",
+      "contents_summary": "Saviero PO #121334 \u2192 YZ Tianjin. Proven lines from MTMPro/Saviero quote: Michael Minnaugh LST-122563-1 art 106273 Charcoal 2y; Albert Azrak LST-122566-1 art 105782 Navy 4y; Albert Azrak LST-122566-2 art 105782 Navy 2y. Invoice HK$7,694.10 card on file. SF Express SF1567092264587 dispatched 2026-09-23 (Ankita). Forward AWB to Mandy.",
       "transit_days": 0,
-      "age_days": 6,
+      "age_days": 7,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00122",
       "modified": "2026-09-23 09:39:37.316320",
-      "delay_band": "on-time",
-      "delay_reasons": []
+      "delay_band": "alert",
+      "delay_reasons": [
+        "stale_open=7d \u2265 N=7 (lane N=7)"
+      ]
     },
     {
       "name": "in7dtjhj4g",
       "tracking_number": "1Z4W20F46698964987",
       "carrier": "UPS",
-      "status": "In Transit",
+      "status": "Out for Delivery",
       "lane_raw": "Factory Inbound",
-      "lane_canonical": "factory→showroom",
+      "lane_canonical": "factory\u2192showroom",
       "origin": "YZ Tianjin",
       "destination": "L&S showroom 138 E 61st",
       "ship_date": "2026-09-23",
       "eta_original": null,
-      "eta_current": "2026-09-28",
-      "eta_source": null,
+      "eta_current": "2026-09-29",
+      "eta_source": "live",
       "eta_slip_days": 0,
       "delivered_date": null,
-      "last_scan_date": null,
-      "last_scan_text": null,
-      "last_scan_location": null,
-      "position_label": "YZ Tianjin",
-      "position_source": "origin_fallback",
-      "progress": 0.55,
+      "last_scan_date": "2026-09-29 07:34:00",
+      "last_scan_text": "Out for Delivery",
+      "last_scan_location": "New York, NY",
+      "position_label": "New York, NY",
+      "position_source": "last_scan_location",
+      "progress": 0.88,
       "from_node": "Factory (YZ)",
       "to_node": "Showroom (NYC)",
       "customs_flag": false,
@@ -2920,13 +2969,13 @@
       "fabric_mill": null,
       "customer": null,
       "exception_flag": true,
-      "exception_detail": "UPS customs cleared 2026-09-25 ~11:53am ET (pkginfo@ups.com 1a0d94568f6fb201). ETA slipped Fri 9/25 → Mon 2026-09-28 by 10:30 AM ET. Import fees prepaid 2026-09-23 $64.50. Still In Transit — not Delivered. AWB 1Z4W20F46698964987. Mandy Shipment LST-1，9.23.",
-      "contents_summary": "YZ → L&S UPS shipment = Mandy 'Shipment LST-1，9.23' (Gmail 1a0cd2906cc3f6f9, 9/23 3:26 AM ET). Pack list in attached XLS 'LST-1，9.23.xls' (not parsed by audit — open the XLS for line items).",
+      "exception_detail": "[2026-09-29 ~12:33pm ET live UPS] Out for Delivery \u2014 New York NY 7:34am ET. ETA Tue 2026-09-29 by 10:30 A.M. ET (window passed; still OFD not Delivered). Prior: Delivery Attempted Mon 2026-09-28 9:55am business closed. Customs cleared 9/25; ETA had slipped to Mon 9/28. Service UPS Worldwide Express. Source: ups.com live track.",
+      "contents_summary": "YZ \u2192 L&S UPS shipment = Mandy 'Shipment LST-1\uff0c9.23' (Gmail 1a0cd2906cc3f6f9, 9/23 3:26 AM ET). Pack list in attached XLS 'LST-1\uff0c9.23.xls' (not parsed by audit \u2014 open the XLS for line items).",
       "transit_days": 0,
-      "age_days": 6,
+      "age_days": 7,
       "tracking_url": null,
       "purchase_order": null,
-      "modified": "2026-09-25 12:38:09.441672",
+      "modified": "2026-09-29 12:34:41.925154",
       "delay_band": "critical",
       "delay_reasons": [
         "exception",
@@ -2937,23 +2986,23 @@
       "name": "ipclbb1ve1",
       "tracking_number": "1Z4W20F46698964987",
       "carrier": "UPS",
-      "status": "In Transit",
+      "status": "Out for Delivery",
       "lane_raw": "Factory Inbound",
-      "lane_canonical": "factory→showroom",
+      "lane_canonical": "factory\u2192showroom",
       "origin": "Yongzheng Tianjin",
       "destination": "138 E 61st Street Suite 201, New York NY 10065",
       "ship_date": "2026-09-23",
       "eta_original": null,
-      "eta_current": "2026-09-28",
-      "eta_source": null,
+      "eta_current": "2026-09-29",
+      "eta_source": "live",
       "eta_slip_days": 0,
       "delivered_date": null,
-      "last_scan_date": null,
-      "last_scan_text": null,
-      "last_scan_location": null,
-      "position_label": "Yongzheng Tianjin",
-      "position_source": "origin_fallback",
-      "progress": 0.55,
+      "last_scan_date": "2026-09-29 07:34:00",
+      "last_scan_text": "Out for Delivery",
+      "last_scan_location": "New York, NY",
+      "position_label": "New York, NY",
+      "position_source": "last_scan_location",
+      "progress": 0.88,
       "from_node": "Factory (YZ)",
       "to_node": "Showroom (NYC)",
       "customs_flag": false,
@@ -2968,13 +3017,13 @@
       "fabric_mill": null,
       "customer": "Rick Press",
       "exception_flag": true,
-      "exception_detail": "UPS customs cleared 2026-09-25 ~11:53am ET (pkginfo@ups.com 1a0d94568f6fb201). ETA slipped Fri 9/25 → Mon 2026-09-28 by 10:30 AM ET. Import fees prepaid 2026-09-23 $64.50. Still In Transit — not Delivered. AWB 1Z4W20F46698964987. Pack: Press LST-122482-1 / Cox LST-122523-1/-2 / Nalen LST-122413-4.",
+      "exception_detail": "[2026-09-29 ~12:33pm ET live UPS] Out for Delivery \u2014 New York NY 7:34am ET. ETA Tue 2026-09-29 by 10:30 A.M. ET (window passed; still OFD not Delivered). Prior: Delivery Attempted Mon 2026-09-28 9:55am business closed. Duplicate of in7dtjhj4g same AWB. Source: ups.com live track.",
       "contents_summary": "YZ ship LST-1 9.23 showroom 138 E 61st Ste 201. UPS 1Z4W20F46698964987. Rick Press LST-26-343/LST-122482-1 jacket+pant; Christopher Cox LST-26-350C/LST-122523-1 pant + LST-26-351C/LST-122523-2 pant; Slater Nalen RUSH need-by 2026-09-25 LST-26-412C/LST-122413-4 pant. Not Delivered.",
       "transit_days": 0,
-      "age_days": 6,
+      "age_days": 7,
       "tracking_url": null,
       "purchase_order": null,
-      "modified": "2026-09-25 12:38:08.753786",
+      "modified": "2026-09-29 12:34:43.264502",
       "delay_band": "critical",
       "delay_reasons": [
         "exception",
@@ -2987,7 +3036,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "mill_to_yz",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "FI Fabrics",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-09-23",
@@ -3017,14 +3066,16 @@
       "customer": "Miguel Barg",
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Melana/FI mill PO #121327 INV 260922 — N771042 2.25y Miguel Barg LST-122557-1; cloth $288 + ship $25 = $313 CC",
+      "contents_summary": "Melana/FI mill PO #121327 INV 260922 \u2014 N771042 2.25y Miguel Barg LST-122557-1; cloth $288 + ship $25 = $313 CC",
       "transit_days": 0,
-      "age_days": 6,
+      "age_days": 7,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00111",
       "modified": "2026-09-23 19:59:08.049638",
-      "delay_band": "on-time",
-      "delay_reasons": []
+      "delay_band": "alert",
+      "delay_reasons": [
+        "stale_open=7d \u2265 N=7 (lane N=7)"
+      ]
     },
     {
       "name": "j0q7e678ub",
@@ -3032,7 +3083,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Imparato S.p.A., Italy",
       "destination": "YZ Tianjin",
       "ship_date": "2026-09-17",
@@ -3062,24 +3113,24 @@
       "customer": "Keith Salters",
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "A913/687 additional 1.2m for Keith Salters LST-122450-1 (LST-26-339C) — top-up to the 1.85m shipped 9/3 on INV 3796/EXC. Ariston INV 4022/EXC dated 2026-09-17 (PDF not read). AWB sent to Mandy 9/18 (Gmail 1a0b4f9699cb7441). HD 2862.",
+      "contents_summary": "A913/687 additional 1.2m for Keith Salters LST-122450-1 (LST-26-339C) \u2014 top-up to the 1.85m shipped 9/3 on INV 3796/EXC. Ariston INV 4022/EXC dated 2026-09-17 (PDF not read). AWB sent to Mandy 9/18 (Gmail 1a0b4f9699cb7441). HD 2862.",
       "transit_days": 0,
-      "age_days": 12,
+      "age_days": 13,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00079",
       "modified": "2026-09-18 16:38:13.880110",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=12d ≥ N=7 (lane N=7)"
+        "stale_open=13d \u2265 N=7 (lane N=7)"
       ]
     },
     {
       "name": "j87jopjhju",
       "tracking_number": null,
-      "carrier": null,
+      "carrier": "",
       "status": "Exception",
       "lane_raw": "Factory Inbound",
-      "lane_canonical": "factory→showroom",
+      "lane_canonical": "factory\u2192showroom",
       "origin": null,
       "destination": null,
       "ship_date": "2026-07-08",
@@ -3091,7 +3142,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.5,
       "from_node": "Factory (YZ)",
@@ -3108,19 +3159,19 @@
       "fabric_mill": null,
       "customer": "James Niven",
       "exception_flag": true,
-      "exception_detail": "Orphan Label Created row with blank AWB. Superseded by Delivered tracker 2gar5orm7t / UPS 1Z4W20F40492053589 (YZ packing LST-1 2026/7/17; includes LST-26-207 James Niven; delivered NYC 2026-07-20). Closed 2026-09-28 per Status FYI — do not invent AWB on this row.",
-      "contents_summary": "SUPERSEDED placeholder — LST-26-207 James Niven / LSTNY-SO-2026-00292. Real factory→showroom movement is UPS 1Z4W20F40492053589 on tracker 2gar5orm7t (Delivered 2026-07-20).",
+      "exception_detail": "Orphan Label Created row with blank AWB. Superseded by Delivered tracker 2gar5orm7t / UPS 1Z4W20F40492053589 (YZ packing LST-1 2026/7/17; includes LST-26-207 James Niven; delivered NYC 2026-07-20). Closed 2026-09-28 per Status FYI \u2014 do not invent AWB on this row.",
+      "contents_summary": "SUPERSEDED placeholder \u2014 LST-26-207 James Niven / LSTNY-SO-2026-00292. Real factory\u2192showroom movement is UPS 1Z4W20F40492053589 on tracker 2gar5orm7t (Delivered 2026-07-20).",
       "transit_days": 0,
-      "age_days": 83,
+      "age_days": 84,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-09-28 15:14:19.755722",
       "delay_band": "critical",
       "delay_reasons": [
         "exception",
-        "past_due=76d vs eta",
-        "past_due≥3d",
-        "stale_open=83d ≥ N=10 (lane N=10)"
+        "past_due=77d vs eta",
+        "past_due\u22653d",
+        "stale_open=84d \u2265 N=10 (lane N=10)"
       ]
     },
     {
@@ -3129,7 +3180,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Customer Delivery",
-      "lane_canonical": "showroom→customer",
+      "lane_canonical": "showroom\u2192customer",
       "origin": "L&S NYC Showroom",
       "destination": "Customer (Chaim Gulkowitz)",
       "ship_date": "2026-07-31",
@@ -3161,13 +3212,13 @@
       "exception_detail": null,
       "contents_summary": "Alterations redo / missing-items return pack. FedEx 875010057927. Gianna 2026-07-31: package scanned after FedEx pickup failed 2 days; client had escalated no-scan on prior drop. HD 0414. No MTMPro/ALT/LSH Delivery rows in ERP for this client.",
       "transit_days": 0,
-      "age_days": 60,
+      "age_days": 61,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-08-12 09:54:12.233395",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=60d ≥ N=7 (lane N=7)"
+        "stale_open=61d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -3176,7 +3227,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Imparato SpA, Nola IT",
       "destination": "YZ Tianjin (presumed)",
       "ship_date": "2026-09-21",
@@ -3206,15 +3257,15 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Ariston INV 4074/EXC dated 2026-09-21 (PDF not read). PRESUMED PO #122 / LSTNY-PO-2026-00114: Salters CKC A913-687 2y + Mantuano LST-122551-1 A913-724 5y / -2 P123-61 4y / -3 A913-734 4y (LST-26-400C..) — verify against invoice PDF. Forward AWB to Mandy.",
+      "contents_summary": "Ariston INV 4074/EXC dated 2026-09-21 (PDF not read). PRESUMED PO #122 / LSTNY-PO-2026-00114: Salters CKC A913-687 2y + Mantuano LST-122551-1 A913-724 5y / -2 P123-61 4y / -3 A913-734 4y (LST-26-400C..) \u2014 verify against invoice PDF. Forward AWB to Mandy.",
       "transit_days": 0,
-      "age_days": 8,
+      "age_days": 9,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00114",
       "modified": "2026-09-21 16:35:12.648085",
-      "delay_band": "alert",
+      "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=8d ≥ N=7 (lane N=7)"
+        "stale_open=9d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -3223,7 +3274,7 @@
       "carrier": "DHL",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Cotonificio Albini, IT",
       "destination": "Trung Tran, 462 Fairmount Ave, Chatham NJ (shirt maker)",
       "ship_date": "2026-09-21",
@@ -3253,15 +3304,15 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Albini Fattura A/27401 + packing B/29642 (ref. 27401), 14.40 m shirt cloth (Tom Kiki / Faud / Jiminez / Royal Twill / Chambray / Saqqara / Marcella / Zephir). USD 728.17 due. DHL Bespoke air DDP AWB 1955786184 — DHL notice 9/21 10:42 AM ET.",
+      "contents_summary": "Albini Fattura A/27401 + packing B/29642 (ref. 27401), 14.40 m shirt cloth (Tom Kiki / Faud / Jiminez / Royal Twill / Chambray / Saqqara / Marcella / Zephir). USD 728.17 due. DHL Bespoke air DDP AWB 1955786184 \u2014 DHL notice 9/21 10:42 AM ET.",
       "transit_days": 0,
-      "age_days": 8,
+      "age_days": 9,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00116",
       "modified": "2026-09-21 16:35:17.241895",
-      "delay_band": "alert",
+      "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=8d ≥ N=7 (lane N=7)"
+        "stale_open=9d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -3270,7 +3321,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Supplier",
       "destination": "YongZheng",
       "ship_date": "2026-07-24",
@@ -3302,13 +3353,13 @@
       "exception_detail": null,
       "contents_summary": "Saviero fabric PO #121281 + PO #125: LST-122373-2 (4y 105728), LST-122497-1 (4y 106008), LST-122498-1 (2y 105991). Invoice INV/2026/07/0965 HK$7580.80",
       "transit_days": 0,
-      "age_days": 67,
+      "age_days": 68,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-07-24 07:11:38.464351",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=67d ≥ N=7 (lane N=7)"
+        "stale_open=68d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -3317,7 +3368,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Customer Delivery",
-      "lane_canonical": "showroom→customer",
+      "lane_canonical": "showroom\u2192customer",
       "origin": "138 E 61st St Suite 201, New York NY",
       "destination": "Alex Gould (AGOULD7@nyc.rr.com)",
       "ship_date": "2026-09-23",
@@ -3347,14 +3398,16 @@
       "customer": "Alex Gould",
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Gianna → Alex Gould, FedEx 877657747278, tracking sent 9/23 3:42 PM ET (Gmail 1a0cfcaa8547e2bd). Contents not stated in the email — presumed finished garments/alteration for Alex Gould (Alterations - Legacy).",
+      "contents_summary": "Gianna \u2192 Alex Gould, FedEx 877657747278, tracking sent 9/23 3:42 PM ET (Gmail 1a0cfcaa8547e2bd). Contents not stated in the email \u2014 presumed finished garments/alteration for Alex Gould (Alterations - Legacy).",
       "transit_days": 0,
-      "age_days": 6,
+      "age_days": 7,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-09-26 07:40:36.593176",
-      "delay_band": "on-time",
-      "delay_reasons": []
+      "delay_band": "alert",
+      "delay_reasons": [
+        "stale_open=7d \u2265 N=7 (lane N=7)"
+      ]
     },
     {
       "name": "mu0l68141i",
@@ -3362,7 +3415,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "FI Fabrics (supplier)",
       "destination": "Yong Zheng Factory, China",
       "ship_date": "2026-07-06",
@@ -3392,15 +3445,15 @@
       "customer": "Sam Herzig",
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "N735031 Midnight Blue fabric, 4 yds — for LST-122470-1 Sam Herzig suit",
+      "contents_summary": "N735031 Midnight Blue fabric, 4 yds \u2014 for LST-122470-1 Sam Herzig suit",
       "transit_days": 0,
-      "age_days": 85,
+      "age_days": 86,
       "tracking_url": "https://www.fedex.com/fedextrack/?trknbr=467190231095",
       "purchase_order": null,
       "modified": "2026-07-06 20:06:55.531340",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=85d ≥ N=7 (lane N=7)"
+        "stale_open=86d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -3409,7 +3462,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Hong Kong",
       "destination": "YZ Tianjin",
       "ship_date": "2026-08-22",
@@ -3441,13 +3494,13 @@
       "exception_detail": null,
       "contents_summary": "Artex PO #121305 INV 26081653 HKD1408 (after disc) | 227779 Lievendag LST-122522-1 2y; 228236 Gordan LST-122524-1 2y | SF Express to YZ Tianjin | COD",
       "transit_days": 0,
-      "age_days": 38,
+      "age_days": 39,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-08-22 07:34:23.369453",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=38d ≥ N=7 (lane N=7)"
+        "stale_open=39d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -3456,7 +3509,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "L&S / mill",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-07-22",
@@ -3488,13 +3541,13 @@
       "exception_detail": null,
       "contents_summary": "Wool fabric FedEx AWB 874677688705 L&S->YZ Tianjin. Customs RELEASED 2026-07-28 (FedEx). Scheduled delivery date TBD/updated soon. Prior: Mandy needed exact length+width from commercial invoice (HD 0712).",
       "transit_days": 0,
-      "age_days": 69,
+      "age_days": 70,
       "tracking_url": "https://www.fedex.com/fedextrack/?trknbr=874677688705",
       "purchase_order": null,
       "modified": "2026-07-28 08:07:00.136308",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=69d ≥ N=7 (lane N=7)"
+        "stale_open=70d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -3503,7 +3556,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "New York, NY US",
       "destination": "Tianjin, CN",
       "ship_date": null,
@@ -3541,8 +3594,8 @@
       "modified": "2026-07-06 07:01:20.048570",
       "delay_band": "critical",
       "delay_reasons": [
-        "past_due=85d vs eta",
-        "past_due≥3d"
+        "past_due=86d vs eta",
+        "past_due\u22653d"
       ]
     },
     {
@@ -3551,7 +3604,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Fabric Italiano",
       "destination": "YZ Tianjin",
       "ship_date": "2026-09-04",
@@ -3581,15 +3634,15 @@
       "customer": "Effie Fribourg",
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "PO #121313 FI INV 260903 — Effie Fribourg LST-122534-1 N785002 Navy Cashmere 2.25y @ $434 = $976.50 + ship $25 = $1001.50 due CC. Ship-to YZ Tianjin. Draft PI LSTNY-PINV-2026-00376 (Melena). Gmail thread 1a064ba983bd8ead.",
+      "contents_summary": "PO #121313 FI INV 260903 \u2014 Effie Fribourg LST-122534-1 N785002 Navy Cashmere 2.25y @ $434 = $976.50 + ship $25 = $1001.50 due CC. Ship-to YZ Tianjin. Draft PI LSTNY-PINV-2026-00376 (Melena). Gmail thread 1a064ba983bd8ead.",
       "transit_days": 0,
-      "age_days": 25,
+      "age_days": 26,
       "tracking_url": "https://www.fedex.com/fedextrack/?trknbr=467190259764",
       "purchase_order": "LSTNY-PO-2026-00098",
       "modified": "2026-09-04 14:11:25.753486",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=25d ≥ N=7 (lane N=7)"
+        "stale_open=26d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -3598,7 +3651,7 @@
       "carrier": "SF Express",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Saviero Hong Kong",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-09-21",
@@ -3630,13 +3683,13 @@
       "exception_detail": null,
       "contents_summary": "PO 121333 Slater Nalen LST-122413-4 art 106280 Midnight Blue 2yd to YZ. Mill billed HKD 844.60. Forward AWB to Mandy.",
       "transit_days": 0,
-      "age_days": 8,
+      "age_days": 9,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00115",
       "modified": "2026-09-21 15:20:06.164102",
-      "delay_band": "alert",
+      "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=8d ≥ N=7 (lane N=7)"
+        "stale_open=9d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -3645,7 +3698,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Fabric Italiano (NY)",
       "destination": "YZ Tianjin",
       "ship_date": "2026-09-17",
@@ -3677,13 +3730,13 @@
       "exception_detail": null,
       "contents_summary": "Fabric Italiano PO #121323 INV 260917: Pete Hathaway LST-122552-1 N721042 2.5y (LST-26-377, SO 00566) + LST-122552-3 N721046 2.5y (LST-26-379, SO 00559) + LST-122552-4 N721041 2.5y (LST-26-380, SO 00560). Loro Piana. Ship-to YZ Tianjin. Forward AWB to Mandy.",
       "transit_days": 0,
-      "age_days": 12,
+      "age_days": 13,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00108",
       "modified": "2026-09-18 07:42:32.685625",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=12d ≥ N=7 (lane N=7)"
+        "stale_open=13d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -3692,7 +3745,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Saviero HK",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-08-19",
@@ -3722,15 +3775,15 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "Saviero PO #125 / LSTNY-PO-2026-00084 — Ken Nelson LST-122518-1 art 105782 Navy 4.5y — INV HK$5232.40 card-on-file — SF Express AWB SF1532353184281 dispatched 2026-08-19. FORWARD AWB TO MANDY. Replacement after Lana #121301 cancel.",
+      "contents_summary": "Saviero PO #125 / LSTNY-PO-2026-00084 \u2014 Ken Nelson LST-122518-1 art 105782 Navy 4.5y \u2014 INV HK$5232.40 card-on-file \u2014 SF Express AWB SF1532353184281 dispatched 2026-08-19. FORWARD AWB TO MANDY. Replacement after Lana #121301 cancel.",
       "transit_days": 0,
-      "age_days": 41,
+      "age_days": 42,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-08-19 07:43:30.464811",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=41d ≥ N=7 (lane N=7)"
+        "stale_open=42d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -3739,7 +3792,7 @@
       "carrier": "DHL",
       "status": "In Transit",
       "lane_raw": "mill_to_yz",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Norwalk CT / USA",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-09-28",
@@ -3769,12 +3822,57 @@
       "customer": null,
       "exception_flag": false,
       "exception_detail": null,
-      "contents_summary": "K&H Invoice 46218 2026-09-28 USD 1266.27 (shared — not split): Pogson LST-122570-4 art 44757 2y $264; LST-122570-1 art 44724 2.5y $330; LST-122570-3 art 44720 2y $264; Currie LST-122386-2 art 44748 2.5y $330; Shipping $78.27. Card on file Amount Due $0.00. Ship YZ Ashley LST. Mill refs Draft PO #121339 (Pogson) + #12540 Currie line 44748. Email carl@ Invoice 46218 2:11pm ET.",
+      "contents_summary": "K&H Invoice 46218 2026-09-28 USD 1266.27 (shared \u2014 not split): Pogson LST-122570-4 art 44757 2y $264; LST-122570-1 art 44724 2.5y $330; LST-122570-3 art 44720 2y $264; Currie LST-122386-2 art 44748 2.5y $330; Shipping $78.27. Card on file Amount Due $0.00. Ship YZ Ashley LST. Mill refs Draft PO #121339 (Pogson) + #12540 Currie line 44748. Email carl@ Invoice 46218 2:11pm ET.",
       "transit_days": 0,
-      "age_days": 1,
+      "age_days": 2,
       "tracking_url": null,
       "purchase_order": "LSTNY-PO-2026-00133",
       "modified": "2026-09-28 15:47:21.251715",
+      "delay_band": "on-time",
+      "delay_reasons": []
+    },
+    {
+      "name": "quqn3aqb0g",
+      "tracking_number": "1Z4W20F46696050815",
+      "carrier": "UPS",
+      "status": "In Transit",
+      "lane_raw": "Factory Inbound",
+      "lane_canonical": "factory\u2192showroom",
+      "origin": "YongZheng Tianjin",
+      "destination": "138 E 61st Street Suite 201, New York NY 10065",
+      "ship_date": "2026-09-30",
+      "eta_original": null,
+      "eta_current": null,
+      "eta_source": "house_avg",
+      "eta_slip_days": 0,
+      "delivered_date": null,
+      "last_scan_date": null,
+      "last_scan_text": null,
+      "last_scan_location": null,
+      "position_label": "YongZheng Tianjin",
+      "position_source": "origin_fallback",
+      "progress": 0.55,
+      "from_node": "Factory (YZ)",
+      "to_node": "Showroom (NYC)",
+      "customs_flag": false,
+      "customs_entry_date": null,
+      "customs_cleared_date": null,
+      "customs_dwell_days": 0,
+      "sales_order": null,
+      "yz_production_tracker": null,
+      "has_so": false,
+      "has_yz": false,
+      "supplier": null,
+      "fabric_mill": null,
+      "customer": null,
+      "exception_flag": false,
+      "exception_detail": "No live UPS scan yet (2026-09-30 ~6:30am ET). ETA est. from house avg factory\u2192showroom 4\u20138 days: about Oct 4\u20138. Invoice date 2026-09-30. Source: Carl packing list xls.",
+      "contents_summary": "YZ ship pack LST-1\u6765\u6599 invoice 2026-09-30. UPS 1Z4W20F46696050815. 14 orders / 17 pcs (j7 p8 v2). Effie Fribourg LST-26-363CW/LST-122534-1 j1; Kevin Honeycut LST-26-365C/LST-122535-1 j1 p1 v1; Michael Chiaramonte LST-26-366/122539-1 j1, LST-26-367/122539-2 p1, LST-26-368/122539-3 j1; Steve Stallings LST-26-370C/122541-2 p1, LST-26-371C/122541-1 v1; Casey Tatham LST-26-386/122536-1 j1 p1, LST-26-387/122536-2 p1, LST-26-388/122536-3 p1; Paul Aguggia LST-26-403/122558-1 j1, LST-26-404/122558-2 j1, LST-26-405C/122558-3 p1, LST-26-406C/122558-4 p1. Not Delivered. Casey 122536-4 not on this pack.",
+      "transit_days": 0,
+      "age_days": 0,
+      "tracking_url": null,
+      "purchase_order": null,
+      "modified": "2026-09-30 06:28:50.684669",
       "delay_band": "on-time",
       "delay_reasons": []
     },
@@ -3784,7 +3882,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Mill to YZ",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": "YZ Tianjin",
       "ship_date": "2026-09-09",
@@ -3796,7 +3894,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -3816,13 +3914,13 @@
       "exception_detail": null,
       "contents_summary": "Ariston/Imparato INV 3892/EXC dated 2026-09-09. FedEx 876938570370. LST-122540-1 Modi Rosenfeld P144-9 100% WOOL 3.70 ml @ $86 = $318.20 + transport $52 + insurance $3.18 = USD $373.38 due (CC). Mill PO 121318 / Desk draft LSTNY-PO-2026-00104. PI LSTNY-PINV-2026-00398. Ship YZ Tianjin.",
       "transit_days": 0,
-      "age_days": 20,
+      "age_days": 21,
       "tracking_url": "https://www.fedex.com/apps/fedextrack?trknbr=876938570370",
       "purchase_order": "LSTNY-PO-2026-00104",
       "modified": "2026-09-11 10:10:44.836854",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=20d ≥ N=7 (lane N=7)"
+        "stale_open=21d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -3831,7 +3929,7 @@
       "carrier": "DHL",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Kemp and Hewitt LLC Norwalk CT",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-09-08",
@@ -3863,13 +3961,13 @@
       "exception_detail": null,
       "contents_summary": "Kemp INV 46032 / PO 121317 / LSTNY-PO-2026-00102 / LSTNY-PINV-2026-00393 | Michael Chiaramonte jacket LST-122539-3 art 44731 Glenroy Navy 2.25yd | YZ order LST-26-368 | $297 + DHL $59.47 = $356.47 card at invoicing | DHL AWB 3749370800 to YZ Ashley LST",
       "transit_days": 0,
-      "age_days": 21,
+      "age_days": 22,
       "tracking_url": "https://www.dhl.com/us-en/home/tracking.html?tracking-id=3749370800",
       "purchase_order": "LSTNY-PO-2026-00102",
       "modified": "2026-09-10 09:56:19.707877",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=21d ≥ N=7 (lane N=7)"
+        "stale_open=22d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -3878,7 +3976,7 @@
       "carrier": "DHL",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -3890,7 +3988,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -3923,7 +4021,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Artextile HK",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-07-30",
@@ -3955,13 +4053,13 @@
       "exception_detail": null,
       "contents_summary": "Artextile fabric 227359 (sub 227349) 4Y for Michael Stern LST-122506-1 / PO 121288 / INV 26072148 HKD1736. Ship to YongZheng Tianjin.",
       "transit_days": 0,
-      "age_days": 61,
+      "age_days": 62,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-07-31 07:00:36.303453",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=61d ≥ N=7 (lane N=7)"
+        "stale_open=62d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -3970,7 +4068,7 @@
       "carrier": "DHL",
       "status": "In Transit",
       "lane_raw": "Factory Inbound",
-      "lane_canonical": "factory→showroom",
+      "lane_canonical": "factory\u2192showroom",
       "origin": "Cotonificio Albini IT",
       "destination": "Trung Tran Chatham NJ",
       "ship_date": "2026-07-30",
@@ -3997,18 +4095,18 @@
       "has_yz": false,
       "supplier": null,
       "fabric_mill": "Albini Group",
-      "customer": null,
+      "customer": "",
       "exception_flag": false,
       "exception_detail": null,
       "contents_summary": "Albini shirt cloth INV A23578 ref 23578: FM37636 Hampton 4MT + FM55586 Downing 2MT. Ship to TRUNG TRAN 462 Fairmount Ave Chatham NJ. Total USD 345.66 DDP.",
       "transit_days": 0,
-      "age_days": 61,
+      "age_days": 62,
       "tracking_url": "https://www.dhl.com/us-en/home/tracking.html?tracking-id=1955751372",
       "purchase_order": null,
       "modified": "2026-07-31 07:00:36.320752",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=61d ≥ N=10 (lane N=10)"
+        "stale_open=62d \u2265 N=10 (lane N=10)"
       ]
     },
     {
@@ -4017,7 +4115,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4029,7 +4127,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4062,7 +4160,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4074,7 +4172,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4107,7 +4205,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4119,7 +4217,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4152,7 +4250,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4164,7 +4262,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4197,7 +4295,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4209,7 +4307,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4242,7 +4340,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4254,7 +4352,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4287,7 +4385,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4299,7 +4397,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4332,7 +4430,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4344,7 +4442,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4377,7 +4475,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4389,7 +4487,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4422,7 +4520,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4434,7 +4532,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4467,7 +4565,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4479,7 +4577,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4512,7 +4610,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4524,7 +4622,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4557,7 +4655,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4569,7 +4667,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4602,7 +4700,7 @@
       "carrier": "Freight-Other",
       "status": "Exception",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": "2026-07-03",
@@ -4614,7 +4712,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.5,
       "from_node": "Mill",
@@ -4630,18 +4728,18 @@
       "supplier": "Artextile International",
       "fabric_mill": "Artextile",
       "customer": null,
-      "exception_flag": false,
+      "exception_flag": true,
       "exception_detail": "",
-      "contents_summary": "Artextile PO #121269 — 8 yds fabric, SF Express SF1563924412534, shipped 2026-07-03. Ship-to: YZ Tianjin. Garment 1: LST-122473-1 Kiameer Johnson, fabric #226008 Brown Mesh 4y. Garment 2: LST-122474-1 Ki Cooley-Winters, fabric #227311 Blue Plaid 4y. Invoices: HKD 2,232 + HKD 1,586 = HKD 3,818 total.",
+      "contents_summary": "Artextile PO #121269 \u2014 8 yds fabric, SF Express SF1563924412534, shipped 2026-07-03. Ship-to: YZ Tianjin. Garment 1: LST-122473-1 Kiameer Johnson, fabric #226008 Brown Mesh 4y. Garment 2: LST-122474-1 Ki Cooley-Winters, fabric #227311 Blue Plaid 4y. Invoices: HKD 2,232 + HKD 1,586 = HKD 3,818 total.",
       "transit_days": 0,
-      "age_days": 88,
+      "age_days": 89,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-07-04 12:02:42.452130",
       "delay_band": "critical",
       "delay_reasons": [
         "exception",
-        "stale_open=88d ≥ N=7 (lane N=7)"
+        "stale_open=89d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -4650,7 +4748,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4662,7 +4760,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4695,7 +4793,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4707,7 +4805,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4740,7 +4838,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4752,7 +4850,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4785,7 +4883,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4797,7 +4895,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4830,7 +4928,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": null,
       "destination": null,
       "ship_date": null,
@@ -4842,7 +4940,7 @@
       "last_scan_date": null,
       "last_scan_text": null,
       "last_scan_location": null,
-      "position_label": "unknown — no scan",
+      "position_label": "unknown \u2014 no scan",
       "position_source": "unknown",
       "progress": 0.55,
       "from_node": "Mill",
@@ -4873,23 +4971,23 @@
       "name": "t2jimqfson",
       "tracking_number": "1Z4W20F46695980054",
       "carrier": "UPS",
-      "status": "Delivery Attempted",
+      "status": "Out for Delivery",
       "lane_raw": "Factory Inbound",
-      "lane_canonical": "factory→showroom",
+      "lane_canonical": "factory\u2192showroom",
       "origin": "YongZheng Tianjin",
       "destination": "138 E 61st Street Suite 201, New York NY 10065",
       "ship_date": "2026-09-24",
       "eta_original": null,
       "eta_current": "2026-09-29",
-      "eta_source": null,
+      "eta_source": "live",
       "eta_slip_days": 0,
       "delivered_date": null,
-      "last_scan_date": null,
-      "last_scan_text": null,
-      "last_scan_location": null,
-      "position_label": "YongZheng Tianjin",
-      "position_source": "origin_fallback",
-      "progress": 0.82,
+      "last_scan_date": "2026-09-29 07:34:00",
+      "last_scan_text": "Out for Delivery",
+      "last_scan_location": "New York, NY",
+      "position_label": "New York, NY",
+      "position_source": "last_scan_location",
+      "progress": 0.88,
       "from_node": "Factory (YZ)",
       "to_node": "Showroom (NYC)",
       "customs_flag": false,
@@ -4904,17 +5002,17 @@
       "fabric_mill": null,
       "customer": null,
       "exception_flag": true,
-      "exception_detail": "[2026-09-28 ~2:35pm ET live UPS mobile] Delivery Attempted — business closed; second attempt next business day. ETA Tue 2026-09-29 by 10:30 A.M. ET. Import fees already paid. Source: Carl screenshot. Prior: UPS import fees prepaid 2026-09-24 $101.64; was scheduled Mon 2026-09-28.",
+      "exception_detail": "[2026-09-29 ~12:33pm ET live UPS] Out for Delivery \u2014 New York NY 7:34am ET. ETA Tue 2026-09-29 by 10:30 A.M. ET (window passed; still OFD not Delivered). Prior: Delivery Attempted Mon 2026-09-28 9:55am business closed. Service UPS Worldwide Express. Source: ups.com live track.",
       "contents_summary": "YZ ship pack LST-1 9.24 showroom. UPS 1Z4W20F46695980054. Chip Kaye LST-122504-1 / LST-26-320C suit; Vincent Sanchez LST-122520-1 / LST-26-349C suit; Stephen Pipkin LST-122533-1 / LST-26-364C; Christos Livanos LST-122476-1 / LST-26-385C suit; Lonnie Williams SDC-26-020C (SDC, no MTMPro). Totals j3 p1 tux-coat 2 tux-pant 2. Not client Delivered.",
       "transit_days": 0,
-      "age_days": 5,
+      "age_days": 6,
       "tracking_url": null,
       "purchase_order": null,
-      "modified": "2026-09-28 14:38:11.899852",
+      "modified": "2026-09-29 12:34:41.305188",
       "delay_band": "critical",
       "delay_reasons": [
-        "Delivery Attempted",
-        "exception"
+        "exception",
+        "past_due=1d vs eta"
       ]
     },
     {
@@ -4923,7 +5021,7 @@
       "carrier": "Freight-Other",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Saviero Textiles HK",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-08-28",
@@ -4955,13 +5053,13 @@
       "exception_detail": null,
       "contents_summary": "PO #121311 Saviero SF Express SF1532353184775 | Daniel Nottes LST-122530-4/5/6 arts 105708/105771/105715 4y each | INV HKD 13832.90 card-on-file | ship-to YZ",
       "transit_days": 0,
-      "age_days": 32,
+      "age_days": 33,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-08-28 09:23:20.777155",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=32d ≥ N=7 (lane N=7)"
+        "stale_open=33d \u2265 N=7 (lane N=7)"
       ]
     },
     {
@@ -4970,7 +5068,7 @@
       "carrier": "FedEx",
       "status": "In Transit",
       "lane_raw": "Inbound Fabric",
-      "lane_canonical": "mill→factory",
+      "lane_canonical": "mill\u2192factory",
       "origin": "Fabric Italiano / FI Fabrics",
       "destination": "YongZheng Tianjin",
       "ship_date": "2026-08-27",
@@ -5002,13 +5100,13 @@
       "exception_detail": null,
       "contents_summary": "PO #121309 FI INV 260827 FedEx 467190255037 | Daniel Lievendag LST-122529-1 N738028 4y @ USD 213 = 852 + ship 25 = USD 877 due CC | ship-to YZ",
       "transit_days": 0,
-      "age_days": 33,
+      "age_days": 34,
       "tracking_url": null,
       "purchase_order": null,
       "modified": "2026-08-28 09:23:21.169406",
       "delay_band": "critical",
       "delay_reasons": [
-        "stale_open=33d ≥ N=7 (lane N=7)"
+        "stale_open=34d \u2265 N=7 (lane N=7)"
       ]
     }
   ]
