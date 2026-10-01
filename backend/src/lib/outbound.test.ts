@@ -18,7 +18,7 @@ describe("dispatchSms TEST gate", () => {
     });
     expect(result.held).toBe(true);
     expect(result.reason).toBe("test_mode_not_allowlisted");
-    expect(String(result.sid || "").startsWith("held_")).toBe(true);
+    expect(result.sid).toBeNull();
   });
 
   test("allowlisted numbers are not held for allowlist reasons", async () => {

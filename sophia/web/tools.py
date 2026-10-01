@@ -32,6 +32,61 @@ logger = logging.getLogger("sophia.tools")
 TOOL_REGISTRY: dict[str, Any] = {}
 
 
+def sms_status_callback_url() -> str:
+    base = (settings.HOUSE_APP_URL or "https://app.lstailors.com").rstrip("/")
+    return f"{base}/api/sofia/sms/status"
+
+
+async def send_tracked_sms(to: str, body: str, *, context_tag: str = "sofia_voice") -> dict:
+    """Twilio accept is not delivery. Receipts land on the house status callback."""
+    client = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+    msg = client.messages.create(
+        body=body,
+        from_=settings.TWILIO_PHONE_NUMBER,
+        to=to,
+        status_callback=sms_status_callback_url(),
+    )
+    status = str(getattr(msg, "status", "") or "").lower() or "queued"
+    accepted = bool(getattr(msg, "sid", None)) and status not in ("failed", "undelivered")
+    await _log_outbound_sms(to, body, str(msg.sid or ""), status, context_tag, accepted)
+    return {"accepted": accepted, "sid": msg.sid, "delivery_status": status}
+
+
+async def _log_outbound_sms(
+    phone: str,
+    body: str,
+    sid: str,
+    delivery_status: str,
+    context_tag: str,
+    accepted: bool,
+) -> None:
+    if not settings.ERPNEXT_URL or not sid:
+        return
+    from datetime import datetime as dt
+
+    doc = {
+        "doctype": "LSH SMS Message",
+        "client_phone": phone,
+        "direction": "outbound",
+        "content": body,
+        "body": body,
+        "twilio_sid": sid,
+        "status": "sent" if accepted else "failed",
+        "delivery_status": delivery_status,
+        "context_tag": context_tag,
+        "sender": settings.TWILIO_PHONE_NUMBER,
+        "timestamp": dt.now(NYC).strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    try:
+        await erp_post("resource/LSH SMS Message", doc)
+    except Exception:
+        doc.pop("delivery_status", None)
+        try:
+            await erp_post("resource/LSH SMS Message", doc)
+        except Exception as e:
+            logger.warning(f"SMS log skipped for {sid}: {e}")
+
+
 def prep_note(service_type: str) -> str:
     """A friendly 'what to bring' line tailored to the appointment type.
     Used in both the booking confirmation and the day-before reminder."""
@@ -213,27 +268,15 @@ async def book_appointment(
         except Exception:
             pass
 
-        # ── Success response — built before any secondary operations ──────────
-        success_response = {
-            "booked": True,
-            "appointment": appt_name,
-            "message": (
-                f"You are all set, {customer_name}. Your {service_type} is confirmed for "
-                f"{appt_display} with {tailor}. I've sent a confirmation to your phone. "
-                f"We look forward to seeing you at 138 East 61st Street, Suite 201."
-            ),
-        }
-
-        # ── Secondary operations — none of these can affect the return value ──
+        # ── Secondary operations — a text failure must not un-book the slot ──
         try:
             await erp_ensure_customer(customer_name, phone, customer_email)
         except Exception as e:
             logger.warning(f"erp_ensure_customer failed: {e}")
 
-        # SMS confirmation (only for real phone numbers, not email addresses)
+        sms_clause = ""
         if phone and phone != "unknown" and "@" not in phone:
             try:
-                twilio_client = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
                 sms_body = (
                     f"L&S Custom Tailors — your {service_type} is confirmed for "
                     f"{appt_display} with {tailor}. "
@@ -241,31 +284,43 @@ async def book_appointment(
                     + prep_note(service_type)
                     + f"\nQuestions? Reply or call (212) 752-1638."
                 )
-                twilio_client.messages.create(
-                    body=sms_body,
-                    from_=settings.TWILIO_PHONE_NUMBER,
-                    to=phone,
-                )
-                await create_communication_log(
-                    communication_type="SMS",
-                    direction="Outbound",
-                    caller_phone=phone,
-                    content=sms_body,
-                    mode="system",
-                    appointment_name=appt_name,
-                )
-                # Second message: calendar link on its own so iOS/Android renders it as a tap
-                if cal_link:
-                    import asyncio as _aio
-                    await _aio.sleep(1.5)
-                    twilio_client.messages.create(
-                        body=f"📅 Add to calendar: {cal_link}",
-                        from_=settings.TWILIO_PHONE_NUMBER,
-                        to=phone,
+                sms = await send_tracked_sms(phone, sms_body, context_tag="sofia_voice_booking")
+                if sms["accepted"]:
+                    sms_clause = " I've sent a confirmation to your phone."
+                    await create_communication_log(
+                        communication_type="SMS",
+                        direction="Outbound",
+                        caller_phone=phone,
+                        content=sms_body,
+                        mode="system",
+                        appointment_name=appt_name,
                     )
-                logger.info(f"Booking confirmation SMS sent to {phone}")
+                    if cal_link:
+                        import asyncio as _aio
+                        await _aio.sleep(1.5)
+                        await send_tracked_sms(
+                            phone,
+                            f"📅 Add to calendar: {cal_link}",
+                            context_tag="sofia_voice_booking_cal",
+                        )
+                    logger.info(f"Booking confirmation SMS accepted for {phone} sid={sms['sid']}")
+                else:
+                    sms_clause = " I wasn't able to text a confirmation — the shop has the booking."
+                    logger.warning(f"Booking confirmation SMS not accepted for {phone}: {sms}")
             except Exception as sms_err:
+                sms_clause = " I wasn't able to text a confirmation — the shop has the booking."
                 logger.warning(f"SMS confirmation failed: {sms_err}")
+
+        success_response = {
+            "booked": True,
+            "appointment": appt_name,
+            "sms_accepted": sms_clause.startswith(" I've sent"),
+            "message": (
+                f"You are all set, {customer_name}. Your {service_type} is confirmed for "
+                f"{appt_display} with {tailor}.{sms_clause} "
+                f"We look forward to seeing you at 138 East 61st Street, Suite 201."
+            ),
+        }
 
         # Email confirmation
         if customer_email:
@@ -686,12 +741,13 @@ async def send_internal_sms(
     if not recipient_number:
         return {"error": f"No number found for {recipient_name}. Available: {', '.join(staff_dir.keys())}"}
     try:
-        client = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-        msg = client.messages.create(
-            body=f"[SOPHIA] From {_caller}:\n{message}",
-            from_=settings.TWILIO_PHONE_NUMBER,
-            to=recipient_number,
+        sms = await send_tracked_sms(
+            recipient_number,
+            f"[SOPHIA] From {_caller}:\n{message}",
+            context_tag="sofia_voice_internal",
         )
+        if not sms["accepted"]:
+            return {"sent": False, "error": "Twilio did not accept that text.", "delivery_status": sms["delivery_status"]}
         await create_communication_log(
             communication_type="SMS",
             direction="Outbound",
@@ -699,7 +755,7 @@ async def send_internal_sms(
             content=message,
             mode="internal",
         )
-        return {"sent": True, "to": recipient_name, "sid": msg.sid}
+        return {"sent": True, "accepted": True, "to": recipient_name, "sid": sms["sid"], "delivery_status": sms["delivery_status"]}
     except Exception as e:
         logger.error(f"send_internal_sms: {e}")
         return {"error": "Failed to send the message."}
@@ -727,12 +783,9 @@ async def send_customer_sms(
     else:
         to_number = customer_phone
     try:
-        client = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-        msg = client.messages.create(
-            body=message,
-            from_=settings.TWILIO_PHONE_NUMBER,
-            to=to_number,
-        )
+        sms = await send_tracked_sms(to_number, message, context_tag="sofia_voice_customer")
+        if not sms["accepted"]:
+            return {"sent": False, "error": "Twilio did not accept that text.", "delivery_status": sms["delivery_status"]}
         await create_communication_log(
             communication_type="SMS",
             direction="Outbound",
@@ -740,7 +793,14 @@ async def send_customer_sms(
             content=message,
             mode="internal",
         )
-        return {"sent": True, "to": to_number, "name": customer_name, "sid": msg.sid}
+        return {
+            "sent": True,
+            "accepted": True,
+            "to": to_number,
+            "name": customer_name,
+            "sid": sms["sid"],
+            "delivery_status": sms["delivery_status"],
+        }
     except Exception as e:
         logger.error(f"send_customer_sms: {e}")
         return {"error": "Failed to send the SMS."}
@@ -774,12 +834,7 @@ async def create_follow_up(
         num = staff_dir.get(assigned_to)
         if num:
             try:
-                client = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-                client.messages.create(
-                    body=f"📝 SOPHIA task:\n{content}",
-                    from_=settings.TWILIO_PHONE_NUMBER,
-                    to=num,
-                )
+                await send_tracked_sms(num, f"📝 SOPHIA task:\n{content}", context_tag="sofia_voice_task")
             except Exception:
                 pass
     return {"created": True, "message": f"Follow-up noted for {customer_name}."}
@@ -893,18 +948,21 @@ async def send_payment_link(
         if not link_url:
             return {"error": "Square returned no link URL."}
 
-        # Text the link to the customer
-        twilio_client = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
         amount_str = f"${amount_cents / 100:.2f}" if amount_cents else ""
         sms_body = (
             f"L&S Custom Tailors — {f'your balance for {order_number} is {amount_str}. ' if order_number else ''}"
             f"Secure payment link: {link_url}"
         )
-        twilio_client.messages.create(
-            body=sms_body,
-            from_=settings.TWILIO_PHONE_NUMBER,
-            to=phone,
-        )
+        sms = await send_tracked_sms(phone, sms_body, context_tag="sofia_voice_pay_link")
+        if not sms["accepted"]:
+            logger.warning(f"Payment link created but SMS not accepted for {phone}: {link_url}")
+            return {
+                "sent": False,
+                "link": link_url,
+                "to": phone,
+                "delivery_status": sms["delivery_status"],
+                "error": "The payment link exists, but the text was not accepted.",
+            }
         await create_communication_log(
             communication_type="SMS",
             direction="Outbound",
@@ -912,12 +970,15 @@ async def send_payment_link(
             content=sms_body,
             mode="internal",
         )
-        logger.info(f"Payment link sent to {phone}: {link_url}")
+        logger.info(f"Payment link text accepted for {phone}: {link_url}")
         return {
             "sent": True,
+            "accepted": True,
             "link": link_url,
             "to": phone,
-            "message": f"Payment link sent to {customer_name or phone}.",
+            "sid": sms["sid"],
+            "delivery_status": sms["delivery_status"],
+            "message": f"Payment link text accepted for {customer_name or phone}. Delivery is not confirmed yet.",
         }
     except httpx.HTTPStatusError as e:
         logger.error(f"send_payment_link Square error: {e.response.status_code} {e.response.text[:200]}")

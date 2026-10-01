@@ -21,6 +21,8 @@ interface Conversation {
     direction: "inbound" | "outbound";
     created_at?: string;
     timestamp?: string;
+    status?: string | null;
+    delivery_status?: string | null;
   };
   messageCount: number;
   sofiaActive: boolean;
@@ -34,6 +36,16 @@ interface Message {
   body: string;
   created_at: string;
   sender?: string;
+  status?: string | null;
+  delivery_status?: string | null;
+}
+
+function deliveryLabel(status?: string | null, delivery?: string | null): "delivered" | "failed" | "accepted" | null {
+  const raw = String(delivery || status || "").toLowerCase();
+  if (raw === "delivered") return "delivered";
+  if (raw === "failed" || raw === "undelivered") return "failed";
+  if (raw === "sent" || raw === "queued" || raw === "accepted" || raw === "sending") return "accepted";
+  return null;
 }
 
 interface SofiaTask {
@@ -124,8 +136,14 @@ function ThreadItem({
             </span>
           </div>
           <div className="flex items-center gap-1.5">
-            {conv.lastMessage.direction === "outbound" && (
-              <CheckCheck className="w-3 h-3 text-brass-light/50 flex-shrink-0" />
+            {conv.lastMessage.direction === "outbound" && deliveryLabel(conv.lastMessage.status, conv.lastMessage.delivery_status) === "delivered" && (
+              <CheckCheck className="w-3 h-3 text-brass-light/50 flex-shrink-0" aria-label="Delivered" />
+            )}
+            {conv.lastMessage.direction === "outbound" && deliveryLabel(conv.lastMessage.status, conv.lastMessage.delivery_status) === "failed" && (
+              <AlertCircle className="w-3 h-3 text-red-300/80 flex-shrink-0" aria-label="Not delivered" />
+            )}
+            {conv.lastMessage.direction === "outbound" && deliveryLabel(conv.lastMessage.status, conv.lastMessage.delivery_status) === "accepted" && (
+              <Clock className="w-3 h-3 text-cream-dim flex-shrink-0" aria-label="Accepted, not confirmed delivered" />
             )}
             <span className="text-xs text-cream-dim truncate">{conv.lastMessage.body}</span>
             {conv.unread && (
@@ -176,6 +194,8 @@ function MessageBubble({ msg }: { msg: Message }) {
           isOut ? "text-right" : "text-left"
         )}>
           {formatFull(msg.created_at)}
+          {isOut && deliveryLabel(msg.status, msg.delivery_status) === "failed" ? " · Not delivered" : ""}
+          {isOut && String(msg.delivery_status || "").toLowerCase() === "delivered" ? " · Delivered" : ""}
         </div>
       </div>
     </div>

@@ -432,6 +432,8 @@ export async function listSmsMessagesFiltered(opts: {
       "timestamp",
       "twilio_sid",
       "status",
+      "delivery_status",
+      "error_message",
       "reference_doctype",
       "reference_name",
       "context_tag",

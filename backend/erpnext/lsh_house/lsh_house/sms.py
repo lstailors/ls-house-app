@@ -14,6 +14,20 @@ ALLOWED_LOG_STATUSES = {"received", "sent", "failed"}
 # Twilio create-message statuses that mean the message was accepted and is in flight.
 TWILIO_ACCEPTED_STATUSES = {"queued", "accepted", "scheduled", "sending", "sent", "delivered"}
 
+# Later callbacks must not walk this backward. failed/undelivered are terminal.
+TWILIO_STATUS_RANK = {
+    "accepted": 1,
+    "queued": 1,
+    "scheduled": 1,
+    "sending": 2,
+    "sent": 3,
+    "delivered": 4,
+    "undelivered": 5,
+    "failed": 5,
+}
+
+HOUSE_SMS_STATUS_URL = "https://app.lstailors.com/api/sofia/sms/status"
+
 
 def normalize_log_status(status):
     value = cstr(status).strip().lower()
@@ -22,6 +36,78 @@ def normalize_log_status(status):
     if value in TWILIO_ACCEPTED_STATUSES:
         return "sent"
     return "failed"
+
+
+def _has_delivery_status_field():
+    try:
+        return frappe.get_meta("LSH SMS Message").has_field("delivery_status")
+    except Exception:
+        return False
+
+
+def next_delivery_patch(current_status, current_delivery, incoming, error_code=None, error_message=None):
+    """Mirror backend/src/lib/sms-status.ts. None means ignore."""
+    incoming = cstr(incoming).strip().lower()
+    incoming_rank = TWILIO_STATUS_RANK.get(incoming)
+    if incoming_rank is None:
+        return None
+    prev = cstr(current_delivery).strip().lower()
+    prev_rank = TWILIO_STATUS_RANK.get(prev)
+    if prev_rank is None:
+        status = cstr(current_status).strip().lower()
+        if status == "failed":
+            prev_rank = TWILIO_STATUS_RANK["failed"]
+        elif status == "sent":
+            prev_rank = TWILIO_STATUS_RANK["sent"]
+        else:
+            prev_rank = 0
+    if incoming_rank < prev_rank:
+        return None
+    failed = incoming in ("failed", "undelivered")
+    err = ""
+    if failed:
+        bits = [cstr(error_code).strip(), cstr(error_message).strip()]
+        err = ": ".join(bit for bit in bits if bit) or f"Twilio {incoming}"
+    return {
+        "status": "failed" if failed else "sent",
+        "delivery_status": incoming,
+        "error_message": err,
+    }
+
+
+def apply_delivery_receipt(message_sid, message_status, error_code=None, error_message=None):
+    """Update every LSH SMS Message row for this Twilio SID. Returns how many changed."""
+    sid = cstr(message_sid).strip()
+    if not sid:
+        return 0
+    fields = ["name", "status"]
+    if _has_delivery_status_field():
+        fields.append("delivery_status")
+    rows = frappe.get_all(
+        "LSH SMS Message",
+        filters={"twilio_sid": sid},
+        fields=fields,
+        limit=5,
+    )
+    updated = 0
+    for row in rows:
+        patch = next_delivery_patch(
+            row.get("status"),
+            row.get("delivery_status"),
+            message_status,
+            error_code,
+            error_message,
+        )
+        if not patch:
+            continue
+        values = {"status": patch["status"], "error_message": patch["error_message"]}
+        if _has_delivery_status_field():
+            values["delivery_status"] = patch["delivery_status"]
+        frappe.db.set_value("LSH SMS Message", row.name, values, update_modified=True)
+        updated += 1
+    if updated:
+        frappe.db.commit()
+    return updated
 
 
 def _ops_mode():
@@ -89,25 +175,29 @@ def _log_sms_message(
     twilio_sid=None,
     error_message=None,
 ):
-    sms_message = frappe.get_doc(
-        {
-            "doctype": "LSH SMS Message",
-            "client_phone": phone,
-            "client_name": client_name,
-            "direction": "outbound",
-            "content": message,
-            "body": message,
-            "sender": sender,
-            "timestamp": now_datetime(),
-            "twilio_sid": twilio_sid,
-            "status": normalize_log_status(status),
-            "customer": customer,
-            "reference_doctype": reference_doctype,
-            "reference_name": reference_name,
-            "context_tag": context_tag,
-            "error_message": error_message,
-        }
-    )
+    doc = {
+        "doctype": "LSH SMS Message",
+        "client_phone": phone,
+        "client_name": client_name,
+        "direction": "outbound",
+        "content": message,
+        "body": message,
+        "sender": sender,
+        "timestamp": now_datetime(),
+        "twilio_sid": twilio_sid,
+        # `status` is the coarse Select (received/sent/failed).
+        # `delivery_status` keeps Twilio's real word: queued is not delivered.
+        "status": normalize_log_status(status),
+        "customer": customer,
+        "reference_doctype": reference_doctype,
+        "reference_name": reference_name,
+        "context_tag": context_tag,
+        "error_message": error_message,
+    }
+    if _has_delivery_status_field():
+        raw = cstr(status).strip().lower()
+        doc["delivery_status"] = raw if raw else doc["status"]
+    sms_message = frappe.get_doc(doc)
     sms_message.insert(ignore_permissions=True)
     return sms_message
 
@@ -219,9 +309,11 @@ def send_and_log(
         # to deliver is indistinguishable from one the client read.
         #
         # Blank setting = no callback, same behaviour as before.
+        # Blank setting used to mean "no receipt", so a queued accept stayed
+        # indistinguishable from a handset delivery. Default to the house app.
         status_callback = cstr(
             getattr(settings, "twilio_status_callback_url", "") or ""
-        ).strip()
+        ).strip() or HOUSE_SMS_STATUS_URL
         if status_callback:
             payload["StatusCallback"] = status_callback
 
@@ -324,6 +416,7 @@ def send_customer_sms(
         "context_tag": sms_message.get("context_tag"),
         "twilio_sid": sms_message.get("twilio_sid"),
         "status": status,
+        "delivery_status": sms_message.get("delivery_status") or status,
         "error_message": sms_message.get("error_message"),
     }
 
@@ -410,11 +503,12 @@ def list_threads(limit=500, start=0, search=None):
 		where += " AND (client_phone LIKE %(q)s OR IFNULL(client_name,'') LIKE %(q)s)"
 		params["q"] = f"%{search}%"
 
+	delivery_col = "m.delivery_status" if _has_delivery_status_field() else "NULL AS delivery_status"
 	rows = frappe.db.sql(
 		f"""
 		SELECT a.pkey, a.msg_count, a.last_at, a.inbound_count,
 		       m.name, m.client_phone, m.client_name, m.customer, m.direction,
-		       m.content, m.body, m.context_tag, m.status, m.delivery_status
+		       m.content, m.body, m.context_tag, m.status, {delivery_col}
 		FROM (
 			SELECT RIGHT(REGEXP_REPLACE(client_phone,'[^0-9]',''),10) AS pkey,
 			       COUNT(*) AS msg_count,
