@@ -339,6 +339,7 @@ function mapCallThreadMessage(row: any) {
     sender: row.from ?? null,
     twilio_sid: row.twilio_sid ?? null,
     status: row.status ?? null,
+    delivery_status: null,
     recording: row.recording ?? null,
     reference_doctype: null,
     reference_name: null,
