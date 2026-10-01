@@ -1,6 +1,7 @@
 import { insertSmsMessage } from "./erpnext/agents";
 import { isLive, isSmsAllowlisted, opsMode } from "./ops-mode";
 import { maskTrack } from "./pci-guard";
+import { smsStatusCallbackUrl } from "./sms-status";
 
 export type OutboundSmsResult = {
   sid: string | null;
@@ -66,16 +67,16 @@ export async function dispatchSms(opts: {
   }
 
   if (!isLive() && !isSmsAllowlisted(to)) {
-    const sid = `held_${Date.now()}`;
+    // Log a held_* trace id. Callers must not treat it as a Twilio SID.
     await logOutbound({
       to,
       body,
       source: opts.source,
-      sid,
+      sid: `held_${Date.now()}`,
       held: true,
       reason: "test_mode_not_allowlisted",
     });
-    return { sid, held: true, reason: "test_mode_not_allowlisted" };
+    return { sid: null, held: true, reason: "test_mode_not_allowlisted" };
   }
 
   const sid = await twilioPost(to, body, opts.mediaUrl);
@@ -99,6 +100,8 @@ async function twilioPost(to: string, body: string, mediaUrl?: string): Promise<
   if (msgSvcSid) params.set("MessagingServiceSid", msgSvcSid);
   else params.set("From", "+12123084431");
   if (mediaUrl) params.set("MediaUrl0", mediaUrl);
+  const callback = smsStatusCallbackUrl();
+  if (callback) params.set("StatusCallback", callback);
   const auth = btoa(`${account}:${token}`);
   const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${account}/Messages.json`, {
     method: "POST",

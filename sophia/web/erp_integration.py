@@ -431,6 +431,7 @@ async def update_communication_log(
     duration_seconds: int = 0,
     tool_calls: list[dict] = None,
     appointment_name: str = "",
+    content: str = "",
 ):
     """Update an existing communication log after a call ends."""
     if not settings.ERPNEXT_URL or not doc_name:
@@ -443,6 +444,8 @@ async def update_communication_log(
         update["duration_seconds"] = duration_seconds
     if appointment_name:
         update["appointment_booked"] = appointment_name
+    if content:
+        update["content"] = content
     if tool_calls:
         update["tool_calls"] = [
             {

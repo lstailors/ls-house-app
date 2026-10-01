@@ -16,6 +16,7 @@
   "timestamp",
   "twilio_sid",
   "status",
+  "delivery_status",
   "reference_doctype",
   "reference_name",
   "context_tag",
@@ -77,6 +78,12 @@
    "fieldtype": "Select",
    "label": "Status",
    "options": "received\nsent\nfailed"
+  },
+  {
+   "fieldname": "delivery_status",
+   "fieldtype": "Data",
+   "label": "Delivery Status",
+   "description": "Raw Twilio MessageStatus (queued, sent, delivered, undelivered, failed). Not the same as Status."
   },
   {
    "fieldname": "reference_doctype",

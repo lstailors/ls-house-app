@@ -43,6 +43,7 @@ from web.tools import (
     execute_tool,
     TOOL_REGISTRY,
     prep_note,
+    send_tracked_sms,
     staff_daily_schedule,
     staff_overdue_orders,
     staff_ready_for_pickup,
@@ -204,9 +205,10 @@ async def send_day_before_reminders() -> None:
             f"Need to reschedule? Reply here or call (212) 752-1638. See you then!"
         )
         try:
-            twilio_client.messages.create(
-                body=body, from_=settings.TWILIO_PHONE_NUMBER, to=phone,
-            )
+            sms = await send_tracked_sms(phone, body, context_tag="sofia_voice_reminder")
+            if not sms["accepted"]:
+                logger.warning(f"Reminder not accepted for {phone} ({a.get('name')}): {sms.get('delivery_status')}")
+                continue
             await create_communication_log(
                 communication_type="SMS",
                 direction="Outbound",
@@ -215,7 +217,7 @@ async def send_day_before_reminders() -> None:
                 mode="system",
                 appointment_name=a.get("name", ""),
             )
-            logger.info(f"Reminder sent to {phone} for {a.get('name')}")
+            logger.info(f"Reminder accepted for {phone} ({a.get('name')}) sid={sms.get('sid')}")
         except Exception as e:
             logger.warning(f"Reminder SMS failed for {phone}: {e}")
 
@@ -299,10 +301,11 @@ async def send_ops_briefing(when: str = "morning") -> None:
         return
     for num in numbers:
         try:
-            twilio_client.messages.create(
-                body=body, from_=settings.TWILIO_PHONE_NUMBER, to=num,
-            )
-            logger.info(f"{when} briefing sent to {num}")
+            sms = await send_tracked_sms(num, body, context_tag="sofia_voice_briefing")
+            if sms["accepted"]:
+                logger.info(f"{when} briefing accepted for {num} sid={sms.get('sid')}")
+            else:
+                logger.warning(f"{when} briefing not accepted for {num}: {sms.get('delivery_status')}")
         except Exception as e:
             logger.warning(f"Briefing SMS failed for {num}: {e}")
 
@@ -522,13 +525,13 @@ async def voice_status(request: Request):
     call_status = form.get("CallStatus", "")
     logger.info(f"Call status callback: {call_sid} status={call_status} duration={duration}s")
 
-    if call_status in ("completed", "no-answer", "busy", "failed"):
-        asyncio.create_task(_finalize_call_log(call_sid, caller, duration))
+    if call_status in ("completed", "no-answer", "busy", "failed", "canceled"):
+        asyncio.create_task(_finalize_call_log(call_sid, caller, duration, call_status))
 
     return HTMLResponse(content="<Response/>", media_type="application/xml")
 
 
-async def _finalize_call_log(call_sid: str, caller: str, duration: int):
+async def _finalize_call_log(call_sid: str, caller: str, duration: int, call_status: str = ""):
     """
     After a call ends, poll Twilio for a transcript and update the ERPNext log.
     Twilio transcription can take up to 60 seconds.
@@ -571,10 +574,15 @@ async def _finalize_call_log(call_sid: str, caller: str, duration: int):
         )
         rows = resp.get("data", [])
         if rows:
+            # A missed or failed call must not stay as "[call started]".
+            outcome = ""
+            if call_status and call_status != "completed":
+                outcome = f"[call {call_status}]"
             await update_communication_log(
                 doc_name=rows[0]["name"],
                 transcript=transcript_text,
                 duration_seconds=duration,
+                content=outcome,
             )
     except Exception as e:
         logger.error(f"Could not update call log for {call_sid}: {e}")
@@ -967,22 +975,30 @@ class ManualSMSPayload(BaseModel):
 
 
 @app.post("/api/send-sms")
-async def send_sms_manual(payload: ManualSMSPayload):
-    msg = twilio_client.messages.create(
-        body=payload.message,
-        from_=settings.TWILIO_PHONE_NUMBER,
-        to=payload.to,
-    )
-    asyncio.create_task(
-        create_communication_log(
-            communication_type="SMS",
-            direction="Outbound",
-            caller_phone=payload.to,
-            content=payload.message,
-            mode="manual",
+async def send_sms_manual(payload: ManualSMSPayload, request: Request):
+    if not check_bridge_key(request):
+        return Response(content='{"error":"unauthorized"}', media_type="application/json", status_code=401)
+    try:
+        sms = await send_tracked_sms(payload.to, payload.message, context_tag="sofia_manual")
+    except Exception as e:
+        logger.error(f"manual send-sms failed: {e}")
+        return {"sent": False, "accepted": False, "error": "Twilio did not accept that text."}
+    if sms["accepted"]:
+        asyncio.create_task(
+            create_communication_log(
+                communication_type="SMS",
+                direction="Outbound",
+                caller_phone=payload.to,
+                content=payload.message,
+                mode="manual",
+            )
         )
-    )
-    return {"sid": msg.sid, "status": msg.status}
+    return {
+        "sent": bool(sms["accepted"]),
+        "accepted": bool(sms["accepted"]),
+        "sid": sms.get("sid"),
+        "status": sms.get("delivery_status"),
+    }
 
 
 # ─── Raven Webhook (staff → Sofia bot messages) ───────────────────────────────

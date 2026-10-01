@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { erpList, erpRunMethod, erpCreate, erpGet } from "../lib/erp";
+import { erpList, erpRunMethod, erpCreate, erpGet, erpUpdate } from "../lib/erp";
 import { eTicketPublicUrl } from "../lib/eticket-token";
 import { DT } from "../lib/erpnext/doctypes";
 import { storeInsert, storeList, storeFindOne, storeSearch, storeUpdate, storeUpsert } from "../lib/erpnext/store";
@@ -19,6 +19,7 @@ import { approveEmailDraft, discardEmailDraft } from "../lib/erpnext/email-draft
 import { getAuthedUser } from "../lib/scope";
 import { requireCronOrSession } from "../lib/require-secret";
 import { dispatchSms } from "../lib/outbound";
+import { applyTwilioMessageStatus, isDeliverableSid, type TwilioStatusEvent } from "../lib/sms-status";
 import { parseContextPhone, parseSofiaChatHistory, type SofiaChatTurn } from "../lib/sofia-chat";
 // sendSms and alertCarl defined locally below
 
@@ -103,8 +104,11 @@ async function twilioSend(
   mediaUrl?: string
 ): Promise<{ ok: boolean; sid?: string; error?: string; status?: number }> {
   const result = await dispatchSms({ to, body, mediaUrl, source: "sofia.twilioSend" });
-  if (result.sid) return { ok: true, sid: result.sid, status: 200 };
-  return { ok: false, error: result.reason ?? "send_failed" };
+  // A held_* id or a missing SID means the handset was not offered the message.
+  if (result.held || !isDeliverableSid(result.sid)) {
+    return { ok: false, error: result.reason ?? "not_sent" };
+  }
+  return { ok: true, sid: result.sid, status: 202 };
 }
 
 // legacy wrapper for non-SMS parts of the file
@@ -121,7 +125,7 @@ async function sendCustomerSmsViaErp(args: {
   reference_name?: string | null;
   context_tag?: string | null;
   client_name?: string | null;
-}): Promise<{ ok: boolean; sid?: string | null; status?: string | null; error?: string | null; message_name?: string | null }> {
+}): Promise<{ ok: boolean; sid?: string | null; status?: string | null; delivery_status?: string | null; error?: string | null; message_name?: string | null }> {
   let result: any = null;
   try {
     result = await erpRunMethod("lsh_house.sms.send_customer_sms", {
@@ -147,11 +151,14 @@ async function sendCustomerSmsViaErp(args: {
     };
   }
 
+  const rawSid = result?.twilio_sid ?? null;
+  const sid = isDeliverableSid(rawSid) ? rawSid : null;
   return {
-    ok: Boolean(result?.ok),
-    sid: result?.twilio_sid ?? null,
+    ok: Boolean(result?.ok) && Boolean(sid),
+    sid,
     status: result?.status ?? null,
-    error: result?.error_message ?? null,
+    delivery_status: result?.delivery_status ?? result?.status ?? null,
+    error: result?.error ?? result?.error_message ?? (sid ? null : "not_sent"),
     message_name: result?.name ?? null,
   };
 }
@@ -305,6 +312,7 @@ function mapSmsThreadMessage(row: any) {
     sender: row.sender ?? null,
     twilio_sid: row.twilio_sid ?? null,
     status: row.status ?? null,
+    delivery_status: row.delivery_status ?? null,
     reference_doctype: row.reference_doctype ?? null,
     reference_name: row.reference_name ?? null,
     context_tag: row.context_tag ?? null,
@@ -331,6 +339,7 @@ function mapCallThreadMessage(row: any) {
     sender: row.from ?? null,
     twilio_sid: row.twilio_sid ?? null,
     status: row.status ?? null,
+    delivery_status: null,
     recording: row.recording ?? null,
     reference_doctype: null,
     reference_name: null,
@@ -436,6 +445,8 @@ async function buildLocalSofiaConversations() {
           direction: message.direction,
           created_at: message.created_at,
           timestamp: message.timestamp,
+          status: message.status ?? null,
+          delivery_status: message.delivery_status ?? null,
         },
         messageCount: (existing?.messageCount ?? 0) + 1,
         // Was hard-coded true, so the console could never show "Human active".
@@ -991,9 +1002,20 @@ async function executeTool(
           context_tag: "sofia",
           client_name: custName || null,
         });
-        if (!result.ok) return JSON.stringify({ error: "ERPNext SMS send failed", detail: result.error, status: result.status });
-        await postToRaven(`:white_check_mark: *Sofia sent SMS* to ${custName || toPhone}\n> ${smsBody}\nsid: \`${result.sid}\``);
-        return JSON.stringify({ ok: true, sent: true, twilio_sid: result.sid, message_name: result.message_name, sent_to: toPhone, recipient_name: custName || null });
+        if (!result.ok || !isDeliverableSid(result.sid)) {
+          return JSON.stringify({ ok: false, sent: false, error: result.error ?? "not_sent", status: result.status, delivery_status: result.delivery_status ?? null });
+        }
+        await postToRaven(`:white_check_mark: *Sofia SMS accepted* to ${custName || toPhone}\n> ${smsBody}\nsid: \`${result.sid}\``);
+        return JSON.stringify({
+          ok: true,
+          sent: true,
+          accepted: true,
+          twilio_sid: result.sid,
+          delivery_status: result.delivery_status ?? "accepted",
+          message_name: result.message_name,
+          sent_to: toPhone,
+          recipient_name: custName || null,
+        });
       }
       case "send_mms_card": {
         if (!isAssistant) return JSON.stringify({ error: "Assistant mode only" });
@@ -1032,7 +1054,9 @@ async function executeTool(
           mediaUrl = `${RENDERER_BASE}?${params.toString()}`;
         }
         const result = await twilioSend(toPhone, smsBody, mediaUrl);
-        if (!result.ok) return JSON.stringify({ error: "Twilio MMS send failed", detail: result.error, status: result.status });
+        if (!result.ok || !isDeliverableSid(result.sid)) {
+          return JSON.stringify({ ok: false, sent: false, error: result.error ?? "Twilio MMS send failed", status: result.status });
+        }
         try {
           await insertSmsMessage({
             twilio_sid: result.sid ?? null,
@@ -1045,7 +1069,16 @@ async function executeTool(
           });
         } catch (_) {}
         await postToRaven(`:white_check_mark: *Sofia sent MMS card* (${tplKey}) to ${custName || toPhone}\n> ${smsBody}\nsid: \`${result.sid}\``);
-        return JSON.stringify({ ok: true, sent: true, twilio_sid: result.sid, sent_to: toPhone, template_key: tplKey, media_url: mediaUrl });
+        return JSON.stringify({
+          ok: true,
+          sent: true,
+          accepted: true,
+          twilio_sid: result.sid,
+          delivery_status: "accepted",
+          sent_to: toPhone,
+          template_key: tplKey,
+          media_url: mediaUrl,
+        });
       }
       case "list_pending_drafts": {
         if (!isAssistant) return JSON.stringify({ error: "Assistant mode only" });
@@ -1318,8 +1351,10 @@ async function executeTool(
         const totalStr = ticket.grand_total ? `$${Number(ticket.grand_total).toFixed(2)}` : "your balance";
         const msg = `Hi, here is your secure payment link for ${ticketName} (${totalStr}) — ${payUrl}\n\nL&S Custom Tailors`;
         const smsResult = await twilioSend(targetPhone, msg);
-        if (!smsResult.ok) return JSON.stringify({ error: `SMS failed: ${smsResult.error}`, pay_url: payUrl });
-        return JSON.stringify({ ok: true, twilio_sid: smsResult.sid, pay_url: payUrl, invoice: invoiceName });
+        if (!smsResult.ok || !isDeliverableSid(smsResult.sid)) {
+          return JSON.stringify({ ok: false, sent: false, error: `SMS failed: ${smsResult.error}`, pay_url: payUrl });
+        }
+        return JSON.stringify({ ok: true, accepted: true, twilio_sid: smsResult.sid, pay_url: payUrl, invoice: invoiceName });
       }
 
       case "request_delivery": {
@@ -1384,8 +1419,10 @@ async function executeTool(
         const statusStr = ticket.workflow_state ? ` — currently *${ticket.workflow_state}*` : "";
         const msg = `Your L&S alteration ticket${statusStr}:\n${ticketUrl}\n\nL&S Custom Tailors`;
         const smsResult = await twilioSend(targetPhone, msg);
-        if (!smsResult.ok) return JSON.stringify({ error: `SMS failed: ${smsResult.error}`, ticket_url: ticketUrl });
-        return JSON.stringify({ ok: true, twilio_sid: smsResult.sid, ticket_url: ticketUrl });
+        if (!smsResult.ok || !isDeliverableSid(smsResult.sid)) {
+          return JSON.stringify({ ok: false, sent: false, error: `SMS failed: ${smsResult.error}`, ticket_url: ticketUrl });
+        }
+        return JSON.stringify({ ok: true, accepted: true, twilio_sid: smsResult.sid, ticket_url: ticketUrl });
       }
 
       default:
@@ -1552,7 +1589,7 @@ When Carl tells you to text/message/SMS/notify a client, you are an ACTION layer
 
 1. NO-DRAFT RULE: NEVER respond with "draft ready, reply YES to send", "confirm with YES", "should I send this?", "want me to send?", or any variant. If Carl said send, SEND. The only acceptable behavior is to immediately call send_sms_to_client (or send_mms_card) and then report what you sent.
 
-2. NEVER-LIE RULE: NEVER say "Sent.", "Message sent", or any confirmation UNLESS the SAME turn contains a successful send_sms_to_client OR send_mms_card tool call returning ok:true with a twilio_sid.
+2. NEVER-LIE RULE: NEVER say "Sent.", "Message sent", or any confirmation UNLESS the SAME turn contains a successful send_sms_to_client OR send_mms_card tool call returning ok:true with a real twilio_sid (not held_). ok:true means Twilio accepted the message. Do NOT say the client received it, read it, or that it was delivered. If the tool returns ok:false, say it was not sent and why.
 
 3. RECIPIENT RESOLUTION: If Carl gives a name only - lookup_customer first, then send_sms_to_client with customer_id. If Carl gives a phone - send_sms_to_client with to_phone directly. If Carl gives both - prefer customer_id.
 
@@ -1838,6 +1875,7 @@ async function processMessage(from: string, body: string, messageSid: string = "
           carl_replied_at: new Date().toISOString(),
         });
       const escRow = await storeFindOne(DT.ESCALATION, "name", escalationId);
+      let clientText = `Sofia did not text the client. Rewrite kept for the desk: ${sofiaRewritten}`;
       if ((escRow as any)?.source_channel === "sms" && (escRow as any)?.source_phone) {
         const smsResult = await sendCustomerSmsViaErp({
           to: String((escRow as any).source_phone),
@@ -1847,9 +1885,14 @@ async function processMessage(from: string, body: string, messageSid: string = "
           reference_name: escalationId,
           context_tag: "sofia",
         });
-        if (!smsResult.ok) console.error("ERPNext SMS error:", smsResult.error);
+        if (smsResult.ok && isDeliverableSid(smsResult.sid)) {
+          clientText = `Sofia text accepted (${smsResult.sid}): ${sofiaRewritten}`;
+        } else {
+          console.error("ERPNext SMS error:", smsResult.error);
+          clientText = `Sofia text NOT accepted (${smsResult.error ?? "not_sent"}). Rewrite: ${sofiaRewritten}`;
+        }
       }
-      await postToRaven(`OK *Escalation answered*\nCarl: _${body}_\nSofia sent: ${sofiaRewritten}`);
+      await postToRaven(`OK *Escalation answered*\nCarl: _${body}_\n${clientText}`);
       return;
     }
 
@@ -2207,6 +2250,61 @@ sofiaRouter.get("/voice-approvals", async (c) => {
 
   const data = await storeList(DT.VOICE_APPROVAL_REQUEST, { orderBy: "creation desc", limit: 50 });
   return c.json({ data: data.map((r) => ({ ...r, id: r.name, created_at: r.creation })) });
+});
+
+async function recordSmsDelivery(sid: string, event: TwilioStatusEvent) {
+  const row = await findSmsByTwilioSid(sid);
+  if (!row?.name) return { updated: false, reason: "not_found" as const };
+  const patch = applyTwilioMessageStatus(row, event);
+  if (!patch) return { updated: false, reason: "stale" as const };
+  const name = String(row.name);
+  try {
+    await erpUpdate(DT.SMS_MESSAGE, name, {
+      status: patch.status,
+      delivery_status: patch.delivery_status,
+      error_message: patch.error_message,
+    });
+  } catch (e) {
+    const message = String((e as Error).message || "");
+    if (!/delivery_status/i.test(message)) throw e;
+    // Column lands with the doctype migrate. Failure receipts still flip `status`.
+    await erpUpdate(DT.SMS_MESSAGE, name, {
+      status: patch.status,
+      error_message: patch.error_message,
+    });
+  }
+  return { updated: true, reason: "applied" as const };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// POST /api/sofia/sms/status — Twilio delivery receipt
+// Point StatusCallback here. Signature-checked. Never 5xx: a carrier
+// outage must not page the same way the UniFi sync used to.
+// ────────────────────────────────────────────────────────────────────────────
+sofiaRouter.post("/sms/status", async (c) => {
+  try {
+    const formText = await c.req.text();
+    const params = new URLSearchParams(formText);
+    if (!(await isValidTwilioWebhook(c, params))) {
+      console.error("[sofia/sms/status] rejected invalid Twilio signature");
+      return c.json({ ok: false }, 403);
+    }
+    const sid = params.get("MessageSid") ?? params.get("SmsSid") ?? "";
+    const messageStatus = params.get("MessageStatus") ?? params.get("SmsStatus") ?? "";
+    if (sid && messageStatus) {
+      const result = await recordSmsDelivery(sid, {
+        messageStatus,
+        errorCode: params.get("ErrorCode"),
+        errorMessage: params.get("ErrorMessage"),
+      });
+      if (!result.updated) {
+        console.info(`[sofia/sms/status] ${sid} ${messageStatus} not applied (${result.reason})`);
+      }
+    }
+  } catch (err: any) {
+    console.error("[sofia/sms/status]", err?.message ?? err);
+  }
+  return emptyTwiml(c);
 });
 
 // ────────────────────────────────────────────────────────────────────────────
