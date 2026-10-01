@@ -1,6 +1,8 @@
 // UniFi Cloud API routes — calls, recordings, cameras
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { getAuthedUser } from "../lib/scope";
+import { secretsMatch } from "../lib/require-secret";
 import { upsertCallLog, listCallLogs } from "../lib/erpnext/agents";
 import { resolveIdentity } from "../lib/identity-resolve";
 import {
@@ -79,19 +81,34 @@ unifiRouter.get("/events", async (c) => {
   return c.json({ data: events });
 });
 
-// ── POST /api/unifi/sync — optional cloud Talk pull into ERP Call Log ────
+// ── GET|POST /api/unifi/sync — optional cloud Talk pull into ERP Call Log ─
 // Prefer maestro/unifi-runtime ERP mirror (SoT). This path is best-effort.
-// Accepts either a user session OR X-Sync-Secret header.
+// Vercel Cron calls GET /api/unifi/sync with Authorization: Bearer CRON_SECRET.
+// Also accepts a staff session or X-Sync-Secret (UNIFI_SYNC_SECRET).
+// Missing cron secret is 401, never 503 — a 5xx here pages Vercel.
 // Never 5xx on upstream Talk outage — that was spamming Vercel anomaly alerts.
-unifiRouter.post("/sync", async (c) => {
+function cronAuthorized(c: Context): boolean {
+  const expected = (process.env.CRON_SECRET ?? "").trim();
+  if (!expected) return false;
+  const auth = c.req.header("authorization") ?? "";
+  const bearer = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
+  const header = c.req.header("x-cron-secret") ?? "";
+  return secretsMatch(bearer, expected) || secretsMatch(header, expected);
+}
+
+async function authorizeUnifiSync(c: Context): Promise<true | Response> {
   const syncSecret = process.env.UNIFI_SYNC_SECRET;
   const providedSecret = c.req.header("X-Sync-Secret");
-  if (syncSecret && providedSecret === syncSecret) {
-    // Authorized via sync secret — skip user session check
-  } else {
-    const user = await getAuthedUser(c);
-    if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
-  }
+  if (syncSecret && providedSecret === syncSecret) return true;
+  if (cronAuthorized(c)) return true;
+  const user = await getAuthedUser(c);
+  if (!user) return c.json({ error: { message: "Unauthorized" } }, 401);
+  return true;
+}
+
+async function handleUnifiSync(c: Context) {
+  const gate = await authorizeUnifiSync(c);
+  if (gate !== true) return gate;
   try {
     const lastRows = await listCallLogs({ limit: 1, orderBy: "time desc" });
     const lastRow = lastRows[0];
@@ -155,4 +172,7 @@ unifiRouter.post("/sync", async (c) => {
       },
     });
   }
-});
+}
+
+unifiRouter.get("/sync", handleUnifiSync);
+unifiRouter.post("/sync", handleUnifiSync);
