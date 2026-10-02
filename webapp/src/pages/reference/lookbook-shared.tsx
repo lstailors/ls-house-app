@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Download } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import type { Column } from "@ls/design";
 import { cn } from "@ls/design/utils";
 import type { LookbookSwatchRow } from "@ls/types";
@@ -69,8 +70,19 @@ export function BucketChip({ bucket, className }: { bucket: LookbookSwatchRow["b
   );
 }
 
-export function swatchDetailPath(swatchNumber: string): string {
-  return `/admin/reference/lookbook-prices/swatch?id=${encodeURIComponent(swatchNumber)}`;
+export function swatchDetailPath(swatchNumber: string, backSearch = ""): string {
+  const qs = new URLSearchParams();
+  qs.set("id", swatchNumber);
+  const cleaned = backSearch.replace(/^\?/, "");
+  if (cleaned) qs.set("back", cleaned);
+  return `/admin/reference/lookbook-prices/swatch?${qs.toString()}`;
+}
+
+export function swatchListPath(backSearch?: string | null): string {
+  const cleaned = (backSearch ?? "").replace(/^\?/, "");
+  return cleaned
+    ? `/admin/reference/lookbook-prices/all?${cleaned}`
+    : "/admin/reference/lookbook-prices/all";
 }
 
 type PriceFields = {
@@ -141,6 +153,90 @@ export function SwatchThumb({
       className={cn("object-cover bg-forest-raised/70", className)}
       loading="lazy"
     />
+  );
+}
+
+export function PhotoLightbox({
+  rows,
+  index,
+  onClose,
+  onChange,
+  backSearch = "",
+}: {
+  rows: LookbookSwatchRow[];
+  index: number;
+  onClose: () => void;
+  onChange: (index: number) => void;
+  backSearch?: string;
+}) {
+  const row = rows[index];
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowRight" && index < rows.length - 1) onChange(index + 1);
+      if (e.key === "ArrowLeft" && index > 0) onChange(index - 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [index, rows.length, onClose, onChange]);
+
+  if (!row?.photoUrl) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-forest-deep/92 backdrop-blur-md flex flex-col"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={row.swatchNumber}
+    >
+      <div className="flex-1 flex items-center justify-center p-4 min-h-0" onClick={(e) => e.stopPropagation()}>
+        <img
+          src={lookbookPhotoSrc(row.photoUrl)}
+          alt={row.swatchNumber}
+          className="max-h-[78vh] max-w-full object-contain rounded"
+        />
+      </div>
+      <div
+        className="px-4 py-3 border-t border-brass/15 flex flex-wrap items-center justify-between gap-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="min-w-0">
+          <div className="font-mono text-cream text-sm truncate">{row.swatchNumber}</div>
+          <div className="text-cream-dim text-[11px] italic truncate">{row.mill}</div>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="text-brass-light disabled:opacity-30"
+            disabled={index === 0}
+            onClick={() => onChange(index - 1)}
+            aria-label="Previous photo"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            className="text-brass-light disabled:opacity-30"
+            disabled={index === rows.length - 1}
+            onClick={() => onChange(index + 1)}
+            aria-label="Next photo"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+          <DownloadPhotoLink swatchNumber={row.swatchNumber} photoUrl={row.photoUrl} />
+          <Link
+            to={swatchDetailPath(row.swatchNumber, backSearch)}
+            className="text-xs text-brass-light underline underline-offset-2"
+          >
+            Details
+          </Link>
+          <button type="button" onClick={onClose} className="text-cream-dim" aria-label="Close">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
