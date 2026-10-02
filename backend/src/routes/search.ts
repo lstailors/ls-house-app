@@ -22,6 +22,13 @@ function moneyish(n: unknown): number | null {
   return Number.isFinite(v) ? v : null;
 }
 
+/** ERP rows omit optional strings. Keep real strings unchanged; never call toLowerCase on null/undefined. */
+function searchText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  return String(value);
+}
+
 /**
  * Universal fuzzy search for alts FOH + app dashboard.
  * ERPNext is primary SoT. All entity queries run in parallel.
@@ -447,17 +454,17 @@ searchRouter.get("/", async (c) => {
   // Secondary sources (best-effort, alts-adjacent)
   try {
     const allFabrics = await listFabrics(true);
-    const qLower = q.toLowerCase();
+    const qLower = searchText(q).toLowerCase();
     const fabrics = allFabrics
       .filter(
         (f: any) =>
-          String(f.fabric_name ?? "")
+          searchText(f.fabric_name)
             .toLowerCase()
             .includes(qLower) ||
-          String(f.mill ?? "")
+          searchText(f.mill)
             .toLowerCase()
             .includes(qLower) ||
-          String(f.name ?? "")
+          searchText(f.name)
             .toLowerCase()
             .includes(qLower),
       )
@@ -510,15 +517,18 @@ searchRouter.get("/", async (c) => {
     /* optional */
   }
 
-  // Rank: exact id matches first, then tickets/customers/deliveries, then rest
-  const qLower = q.toLowerCase();
+  // Rank: exact id matches first, then tickets/customers/deliveries, then rest.
+  // id/title are typed as strings but ERP hits (and fabric/note rows) can omit them.
+  const qLower = searchText(q).toLowerCase();
   results.sort((a, b) => {
     const score = (h: SearchHit) => {
       let s = 0;
-      if (h.id.toLowerCase() === qLower) s += 100;
-      if (h.id.toLowerCase().includes(qLower)) s += 40;
-      if (h.title.toLowerCase() === qLower) s += 30;
-      if (h.title.toLowerCase().includes(qLower)) s += 15;
+      const id = searchText(h.id).toLowerCase();
+      const title = searchText(h.title).toLowerCase();
+      if (id === qLower) s += 100;
+      if (id.includes(qLower)) s += 40;
+      if (title === qLower) s += 30;
+      if (title.includes(qLower)) s += 15;
       if (h.type === "alteration") s += 8;
       if (h.type === "customer") s += 7;
       if (h.type === "delivery") s += 6;
