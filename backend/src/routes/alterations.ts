@@ -90,6 +90,7 @@ interface ErpTicket {
   modified: string;
   creation: string;
   assigned_tailor: string | null;
+  assigned_tailor_name?: string | null;
   lines?: Array<{ description: string; price: number; garment_ref: string }>;
 }
 
@@ -119,7 +120,9 @@ function serialize(t: ErpTicket) {
     status: mapStatus(t.workflow_state),
     workflow_state: t.workflow_state,
     tailorId: t.assigned_tailor ?? null,
-    tailor: t.assigned_tailor ? { id: t.assigned_tailor, name: t.assigned_tailor } : null,
+    tailor: t.assigned_tailor
+      ? { id: t.assigned_tailor, name: t.assigned_tailor_name || t.assigned_tailor }
+      : null,
     ticketDate: t.ticket_date ?? null,
     dueDate: t.due_date ?? null,
     promisedDate: t.promised_date ?? null,
@@ -154,7 +157,7 @@ const LIST_FIELDS = [
   "is_rush", "internal_notes", "customer_notes",
   "sales_invoice", "linked_sales_order", "included_in_custom",
   "delivery_method", "notified_ready_at", "picked_up_at",
-  "modified", "creation", "assigned_tailor",
+  "modified", "creation", "assigned_tailor", "assigned_tailor_name",
 ];
 
 // Batch-fetch Alteration Ticket Line child rows for a set of ticket names in
